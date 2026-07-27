@@ -1,0 +1,21 @@
+{
+  "name": "@sample/agent-runbook",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A2A worker: looks up service ownership and runbook steps via MCP (AgentCore Gateway in deployed mode)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@sample/claude-a2a-executor": "0.1.0",
+    "@sample/aws-sigv4-fetch": "0.1.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.218"
+  }
+}

@@ -1,0 +1,84 @@
+# Local end-to-end run: all three agents + the mock service-catalog tool.
+#
+#   eval "$(aws configure export-credentials --format env)"
+#   docker compose up --build
+#
+# All four services share ONE image; AGENT_DIR selects the workspace to run.
+x-agent-base: &agent-base
+  image: sample-agents:local
+  build:
+    context: .
+    dockerfile: docker/agent.Dockerfile
+
+x-aws-env: &aws-env
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-global.anthropic.claude-haiku-4-5-20251001-v1:0}
+
+x-healthcheck: &ping-healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 12
+
+services:
+  mock-service-catalog:
+    <<: *agent-base
+    environment:
+      AGENT_DIR: scripts/mock-service-catalog
+      PORT: "8900"
+    ports:
+      - "8900:8900"
+    healthcheck:
+      <<: *ping-healthcheck
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8900/ping').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))\""]
+
+  log-analyst:
+    <<: *agent-base
+    environment:
+      <<: *aws-env
+      AGENT_DIR: agents/log-analyst
+      PORT: "9000"
+      # A2A clients route via the URL in the agent card; inside the compose
+      # network that must be the service DNS name, not localhost. The same
+      # var carries the runtime endpoint when deployed on AgentCore.
+      AGENTCORE_RUNTIME_URL: http://log-analyst:9000/
+    ports:
+      - "9001:9000"
+    healthcheck:
+      <<: *ping-healthcheck
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:9000/ping').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))\""]
+
+  runbook:
+    <<: *agent-base
+    environment:
+      <<: *aws-env
+      AGENT_DIR: agents/runbook
+      PORT: "9000"
+      AGENTCORE_RUNTIME_URL: http://runbook:9000/
+      SERVICE_CATALOG_MCP_URL: http://mock-service-catalog:8900/mcp
+    ports:
+      - "9002:9000"
+    depends_on:
+      mock-service-catalog:
+        condition: service_healthy
+    healthcheck:
+      <<: *ping-healthcheck
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:9000/ping').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))\""]
+
+  lead:
+    <<: *agent-base
+    environment:
+      <<: *aws-env
+      AGENT_DIR: agents/lead
+      PORT: "8080"
+      LOG_ANALYST_URL: http://log-analyst:9000
+      RUNBOOK_URL: http://runbook:9000
+    ports:
+      - "8080:8080"
+    depends_on:
+      log-analyst:
+        condition: service_healthy
+      runbook:
+        condition: service_healthy

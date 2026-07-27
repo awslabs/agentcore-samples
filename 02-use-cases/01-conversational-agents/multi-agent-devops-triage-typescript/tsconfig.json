@@ -1,0 +1,26 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/claude-a2a-executor"
+    },
+    {
+      "path": "packages/aws-sigv4-fetch"
+    },
+    {
+      "path": "agents/log-analyst"
+    },
+    {
+      "path": "agents/runbook"
+    },
+    {
+      "path": "agents/lead"
+    },
+    {
+      "path": "scripts/mock-service-catalog"
+    },
+    {
+      "path": "tests"
+    }
+  ]
+}

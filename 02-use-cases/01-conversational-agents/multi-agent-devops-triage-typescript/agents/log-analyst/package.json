@@ -1,0 +1,19 @@
+{
+  "name": "@sample/agent-log-analyst",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A2A worker: reasons over log/metric snippets for incident triage",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@sample/claude-a2a-executor": "0.1.0"
+  }
+}

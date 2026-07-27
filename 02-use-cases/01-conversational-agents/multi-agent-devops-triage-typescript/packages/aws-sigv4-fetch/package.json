@@ -1,0 +1,25 @@
+{
+  "name": "@sample/aws-sigv4-fetch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SigV4-signing fetch wrapper + in-process MCP proxy for AgentCore Gateway",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@aws-crypto/sha256-js": "5.2.0",
+    "@aws-sdk/credential-providers": "3.1093.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@smithy/protocol-http": "5.5.13",
+    "@smithy/signature-v4": "5.6.9"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "express": "5.2.1",
+    "zod": "4.4.3"
+  }
+}

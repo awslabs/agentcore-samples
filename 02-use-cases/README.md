@@ -20,6 +20,7 @@ Agents that interact with users in real time. Users authenticate through an iden
 | [healthcare-appointment-agent](./01-conversational-agents/healthcare-appointment-agent/) | FHIR-compliant healthcare appointment scheduling with patient data integration | Healthcare | Runtime, Gateway, Policy, Observability (FHIR R4) |
 | [lakehouse-agent](./01-conversational-agents/lakehouse-agent/) | Secure data lakehouse assistant with memory and row-level access controls | Data and Analytics | Runtime, Gateway, Memory, Policy (row-level security) |
 | [market-trends-agent](./01-conversational-agents/market-trends-agent/) | Financial market analysis with browser tools and memory integration | Financial Services | Runtime, Memory, Browser, Evaluations, Optimization |
+| [multi-agent-devops-triage-typescript](./01-conversational-agents/multi-agent-devops-triage-typescript/) | Multi-agent DevOps incident triage with the Claude Agent SDK in TypeScript, delegating over A2A | IT / DevOps | Runtime (HTTP + A2A), Gateway, Identity (Claude Agent SDK, TypeScript) |
 | [SRE-agent](./01-conversational-agents/SRE-agent/) | Site reliability engineering assistant with multi-agent LangGraph workflows | Site Reliability | Runtime, Gateway, Memory, Observability |
 | [video-games-sales-assistant](./01-conversational-agents/video-games-sales-assistant/) | Conversational video game sales analysis assistant | Retail / Gaming | Runtime, Gateway, Memory |
 
