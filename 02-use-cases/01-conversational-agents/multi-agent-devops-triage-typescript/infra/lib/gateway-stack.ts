@@ -1,10 +1,17 @@
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
-import { CfnGateway, CfnGatewayTarget } from 'aws-cdk-lib/aws-bedrockagentcore';
+import type { StackProps } from 'aws-cdk-lib';
+import {
+  Gateway,
+  GatewayAuthorizer,
+  SchemaDefinitionType,
+  ToolSchema,
+} from 'aws-cdk-lib/aws-bedrockagentcore';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import type { Construct } from 'constructs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,7 +23,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * in-process signing proxy produces.
  */
 export class GatewayStack extends Stack {
-  constructor(scope, id, props) {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     // --- Lambda target: the mock service catalog -------------------------
@@ -29,74 +36,55 @@ export class GatewayStack extends Stack {
       description: 'Mock service catalog / runbook lookup (AgentCore Gateway target)',
     });
 
-    // --- Gateway role: lets the Gateway invoke the target Lambda ---------
-    const gatewayRole = new iam.Role(this, 'GatewayRole', {
-      assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
-      description: 'Execution role for the AgentCore Gateway (invokes target Lambda)',
-    });
-    catalogFn.grantInvoke(gatewayRole);
-
     // --- Gateway with IAM inbound auth -----------------------------------
-    const gateway = new CfnGateway(this, 'ServiceCatalogGateway', {
-      name: 'sample-service-catalog',
+    const gateway = new Gateway(this, 'ServiceCatalogGateway', {
+      gatewayName: 'sample-service-catalog',
       description: 'Sample gateway exposing the mock service catalog over MCP',
-      protocolType: 'MCP',
-      authorizerType: 'AWS_IAM',
-      roleArn: gatewayRole.roleArn,
+      authorizerConfiguration: GatewayAuthorizer.usingAwsIam(),
     });
 
-    new CfnGatewayTarget(this, 'ServiceCatalogTarget', {
-      name: 'catalog',
-      gatewayIdentifier: gateway.attrGatewayIdentifier,
+    // The target grants the gateway's role invoke on the Lambda and uses the
+    // gateway's IAM role for outbound credentials by default.
+    gateway.addLambdaTarget('ServiceCatalogTarget', {
+      gatewayTargetName: 'catalog',
       description: 'Mock service catalog Lambda',
-      credentialProviderConfigurations: [
-        { credentialProviderType: 'GATEWAY_IAM_ROLE' },
-      ],
-      targetConfiguration: {
-        mcp: {
-          lambda: {
-            lambdaArn: catalogFn.functionArn,
-            toolSchema: {
-              inlinePayload: [
-                {
-                  name: 'lookup_service',
-                  description:
-                    'Look up a service in the service catalog: owning team, escalation contact, tier, and dependencies. Known services: orders-api, payments-svc, inventory-svc.',
-                  inputSchema: {
-                    type: 'object',
-                    properties: {
-                      service: {
-                        type: 'string',
-                        description: 'Service name, e.g. "orders-api"',
-                      },
-                    },
-                    required: ['service'],
-                  },
-                },
-                {
-                  name: 'get_runbook',
-                  description:
-                    'Get the runbook steps for a service and symptom (e.g. "latency", "errors").',
-                  inputSchema: {
-                    type: 'object',
-                    properties: {
-                      service: {
-                        type: 'string',
-                        description: 'Service name, e.g. "orders-api"',
-                      },
-                      symptom: {
-                        type: 'string',
-                        description: 'Observed symptom, e.g. "latency spike"',
-                      },
-                    },
-                    required: ['service', 'symptom'],
-                  },
-                },
-              ],
+      lambdaFunction: catalogFn,
+      toolSchema: ToolSchema.fromInline([
+        {
+          name: 'lookup_service',
+          description:
+            'Look up a service in the service catalog: owning team, escalation contact, tier, and dependencies. Known services: orders-api, payments-svc, inventory-svc.',
+          inputSchema: {
+            type: SchemaDefinitionType.OBJECT,
+            properties: {
+              service: {
+                type: SchemaDefinitionType.STRING,
+                description: 'Service name, e.g. "orders-api"',
+              },
             },
+            required: ['service'],
           },
         },
-      },
+        {
+          name: 'get_runbook',
+          description:
+            'Get the runbook steps for a service and symptom (e.g. "latency", "errors").',
+          inputSchema: {
+            type: SchemaDefinitionType.OBJECT,
+            properties: {
+              service: {
+                type: SchemaDefinitionType.STRING,
+                description: 'Service name, e.g. "orders-api"',
+              },
+              symptom: {
+                type: SchemaDefinitionType.STRING,
+                description: 'Observed symptom, e.g. "latency spike"',
+              },
+            },
+            required: ['service', 'symptom'],
+          },
+        },
+      ]),
     });
 
     // --- ECR repo for the shared agent image ------------------------------
@@ -125,13 +113,7 @@ export class GatewayStack extends Stack {
         resources: ['*'],
       }),
     );
-    runtimeRole.addToPolicy(
-      new iam.PolicyStatement({
-        sid: 'GatewayInvoke',
-        actions: ['bedrock-agentcore:InvokeGateway'],
-        resources: [gateway.attrGatewayArn],
-      }),
-    );
+    gateway.grantInvoke(runtimeRole);
     runtimeRole.addToPolicy(
       new iam.PolicyStatement({
         sid: 'WorkerInvoke',
@@ -152,8 +134,8 @@ export class GatewayStack extends Stack {
       }),
     );
 
-    new CfnOutput(this, 'GatewayUrl', { value: gateway.attrGatewayUrl });
-    new CfnOutput(this, 'GatewayArn', { value: gateway.attrGatewayArn });
+    new CfnOutput(this, 'GatewayUrl', { value: gateway.gatewayUrl ?? '' });
+    new CfnOutput(this, 'GatewayArn', { value: gateway.gatewayArn });
     new CfnOutput(this, 'AgentImageRepoUri', { value: repo.repositoryUri });
     new CfnOutput(this, 'RuntimeExecutionRoleArn', { value: runtimeRole.roleArn });
   }

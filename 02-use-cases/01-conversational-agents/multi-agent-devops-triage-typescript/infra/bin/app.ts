@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { App } from 'aws-cdk-lib';
-import { GatewayStack } from '../lib/gateway-stack.mjs';
+
+import { GatewayStack } from '../lib/gateway-stack.js';
 
 const app = new App();
 new GatewayStack(app, 'SampleClaudeAgentcoreGateway', {

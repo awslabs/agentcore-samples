@@ -21,6 +21,9 @@
     },
     {
       "path": "tests"
+    },
+    {
+      "path": "infra"
     }
   ]
 }
