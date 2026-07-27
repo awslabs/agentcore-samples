@@ -1,8 +1,8 @@
 import { BedrockAgentCoreApp } from 'bedrock-agentcore/runtime';
 import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk';
+import { runtimeUrlFromArn } from '@sample/claude-a2a-executor';
 import { z } from 'zod';
 
-import { runtimeUrlFromArn } from './a2a-transport.js';
 import { notifyIncidentChannel } from './notify.js';
 import { WorkerClient } from './worker-client.js';
 

@@ -31,19 +31,36 @@ describe('extractBedrockContext', () => {
     expect(context.oauth2CallbackUrl).toBeUndefined();
   });
 
-  it('forwards only Authorization and runtime-custom headers', () => {
+  it('forwards Authorization, custom headers, and unrestricted headers', () => {
     const context = extractBedrockContext({
       authorization: 'Bearer abc',
       'x-amzn-bedrock-agentcore-runtime-custom-tenant': 'acme',
-      'content-type': 'application/json',
-      'x-forwarded-for': '10.0.0.1',
-      'x-amzn-bedrock-agentcore-runtime-session-id': 'sess-1',
+      traceparent: '00-abc-def-01',
+      baggage: 'k=v',
+      'x-request-source': 'ci',
     });
 
     expect(context.headers).toEqual({
       authorization: 'Bearer abc',
       'x-amzn-bedrock-agentcore-runtime-custom-tenant': 'acme',
+      traceparent: '00-abc-def-01',
+      baggage: 'k=v',
+      'x-request-source': 'ci',
     });
+  });
+
+  it('drops restricted, x-amz-*, and non-custom x-amzn-* headers', () => {
+    const context = extractBedrockContext({
+      'content-type': 'application/json',
+      'x-forwarded-for': '10.0.0.1',
+      host: 'example.com',
+      cookie: 'session=1',
+      'x-amz-date': '20260727T000000Z',
+      'x-amzn-trace-id': 'Root=1-abc',
+      'x-amzn-bedrock-agentcore-runtime-session-id': 'sess-1',
+    });
+
+    expect(context.headers).toEqual({});
   });
 
   it('joins repeated header values', () => {

@@ -17,6 +17,25 @@ export interface AgentCardParams {
 }
 
 /**
+ * Returns a copy of `card` with every JSONRPC interface pointing at `url`
+ * (appending one if the card has none) — the analog of the Python SDK's
+ * `_set_jsonrpc_url`. Used by `serveA2A` so a caller-provided card never
+ * advertises a stale URL when `AGENTCORE_RUNTIME_URL` is set. The runtime
+ * invocation URL serves both protocol versions, so all JSONRPC interfaces
+ * (v1.0 and the v0.3 legacy mirror) get the same value.
+ */
+export function withJsonRpcUrl(card: AgentCard, url: string): AgentCard {
+  const hasJsonRpc = card.supportedInterfaces.some((i) => i.protocolBinding === 'JSONRPC');
+  const supportedInterfaces = hasJsonRpc
+    ? card.supportedInterfaces.map((i) => (i.protocolBinding === 'JSONRPC' ? { ...i, url } : i))
+    : [
+        ...card.supportedInterfaces,
+        { url, protocolBinding: 'JSONRPC', tenant: '', protocolVersion: '1.0' },
+      ];
+  return { ...card, supportedInterfaces };
+}
+
+/**
  * Builds a v1.0 AgentCard from a name/description plus optional skills.
  * The service URL resolution order is: explicit `url` param →
  * `AGENTCORE_RUNTIME_URL` env var (deployed on AgentCore) → local default.

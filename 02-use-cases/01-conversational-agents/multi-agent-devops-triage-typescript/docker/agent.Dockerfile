@@ -25,6 +25,10 @@ RUN npx tsc --build
 FROM --platform=linux/arm64 node:20-bookworm-slim
 
 ENV NODE_ENV=production
+# serveA2A binds 0.0.0.0 only inside containers (loopback otherwise). Its
+# detection checks /.dockerenv or this var; /.dockerenv doesn't exist under
+# podman or AgentCore Runtime, so declare container-ness explicitly.
+ENV DOCKER_CONTAINER=1
 WORKDIR /app
 
 COPY --from=build /app/node_modules ./node_modules
