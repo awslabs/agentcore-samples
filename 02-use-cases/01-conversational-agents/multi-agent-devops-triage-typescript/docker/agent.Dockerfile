@@ -17,10 +17,12 @@ COPY package.json package-lock.json tsconfig.base.json tsconfig.json ./
 COPY packages ./packages
 COPY agents ./agents
 COPY scripts ./scripts
-COPY tests ./tests
 RUN npm ci --no-audit --no-fund
 
-RUN npx tsc --build
+# Build only the runtime projects (project references pull in packages/).
+# The root tsconfig also references tests/ and infra/, which stay outside
+# the image on purpose — infra is deploy-time CDK code.
+RUN npx tsc --build agents/lead agents/log-analyst agents/runbook scripts/mock-service-catalog
 
 FROM --platform=linux/arm64 node:20-bookworm-slim
 
