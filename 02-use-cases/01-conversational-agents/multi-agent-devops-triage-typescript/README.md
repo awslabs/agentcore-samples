@@ -97,6 +97,14 @@ cd .. && ./deploy.sh                  # push arm64 image, create/update 3 runtim
 
 Deployed topology: the lead's A2A calls go through SigV4-signed `InvokeAgentRuntime` URLs (derived from the worker runtime ARNs), and the runbook worker reaches the real Gateway through the in-process SigV4 MCP proxy. The same agent code runs in all three modes (local processes, docker compose, deployed).
 
+## Sample prompts
+
+Use these as the `prompt` in the local `curl` above or with `./invoke.sh` when deployed. Ownership and runbook facts in the answers come from the service-catalog tool — the mock and the Gateway Lambda serve the same three services (`orders-api`, `payments-svc`, `inventory-svc`):
+
+- `orders-api latency spiked after the 14:00 deploy. Logs: ERROR timeout connecting to postgres-orders x40 since 14:02. What happened and what should we do?`
+- `orders-api error rate jumped on POST /checkout right after a config change — which team owns this and how do we mitigate?`
+- `payments-svc p99 latency has been degrading for 30 minutes with no recent deploys. Who is on call and what are the first steps?`
+
 ## Cleanup
 
 ```bash
