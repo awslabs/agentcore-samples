@@ -146,3 +146,7 @@ docker/ + docker-compose.yaml   # one arm64 image for all agents, local stack
 deploy.sh / invoke.sh / cleanup.sh
 ```
 
+## Disclaimer
+
+This sample is for learning and prototyping. It omits production concerns such as authentication hardening, retries, and full observability — review and adapt before any production use.
+
