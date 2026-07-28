@@ -1,17 +1,16 @@
 # Multi-Agent DevOps Triage Copilot — Claude Agent SDK (TypeScript) with A2A on Amazon Bedrock AgentCore
 
-Three [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) agents written in **TypeScript**, hosted on [Amazon Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html), communicating via the [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org/latest/), with one agent consuming a tool through **AgentCore Gateway** (MCP) — authenticated end to end with **IAM/SigV4** instead of OAuth.
+Three [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) agents written in **TypeScript**, hosted on [Amazon Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html), communicating via the [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org/latest/), with one agent consuming a tool through **AgentCore Gateway** (MCP) — authenticated end to end with **IAM/SigV4**.
 
 The scenario is a DevOps incident-triage copilot: a **lead agent** takes an incident description, delegates to a **log-analyst worker** and a **runbook worker** over A2A, and composes a triage summary. The runbook worker looks up service ownership and runbook steps through an MCP tool exposed by AgentCore Gateway (backed by a Lambda target).
 
 | Component | Technology |
 |---|---|
 | Agent framework | Claude Agent SDK (TypeScript) |
-| Hosting | AgentCore Runtime — HTTP protocol (lead), A2A protocol (workers) |
+| Hosting | AgentCore Runtime: HTTP protocol (lead), A2A protocol (workers) |
 | Agent ↔ agent | A2A JSON-RPC over SigV4-signed `InvokeAgentRuntime` |
 | Agent ↔ tools | MCP via AgentCore Gateway (IAM auth), in-process SigV4 signing |
 | Outbound credentials | AgentCore Identity (`withApiKey`) |
-| Models | Amazon Bedrock (Claude, via `CLAUDE_CODE_USE_BEDROCK`) |
 | Infrastructure | CDK (Gateway, Lambda target, IAM, ECR) + deploy script |
 
 ## Architecture
@@ -25,30 +24,18 @@ graph LR
     G --> T[Lambda: service catalog]
 ```
 
-**Protocol rationale — A2A is horizontal (agent ↔ agent), MCP is vertical (agent ↔ tools):**
-
 - The **lead** uses the AgentCore **HTTP protocol** (port 8080) because its caller is an application, not an agent.
-- The **workers** use the **A2A protocol** path (port 9000). AgentCore proxies `InvokeAgentRuntime` payloads to the container **unmodified**, so there is zero envelope unwrap/rewrap code in this sample.
-- The **runbook worker** consumes its tool over **MCP** — a local mock server in dev, the real Gateway (SigV4) when deployed.
-
-### How this differs from the Python A2A sample
-
-The [A2A-multi-agent-incident-response](../A2A-multi-agent-incident-response/) use case demonstrates A2A with Python agents (Google ADK, Strands, OpenAI Agents SDK) authenticated via Cognito OAuth. This sample is its TypeScript counterpart with a different auth architecture:
-
-- **TypeScript + Claude Agent SDK** end to end — no A2A sample exists for either elsewhere in this repository.
-- **IAM/SigV4 everywhere**: agents authenticate to each other and to the Gateway with SigV4-signed requests using the runtime's execution role — no identity provider, tokens, or secrets to manage.
-- **Gateway integration**: the tool path goes through AgentCore Gateway with IAM inbound auth, signed in-process (no sidecar proxy).
+- The **workers** use the **A2A protocol** path (port 9000).
+- The **runbook worker** consumes its tool over **MCP**. In dev mode, it's a local mock server and when being deployed the real Gateway (SigV4).
 
 ## What this sample provides beyond the scenario
 
-The AgentCore **Python** SDK ships A2A hosting (`serve_a2a`) and framework executors. The **TypeScript** SDK (`bedrock-agentcore`) does not yet — so this sample includes two scenario-agnostic packages that fill the gap and are structured for potential upstreaming:
+The AgentCore **Python** SDK ships A2A hosting (`serve_a2a`) and framework executors. The **TypeScript** SDK (`bedrock-agentcore`) does not yet — so this sample includes two scenario-agnostic packages that fill the gap:
 
 | Package | What it does |
 |---|---|
 | [`packages/claude-a2a-executor`](packages/claude-a2a-executor/) | `ClaudeAgentExecutor` — bridges a Claude Agent SDK `query()` stream to the `@a2a-js/sdk` `AgentExecutor` interface (task lifecycle, streaming, cancellation). `serveA2A()` — implements the AgentCore A2A container contract in one call (JSON-RPC at `POST /`, agent card, `GET /ping`, AgentCore header extraction via `AsyncLocalStorage`), mirroring the Python SDK's `serve_a2a`. |
-| [`packages/aws-sigv4-fetch`](packages/aws-sigv4-fetch/) | `createSigV4Fetch` — a fetch-shaped SigV4 signer usable by any fetch-injectable client (MCP SDK, a2a-js). `createMcpProxy` — an in-process MCP server that mirrors the Gateway's tools over the signing fetch and plugs into the Claude Agent SDK as an SDK MCP server, replacing the localhost signing-sidecar workaround. |
-
-Everything in `agents/` is thin assembly on top of these packages — each agent is under ~150 lines.
+| [`packages/aws-sigv4-fetch`](packages/aws-sigv4-fetch/) | `createSigV4Fetch` — a fetch-shaped SigV4 signer usable by any fetch-injectable client (MCP SDK, a2a-js). `createMcpProxy` — an in-process MCP server that mirrors the Gateway's tools over the signing fetch and plugs into the Claude Agent SDK as an SDK MCP server. |
 
 ## Prerequisites
 
@@ -108,7 +95,7 @@ cd .. && ./deploy.sh                  # push arm64 image, create/update 3 runtim
   'orders-api latency spiked after the 14:00 deploy — what happened?'
 ```
 
-Deployed topology: the lead's A2A calls go through SigV4-signed `InvokeAgentRuntime` URLs (derived from the worker runtime ARNs), and the runbook worker reaches the real Gateway through the in-process SigV4 MCP proxy. The same agent code runs in all three modes (local processes, docker compose, deployed) — only env vars change.
+Deployed topology: the lead's A2A calls go through SigV4-signed `InvokeAgentRuntime` URLs (derived from the worker runtime ARNs), and the runbook worker reaches the real Gateway through the in-process SigV4 MCP proxy. The same agent code runs in all three modes (local processes, docker compose, deployed).
 
 ## Cleanup
 
@@ -159,11 +146,3 @@ docker/ + docker-compose.yaml   # one arm64 image for all agents, local stack
 deploy.sh / invoke.sh / cleanup.sh
 ```
 
-## Limitations
-
-- **This is sample code** for learning and prototyping — it omits authentication hardening, full observability, retries, and other production concerns.
-- **The AgentCore TypeScript SDK (`bedrock-agentcore` 0.4.x) has no A2A support yet** — `serveA2A()` and `ClaudeAgentExecutor` in this sample fill that gap (the Python SDK covers it via `serve_a2a`). If the TS SDK gains A2A hosting, most of `packages/` collapses into SDK calls.
-- **The Claude Agent SDK's HTTP MCP client cannot SigV4-sign requests**, which Gateway requires under IAM inbound auth — the in-process proxy works around this.
-- **A2A protocol version skew**: AgentCore's documented A2A examples use protocol v0.3 shapes; `@a2a-js/sdk` 1.x speaks v1.0. This sample enables the SDK's compat layer so both client styles work.
-- **Agent-card discovery on AgentCore requires the `bedrock-agentcore:GetAgentCard` IAM action** in addition to `InvokeAgentRuntime` — missing it fails as a 403 on `/invocations/.well-known/agent-card.json`. The CDK stack grants both.
-- The AgentCore Identity `withApiKey` path is exercised only when deployed (it needs the runtime-injected workload access token); local runs log and skip it.
