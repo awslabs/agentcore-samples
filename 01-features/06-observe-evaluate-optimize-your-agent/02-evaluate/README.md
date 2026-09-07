@@ -129,7 +129,7 @@ The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-
 
 ## Agent Architecture
 
-![Agent Architecture](images/agent_architecture.png)
+![Agent Architecture](images/hr_agent_arch.png)
 
 ## AgentCore CLI
 

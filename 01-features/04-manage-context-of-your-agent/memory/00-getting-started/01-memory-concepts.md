@@ -33,10 +33,10 @@ Memory resource
 
 ## Namespaces
 
-A **namespace** organizes long-term records into a hierarchical path. Templates like `{actorId}`, `{sessionId}`, and `{strategyId}` expand at write time:
+A **namespace** organizes long-term records into a hierarchical path. Templates like `{actorId}`, `{sessionId}`, and `{memoryStrategyId}` expand at write time:
 
-- `/users/{actorId}/facts` → `/users/user-42/facts`
-- `/sessions/{sessionId}/summary` → `/sessions/sess-9/summary`
+- `/users/{actorId}/facts/` → `/users/user-42/facts/`
+- `/sessions/{sessionId}/summary/` → `/sessions/sess-9/summary/`
 
 Namespaces are the primary axis for IAM scoping, tenant isolation, and targeted retrieval.
 

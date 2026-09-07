@@ -228,7 +228,7 @@ strategies = [
         "semanticMemoryStrategy": {
             "name": "HealthcareEpisodes",
             "description": "Captures healthcare interactions as episodes",
-            "namespaces": ["healthcare/{actorId}/{sessionId}"],
+            "namespaceTemplates": ["/healthcare/{actorId}/{sessionId}/"],
         }
     }
 ]

@@ -284,6 +284,8 @@ plan/
 **/Dockerfile
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/app/claimsagent/Dockerfile
 !01-features/02-host-your-agent/01-runtime/04-coding-agents/06-codex-with-efs/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/agent/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*

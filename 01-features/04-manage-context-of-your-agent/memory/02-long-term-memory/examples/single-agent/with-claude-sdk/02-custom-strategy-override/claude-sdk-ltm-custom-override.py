@@ -350,7 +350,7 @@ def get_or_create_memory(name: str, execution_role_arn: str) -> str:
             StrategyType.CUSTOM.value: {
                 "name": "ClinicalFactsOverride",
                 "description": "Semantic extraction overridden for clinical intake facts",
-                "namespaces": [CLINICAL_NAMESPACE],
+                "namespaceTemplates": [CLINICAL_NAMESPACE],
                 "configuration": {
                     "semanticOverride": {
                         "extraction": {

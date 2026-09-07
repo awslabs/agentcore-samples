@@ -41,7 +41,7 @@ client.update_memory_strategies_and_wait(
         {
             "semanticMemoryStrategy": {
                 "name": "UserFacts",
-                "namespaces": ["/users/{actorId}/facts"],
+                "namespaceTemplates": ["/users/{actorId}/facts/"],
             }
         }
     ],

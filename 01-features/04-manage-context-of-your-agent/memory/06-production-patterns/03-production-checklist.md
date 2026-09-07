@@ -68,7 +68,7 @@ Wire these up *before* launch — the first time you need them is during an inci
 | Ingestion health | `NumberOfMemoryRecords` per strategy | Alarm on a sudden drop — the canary for an extraction regression. |
 | Ingestion errors | Log group `/aws/bedrock-agentcore/memory/<memoryId>` | **Enable log delivery in production** — without it, ingestion failures are invisible. |
 
-- **Pair every alarm with a runbook.** Streaming failures usually want a redrive ([`../02-long-term-memory/08-redrive/`](../02-long-term-memory/08-redrive/)); user errors want an IAM/KMS fix.
+- **Pair every alarm with a runbook.** Streaming failures usually want a redrive ([`../02-long-term-memory/08-manage-extraction/`](../02-long-term-memory/08-manage-extraction/)); user errors want an IAM/KMS fix.
 - **Audit `bedrock-agentcore:actorId` and `kms:Decrypt` in CloudTrail** — the two signals that tell you who read what.
 
 ## 4. Rate limits and quotas
@@ -162,4 +162,3 @@ Orphaned memory resources keep costing money (event + record storage). Make tear
 - [ ] Conversation persistence uses the durable adapter (`AgentCoreMemorySaver` / `AgentCoreMemorySessionManager`)
 - [ ] `actor_id` derived from the authenticated principal; session id always non-empty
 - [ ] Teardown path deletes ephemeral/offboarded resources; long-lived ones excluded
-</content>

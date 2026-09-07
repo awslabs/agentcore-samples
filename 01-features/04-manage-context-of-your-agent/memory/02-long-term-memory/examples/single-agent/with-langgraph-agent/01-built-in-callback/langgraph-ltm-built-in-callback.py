@@ -283,7 +283,7 @@ def get_or_create_memory(name: str) -> str:
             StrategyType.SEMANTIC.value: {
                 "name": "NutritionFacts",
                 "description": "Durable facts about the user: diet, goals, preferences",
-                "namespaces": [SEMANTIC_NAMESPACE],
+                "namespaceTemplates": [SEMANTIC_NAMESPACE],
             }
         }
     ]

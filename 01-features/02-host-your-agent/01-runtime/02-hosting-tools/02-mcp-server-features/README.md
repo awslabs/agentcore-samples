@@ -2,7 +2,9 @@
 
 ## Overview
 
-Beyond basic tools, MCP servers can expose **resources** (data sources), **prompts** (reusable templates), and support **sampling** (server-initiated LLM calls). This example demonstrates all three on AgentCore runtime.
+Beyond basic tools, MCP servers can expose **resources** (data sources) and **prompts** (reusable templates). This example demonstrates both on AgentCore runtime.
+
+> MCP also defines **sampling** and **elicitation** (server-initiated requests back to the client). This sample does not implement them: it sets `json_response=True`, which reduces each reply to a single JSON body, so anything that is not a response or an error — progress notifications and server-initiated requests included — is dropped. Demonstrating sampling would mean serving `text/event-stream` and using a client that can hold the stream open.
 
 > **If you're new to MCP on AgentCore**, start with the [MCP Server Basics](../01-mcp-server-basics/) example first.
 
@@ -14,7 +16,7 @@ Tools are the most common MCP feature. They let clients discover and execute fun
 
 ```python
 @mcp.tool()
-def search_documents(query: str, max_results: int = 5) -> str:
+def search_documents(query: str, max_results: Annotated[int, Field(ge=1, le=5)] = 5) -> str:
     """Search a document database."""
     # Your search logic here
     return json.dumps(results)
@@ -79,9 +81,15 @@ def mcp_rpc(client, arn, method, params, rpc_id):
         agentRuntimeArn=arn,
         payload=json.dumps(msg).encode(),
         contentType="application/json",
-        accept="application/json",
+        accept="application/json, text/event-stream",
     )
-    return json.loads(resp["response"].read().decode())
+    result = json.loads(resp["response"].read().decode())
+
+    # A JSON-RPC error arrives with HTTP 200, so boto3 does not raise. Check for it, or a
+    # server that failed to start returns an error for every call and still looks empty.
+    if "error" in result:
+        raise RuntimeError(f"{result['error']['code']}: {result['error']['message']}")
+    return result
 
 # Initialize session
 mcp_rpc(client, arn, "initialize", {...}, 1)
@@ -106,15 +114,30 @@ All MCP JSON-RPC messages are passed through `invoke_agent_runtime` directly to 
 | File | Description |
 |:-----|:------------|
 | `mcp_server.py` | MCP server with tools (`search_documents`, `analyze_sentiment`, `get_timestamp`), resources (`config://app`, `data://system-status`), and prompts (`code_review`, `summarize_document`) |
-| `requirements.txt` | `mcp`, `boto3`, `bedrock-agentcore` |
-| `deploy.py` | Same deployment pattern with `serverProtocol='MCP'` |
+| `requirements.txt` | Local deps: `boto3`, plus `requirements-server.txt` |
+| `requirements-server.txt` | The server's own deps (`mcp`, pinned `<2.0.0`) — this is what gets vendored into the zip |
+| `deploy.py` | Same deployment pattern with `serverProtocol='MCP'`, plus a `tools/list` smoke test |
 | `invoke.py` | Exercises all MCP features: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get` |
-| `cleanup.py` | Same cleanup pattern |
+| `cleanup.py` | Deletes runtime, S3 artifact, log groups, IAM role |
+
+## Prerequisites
+
+See the [Prerequisites in the runtime README](../../README.md) — Python 3.12+, `uv` on PATH (for building arm64 packages), AWS credentials, and `boto3`. `deploy.py` also shells out to `zip`.
+
+AgentCore is regional and there is no default region, so set one:
+
+```bash
+export AWS_REGION=us-west-2
+```
 
 ## Quick Start
 
 ```bash
-python deploy.py     # Deploy MCP server
+pip install -r requirements.txt
+
+python deploy.py     # Deploy MCP server, then smoke-test it
 python invoke.py     # Exercise all MCP features
 python cleanup.py    # Clean up
 ```
+
+To try the server locally first, run it in one terminal and call it from another — see the [two-terminal example in MCP Server Basics](../01-mcp-server-basics/README.md#quick-start).

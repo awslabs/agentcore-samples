@@ -252,7 +252,7 @@ def get_or_create_memory(name: str) -> str:
             StrategyType.SEMANTIC.value: {
                 "name": "ResearchTeamKnowledge",
                 "description": "Findings, syntheses, and reports shared across the research team",
-                "namespaces": [NAMESPACE_TEMPLATE],
+                "namespaceTemplates": [NAMESPACE_TEMPLATE],
             }
         }
     ]
