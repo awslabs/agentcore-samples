@@ -1,0 +1,53 @@
+{
+  "homepage": "/proxy/3000/",
+  "name": "livekit-sample-ui",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@livekit/components-react": "^2.9.14",
+    "@livekit/components-styles": "^1.1.6",
+    "livekit-client": "^2.15.3",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "axios": "^1.6.7",
+    "js-cookie": "^3.0.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "cdk_build": "tsc --target ES2018 --moduleResolution node --module commonjs cdk/index.ts",
+    "cdk_deploy": "npm run cdk_build && cdk deploy"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "dotenv": "^16.4.5",
+    "env-cmd": "^10.1.0",
+    "source-map-support": "^0.5.21",
+    "typescript": "^4.9.4"
+  }
+}

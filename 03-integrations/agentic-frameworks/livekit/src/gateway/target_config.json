@@ -1,0 +1,25 @@
+{
+  "mcp": {
+    "lambda": {
+      "lambdaArn": "arn:aws:lambda:us-east-1:123456789012:function:EvaluateInterview",
+      "toolSchema": {
+        "inlinePayload": [
+          {
+            "name": "evaluate_interview",
+            "description": "Evaluates interview transcripts using Claude Sonnet and generates feedback report with PDF",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "session_id": {
+                  "type": "string",
+                  "description": "The session ID of the interview to evaluate"
+                }
+              },
+              "required": ["session_id"]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

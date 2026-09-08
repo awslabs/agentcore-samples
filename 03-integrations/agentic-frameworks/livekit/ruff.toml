@@ -1,0 +1,14 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+# This is a demonstration sample, not production-hardened code. The following
+# rules flag idioms that are intentional and harmless in sample scripts, so
+# they are ignored here while all other default rules remain enforced.
+ignore = [
+    "BLE001",   # Broad `except Exception` is acceptable for sample error handling
+    "DTZ003",   # `datetime.utcnow()` used for simple UTC timestamps
+    "DTZ005",   # `datetime.now()` without tz used for local timestamps/logging
+    "ASYNC230", # Small config file read with blocking open() inside async setup
+    "EXE001",   # Scripts carry a shebang for convenience without the +x bit
+]
