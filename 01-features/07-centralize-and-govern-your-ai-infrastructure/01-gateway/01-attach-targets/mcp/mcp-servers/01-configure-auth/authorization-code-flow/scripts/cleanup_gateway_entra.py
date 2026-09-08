@@ -39,7 +39,7 @@ def portal_still_attached(control, gateway_id, name):
     while True:
         try:
             page = control.list_consent_portals(**kwargs)
-        except Exception:
+        except Exception:  # noqa: BLE001
             # Portal APIs unavailable in this region tells us nothing about the
             # gateway; do not block the delete on it.
             return None
@@ -70,7 +70,7 @@ def main():
         remaining = control.list_gateway_targets(
             gatewayIdentifier=gateway_id, maxResults=100
         ).get("items", [])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"ERROR: could not list targets on {gateway_id}: {e}")
         sys.exit(1)
 
@@ -95,13 +95,13 @@ def main():
     try:
         control.delete_gateway(gatewayIdentifier=gateway_id)
         print(f"  Deleted: {gateway_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Deleting IAM role ---")
     try:
         admin.delete_gateway_role(gw_name)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Left in place (on purpose) ---")

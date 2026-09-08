@@ -36,7 +36,7 @@ from mcp_config import (
 # created before a client exists. deploy_credential_update.py overwrites them
 # with the DCR-registered values.
 DCR_DUMMY_CLIENT_ID = "dcr-placeholder-client-id"
-DCR_DUMMY_CLIENT_SECRET = "dcr-placeholder-client-secret"  # noqa: S105
+DCR_DUMMY_CLIENT_SECRET = "dcr-placeholder-client-secret"
 
 
 def find_provider(client, name):

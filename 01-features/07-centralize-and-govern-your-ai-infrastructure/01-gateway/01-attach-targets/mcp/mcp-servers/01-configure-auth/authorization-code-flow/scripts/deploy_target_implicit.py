@@ -65,9 +65,7 @@ def main():
         print("  Saved to .env")
         return
 
-    print(
-        f"--- Creating {profile['displayName']} target " "(Method 1: implicit sync) ---"
-    )
+    print(f"--- Creating {profile['displayName']} target (Method 1: implicit sync) ---")
     print("  This requires you to authorize in your browser.\n")
 
     target_response = client.create_gateway_target(

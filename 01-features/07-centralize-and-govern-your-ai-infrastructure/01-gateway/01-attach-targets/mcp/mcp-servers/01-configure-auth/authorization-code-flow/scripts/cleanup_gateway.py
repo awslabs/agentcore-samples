@@ -40,7 +40,7 @@ def main():
         remaining = admin.client.list_gateway_targets(
             gatewayIdentifier=gateway_id, maxResults=100
         ).get("items", [])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"ERROR: could not list targets on {gateway_id}: {e}")
         sys.exit(1)
 
@@ -57,13 +57,13 @@ def main():
     try:
         admin.client.delete_gateway(gatewayIdentifier=gateway_id)
         print(f"  Deleted: {gateway_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Deleting IAM role ---")
     try:
         admin.delete_gateway_role(gw_name)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
 

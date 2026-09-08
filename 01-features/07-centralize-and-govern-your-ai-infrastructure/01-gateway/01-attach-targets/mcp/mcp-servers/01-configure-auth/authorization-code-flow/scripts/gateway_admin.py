@@ -490,7 +490,7 @@ class GatewayBoto3Client:
         try:
             self.identity_client.delete_oauth2_credential_provider(name=name)
             print(f"  Deleted credential provider: {name}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Could not delete credential provider {name}: {e}")
 
     def delete_gateway_role(self, gateway_name: str) -> None:

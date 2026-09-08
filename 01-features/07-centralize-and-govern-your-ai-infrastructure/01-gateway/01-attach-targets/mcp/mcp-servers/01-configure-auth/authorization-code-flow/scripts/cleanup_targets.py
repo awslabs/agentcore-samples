@@ -67,7 +67,7 @@ def main():
         targets = admin.client.list_gateway_targets(
             gatewayIdentifier=gateway_id, maxResults=100
         ).get("items", [])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"ERROR: could not list targets on {gateway_id}: {e}")
         sys.exit(1)
 
@@ -104,7 +104,7 @@ def main():
                 gatewayIdentifier=gateway_id, targetId=t["targetId"]
             )
             time.sleep(5)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"    Error: {e}")
 
     if not is_all:
@@ -117,7 +117,7 @@ def main():
         try:
             admin.client.delete_oauth2_credential_provider(name=name)
             print(f"  Deleted: {name}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Error deleting {name}: {e}")
 
     print("\n  Gateway and IAM role left in place.")

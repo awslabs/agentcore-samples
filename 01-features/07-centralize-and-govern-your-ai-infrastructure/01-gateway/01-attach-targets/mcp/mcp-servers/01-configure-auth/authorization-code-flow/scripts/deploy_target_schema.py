@@ -67,7 +67,7 @@ def resolve_provider_arn(client, profile):
     name = credential_provider_name(profile)
     try:
         return client.get_oauth2_credential_provider(name=name)["credentialProviderArn"]
-    except Exception:
+    except Exception:  # noqa: BLE001
         return get_required_env("CRED_PROVIDER_ARN")
 
 
@@ -109,8 +109,7 @@ def main():
         return
 
     print(
-        f"--- Creating {profile['displayName']} target "
-        "(Method 2: schema upfront) ---"
+        f"--- Creating {profile['displayName']} target (Method 2: schema upfront) ---"
     )
     print("  No browser authorization needed during creation.")
     if portal_return_url:

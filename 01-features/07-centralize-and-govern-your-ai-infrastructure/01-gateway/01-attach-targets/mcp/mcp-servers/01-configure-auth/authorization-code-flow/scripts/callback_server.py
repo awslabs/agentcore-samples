@@ -44,7 +44,7 @@ async def callback(request: Request):
             userIdentifier=user_identifier,
             sessionUri=session_uri,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Session binding error: {e}")
         return HTMLResponse(
             content="<h1>Session Binding Failed</h1><p>An error occurred during session binding. Check the console for details.</p>",

@@ -79,7 +79,7 @@ def main():
     else:
         try:
             detach_interceptor(control, gateway_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Skipped: {e}")
 
     print("\n--- Step 2: delete the interceptor Lambda ---")
@@ -88,20 +88,20 @@ def main():
         print(f"  Deleted Lambda: {fn_name}")
     except lambda_client.exceptions.ResourceNotFoundException:
         print(f"  Already gone: {fn_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skipped: {e}")
 
     print("\n--- Step 3: delete the Lambda execution role ---")
     try:
         admin.iam.detach_role_policy(RoleName=role_name, PolicyArn=BASIC_EXECUTION)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         admin.iam.delete_role(RoleName=role_name)
         print(f"  Deleted role: {role_name}")
     except admin.iam.exceptions.NoSuchEntityException:
         print(f"  Already gone: {role_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skipped: {e}")
 
     print("\n--- Step 4: remove the invoke grant from the gateway role ---")
@@ -112,7 +112,7 @@ def main():
         print(f"  Removed InterceptorInvoke from: {gateway_role}")
     except admin.iam.exceptions.NoSuchEntityException:
         print("  Already gone (role or policy).")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skipped: {e}")
 
     print("\n--- Left in place (on purpose) ---")
