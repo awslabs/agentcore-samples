@@ -3,8 +3,9 @@
 Reverses deploy_interceptor.py, in the reverse order it created things, and every
 step is skipped-not-fatal so a partial deploy still cleans up:
 
-    1. update_gateway with interceptorConfigurations=[]  (detach first, so the
-       gateway stops invoking a Lambda we are about to delete)
+    1. update_gateway with interceptorConfigurations omitted  (detach first, so the
+       gateway stops invoking a Lambda we are about to delete; the API rejects an
+       empty list, so the field is dropped rather than set to [])
     2. delete the interceptor Lambda
     3. delete the Lambda execution role (detach its managed policy first)
     4. delete the "InterceptorInvoke" inline policy from the gateway service role
@@ -32,7 +33,12 @@ BASIC_EXECUTION = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionR
 
 
 def detach_interceptor(control, gateway_id):
-    """Re-put the gateway with an empty interceptor list, re-supplying required fields."""
+    """Re-put the gateway without interceptorConfigurations, re-supplying required fields.
+
+    update_gateway is a full replace, so omitting interceptorConfigurations clears the
+    interceptor. The API rejects an empty list (min length 1), so the key must be absent
+    rather than [].
+    """
     gw = control.get_gateway(gatewayIdentifier=gateway_id)
     if not gw.get("interceptorConfigurations"):
         print("  No interceptor attached; nothing to detach.")
@@ -44,7 +50,6 @@ def detach_interceptor(control, gateway_id):
         "protocolType": gw.get("protocolType", "MCP"),
         "authorizerType": gw["authorizerType"],
         "authorizerConfiguration": gw["authorizerConfiguration"],
-        "interceptorConfigurations": [],
         "exceptionLevel": "DEBUG",
     }
     if gw.get("protocolConfiguration"):
