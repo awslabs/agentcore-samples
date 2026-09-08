@@ -1,0 +1,86 @@
+default_agent: ac_runtime_langgraph_langfuse_obsy_demo
+agents:
+  langgraph_claude_getting_started:
+    name: langgraph_claude_getting_started
+    entrypoint: /Users/sequdian/Desktop/amazon-bedrock-agentcore-samples/01-tutorials/06-AgentCore-observability/01-Agentcore-runtime-hosted/Langgraph/langgraph_bedrock.py
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: null
+    aws:
+      execution_role: arn:aws:iam::982567305797:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-2292fc8165
+      execution_role_auto_create: false
+      account: '982567305797'
+      region: us-east-1
+      ecr_repository: 982567305797.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-langgraph_claude_getting_started
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: langgraph_claude_getting_started-FH0gdXDTCv
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:982567305797:runtime/langgraph_claude_getting_started-FH0gdXDTCv
+      agent_session_id: 7ace0234-72e7-4531-8dfa-4f455208ecae
+    codebuild:
+      project_name: bedrock-agentcore-langgraph_claude_getting_started-builder
+      execution_role: arn:aws:iam::982567305797:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-2292fc8165
+      source_bucket: bedrock-agentcore-codebuild-sources-982567305797-us-east-1
+    memory:
+      mode: NO_MEMORY
+      memory_id: null
+      memory_arn: null
+      memory_name: null
+      event_expiry_days: 30
+      first_invoke_memory_check_done: false
+      was_created_by_toolkit: false
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+  ac_runtime_langgraph_langfuse_obsy_demo:
+    name: ac_runtime_langgraph_langfuse_obsy_demo
+    entrypoint: /Users/sequdian/Desktop/amazon-bedrock-agentcore-samples/01-tutorials/06-AgentCore-observability/01-Agentcore-runtime-hosted/Langgraph/langgraph_agent.py
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: null
+    aws:
+      execution_role: arn:aws:iam::982567305797:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-eaedac7ea6
+      execution_role_auto_create: false
+      account: '982567305797'
+      region: us-east-1
+      ecr_repository: 982567305797.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-ac_runtime_langgraph_langfuse_obsy_demo
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: ac_runtime_langgraph_langfuse_obsy_demo-UNvyl2C7e1
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:982567305797:runtime/ac_runtime_langgraph_langfuse_obsy_demo-UNvyl2C7e1
+      agent_session_id: f32eec35-0b78-4773-b89d-37f302e75a35
+    codebuild:
+      project_name: bedrock-agentcore-ac_runtime_langgraph_langfuse_obsy_demo-builder
+      execution_role: arn:aws:iam::982567305797:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-eaedac7ea6
+      source_bucket: bedrock-agentcore-codebuild-sources-982567305797-us-east-1
+    memory:
+      mode: NO_MEMORY
+      memory_id: null
+      memory_arn: null
+      memory_name: null
+      event_expiry_days: 30
+      first_invoke_memory_check_done: false
+      was_created_by_toolkit: false
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
