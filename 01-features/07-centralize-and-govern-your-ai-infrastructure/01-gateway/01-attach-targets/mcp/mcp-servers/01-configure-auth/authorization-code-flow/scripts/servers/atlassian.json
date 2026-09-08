@@ -1,0 +1,27 @@
+{
+  "name": "atlassian",
+  "displayName": "Atlassian",
+  "authModel": "dcr",
+  "vendor": "CustomOauth2",
+  "providerConfigKey": "customOauth2ProviderConfig",
+  "clientIdEnv": "ATLASSIAN_CLIENT_ID",
+  "clientSecretEnv": "ATLASSIAN_CLIENT_SECRET",
+  "discoveryUrl": "https://auth.atlassian.com/.well-known/openid-configuration",
+  "dcrRegisterUrl": "https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3/dcr/register",
+  "dcrDiscoveryUrl": "https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3/.well-known/oauth-authorization-server",
+  "endpoint": "https://mcp.atlassian.com/v1/mcp/authv2",
+  "scopes": [
+    "offline_access",
+    "read:me",
+    "read:account",
+    "email",
+    "read:jira-work",
+    "write:jira-work",
+    "search:confluence",
+    "read:confluence-user"
+  ],
+  "toolSchema": "../atlassian/atlassian.json",
+  "demoTool": "atlassianUserInfo",
+  "demoArgs": {},
+  "resourcePrefix": "atlassian"
+}
