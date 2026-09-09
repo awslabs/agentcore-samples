@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  voice-interview-agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.voice-agent
+    ports:
+      - "8060:8000"
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_TTS_MODEL=amazon.nova-sonic-v1:0
+      - BEDROCK_REGION=${BEDROCK_REGION}
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK}
+      - NOVA_SONIC_MODEL_ID=${NOVA_SONIC_MODEL_ID}
+      - CLAUDE_MODEL_ID=${CLAUDE_MODEL_ID}
+    volumes:
+      - ./transcripts:/app/transcripts
+    networks:
+      - interview-network
+
+  lexis-web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.voice-agent
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+    command: ["python", "-m", "src.web.app"]
+    networks:
+      - interview-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - lexis-web
+    networks:
+      - interview-network
+
+networks:
+  interview-network:
+    driver: bridge

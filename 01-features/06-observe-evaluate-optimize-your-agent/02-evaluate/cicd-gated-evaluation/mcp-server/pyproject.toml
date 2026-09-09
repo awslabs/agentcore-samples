@@ -1,0 +1,20 @@
+[project]
+name = "mcp-server"
+version = "0.1.0"
+description = "MCP Server providing additional tools for the assistant agent"
+requires-python = ">=3.12"
+# Versions are pinned exactly: a floating range means the image contents can
+# change without any repo change, which defeats reproducible builds and lets a
+# compromised release enter the runtime silently. These are the versions verified by
+# the deployed stack; bump them deliberately.
+dependencies = [
+    "fastmcp==3.4.7",
+    "pydantic==2.13.4",
+    "python-json-logger==4.2.0",
+    "PyJWT[crypto]==2.13.0",
+    "packaging==26.3",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
