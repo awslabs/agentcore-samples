@@ -51,27 +51,27 @@ def main():
                 gatewayIdentifier=gateway_id, targetId=item["targetId"]
             )
             time.sleep(5)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Deleting gateway ---")
     try:
         admin.client.delete_gateway(gatewayIdentifier=gateway_id)
         print(f"  Deleted gateway: {gateway_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Deleting IAM role ---")
     try:
         admin.delete_gateway_role(GATEWAY_NAME)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
     print("\n--- Deleting credential provider ---")
     try:
         admin.client.delete_oauth2_credential_provider(name="linkedin-oauth-credential")
         print("  Deleted: linkedin-oauth-credential")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
 
 
