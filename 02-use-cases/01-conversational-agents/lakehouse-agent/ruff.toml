@@ -1,0 +1,36 @@
+# Ruff configuration for the lakehouse-agent sample.
+#
+# Inherits the repository-root configuration (line-length 120 and the shared
+# tutorial-friendly ignores: E402, E722, F401, F811, F841) and adds a small set
+# of sample-scoped ignores below. Nothing here relaxes a rule the root config
+# selects deliberately — each entry covers a pattern that is load-bearing for
+# this tutorial, with the reason stated inline.
+extend = "../../../pyproject.toml"
+
+[lint]
+# Appended to the root config's ignore list (which stays in effect).
+extend-ignore = [
+    # `except Exception` is this sample's deliberate fail-closed idiom (DR-14); the root config already exempts sibling E722 as acceptable in demo scripts.
+    "BLE001",
+    # Shebangs sit on scripts invoked as `python x.py` rather than as executables; matches the upstream base files this sample extends.
+    "EXE001",
+    # try/except/pass marks deliberate fail-soft paths, e.g. the AOSS index-drop that idempotent `_id` upsert already covers.
+    "S110",
+    # Naive datetimes are load-bearing: audit records and note-ID fixtures compare against tz-naive values seeded in the sample data.
+    "DTZ005",
+    # Same naive-datetime contract as DTZ005, for timestamp parsing.
+    "DTZ006",
+    # DR-15's hard-fail contract depends on vanilla exception types propagating to the caller unchanged.
+    "TRY002",
+    # Implicit string concatenation sits inside the answer-key-validated notes loader; deferred rather than risked mid-validation.
+    "ISC004",
+]
+
+[lint.per-file-ignores]
+# RUF013 (implicit Optional) on the two MCP servers ONLY. FastMCP derives each
+# tool's JSON inputSchema from its type hints, so widening a tool parameter from
+# `T` to `T | None` changes the schema the gateway advertises for tools that are
+# already deployed and validated. Everywhere else in the sample RUF013 is fixed;
+# these sites are deferred to a coordinated runtime + gateway-target redeploy.
+"deployment/4a-mcp-lakehouse-server/server.py" = ["RUF013"]
+"deployment/4b-mcp-opensearch-server/server.py" = ["RUF013"]

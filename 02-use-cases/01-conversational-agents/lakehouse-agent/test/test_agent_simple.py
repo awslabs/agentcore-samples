@@ -5,6 +5,7 @@ Simple test of agent runtime with JWT authentication
 
 import json
 import uuid
+
 import requests
 from config import config
 
@@ -67,10 +68,11 @@ def test_agent_simple():
         base_url = f"https://bedrock-agentcore.{region}.amazonaws.com"
         runtime_url = f"{base_url}/runtimes/{escaped_arn}/invocations"
 
-        # Payload with bearer token for Gateway calls
+        # The bearer token is sent only in the Authorization header below; the agent
+        # reads it from there. It is deliberately absent from the body so that the
+        # agent's fallback warning identifies any caller still sending it that way.
         payload = {
             "prompt": "Hello, can you introduce yourself?",
-            "bearer_token": bearer_token,  # Pass token in payload for agent to use with Gateway
         }
 
         # Generate session ID

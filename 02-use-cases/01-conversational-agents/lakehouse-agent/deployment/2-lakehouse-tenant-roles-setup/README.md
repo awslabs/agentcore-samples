@@ -108,7 +108,7 @@ These roles are used by the AgentCore Gateway for fine-grained access control:
 1. The gateway intercepts requests and determines the tenant
 2. It assumes the appropriate tenant role based on the user context
 3. Athena queries are executed with the tenant role's permissions
-4. Row-level security is enforced through the role's credentials
+4. Per-user **row** scope is enforced by the bound identity SQL predicate (`WHERE user_id = ?`), **not** by the role's credentials — the per-group tenant roles share one Athena/S3 policy and set no per-user session tags. Lake Formation governs **column**-level filtering + tenant-role table grants.
 
 ## Verification
 

@@ -35,7 +35,7 @@ aws dynamodb create-table \
         AttributeName=user_id,KeyType=HASH \
         AttributeName=login_timestamp,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
-    --tags Key=Project,Value=lakehouse-agent Key=Component,Value=audit \
+    --tags Key=Application,Value=lakehouse-agent Key=Purpose,Value=login-audit \
     --region $REGION 2>/dev/null || echo "ℹ️  Table already exists"
 
 # Enable TTL on the table
@@ -74,6 +74,7 @@ aws iam create-role \
     --role-name $ROLE_NAME \
     --assume-role-policy-document file:///tmp/lambda-trust-policy.json \
     --description "Role for Cognito Post-Authentication Lambda" \
+    --tags Key=Application,Value=lakehouse-agent Key=Purpose,Value=cognito-post-auth-role \
     2>/dev/null || echo "ℹ️  Role already exists"
 
 # Create and attach inline policy for DynamoDB access
@@ -147,6 +148,7 @@ else
         --memory-size 256 \
         --environment "Variables={LOGIN_AUDIT_TABLE=${TABLE_NAME}}" \
         --description "Cognito Post-Authentication trigger for login audit logging" \
+        --tags Application=lakehouse-agent,Purpose=cognito-post-auth \
         --region $REGION
 fi
 
