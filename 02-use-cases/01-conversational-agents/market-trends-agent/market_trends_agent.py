@@ -10,8 +10,10 @@ from tools import (
     collect_broker_preferences_interactively,
 )
 from tools import get_memory_from_ssm, create_memory_tools
+from tools import build_chat_model
 from datetime import datetime
 import logging
+import os
 
 # Enable LangChain / LangGraph OpenTelemetry instrumentation so AgentCore
 # Observability captures tool-call spans, gen_ai.prompt.*, gen_ai.completion.*,
@@ -35,13 +37,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Memory setup is now handled in tools/memory_tools.py
+# Model setup is handled in tools/model_config.py
 
 
 # Define the agent using LangGraph construction with AgentCore Memory
 def create_market_trends_agent():
     """Create and configure the LangGraph market trends agent with memory"""
-    from langchain_aws import ChatBedrock
-
     # Get memory from SSM (created during deployment)
     memory_client, memory_id = get_memory_from_ssm()
 
@@ -51,28 +52,90 @@ def create_market_trends_agent():
     # Default actor_id - will be updated when user identifies themselves
     default_actor_id = "unknown-user"
 
-    # Initialize your LLM with Claude Haiku 4.5 using inference profile
-    llm = ChatBedrock(
-        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-        model_kwargs={"temperature": 0.1},
-    )
+    # Initialize the LLM. See tools/model_config.py for the model in use and how
+    # to override it.
+    llm = build_chat_model(model_kwargs={"temperature": 0.1})
 
     # Create memory tools using the memory_tools module
     memory_tools = create_memory_tools(memory_client, memory_id, session_id, default_actor_id)
 
+    # Drift trigger: drift_detection/scripts/induce_drift.py sets SKIP_PROFILE_STEP=1
+    # to simulate a prompt/orchestration regression that drops broker
+    # identification from the tool sequence. This agent has no hardcoded step
+    # order (LangGraph's tools_condition lets the LLM pick any bound tool each
+    # turn), so the only deterministic way to remove the step is to unbind the
+    # tools that carry it: the LLM cannot call a tool that was never bound.
+    # identify_broker is the identification step itself; the other three are
+    # exactly the workflow_contract_gsr "load_or_store_profile" any_of set, so
+    # dropping just identify_broker would not guarantee that contract group
+    # fails, since the LLM could still call one of the others without ever
+    # identifying the broker first.
+    skip_profile_step = os.environ.get("SKIP_PROFILE_STEP") == "1"
+    if skip_profile_step:
+        profile_tool_names = {
+            "identify_broker",
+            "get_broker_financial_profile",
+            "update_broker_financial_interests",
+        }
+        memory_tools = [t for t in memory_tools if t.name not in profile_tool_names]
+        broker_card_tools = []
+    else:
+        broker_card_tools = [parse_broker_profile_from_message]
+
     # Bind tools to the LLM (market data tools + memory tools + conversational broker tools)
-    tools = [
-        get_stock_data,
-        search_news,
-        parse_broker_profile_from_message,
-        generate_market_summary_for_broker,
-        get_broker_card_template,
-        collect_broker_preferences_interactively,
-    ] + memory_tools
+    tools = (
+        [
+            get_stock_data,
+            search_news,
+            generate_market_summary_for_broker,
+            get_broker_card_template,
+            collect_broker_preferences_interactively,
+        ]
+        + broker_card_tools
+        + memory_tools
+    )
     llm_with_tools = llm.bind_tools(tools)
 
     # System message optimized for Claude Sonnet 4 with Long-Term AgentCore Memory
-    system_message = """You're an expert market intelligence analyst with deep expertise in financial markets, business strategy, and economic trends. You have advanced long-term memory capabilities to store and recall financial interests for each broker you work with.
+    #
+    # Two variants: the profile-management instructions below are stripped out
+    # under the skip_profile_step trigger rather than merely left in place with
+    # the tools unbound, so the model isn't left trying to call a step that no
+    # longer exists. A prompt/orchestration regression that silently loses a
+    # step usually loses the instruction for it too, not just the tool.
+    if skip_profile_step:
+        system_message = """You're an expert market intelligence analyst with deep expertise in financial markets, business strategy, and economic trends.
+
+    PURPOSE:
+    - Provide real-time market analysis and stock data
+    - Deliver clear, professional investment insights
+
+    AVAILABLE TOOLS:
+
+    Real-Time Market Data:
+    - get_stock_data(symbol): Retrieves current stock prices, changes, and market data
+    - search_news(query, news_source): Searches multiple news sources (Bloomberg, Reuters, CNBC, WSJ, Financial Times, Dow Jones) for business news and market intelligence
+
+    Broker Profile Collection (Conversational):
+    - generate_market_summary_for_broker(broker_profile, market_data): Generate tailored market summary
+    - get_broker_card_template(): Provide template for broker profile format
+    - collect_broker_preferences_interactively(preference_type): Guide collection of specific preferences
+
+    Memory:
+    - list_conversation_history(): Retrieve recent conversation history
+
+    MARKET ANALYSIS:
+    - Provide real-time stock data using get_stock_data()
+    - Search for relevant market news using search_news() with appropriate news sources
+    - Deliver institutional-quality analysis
+
+    PROFESSIONAL STANDARDS:
+    - Maintain professional tone and disclaimer discipline
+    - Provide clear, well-organized responses
+
+    CRITICAL: Provide market intelligence services directly. Do not attempt to identify or store broker profiles; that capability is not available in this configuration."""
+    else:
+        system_message = """You're an expert market intelligence analyst with deep expertise in financial markets, business strategy, and economic trends. You have advanced long-term memory capabilities to store and recall financial interests for each broker you work with.
 
     PURPOSE:
     - Provide real-time market analysis and stock data

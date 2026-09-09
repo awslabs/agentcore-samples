@@ -1,8 +1,9 @@
 import os
 
 from langchain_core.tools import tool
-from langchain_aws import ChatBedrock
 from typing import Dict
+
+from .model_config import build_chat_model
 
 
 def parse_broker_card_format(card_content: str) -> Dict[str, str]:
@@ -115,10 +116,7 @@ def generate_market_summary_for_broker(broker_profile: str, market_data: str = "
     """
     try:
         # Create tailored prompt
-        llm = ChatBedrock(
-            model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-        )
+        llm = build_chat_model()
 
         prompt = f"""
 Generate a comprehensive market trends summary tailored for this broker profile:
