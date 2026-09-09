@@ -1,0 +1,21 @@
+{
+  "name": "entra",
+  "displayName": "Microsoft Entra ID",
+  "vendor": "CustomOauth2",
+  "providerConfigKey": "customOauth2ProviderConfig",
+  "clientIdEnv": "PORTAL_CLIENT_ID",
+  "clientSecretEnv": "PORTAL_CLIENT_SECRET",
+  "discoveryUrlEnv": "ENTRA_DISCOVERY_URL",
+  "discoveryUrlMustContain": "/v2.0/",
+  "discoveryUrlExample": "https://login.microsoftonline.com/<TENANT_ID>/v2.0/.well-known/openid-configuration",
+  "discoveryUrlWhy": "The v1.0 document advertises iss: https://sts.windows.net/{tenant}/, which does not match the iss in the v2.0 tokens Entra issues. Token validation then fails with insufficient_scope.",
+  "audienceEnv": "ENTRA_RESOURCE",
+  "audienceNote": "the resource app GUID, not api://<GUID> -- Entra sets aud to the application id",
+  "scopesEnv": "ENTRA_ALLOWED_SCOPES",
+  "requireQualifiedScopes": true,
+  "qualifiedScopeExample": "api://<APP_ID>/access_as_user",
+  "gatewayScopes": ["access_as_user"],
+  "scopeTemplate": "api://{audience}/access_as_user",
+  "resourcePrefix": "entra",
+  "docPath": "entra/"
+}
