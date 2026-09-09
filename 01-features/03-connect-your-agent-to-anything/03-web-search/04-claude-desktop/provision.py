@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Provision an Amazon Bedrock AgentCore Gateway exposing the managed Web Search
 tool as an MCP tool, so an MCP client (e.g. Claude Cowork) can search the web.
@@ -79,6 +78,7 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".provisio
 # Small helpers
 # ---------------------------------------------------------------------------
 
+
 def log(msg: str) -> None:
     print(f"[provision] {msg}", flush=True)
 
@@ -98,10 +98,7 @@ def save_state(state: dict) -> None:
 
 def clients(region: str):
     if boto3 is None:
-        raise RuntimeError(
-            "boto3 is required to run this command. Install it with "
-            "'pip install -r requirements.txt'."
-        )
+        raise RuntimeError("boto3 is required to run this command. Install it with 'pip install -r requirements.txt'.")
     session = boto3.Session()
     return {
         "acp": session.client("bedrock-agentcore-control", region_name=region),
@@ -114,6 +111,7 @@ def clients(region: str):
 # ---------------------------------------------------------------------------
 # IAM service role (least privilege)
 # ---------------------------------------------------------------------------
+
 
 def create_service_role(iam, account_id: str, region: str, role_name: str, state: dict) -> str:
     """Create the Gateway service role with least-privilege web-search access."""
@@ -201,9 +199,19 @@ def delete_service_role(iam, role_name: str) -> None:
 # Cognito (optional inbound authorizer)
 # ---------------------------------------------------------------------------
 
-def create_cognito(cognito, region: str, prefix: str, extra_callbacks: list[str],
-                   with_m2m: bool, user_email: str | None, user_password: str | None,
-                   callback_port: int, identity_providers: list[str], state: dict) -> dict:
+
+def create_cognito(
+    cognito,
+    region: str,
+    prefix: str,
+    extra_callbacks: list[str],
+    with_m2m: bool,
+    user_email: str | None,
+    user_password: str | None,
+    callback_port: int,
+    identity_providers: list[str],
+    state: dict,
+) -> dict:
     """Create a Cognito user pool, domain, resource server and app client(s).
 
     The PRIMARY client uses the OAuth **authorization-code** grant, which is what
@@ -320,12 +328,12 @@ def create_cognito(cognito, region: str, prefix: str, extra_callbacks: list[str]
                 ],
                 DesiredDeliveryMediums=["EMAIL"],
             )
-            log(f"Created sign-in user {user_email} and emailed an invitation; "
-                f"they set their own password at first sign-in.")
+            log(
+                f"Created sign-in user {user_email} and emailed an invitation; "
+                f"they set their own password at first sign-in."
+            )
 
-    discovery_url = (
-        f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
-    )
+    discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
     token_endpoint = f"https://{domain_prefix}.auth.{region}.amazoncognito.com/oauth2/token"
     authorize_endpoint = f"https://{domain_prefix}.auth.{region}.amazoncognito.com/oauth2/authorize"
 
@@ -363,6 +371,7 @@ def delete_cognito(cognito, state: dict) -> None:
 # Gateway + web-search target
 # ---------------------------------------------------------------------------
 
+
 def wait_for_gateway(acp, gateway_id: str, timeout: int = 300) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -391,8 +400,7 @@ def wait_for_target(acp, gateway_id: str, target_id: str, timeout: int = 300) ->
     raise TimeoutError(f"Target {target_id} not READY within {timeout}s")
 
 
-def create_gateway(acp, name: str, role_arn: str, discovery_url: str,
-                   allowed_clients: list[str], state: dict) -> dict:
+def create_gateway(acp, name: str, role_arn: str, discovery_url: str, allowed_clients: list[str], state: dict) -> dict:
     authorizer_config = {
         "customJWTAuthorizer": {
             "discoveryUrl": discovery_url,
@@ -439,9 +447,7 @@ def create_web_search_target(acp, gateway_id: str, target_name: str, state: dict
         "mcp": {
             "connector": {
                 "source": {"connectorId": WEB_SEARCH_CONNECTOR_ID},
-                "configurations": [
-                    {"name": WEB_SEARCH_TOOL_NAME, "parameterValues": {}}
-                ],
+                "configurations": [{"name": WEB_SEARCH_TOOL_NAME, "parameterValues": {}}],
             }
         }
     }
@@ -482,10 +488,13 @@ def delete_gateway_and_target(acp, state: dict) -> None:
 # Commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_create(args) -> None:
     region = args.region
-    log(f"Using region {region}. Make sure the Web Search connector is available "
-        f"there (see the AWS docs); otherwise creation will fail.")
+    log(
+        f"Using region {region}. Make sure the Web Search connector is available "
+        f"there (see the AWS docs); otherwise creation will fail."
+    )
 
     c = clients(region)
     account_id = c["sts"].get_caller_identity()["Account"]
@@ -502,7 +511,10 @@ def cmd_create(args) -> None:
     else:
         log("No --auth-discovery-url/--auth-client-id given: creating a Cognito user pool")
         cog = create_cognito(
-            c["cognito"], region, args.prefix, args.extra_callback or [],
+            c["cognito"],
+            region,
+            args.prefix,
+            args.extra_callback or [],
             with_m2m=args.with_m2m_client,
             user_email=args.user_email,
             user_password=args.user_password,
@@ -595,9 +607,7 @@ def cmd_add_callback(args) -> None:
     region = state.get("region", args.region)
     c = clients(region)
 
-    current = c["cognito"].describe_user_pool_client(
-        UserPoolId=pool_id, ClientId=client_id
-    )["UserPoolClient"]
+    current = c["cognito"].describe_user_pool_client(UserPoolId=pool_id, ClientId=client_id)["UserPoolClient"]
 
     callbacks = list(dict.fromkeys(current.get("CallbackURLs", []) + [args.url]))
 
@@ -608,13 +618,9 @@ def cmd_add_callback(args) -> None:
         CallbackURLs=callbacks,
         AllowedOAuthFlows=current.get("AllowedOAuthFlows", ["code"]),
         AllowedOAuthScopes=current.get("AllowedOAuthScopes", []),
-        AllowedOAuthFlowsUserPoolClient=current.get(
-            "AllowedOAuthFlowsUserPoolClient", True
-        ),
+        AllowedOAuthFlowsUserPoolClient=current.get("AllowedOAuthFlowsUserPoolClient", True),
         SupportedIdentityProviders=current.get("SupportedIdentityProviders", ["COGNITO"]),
-        ExplicitAuthFlows=current.get(
-            "ExplicitAuthFlows", ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"]
-        ),
+        ExplicitAuthFlows=current.get("ExplicitAuthFlows", ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"]),
     )
     log(f"Registered callback URL {args.url}")
     log(f"Allowed callback URLs are now: {callbacks}")
@@ -624,6 +630,7 @@ def cmd_add_callback(args) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Provision an AgentCore Gateway with the managed Web Search tool.",
@@ -632,37 +639,66 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("create", help="Create the gateway, target, IAM role and (optional) Cognito.")
-    create.add_argument("--region", default=os.environ.get("AWS_REGION", DEFAULT_REGION),
-                        help=f"AWS region for the gateway/Web Search connector "
-                             f"(default {DEFAULT_REGION}; use a region where Web Search is available).")
+    create.add_argument(
+        "--region",
+        default=os.environ.get("AWS_REGION", DEFAULT_REGION),
+        help=f"AWS region for the gateway/Web Search connector "
+        f"(default {DEFAULT_REGION}; use a region where Web Search is available).",
+    )
     create.add_argument("--gateway-name", default=os.environ.get("GATEWAY_NAME", "WebSearchGateway"))
     create.add_argument("--target-name", default=os.environ.get("TARGET_NAME", "web-search-tool"))
     create.add_argument("--role-name", default=os.environ.get("ROLE_NAME", "WebSearchGatewayRole"))
-    create.add_argument("--prefix", default=os.environ.get("RESOURCE_PREFIX", "agentcore-websearch"),
-                        help="Name prefix for auto-created Cognito resources.")
+    create.add_argument(
+        "--prefix",
+        default=os.environ.get("RESOURCE_PREFIX", "agentcore-websearch"),
+        help="Name prefix for auto-created Cognito resources.",
+    )
     # Auth variables: provide both to use your own IdP; omit to create Cognito.
-    create.add_argument("--auth-discovery-url", default=os.environ.get("AUTH_DISCOVERY_URL"),
-                        help="OIDC discovery URL of your IdP (.well-known/openid-configuration).")
-    create.add_argument("--auth-client-id", default=os.environ.get("AUTH_CLIENT_ID"),
-                        help="Client ID allowed in the incoming JWT (allowedClients).")
-    create.add_argument("--extra-callback", action="append",
-                        help="Additional OAuth callback URL for the created Cognito client (repeatable).")
-    create.add_argument("--with-m2m-client", action="store_true",
-                        help="Also create a client_credentials app client for the browserless curl test "
-                             "(Cowork cannot use it).")
-    create.add_argument("--user-email", default=os.environ.get("USER_EMAIL"),
-                        help="Create a Cognito sign-in user with this email. Without --user-password, "
-                             "Cognito emails an invitation and the user sets their own password (recommended).")
-    create.add_argument("--user-password", default=os.environ.get("USER_PASSWORD"),
-                        help="Optional. Set a permanent password for --user-email instead of emailing an "
-                             "invitation. Avoid committing this; prefer the invitation flow.")
-    create.add_argument("--callback-port", type=int,
-                        default=int(os.environ.get("CALLBACK_PORT", DEFAULT_CALLBACK_PORT)),
-                        help=f"Loopback port for the Bedrock 3P connector callback "
-                             f"(default {DEFAULT_CALLBACK_PORT}); registers http://127.0.0.1:<PORT>/callback.")
-    create.add_argument("--identity-provider", action="append",
-                        help="Federated identity provider name to add to the app client's supported "
-                             "providers, e.g. an IAM Identity Center provider (repeatable).")
+    create.add_argument(
+        "--auth-discovery-url",
+        default=os.environ.get("AUTH_DISCOVERY_URL"),
+        help="OIDC discovery URL of your IdP (.well-known/openid-configuration).",
+    )
+    create.add_argument(
+        "--auth-client-id",
+        default=os.environ.get("AUTH_CLIENT_ID"),
+        help="Client ID allowed in the incoming JWT (allowedClients).",
+    )
+    create.add_argument(
+        "--extra-callback",
+        action="append",
+        help="Additional OAuth callback URL for the created Cognito client (repeatable).",
+    )
+    create.add_argument(
+        "--with-m2m-client",
+        action="store_true",
+        help="Also create a client_credentials app client for the browserless curl test (Cowork cannot use it).",
+    )
+    create.add_argument(
+        "--user-email",
+        default=os.environ.get("USER_EMAIL"),
+        help="Create a Cognito sign-in user with this email. Without --user-password, "
+        "Cognito emails an invitation and the user sets their own password (recommended).",
+    )
+    create.add_argument(
+        "--user-password",
+        default=os.environ.get("USER_PASSWORD"),
+        help="Optional. Set a permanent password for --user-email instead of emailing an "
+        "invitation. Avoid committing this; prefer the invitation flow.",
+    )
+    create.add_argument(
+        "--callback-port",
+        type=int,
+        default=int(os.environ.get("CALLBACK_PORT", DEFAULT_CALLBACK_PORT)),
+        help=f"Loopback port for the Bedrock 3P connector callback "
+        f"(default {DEFAULT_CALLBACK_PORT}); registers http://127.0.0.1:<PORT>/callback.",
+    )
+    create.add_argument(
+        "--identity-provider",
+        action="append",
+        help="Federated identity provider name to add to the app client's supported "
+        "providers, e.g. an IAM Identity Center provider (repeatable).",
+    )
     create.set_defaults(func=cmd_create)
 
     delete = sub.add_parser("delete", help="Delete everything created by 'create' (uses the state file).")
@@ -673,8 +709,7 @@ def build_parser() -> argparse.ArgumentParser:
         "add-callback",
         help="Register an OAuth callback URL (e.g. the Claude desktop loopback) on the Cognito app client.",
     )
-    add_cb.add_argument("--url", required=True,
-                        help="Callback URL to allow, e.g. http://127.0.0.1:62029/callback")
+    add_cb.add_argument("--url", required=True, help="Callback URL to allow, e.g. http://127.0.0.1:62029/callback")
     add_cb.add_argument("--region", default=os.environ.get("AWS_REGION", DEFAULT_REGION))
     add_cb.set_defaults(func=cmd_add_callback)
 
