@@ -546,7 +546,7 @@ def _print_summary(state: dict) -> None:
             print(f"  Identity providers: {cog['supported_idps']}")
         print("\n  Cowork OAuth client (authorization-code grant, REQUIRED for Cowork):")
         print(f"    client_id       : {state.get('cognito_user_client_id')}")
-        print(f"    client_secret   : {state.get('cognito_user_client_secret')}")
+        print(f"    client_secret   : <hidden> (key 'cognito_user_client_secret' in {STATE_FILE})")
         if state.get("cognito_user_email"):
             print(f"    sign-in user    : {state.get('cognito_user_email')}")
         else:
@@ -554,7 +554,7 @@ def _print_summary(state: dict) -> None:
         if state.get("cognito_m2m_client_id"):
             print("\n  M2M client (client_credentials, ONLY for the curl test; not usable by Cowork):")
             print(f"    client_id       : {state.get('cognito_m2m_client_id')}")
-            print(f"    client_secret   : {state.get('cognito_m2m_client_secret')}")
+            print(f"    client_secret   : <hidden> (key 'cognito_m2m_client_secret' in {STATE_FILE})")
     else:
         print("\n  Inbound auth      : your own JWT authorizer")
     print("\n  Next: see README.md -> 'Connect to Claude Cowork'.")

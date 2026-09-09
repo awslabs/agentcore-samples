@@ -191,7 +191,7 @@ for details.
 |---|---|
 | **URL** (server URL) | the **Gateway MCP URL** (ends in `/mcp`) |
 | **OAuth Client ID** | the Cognito `*-cowork` app client `client_id` |
-| **OAuth Client Secret** | the Cognito `*-cowork` app client `client_secret` |
+| **OAuth Client Secret** | the Cognito `*-cowork` app client `client_secret` — not printed by the script; read `cognito_user_client_secret` from the local `.provision-state.json` (gitignored) |
 | **Authorization server(s)** | `["https://cognito-idp.<REGION>.amazonaws.com/<USER_POOL_ID>"]` |
 
 Note the **Authorization server** is the Cognito **issuer** URL — the discovery
