@@ -33,7 +33,13 @@ import time
 
 import boto3
 from botocore.exceptions import ClientError
-from idp_config import idp_provider_name, portal_name, portal_role_name, select_idp
+from idp_config import (
+    idp_provider_name,
+    portal_name,
+    portal_role_name,
+    resource_app_delete_hint_lines,
+    select_idp,
+)
 from mcp_config import load_env
 
 
@@ -142,10 +148,8 @@ def main():
     print("  the gateway and its targets -- use cleanup_targets.py, then")
     print("    cleanup_gateway_entra.py")
     print("  the GitHub outbound credential provider -- cleanup_targets.py")
-    print(f"  the {idp['displayName']} resource app -- it is the gateway's audience")
-    print("    AND the portal's login client, so it is not this script's to delete.")
-    print("    cleanup_gateway_entra.py leaves it too; delete it yourself once the")
-    print(f"    gateway is gone (az ad app delete --id <{idp['audienceEnv']}>).")
+    for line in resource_app_delete_hint_lines(idp):
+        print(line)
 
     print("\n  scripts/.env still holds the deleted resources' ids. Remove the")
     print("  PORTAL_* , IDP_PROVIDER_ARN and EXECUTION_ROLE_ARN lines, or")

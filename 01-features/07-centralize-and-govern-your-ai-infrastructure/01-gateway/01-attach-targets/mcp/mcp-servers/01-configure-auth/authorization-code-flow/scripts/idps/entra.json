@@ -17,5 +17,32 @@
   "gatewayScopes": ["access_as_user"],
   "scopeTemplate": "api://{audience}/access_as_user",
   "resourcePrefix": "entra",
-  "docPath": "entra/"
+  "docPath": "entra/",
+  "identifierUriHint": [
+    "  Register the gateway URL as an identifier URI on the resource app.",
+    "  MCP clients send it as the RFC 8707 `resource` parameter, and Entra",
+    "  rejects the /authorize call with AADSTS9010010 until it is",
+    "  registered. The consent portal does NOT need this.",
+    "",
+    "    OBJECT_ID=$(az ad app show --id \"{audience}\" --query id -o tsv)",
+    "    az rest --method PATCH \\",
+    "      --url \"https://graph.microsoft.com/v1.0/applications/$OBJECT_ID\" \\",
+    "      --headers \"Content-Type=application/json\" \\",
+    "      --body '{\"identifierUris\":[\"api://{audience}\",\"{gateway_url}/mcp\"]}'"
+  ],
+  "portalCallbackHint": [
+    "    az ad app update --id {client_id} \\",
+    "      --web-redirect-uris \"{callback_url}\"",
+    "",
+    "  --web-redirect-uris REPLACES the whole array. Under Entra this app is",
+    "  also the gateway resource app and may already carry other web redirects",
+    "  (e.g. a credential provider's vended callback); pass every URI you need",
+    "  in one call so you do not drop them."
+  ],
+  "resourceAppDeleteHint": [
+    "  the {displayName} resource app -- it is the gateway's audience",
+    "    AND the portal's login client, so it is not this script's to delete.",
+    "    cleanup_gateway_entra.py leaves it too; delete it yourself once the",
+    "    gateway is gone (az ad app delete --id <{audienceEnv}>)."
+  ]
 }

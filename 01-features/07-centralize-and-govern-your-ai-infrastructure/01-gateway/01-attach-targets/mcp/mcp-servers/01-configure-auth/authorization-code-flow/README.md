@@ -4,9 +4,13 @@ Introductory Blog: [Connecting MCP servers to Amazon Bedrock AgentCore gateway u
 
 ### Custom Just-in-time auth
 
+See how to configure custom just-in-time auth following [guide](./consent-portal/README.md).
+
 ![demo1](./consent-portal/images/demo-portal.gif)
 
 ### Custom web server session binding
+
+See how to configure custom web server using the following [guide](./github/README.md).
 
 ![demo2](./github/images/demo.gif)
 
@@ -41,7 +45,7 @@ This means AgentCore gateway users will be able to call `list/tools` without bei
 
 [URL Session Binding](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/oauth2-authorization-url-session-binding.html) ensures that the user who initiated the OAuth authorization request is the same user who granted consent. When AgentCore identity generates an authorization URL, it also returns a session-URI. After the user completes consent, the browser redirects back to a callback URL with the session-URI. The application then is responsible for calling the [CompleteResourceTokenAuth](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CompleteResourceTokenAuth.html) API, presenting both the user's identity and the session-URI. AgentCore identity validates that the user who started the flow is the same user who completed it before exchanging the authorization code for an access token. This prevents a scenario where a user accidentally shares the authorization URL, and someone else completes the consent, which would grant access tokens to the wrong party. The authorization URL and session URI are only valid for 10 minutes, further limiting the window for misuse. Session binding applies during admin target creation (implicit sync) and during tool invocation.
 
-### Who calls `CompleteResourceTokenAuth`: your own dashboard, or a consent portal
+### Q. Who calls `CompleteResourceTokenAuth`: your own dashboard, or a consent portal
 
 Session binding leaves one job to the application: something has to receive the redirect and call [`CompleteResourceTokenAuth`](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CompleteResourceTokenAuth.html) with the caller's identity and the session-URI. You have two ways to cover it.
 
@@ -49,7 +53,7 @@ Session binding leaves one job to the application: something has to receive the 
 
 **Or use an AgentCore Consent Portal.** A consent portal is a hosted, AWS-managed portal that authenticates your end users to an OpenID Connect (OIDC) identity provider (IdP) and gathers their consent before your agent accesses a downstream resource on their behalf. Each consent portal attaches to a single Amazon Bedrock AgentCore Gateway (its source) and uses an OAuth2 credential provider to reference the same IdP that the gateway's inbound JWT authorizer trusts. The portal keeps the OAuth flow server-side: the browser never holds a token. It calls `CompleteResourceTokenAuth` for you, so there is no callback server to write and no consent UI to build — see [Consent Portal](#consent-portal) below and the [AWS documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-consent-portal.html).
 
-### Implicit sync during MCP Server target creation
+### Type 1: Implicit sync during MCP Server target creation
 
 In this section, we will introduce how implicit sync during MCP Server target creation works. Make sure that the AgentCore gateway execution role has `GetWorkloadAccessTokenForUserId` and `CompleteResourceTokenAuth` permissions. First, let's start by understanding the flow.
 
@@ -71,7 +75,7 @@ In this section, we will introduce how implicit sync during MCP Server target cr
 
 8. This access token is used to list the tools on MCP server target; returned tool definitions from the target are cached at AgentCore gateway.
 
-### (Recommended) Provide schema upfront during MCP Server targets creation 
+### Type 2 (Recommended): Provide schema upfront during MCP Server targets creation
 
 In this section, we introduce how to provide the schema upfront during MCP Server targets creation. This is the recommended approach when human intervention isn’t possible during create/update operations.
 

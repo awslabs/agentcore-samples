@@ -115,8 +115,7 @@ uv run python scripts/deploy_gateway_entra.py --entra
 
 The `--entra` flag names a profile in [`scripts/idps/`](../scripts/idps/). It is required
 and has no default: a script that guessed its identity provider could create — or later
-delete — the wrong one. Adding Okta means adding `scripts/idps/okta.json`, and `--okta`
-appears on every one of these scripts on its own.
+delete — the wrong one.
 
 The script creates an IAM role for the gateway, then calls
 [`CreateGateway`](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CreateGateway.html)
