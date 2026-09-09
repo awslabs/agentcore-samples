@@ -2306,8 +2306,6 @@ dependencies = [
     { name = "chardet" },
     { name = "mcp" },
     { name = "pyjwt" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "requests" },
     { name = "strands-agents" },
     { name = "strands-agents-tools" },
@@ -2316,6 +2314,8 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "bedrock-agentcore-starter-toolkit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
@@ -2325,15 +2325,17 @@ requires-dist = [
     { name = "chardet", specifier = ">=3.0.2,<6.0.0" },
     { name = "mcp", specifier = ">=1.19.0" },
     { name = "pyjwt", specifier = ">=2.11.0" },
-    { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.21.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "strands-agents", specifier = ">=1.25.0" },
     { name = "strands-agents-tools", specifier = ">=0.2.20" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "bedrock-agentcore-starter-toolkit", specifier = ">=0.3.2" }]
+dev = [
+    { name = "bedrock-agentcore-starter-toolkit", specifier = ">=0.3.2" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.21.0" },
+]
 
 [[package]]
 name = "sympy"
