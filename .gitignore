@@ -325,3 +325,20 @@ plan/
 
 # Blog post drafts
 02-use-cases/data-analyst-conversational-assistant/blog-*
+
+# Consent Portal pen-test working document (internal; upstream source for
+# 01-features/.../authorization-code-flow/consent-portal/)
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/pen-test-details.md
+
+# Locally-staged SDK wheels for the Consent Portal walkthrough (~15 MB each).
+# portal.md floors boto3/botocore at 1.43.88 in pyproject.toml instead; these are
+# only a convenience for offline installs and must not be committed.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/*.whl
+
+# In-progress target guidance folders — only atlassian/ and github/ ship for now.
+# The rest are boilerplate pending per-server platform setup + tool schema.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/aws/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/box/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/datadog/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/glean/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/snowflake/

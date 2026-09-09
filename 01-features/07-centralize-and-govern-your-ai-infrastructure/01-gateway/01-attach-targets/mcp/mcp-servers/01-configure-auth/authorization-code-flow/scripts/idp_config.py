@@ -230,6 +230,70 @@ def gateway_advertised_scope_mapping(idp):
     }
 
 
+def advertised_scope_mapping_is_identity(idp):
+    """True when the mapping maps every scope to itself, so it can be omitted.
+
+    Entra needs the mapping: its token carries the short scope but /authorize
+    only accepts the fully qualified one (scopeTemplate api://{audience}/...).
+    Okta uses short scopes end to end (scopeTemplate {scope}), so the mapping is
+    the identity and sending it is a no-op the gateway need not carry.
+    """
+    return all(k == v for k, v in gateway_advertised_scope_mapping(idp).items())
+
+
+# --- Printed CLI hints -------------------------------------------------------
+# Each deploy/cleanup script ends with a copy-pasteable next step whose exact
+# command is IdP-specific (Entra -> az, Okta -> curl). The command lines live in
+# the profile as {token}-format strings so a new IdP is a data edit, not a branch
+# on idp["name"]; an IdP that has no such step simply omits the key.
+
+
+def _render_hint(idp, key, **subs):
+    """Return the profile's hint lines with {token}s replaced, or [] if absent.
+
+    Plain str.replace rather than str.format: the command bodies contain literal
+    shell braces and $ that str.format would choke on.
+    """
+    lines = idp.get(key)
+    if not lines:
+        return []
+    rendered = []
+    for line in lines:
+        for token, value in subs.items():
+            line = line.replace("{" + token + "}", value)
+        rendered.append(line)
+    return rendered
+
+
+def identifier_uri_hint_lines(idp, *, audience, gateway_url):
+    """The 'register the gateway URL as an identifier URI' block, or [].
+
+    Entra requires it (AADSTS9010010 otherwise); Okta's audience is fixed by the
+    Custom Authorization Server, so okta.json omits the key and the block is
+    skipped entirely.
+    """
+    return _render_hint(
+        idp, "identifierUriHint", audience=audience, gateway_url=gateway_url
+    )
+
+
+def portal_callback_hint_lines(idp, *, client_id, callback_url):
+    """The command to register the portal's callback on its login app."""
+    return _render_hint(
+        idp, "portalCallbackHint", client_id=client_id, callback_url=callback_url
+    )
+
+
+def resource_app_delete_hint_lines(idp):
+    """The 'left in place, delete it yourself' block for the IdP's own apps."""
+    return _render_hint(
+        idp,
+        "resourceAppDeleteHint",
+        displayName=idp["displayName"],
+        audienceEnv=idp["audienceEnv"],
+    )
+
+
 def client_secret(idp):
     """Read the portal app's client secret without putting it in argv."""
     env_var = idp["clientSecretEnv"]

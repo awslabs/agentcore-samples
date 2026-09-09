@@ -34,6 +34,7 @@ from idp_config import (
     client_secret,
     discovery_url,
     idp_provider_name,
+    portal_callback_hint_lines,
     portal_name,
     portal_role_name,
     portal_scopes,
@@ -404,13 +405,10 @@ def main():
     print("  a public-client one: the portal holds a secret and exchanges the")
     print("  code server-side.")
     print()
-    print(f"    az ad app update --id {client_id(idp)} \\")
-    print(f'      --web-redirect-uris "{callback_url}"')
-    print()
-    print("  --web-redirect-uris REPLACES the whole array. Under Entra this app is")
-    print("  also the gateway resource app and may already carry other web redirects")
-    print("  (e.g. a credential provider's vended callback); pass every URI you need")
-    print("  in one call so you do not drop them.")
+    for line in portal_callback_hint_lines(
+        idp, client_id=client_id(idp), callback_url=callback_url
+    ):
+        print(line)
     print()
     print("  Then sign in at the portal URL above to confirm the IdP leg works.")
     print("  The Connections page will be empty until a target exists.")

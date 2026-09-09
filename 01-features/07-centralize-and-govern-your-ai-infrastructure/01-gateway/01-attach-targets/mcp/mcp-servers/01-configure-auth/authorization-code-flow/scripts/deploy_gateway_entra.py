@@ -30,10 +30,12 @@ import time
 import boto3
 from gateway_admin import GatewayBoto3Client
 from idp_config import (
+    advertised_scope_mapping_is_identity,
     audience,
     discovery_url,
     gateway_advertised_scope_mapping,
     gateway_name,
+    identifier_uri_hint_lines,
     select_idp,
 )
 from mcp_config import load_env, mcp_protocol_configuration, save_env
@@ -65,6 +67,7 @@ def main():
     aud = audience(idp)
     scopes = idp["gatewayScopes"]
     advertised = gateway_advertised_scope_mapping(idp)
+    advertise = not advertised_scope_mapping_is_identity(idp)
 
     region = boto3.Session().region_name
     admin = GatewayBoto3Client(region=region)
@@ -79,8 +82,9 @@ def main():
     print(f"  discovery: {discovery}")
     print(f"  audience:  {aud}")
     print(f"  scopes:    {', '.join(scopes)}")
-    for short, qualified in advertised.items():
-        print(f"  advertises {short} as {qualified}")
+    if advertise:
+        for short, qualified in advertised.items():
+            print(f"  advertises {short} as {qualified}")
 
     existing_id = find_gateway(control, gw_name)
     if existing_id:
@@ -89,19 +93,21 @@ def main():
         gw_url = gw["gatewayUrl"]
         print(f"\n  Gateway already exists: {gateway_id} ({gw['status']}) -- reusing")
     else:
+        authorizer = {
+            "discoveryUrl": discovery,
+            "allowedAudience": [aud],
+            "allowedScopes": scopes,
+        }
+        # Omitted when it maps every scope to itself (Okta): sending an identity
+        # map is a no-op, and only MCP clients ever read it anyway.
+        if advertise:
+            authorizer["advertisedScopeMapping"] = advertised
         gw_resp = control.create_gateway(
             name=gw_name,
             roleArn=role_arn,
             protocolType="MCP",
             authorizerType="CUSTOM_JWT",
-            authorizerConfiguration={
-                "customJWTAuthorizer": {
-                    "discoveryUrl": discovery,
-                    "allowedAudience": [aud],
-                    "allowedScopes": scopes,
-                    "advertisedScopeMapping": advertised,
-                }
-            },
+            authorizerConfiguration={"customJWTAuthorizer": authorizer},
             protocolConfiguration=mcp_protocol_configuration(),
             exceptionLevel="DEBUG",
         )
@@ -133,19 +139,13 @@ def main():
 
     print()
     print("=" * 62)
-    print("  NEXT, before pointing an MCP client at this gateway:")
-    print()
-    print("  Register the gateway URL as an identifier URI on the resource app.")
-    print("  MCP clients send it as the RFC 8707 `resource` parameter, and Entra")
-    print("  rejects the /authorize call with AADSTS9010010 until it is")
-    print("  registered. The consent portal does NOT need this.")
-    print()
-    print(f'    OBJECT_ID=$(az ad app show --id "{aud}" --query id -o tsv)')
-    print("    az rest --method PATCH \\")
-    print('      --url "https://graph.microsoft.com/v1.0/applications/$OBJECT_ID" \\')
-    print('      --headers "Content-Type=application/json" \\')
-    print(f'      --body \'{{"identifierUris":["api://{aud}","{gateway_url}/mcp"]}}\'')
-    print()
+    hint = identifier_uri_hint_lines(idp, audience=aud, gateway_url=gateway_url)
+    if hint:
+        print("  NEXT, before pointing an MCP client at this gateway:")
+        print()
+        for line in hint:
+            print(line)
+        print()
     print("  Then create the consent portal:")
     print(f"    uv run python scripts/deploy_portal.py --{idp['name']}")
     print("=" * 62)

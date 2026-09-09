@@ -3,7 +3,7 @@
 Deletes gateway targets, gateway, credential provider, and IAM role.
 
 Usage:
-    uv run python scripts/github-auth-code/cleanup.py
+    uv run python scripts/linkedin-auth-code/cleanup.py
 """
 
 import os

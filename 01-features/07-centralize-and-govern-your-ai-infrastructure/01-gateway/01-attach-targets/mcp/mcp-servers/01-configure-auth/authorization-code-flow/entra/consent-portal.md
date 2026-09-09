@@ -6,6 +6,8 @@ a downstream resource on their behalf. Each portal attaches to exactly one Agent
 gateway, reads that gateway's targets, and shows the user one row per outbound provider
 those targets depend on — with **Connect**, **Reconnect** and **Disconnect** actions.
 
+![demo](../consent-portal/images/demo-portal.gif)
+
 It is a managed front end over the
 [OAuth2 authorization URL session binding](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/oauth2-authorization-url-session-binding.html)
 primitive. Session binding is what guarantees the user who *started* an authorization is the
@@ -160,9 +162,8 @@ and with no real redirect URI yet — `<portalUrl>` does not exist until you cre
 portal. With Entra this **is the gateway's resource app**, not a new registration; Step 1
 adds the secret and (in Step 4) the redirect to it. [Why](#step-1-prepare-the-resource-app-as-the-portals-login-client).
 
-**At least one active test user** who can sign in to that application. In Okta the user must
-also be *assigned* to the app; in Entra, membership in the tenant is enough for a
-single-tenant registration.
+**At least one active test user** who can sign in to that application. For a single-tenant
+registration, membership in the tenant is enough.
 
 **Tooling and permissions:**
 
@@ -191,9 +192,7 @@ resource/login app, and the GitHub outbound provider.
 > gateway resolves for the same user (which is pairwise for the resource app). AgentCore
 > would then bind consent under one identity and look it up under the other, and every tool
 > invocation would re-prompt for authorization instead of using the stored consent. Signing
-> in through the resource app itself makes the two `sub` values identical. This is
-> Entra-specific: IdPs with a stable per-user `sub` (Okta, Auth0) can use a separate portal
-> client.
+> in through the resource app itself makes the two `sub` values identical.
 
 The app already exists and already has a service principal (from `gateway.md` Step 1). To
 act as a confidential login client it needs two more things: a client secret, and — so the
@@ -333,9 +332,6 @@ az ad app update --id "$PORTAL_CLIENT_ID" \
 > [!IMPORTANT]
 > Enter it **exactly**, with **no trailing slash**. A trailing slash makes the IdP treat the
 > callback as unregistered, and the resulting failure surfaces as a generic login error.
-> Other providers name this field differently — Amazon Cognito calls it "Allowed callback
-> URLs", Okta "Sign-in redirect URIs" — but the value and the no-trailing-slash rule are the
-> same.
 
 > [!IMPORTANT]
 > `--web-redirect-uris` **replaces** the whole `web.redirectUris` array rather than appending

@@ -26,6 +26,7 @@ Follow the gateway guide for your identity provider. It ends with a `READY` gate
 | Identity provider | Guide |
 | :--- | :--- |
 | Microsoft Entra ID | [`../entra/gateway.md`](../entra/gateway.md) |
+| Okta | [`../okta/gateway.md`](../okta/gateway.md) |
 
 ## Step 2: Set up the consent portal with your identity provider
 
@@ -34,6 +35,7 @@ Follow the portal guide for the same identity provider. **If you already did thi
 | Identity provider | Guide |
 | :--- | :--- |
 | Microsoft Entra ID | [`../entra/consent-portal.md`](../entra/consent-portal.md) |
+| Okta | [`../okta/consent-portal.md`](../okta/consent-portal.md) |
 
 ## Step 3: Set up the Atlassian MCP server target
 
