@@ -1,0 +1,4 @@
+strands-agents>=1.52
+attenu-guard[strands,crypto]>=0.8,<0.9
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
