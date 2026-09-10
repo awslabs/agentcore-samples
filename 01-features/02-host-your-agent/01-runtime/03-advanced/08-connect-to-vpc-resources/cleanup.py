@@ -20,6 +20,7 @@ import time
 
 import boto3
 from boto3.session import Session
+from botocore.exceptions import ClientError
 
 
 def load_config() -> dict:
@@ -51,11 +52,13 @@ def main():
         for ep in endpoints.get("runtimeEndpoints", []):
             name = ep["name"]
             print(f"  Deleting endpoint: {name}")
+            if name == "DEFAULT":
+                continue  # DEFAULT endpoint is auto-deleted with the runtime
             control.delete_agent_runtime_endpoint(agentRuntimeId=runtime_id, endpointName=name)
         if endpoints.get("runtimeEndpoints"):
             print("  Waiting for endpoint deletion...")
             time.sleep(30)
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # 2. Delete runtime
@@ -64,7 +67,7 @@ def main():
         control.delete_agent_runtime(agentRuntimeId=runtime_id)
         print("  Waiting for runtime deletion...")
         time.sleep(30)
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # 3. Delete S3 code artifact
@@ -73,7 +76,7 @@ def main():
     try:
         s3.delete_object(Bucket=bucket_name, Key=s3_key)
         print(f"  Deleted s3://{bucket_name}/{s3_key}")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # 4. Delete IAM role
@@ -86,7 +89,7 @@ def main():
         print(f"  Deleted IAM role: {role_name}")
     except iam.exceptions.NoSuchEntityException:
         print(f"  IAM role not found: {role_name}")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # 5. Destroy CDK infrastructure
