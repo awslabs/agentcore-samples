@@ -86,7 +86,7 @@ AgentCore identity integrates seamlessly with other AgentCore components:
 | `04-entra-obo-mcp-runtime/` | Advanced: Entra ID On-Behalf-Of token exchange across two runtimes (Agent + MCP Server); user identity preserved end-to-end |
 | `05-certificate-based-auth/` | Outbound `PRIVATE_KEY_JWT` client authentication (RFC 7523) with KMS-hosted signing keys for Okta and Entra ID; M2M, 3LO, and OBO flows |
 | `06-okta-xaa/` | Okta Cross-App Access: an agent reaches a resource app through Okta's identity-assertion grant |
-| `07-consent-portal-auth-code-flow-targets/` | Managed consent dashboard end-to-end: FastAPI BFF → agent on Runtime → Gateway → GitHub MCP server (3LO). Users connect GitHub themselves on the AWS-hosted consent portal (Entra ID or Okta) |
+| `07-consent-portal-auth-code-flow-targets/` | Managed consent dashboard end-to-end: FastAPI BFF → agent on Runtime → Gateway → GitHub MCP server over the authorization code flow (3LO). Users connect GitHub themselves on the AWS-hosted consent portal (Entra ID or Okta) |
 | `obo-training/` | On-Behalf-Of training curriculum: concept guides plus worked Entra and Okta examples for agent-to-downstream and agent-via-gateway |
 | `okta-auth-three-tier-end-to-end-demo/` | End-to-end Okta OAuth2 three-tier demo: per-tier JWT isolation across User → Runtime → Gateway → MCP Server with RBAC |
 | `auth0-multi-agent-obo/` | Multi-agent RFC 8693 On-Behalf-Of token exchange via Auth0: coordinator mints attenuated tokens per sub-agent rather than forwarding the user JWT |
@@ -116,7 +116,7 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 | Entra OBO | 04-entra-obo-mcp-runtime/ | Agent calls MCP server carrying user-delegated Graph token |
 | PRIVATE_KEY_JWT (Okta + Entra) | 05-certificate-based-auth/ | KMS-signed client assertions for outbound M2M, 3LO, and OBO flows; no client secret |
 | Okta Cross-App Access | 06-okta-xaa/ | Agent reaches a resource app via Okta's identity-assertion grant |
-| Consent portal + 3LO MCP target | 07-consent-portal-auth-code-flow-targets/ | Hosted consent dashboard where end users grant the agent GitHub access out of band |
+| Consent portal + authorization-code-flow MCP target | 07-consent-portal-auth-code-flow-targets/ | Hosted consent dashboard where end users grant the agent GitHub access out of band |
 | Auth0 OBO (multi-agent) | auth0-multi-agent-obo/ | Coordinator mints scoped tokens per sub-agent using RFC 8693 via Auth0 |
 
 ## Finding Things

@@ -28,7 +28,8 @@ Two consequences worth knowing:
 - `SynchronizeGatewayTargets` is not supported for a schema-upfront target. If
   GitHub adds tools, update the schema. You can switch a target between the two
   methods by updating its configuration.
-- `listingMode: DYNAMIC` is incompatible with outbound 3LO, so it is not used.
+- `listingMode: DYNAMIC` is incompatible with the outbound authorization code
+  flow, so it is not used.
 
 ## Trimming it
 

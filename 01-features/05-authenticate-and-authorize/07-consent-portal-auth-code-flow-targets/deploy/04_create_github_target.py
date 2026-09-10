@@ -1,4 +1,4 @@
-"""Attach the GitHub MCP server to the gateway as a 3LO target (schema upfront).
+"""Attach the GitHub MCP server as an authorization-code-flow target (schema upfront).
 
 Creates one gateway target pointing at https://api.githubcopilot.com/mcp with:
 
@@ -109,7 +109,7 @@ def main() -> None:
 
     print(f"--- Creating GitHub MCP target: {target_name} (schema upfront) ---")
     print(f"  endpoint:         {GITHUB_MCP_ENDPOINT}")
-    print("  grantType:        AUTHORIZATION_CODE (3LO — appears on the portal)")
+    print("  grantType:        AUTHORIZATION_CODE (appears on the portal)")
     print(f"  scopes:           {' '.join(GITHUB_SCOPES)}")
     print(f"  defaultReturnUrl: {return_url}")
     print("  No browser authorization happens during creation.")
@@ -117,7 +117,9 @@ def main() -> None:
     response = control.create_gateway_target(
         gatewayIdentifier=gateway_id,
         name=target_name,
-        description="GitHub MCP server, 3LO outbound auth, consent granted on the AgentCore consent portal",
+        description=(
+            "GitHub MCP server, outbound authorization code flow, consent granted on the AgentCore consent portal"
+        ),
         targetConfiguration={
             "mcp": {
                 "mcpServer": {

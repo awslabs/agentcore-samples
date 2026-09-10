@@ -1,4 +1,4 @@
-"""Strands agent on AgentCore Runtime, reaching GitHub through a Gateway (3LO).
+"""Strands agent on AgentCore Runtime, reaching GitHub through a Gateway.
 
 Copy this over the scaffolded project's entrypoint, then deploy:
 

@@ -168,7 +168,19 @@ def ensure_execution_role(iam, role_name: str, gateway_id: str, region: str, acc
                     "bedrock-agentcore:GetResourceOauth2Token",
                     "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
                 ],
-                "Resource": "*",
+                # Scoped, not "*" — these actions support resource-level
+                # permissions. See the matching comment in
+                # 01_create_gateway.py for which resource types each accepts
+                # and why the vault/directory ids stay wildcarded.
+                "Resource": [
+                    # token-vault/* also covers .../oauth2credentialprovider/*,
+                    # and workload-identity-directory/* also covers
+                    # .../workload-identity/*, because an IAM wildcard spans "/".
+                    # Listing the children as well is redundant — IAM Access
+                    # Analyzer flags it.
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:token-vault/*",
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:workload-identity-directory/*",
+                ],
             },
             {
                 "Effect": "Allow",

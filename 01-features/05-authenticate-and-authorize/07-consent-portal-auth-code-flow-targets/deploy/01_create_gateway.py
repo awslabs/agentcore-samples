@@ -3,8 +3,9 @@
 Creates, idempotently:
   1. The gateway service role (AmazonBedrockAgentCoreGatewayRole-<GATEWAY_NAME>),
      unless GATEWAY_SERVICE_ROLE_ARN is set. It needs the AgentCore Identity
-     token operations, because the gateway itself performs the outbound 3LO
-     exchange against GitHub on the user's behalf, plus read access to the
+     token operations, because the gateway itself performs the outbound
+     authorization code flow against GitHub on the user's behalf, plus read
+     access to the
      identity service's own OAuth secrets and CloudWatch Logs.
   2. The gateway: protocolType MCP, inbound authorizerType CUSTOM_JWT over
      your IdP's OIDC discovery URL.
@@ -13,7 +14,8 @@ Two details that are load-bearing and easy to get wrong:
 
   * supportedVersions must include "2025-11-25". That MCP protocol version is
     what enables URL-mode elicitation, which is how the gateway asks an
-    unconsented user to authorize a 3LO target. On older versions only, an
+    unconsented user to authorize an authorization-code-flow target. On older
+    versions only, an
     AUTHORIZATION_CODE target has no way to prompt.
 
   * The gateway's authorizer and the consent portal's IdP credential provider
@@ -116,7 +118,29 @@ def ensure_service_role(iam, role_name: str, account_id: str, region: str) -> st
                     "bedrock-agentcore:GetResourceOauth2Token",
                     "bedrock-agentcore:CompleteResourceTokenAuth",
                 ],
-                "Resource": "*",
+                # These actions DO support resource-level permissions, so they
+                # are scoped rather than left on "*". Per the AWS service
+                # reference, GetWorkloadAccessToken* accept workload-identity
+                # and workload-identity-directory; GetResourceOauth2Token and
+                # CompleteResourceTokenAuth additionally accept token-vault and
+                # oauth2credentialprovider. No one type is marked required, so
+                # both families are covered below rather than guessing which the
+                # service authorizes against.
+                #
+                # The vault and directory ids stay wildcarded: AgentCore names
+                # them ("default" today) and mints a workload identity per
+                # runtime/gateway, so pinning exact ids would break the moment
+                # the service picks a different one. Region and account are
+                # still pinned, which is the part that matters.
+                "Resource": [
+                    # token-vault/* also covers .../oauth2credentialprovider/*,
+                    # and workload-identity-directory/* also covers
+                    # .../workload-identity/*, because an IAM wildcard spans "/".
+                    # Listing the children as well is redundant — IAM Access
+                    # Analyzer flags it.
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:token-vault/*",
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:workload-identity-directory/*",
+                ],
             },
             {
                 "Sid": "ReadAgentCoreOauthSecrets",

@@ -325,7 +325,7 @@ redirect endpoint and vends its address.
 > when GitHub refuses the `redirect_uri` — a symptom that points at the portal
 > rather than at the OAuth App.
 
-### 6. Attach the GitHub MCP server as a 3LO target
+### 6. Attach the GitHub MCP server as an authorization-code-flow target
 
 ```bash
 python deploy/04_create_github_target.py --entra
@@ -730,16 +730,30 @@ scaffolded project folder per runtime (`consentGithubAgent/`, `consentGithubOkta
   sent over plain HTTP and break the sample. Serving this anywhere other than
   localhost means terminating TLS and adding `https_only=True` to the
   `SessionMiddleware` in [`frontend/app.py`](frontend/app.py).
-- **One statement in each role uses `"Resource": "*"`** — the AgentCore Identity
-  actions (`GetWorkloadAccessToken*`, `GetResourceOauth2Token`,
-  `CompleteResourceTokenAuth`) on the gateway service role and on the portal
-  execution role. Every other statement is scoped to a specific ARN: the portal
-  role's gateway and credential-provider reads, the log-group writes, and both
-  Secrets Manager reads, which are limited to the
-  `bedrock-agentcore-identity!default/oauth2/*` path — and on the portal role
-  additionally to secrets tagged `owningService = bedrock-agentcore-identity`.
-  If your account can express those identity actions more narrowly, do so; check
-  before copying these policies into anything shared.
+- **No statement in either IAM role uses `"Resource": "*"`.** The AgentCore
+  Identity actions (`GetWorkloadAccessToken*`, `GetResourceOauth2Token`,
+  `CompleteResourceTokenAuth`) *do* support resource-level permissions, so they
+  are scoped to this account and region:
+
+  ```
+  arn:aws:bedrock-agentcore:<region>:<account>:token-vault/*
+  arn:aws:bedrock-agentcore:<region>:<account>:workload-identity-directory/*
+  ```
+
+  Both families are listed because the [service reference](https://servicereference.us-east-1.amazonaws.com/v1/bedrock-agentcore/bedrock-agentcore.json)
+  marks none of the supported resource types as required. The vault and directory
+  **ids** stay wildcarded on purpose: AgentCore owns those names and mints a
+  workload identity per runtime and gateway, so pinning today's `default` would
+  break as soon as the service picks something else. The remaining statements are
+  pinned to a single gateway, credential-provider, log-group or secret ARN, and
+  the portal role's Secrets Manager read additionally requires
+  `owningService = bedrock-agentcore-identity`.
+
+  To go further, these actions also accept condition keys —
+  `bedrock-agentcore:InboundJwtClaim/{iss,aud,sub,client_id,scope}` and
+  `bedrock-agentcore:userid` — so you can require, say, a specific token issuer
+  and audience. Not used here, because the correct values differ per tenant and a
+  wrong one fails closed in a way that is hard to diagnose from the portal.
 - **Names are user-facing.** Whatever you call the target and the outbound
   provider is what end users read on the Connections page. `github-mcp-server`
   suits a sample; outside one, choose wording that means something to the person
