@@ -116,10 +116,7 @@ def resolve_region(explicit: str | None = None) -> str:
     one that refuses to start.
     """
     region = (
-        explicit
-        or os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-        or boto3.Session().region_name
+        explicit or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or boto3.Session().region_name
     )
     if not region:
         sys.exit(
@@ -199,11 +196,7 @@ def enable_managed_resource_visibility(region: str) -> None:
         return
 
     try:
-        current = (
-            ec2.get_managed_resource_visibility()
-            .get("Visibility", {})
-            .get("DefaultVisibility")
-        )
+        current = ec2.get_managed_resource_visibility().get("Visibility", {}).get("DefaultVisibility")
         if current == "visible":
             log("✓ Managed resource visibility: already visible (account-wide)")
             return
@@ -257,8 +250,6 @@ def ensure_roles() -> tuple[str, str]:
     #      exists and its trust policy allows assumption by this service"
     # which reads like the role is missing rather than mis-trusted.
     #
-    # No aws:SourceAccount condition here, to keep the sample minimal. Add one in
-    # a real deployment — it is the standard confused-deputy guard.
     runtime_trust = {
         "Version": "2012-10-17",
         "Statement": [
@@ -266,6 +257,7 @@ def ensure_roles() -> tuple[str, str]:
                 "Effect": "Allow",
                 "Principal": {"Service": SERVICE_PRINCIPAL},
                 "Action": "sts:AssumeRole",
+                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT}},
             }
         ],
     }
@@ -291,7 +283,7 @@ def ensure_roles() -> tuple[str, str]:
                     "logs:PutLogEvents",
                     "logs:DescribeLogStreams",
                 ],
-                "Resource": "arn:aws:logs:*:*:*",
+                "Resource": f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/bedrock-agentcore/*",
             },
         ],
     }
@@ -306,9 +298,7 @@ def ensure_roles() -> tuple[str, str]:
     except iam.exceptions.EntityAlreadyExistsException:
         # Refresh the trust policy too, so a role left over from an older run
         # (or from a different sample) is corrected rather than silently reused.
-        iam.update_assume_role_policy(
-            RoleName=ROLE_NAME, PolicyDocument=json.dumps(runtime_trust)
-        )
+        iam.update_assume_role_policy(RoleName=ROLE_NAME, PolicyDocument=json.dumps(runtime_trust))
     iam.put_role_policy(
         RoleName=ROLE_NAME,
         # Same policy name as Sample 1, which grants the same thing on the same
@@ -416,9 +406,7 @@ def ensure_operator_role(iam) -> str:
             }
         )
         trust["Statement"] = statements
-        iam.update_assume_role_policy(
-            RoleName=name, PolicyDocument=json.dumps(trust)
-        )
+        iam.update_assume_role_policy(RoleName=name, PolicyDocument=json.dumps(trust))
         log(f"  Added {SERVICE_PRINCIPAL} to {name}'s trust policy")
         log("  (this is a change to YOUR role — cleanup.py does not undo it)")
 
@@ -452,6 +440,16 @@ def build_and_upload_zip() -> None:
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         log(f"✓ Bucket exists  {BUCKET}")
 
+    s3.put_public_access_block(
+        Bucket=BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
+
     build = HERE / ".build"
     if build.exists():
         shutil.rmtree(build)
@@ -460,12 +458,19 @@ def build_and_upload_zip() -> None:
     log(f"  Vendoring deps for {_ARCH['pip_platform']} / python{PYTHON_VERSION}...")
     subprocess.run(
         [
-            "uv", "pip", "install",
-            "--python-platform", _ARCH["pip_platform"],
-            "--python-version", PYTHON_VERSION,
-            "--target", str(build),
-            "--only-binary", ":all:",
-            "-r", str(AGENT_DIR / "requirements.txt"),
+            "uv",
+            "pip",
+            "install",
+            "--python-platform",
+            _ARCH["pip_platform"],
+            "--python-version",
+            PYTHON_VERSION,
+            "--target",
+            str(build),
+            "--only-binary",
+            ":all:",
+            "-r",
+            str(AGENT_DIR / "requirements.txt"),
         ],
         check=True,
         capture_output=True,
@@ -492,9 +497,7 @@ def default_network() -> tuple[str, str]:
     if not vpcs:
         sys.exit("No default VPC found. Set CP_SUBNET_ID and CP_SECURITY_GROUP_ID.")
     vpc_id = vpcs[0]["VpcId"]
-    subnet = ec2.describe_subnets(
-        Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
-    )["Subnets"][0]["SubnetId"]
+    subnet = ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])["Subnets"][0]["SubnetId"]
     sg = ec2.describe_security_groups(
         Filters=[
             {"Name": "vpc-id", "Values": [vpc_id]},
@@ -538,17 +541,13 @@ def create_capacity_provider(agentcore, operator_role_arn: str) -> dict:
     resp = agentcore.create_capacity_provider(
         name=NAME,
         description="Basic A2A sample — A2A agent on your own EC2 fleet",
-        permissionsConfiguration={
-            "capacityProviderOperatorRoleArn": operator_role_arn
-        },
+        permissionsConfiguration={"capacityProviderOperatorRoleArn": operator_role_arn},
         computeConfiguration={
             "ec2Configuration": {
                 "launchTemplateSource": {
                     "launchParameters": {
                         "operatingSystem": OPERATING_SYSTEM,
-                        "instanceRequirements": {
-                            "allowedInstanceTypes": [INSTANCE_TYPE]
-                        },
+                        "instanceRequirements": {"allowedInstanceTypes": [INSTANCE_TYPE]},
                     }
                 },
                 "vpcConfiguration": {"subnets": [subnet], "securityGroups": [sg]},
@@ -571,8 +570,7 @@ def create_capacity_provider(agentcore, operator_role_arn: str) -> dict:
         if "FAILED" in status:
             # statusReason/statusCode are on GetCapacityProvider, not on Create.
             sys.exit(
-                f"CapacityProvider {status}: "
-                f"{got.get('statusReason') or got.get('statusCode') or 'no reason given'}"
+                f"CapacityProvider {status}: {got.get('statusReason') or got.get('statusCode') or 'no reason given'}"
             )
         time.sleep(5)
     sys.exit("CapacityProvider did not become READY in 5 minutes")

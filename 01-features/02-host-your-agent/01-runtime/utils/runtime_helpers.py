@@ -15,6 +15,7 @@ import zipfile
 
 import boto3
 from boto3.session import Session
+from botocore.exceptions import ClientError
 
 
 def get_account_info(region: str | None = None) -> tuple[str, str]:
@@ -69,7 +70,7 @@ def create_execution_role(
                 "logs:CreateLogStream",
                 "logs:PutLogEvents",
             ],
-            "Resource": "arn:aws:logs:*:*:*",
+            "Resource": f"arn:aws:logs:{region}:{account_id}:log-group:/aws/bedrock-agentcore/*",
         },
     ]
 
@@ -142,6 +143,16 @@ def zip_and_upload_code(
         print(f"S3 bucket exists: {bucket_name}")
     except s3.exceptions.BucketAlreadyExists:
         print(f"S3 bucket exists: {bucket_name}")
+
+    s3.put_public_access_block(
+        Bucket=bucket_name,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
 
     # Create zip in memory
     zip_buffer = io.BytesIO()
@@ -319,7 +330,7 @@ def invoke_agent(
     return {
         "session_id": response.get("runtimeSessionId"),
         "status_code": response.get("statusCode"),
-        "body": json.loads(body) if body.startswith("{") or body.startswith("[") else body,
+        "body": json.loads(body) if body.startswith(("{", "[")) else body,
     }
 
 
@@ -366,7 +377,7 @@ def delete_agent_runtime(agent_runtime_id: str, region: str) -> None:
                 agentRuntimeId=agent_runtime_id,
                 endpointName=ep_name,
             )
-    except Exception as e:
+    except ClientError as e:
         print(f"Warning: could not delete endpoints: {e}")
 
     # Delete the runtime
@@ -402,5 +413,5 @@ def delete_s3_code(agent_name: str, region: str) -> None:
     try:
         s3.delete_object(Bucket=bucket_name, Key=s3_prefix)
         print(f"Deleted s3://{bucket_name}/{s3_prefix}")
-    except Exception as e:
+    except ClientError as e:
         print(f"Warning: could not delete S3 object: {e}")

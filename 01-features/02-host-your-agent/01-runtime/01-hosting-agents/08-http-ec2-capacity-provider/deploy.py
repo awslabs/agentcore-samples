@@ -82,8 +82,8 @@ MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-sonnet-4-5-202509
 # Lifecycle. maxLifetime's ceiling is 1209600s (14 days) — verified against the
 # live API, which rejects 1209601 with an explicit range message. The service
 # requires maxLifetime >= idleInstanceTimeout.
-IDLE_TIMEOUT = 900        # 15 min with no work → instance stops
-MAX_LIFETIME = 86400      # 1 day; raise up to 1209600 for long-lived sessions
+IDLE_TIMEOUT = 900  # 15 min with no work → instance stops
+MAX_LIFETIME = 86400  # 1 day; raise up to 1209600 for long-lived sessions
 
 CONTROL_SERVICE = "bedrock-agentcore-control"
 
@@ -113,10 +113,7 @@ def resolve_region(explicit: str | None = None) -> str:
     one that refuses to start.
     """
     region = (
-        explicit
-        or os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-        or boto3.Session().region_name
+        explicit or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or boto3.Session().region_name
     )
     if not region:
         sys.exit(
@@ -196,11 +193,7 @@ def enable_managed_resource_visibility(region: str) -> None:
         return
 
     try:
-        current = (
-            ec2.get_managed_resource_visibility()
-            .get("Visibility", {})
-            .get("DefaultVisibility")
-        )
+        current = ec2.get_managed_resource_visibility().get("Visibility", {}).get("DefaultVisibility")
         if current == "visible":
             log("✓ Managed resource visibility: already visible (account-wide)")
             return
@@ -256,8 +249,6 @@ def ensure_roles() -> tuple[str, str]:
     #      exists and its trust policy allows assumption by this service"
     # which reads like the role is missing rather than mis-trusted.
     #
-    # No aws:SourceAccount condition here, to keep the sample minimal. Add one in
-    # a real deployment — it is the standard confused-deputy guard.
     runtime_trust = {
         "Version": "2012-10-17",
         "Statement": [
@@ -265,6 +256,7 @@ def ensure_roles() -> tuple[str, str]:
                 "Effect": "Allow",
                 "Principal": {"Service": SERVICE_PRINCIPAL},
                 "Action": "sts:AssumeRole",
+                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT}},
             }
         ],
     }
@@ -287,12 +279,11 @@ def ensure_roles() -> tuple[str, str]:
                     "logs:PutLogEvents",
                     "logs:DescribeLogStreams",
                 ],
-                "Resource": "arn:aws:logs:*:*:*",
+                "Resource": f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/bedrock-agentcore/*",
             },
             {
                 "Effect": "Allow",
-                "Action": ["ecr:GetAuthorizationToken", "ecr:BatchGetImage",
-                           "ecr:GetDownloadUrlForLayer"],
+                "Action": ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
                 "Resource": "*",
             },
         ],
@@ -308,9 +299,7 @@ def ensure_roles() -> tuple[str, str]:
     except iam.exceptions.EntityAlreadyExistsException:
         # Refresh the trust policy too, so a role left over from an older run
         # (or from a different sample) is corrected rather than silently reused.
-        iam.update_assume_role_policy(
-            RoleName=ROLE_NAME, PolicyDocument=json.dumps(runtime_trust)
-        )
+        iam.update_assume_role_policy(RoleName=ROLE_NAME, PolicyDocument=json.dumps(runtime_trust))
     iam.put_role_policy(
         RoleName=ROLE_NAME,
         PolicyName="runtime-access",
@@ -414,9 +403,7 @@ def ensure_operator_role(iam) -> str:
             }
         )
         trust["Statement"] = statements
-        iam.update_assume_role_policy(
-            RoleName=name, PolicyDocument=json.dumps(trust)
-        )
+        iam.update_assume_role_policy(RoleName=name, PolicyDocument=json.dumps(trust))
         log(f"  Added {SERVICE_PRINCIPAL} to {name}'s trust policy")
         log("  (this is a change to YOUR role — cleanup.py does not undo it)")
 
@@ -449,6 +436,16 @@ def build_and_upload_zip() -> None:
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         log(f"✓ Bucket exists  {BUCKET}")
 
+    s3.put_public_access_block(
+        Bucket=BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
+
     build = HERE / ".build"
     if build.exists():
         shutil.rmtree(build)
@@ -457,12 +454,19 @@ def build_and_upload_zip() -> None:
     log(f"  Vendoring deps for {_ARCH['pip_platform']} / python{PYTHON_VERSION}...")
     subprocess.run(
         [
-            "uv", "pip", "install",
-            "--python-platform", _ARCH["pip_platform"],
-            "--python-version", PYTHON_VERSION,
-            "--target", str(build),
-            "--only-binary", ":all:",
-            "-r", str(AGENT_DIR / "requirements.txt"),
+            "uv",
+            "pip",
+            "install",
+            "--python-platform",
+            _ARCH["pip_platform"],
+            "--python-version",
+            PYTHON_VERSION,
+            "--target",
+            str(build),
+            "--only-binary",
+            ":all:",
+            "-r",
+            str(AGENT_DIR / "requirements.txt"),
         ],
         check=True,
         capture_output=True,
@@ -530,8 +534,7 @@ def build_and_push_image() -> None:
         "Statement": [
             {
                 "Effect": "Allow",
-                "Action": ["logs:CreateLogGroup", "logs:CreateLogStream",
-                           "logs:PutLogEvents"],
+                "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
                 "Resource": "*",
             },
             {
@@ -543,9 +546,13 @@ def build_and_push_image() -> None:
             {
                 "Effect": "Allow",
                 "Action": [
-                    "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchGetImage", "ecr:PutImage", "ecr:InitiateLayerUpload",
-                    "ecr:UploadLayerPart", "ecr:CompleteLayerUpload",
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:PutImage",
+                    "ecr:InitiateLayerUpload",
+                    "ecr:UploadLayerPart",
+                    "ecr:CompleteLayerUpload",
                 ],
                 "Resource": f"arn:aws:ecr:{REGION}:{ACCOUNT}:repository/{ECR_REPO}",
             },
@@ -553,9 +560,7 @@ def build_and_push_image() -> None:
     }
     fresh = False
     try:
-        iam.create_role(
-            RoleName=CODEBUILD_ROLE, AssumeRolePolicyDocument=json.dumps(cb_trust)
-        )
+        iam.create_role(RoleName=CODEBUILD_ROLE, AssumeRolePolicyDocument=json.dumps(cb_trust))
         fresh = True
     except iam.exceptions.EntityAlreadyExistsException:
         pass
@@ -576,9 +581,7 @@ def build_and_push_image() -> None:
     shutil.copy(AGENT_DIR / "requirements.txt", ctx)
     (ctx / "Dockerfile").write_text(DOCKERFILE)
     src_zip = shutil.make_archive(str(HERE / ".ctx-src"), "zip", root_dir=ctx)
-    boto3.client("s3", region_name=REGION).upload_file(
-        src_zip, BUCKET, f"{NAME}/context.zip"
-    )
+    boto3.client("s3", region_name=REGION).upload_file(src_zip, BUCKET, f"{NAME}/context.zip")
     os.remove(src_zip)
     shutil.rmtree(ctx)
 
@@ -588,13 +591,14 @@ def build_and_push_image() -> None:
             "phases:",
             "  pre_build:",
             "    commands:",
-            f"      - aws ecr get-login-password --region {REGION} | "
-            f"docker login --username AWS --password-stdin "
-            f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com",
+            (
+                f"      - aws ecr get-login-password --region {REGION} | "
+                f"docker login --username AWS --password-stdin "
+                f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com"
+            ),
             "  build:",
             "    commands:",
-            f"      - docker build --platform {_ARCH['docker_platform']} "
-            f"-t {IMAGE_URI} .",
+            (f"      - docker build --platform {_ARCH['docker_platform']} -t {IMAGE_URI} ."),
             "  post_build:",
             "    commands:",
             f"      - docker push {IMAGE_URI}",
@@ -630,10 +634,7 @@ def build_and_push_image() -> None:
         if status == "SUCCEEDED":
             break
         if status != "IN_PROGRESS":
-            sys.exit(
-                f"CodeBuild {status}. Logs:\n"
-                f"  aws codebuild batch-get-builds --ids {build_id} --region {REGION}"
-            )
+            sys.exit(f"CodeBuild {status}. Logs:\n  aws codebuild batch-get-builds --ids {build_id} --region {REGION}")
         time.sleep(10)
     log(f"✓ Pushed {IMAGE_URI}")
 
@@ -648,13 +649,9 @@ def default_network() -> tuple[str, str]:
     ec2 = boto3.client("ec2", region_name=REGION)
     vpcs = ec2.describe_vpcs(Filters=[{"Name": "is-default", "Values": ["true"]}])["Vpcs"]
     if not vpcs:
-        sys.exit(
-            "No default VPC found. Set CP_SUBNET_ID and CP_SECURITY_GROUP_ID."
-        )
+        sys.exit("No default VPC found. Set CP_SUBNET_ID and CP_SECURITY_GROUP_ID.")
     vpc_id = vpcs[0]["VpcId"]
-    subnet = ec2.describe_subnets(
-        Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
-    )["Subnets"][0]["SubnetId"]
+    subnet = ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])["Subnets"][0]["SubnetId"]
     sg = ec2.describe_security_groups(
         Filters=[
             {"Name": "vpc-id", "Values": [vpc_id]},
@@ -693,17 +690,13 @@ def create_capacity_provider(agentcore, operator_role_arn: str) -> dict:
     resp = agentcore.create_capacity_provider(
         name=NAME,
         description="Basic HTTP sample — one CP hosting a zip and a container agent",
-        permissionsConfiguration={
-            "capacityProviderOperatorRoleArn": operator_role_arn
-        },
+        permissionsConfiguration={"capacityProviderOperatorRoleArn": operator_role_arn},
         computeConfiguration={
             "ec2Configuration": {
                 "launchTemplateSource": {
                     "launchParameters": {
                         "operatingSystem": OPERATING_SYSTEM,
-                        "instanceRequirements": {
-                            "allowedInstanceTypes": [INSTANCE_TYPE]
-                        },
+                        "instanceRequirements": {"allowedInstanceTypes": [INSTANCE_TYPE]},
                     }
                 },
                 "vpcConfiguration": {
@@ -729,8 +722,7 @@ def create_capacity_provider(agentcore, operator_role_arn: str) -> dict:
         if "FAILED" in status:
             # statusReason/statusCode are on GetCapacityProvider, not on Create.
             sys.exit(
-                f"CapacityProvider {status}: "
-                f"{got.get('statusReason') or got.get('statusCode') or 'no reason given'}"
+                f"CapacityProvider {status}: {got.get('statusReason') or got.get('statusCode') or 'no reason given'}"
             )
         time.sleep(5)
     sys.exit("CapacityProvider did not become READY in 5 minutes")
@@ -739,8 +731,7 @@ def create_capacity_provider(agentcore, operator_role_arn: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════
 # 6. The agent runtimes
 # ══════════════════════════════════════════════════════════════════════════
-def create_runtime(agentcore, name: str, artifact: dict, cp_arn: str,
-                   role_arn: str, kind: str) -> dict:
+def create_runtime(agentcore, name: str, artifact: dict, cp_arn: str, role_arn: str, kind: str) -> dict:
     """
     Create one agent runtime bound to the CapacityProvider.
 
@@ -873,9 +864,7 @@ def main() -> None:
     log(f"\n  Config written to {CONFIG_FILE.name}")
     log("\n  Next:  python invoke.py      # invoke both, compare the machines")
     log("         python cleanup.py     # delete everything")
-    log(
-        "\n  No EC2 instances are running yet — the first invoke starts one."
-    )
+    log("\n  No EC2 instances are running yet — the first invoke starts one.")
 
 
 if __name__ == "__main__":
