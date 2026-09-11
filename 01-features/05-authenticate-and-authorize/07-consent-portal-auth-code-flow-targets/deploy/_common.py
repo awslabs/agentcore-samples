@@ -101,6 +101,30 @@ def load_env() -> None:
 
 
 def must_env(name: str) -> str:
+    """Read a required NON-SENSITIVE setting (ids, URLs, audiences, names).
+
+    Secrets go through must_secret_env instead. Keeping the two apart is not
+    cosmetic: when one accessor returns both, every value it yields inherits the
+    "this may be a credential" property, and static analysis then reports
+    ordinary config — a callback URL, say — as a leaked password. Splitting them
+    keeps that signal meaningful.
+    """
+    value = os.environ.get(name)
+    if not value:
+        print(
+            f"ERROR: {name} is not set. Export it or add it to .env (see config.example.env).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return value
+
+
+def must_secret_env(name: str) -> str:
+    """Read a required secret (client secrets, admin tokens).
+
+    Same contract as must_env, deliberately a separate function so the values
+    that must never be printed or logged are visible as such at every call site.
+    """
     value = os.environ.get(name)
     if not value:
         print(
@@ -131,6 +155,13 @@ def save_env(**kwargs: str) -> None:
     for key, value in remaining.items():
         out.append(f"{key}={value}")
     ENV_PATH.write_text("\n".join(out) + "\n")
+    # .env holds client secrets and, for Okta, an admin API token in plaintext.
+    # It is gitignored, but the default umask would still leave it group- and
+    # world-readable, so narrow it to the owner on every write.
+    try:
+        ENV_PATH.chmod(0o600)
+    except OSError:
+        pass  # non-POSIX filesystem; the write already succeeded
     for key, value in kwargs.items():
         os.environ[key] = str(value)
 

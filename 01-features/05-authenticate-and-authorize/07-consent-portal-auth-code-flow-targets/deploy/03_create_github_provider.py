@@ -45,6 +45,7 @@ from _common import (
     github_provider_name,
     load_env,
     must_env,
+    must_secret_env,
     save_env,
     select_idp,
 )
@@ -63,7 +64,7 @@ def main() -> None:
     load_env()
 
     client_id = must_env("GITHUB_CLIENT_ID")
-    client_secret = must_env("GITHUB_CLIENT_SECRET")
+    client_secret = must_secret_env("GITHUB_CLIENT_SECRET")
     name = github_provider_name(idp)
 
     control, _ = control_client()
