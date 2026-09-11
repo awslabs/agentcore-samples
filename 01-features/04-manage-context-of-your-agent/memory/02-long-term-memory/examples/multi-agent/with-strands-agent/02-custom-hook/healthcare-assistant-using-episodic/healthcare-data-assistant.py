@@ -13,7 +13,7 @@
 # | Tutorial type       | Episodic Memory with Multi-Agent Coordination                                    |
 # | Agent type          | Healthcare Assistant System                                                      |
 # | Agentic Framework   | Strands Agents with Memory Hooks                                                 |
-# | LLM model           | Anthropic Claude Sonnet 4                                                        |
+# | LLM model           | Anthropic Claude Opus 4.6                                                        |
 # | Tutorial components | Episodic Memory, Memory Hooks, HealthLake Integration                           |
 # | Example complexity  | Intermediate                                                                     |
 #
@@ -107,7 +107,7 @@ MEMORY_NAME = "healthcare_episodic_memory"
 PATIENT_ID = "b2055b4d-ac17-4d94-8c5b-3395e4c334dd"
 region = "us-east-1"  # Replace with your AWS region
 SESSION_ID = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-MODEL_ID = "global.anthropic.claude-sonnet-4-20250514-v1:0"  # Replace with your Model ID
+MODEL_ID = "global.anthropic.claude-opus-4-6-v1"  # Replace with your Model ID
 
 print("Memory Configuration:")
 print(f"  Memory Name: {MEMORY_NAME}")

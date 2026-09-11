@@ -32,6 +32,7 @@
 
 import time
 import uuid
+from pathlib import Path
 from aws_utils import AWSUtils
 
 # Configure AWS region
@@ -39,7 +40,7 @@ region_name = "us-east-1"  # Change to your preferred region
 aws_utils = AWSUtils(region_name=region_name)
 
 # Read Lambda function code
-with open("lambda_function.py", "r") as f:
+with open(Path(__file__).parent / "lambda_function.py", "r") as f:
     lambda_code = f.read()
 
 

@@ -193,7 +193,7 @@ def get_patient_allergies(patient_id: str = PATIENT_ID) -> dict:
     return query_healthlake('AllergyIntolerance', {'patient': patient_id})
 
 allergy_agent = Agent(
-    model="global.anthropic.claude-sonnet-4-20250514-v1:0",
+    model="global.anthropic.claude-opus-4-6-v1",
     system_prompt="You handle patient allergies. Use get_patient_allergies tool.",
     tools=[get_patient_allergies]
 )
@@ -230,7 +230,7 @@ If you see "MemorySession.add_turns() got an unexpected keyword argument 'branch
 
 ### Model Not Available
 If you see "serviceUnavailableException", ensure:
-- Using global inference profile: `global.anthropic.claude-sonnet-4-20250514-v1:0`
+- Using global inference profile: `global.anthropic.claude-opus-4-6-v1`
 - Or region-specific profile for your region
 
 ### HealthLake Access Denied
