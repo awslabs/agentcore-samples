@@ -31,8 +31,7 @@ import botocore.exceptions
 HERE = pathlib.Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
-import config  # noqa: E402  (top-level module — same folder as this script)
-
+import config
 
 # --------------------------------------------------------------------------
 

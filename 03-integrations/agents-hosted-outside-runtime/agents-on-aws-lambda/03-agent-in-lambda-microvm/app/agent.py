@@ -231,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             result = _run_agent(prompt, session_id)
             self._json(200, result)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.exception("agent invocation failed")
             self._json(500, {"error": type(e).__name__, "detail": str(e)})
 

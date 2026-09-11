@@ -33,8 +33,7 @@ import botocore.exceptions
 HERE = pathlib.Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
-import config  # noqa: E402  (top-level module — same folder as this script)
-
+import config
 
 # --------------------------------------------------------------------------
 
@@ -138,7 +137,7 @@ def _post(endpoint: str, path: str, body: dict[str, Any],
     )
     # The endpoint is served by AWS Lambda's front door with a public cert.
     # Use the default SSL context (verified).
-    with urllib.request.urlopen(req, context=ssl.create_default_context(), timeout=60) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, context=ssl.create_default_context(), timeout=60) as resp:
         data = resp.read().decode("utf-8")
         return resp.status, (json.loads(data) if data else {})
 
@@ -184,7 +183,7 @@ def print_verification_links(microvm_id: str) -> None:
     lg = config.AGENT_LOG_GROUP.replace("/", "$252F")
 
     print("\n\033[1mVerify telemetry landed in AgentCore Observability\033[0m")
-    print(f"  Give it ~1-2 minutes for OTLP to flush, then open:\n")
+    print("  Give it ~1-2 minutes for OTLP to flush, then open:\n")
     print("  1. GenAI Observability dashboard (agent-level view)")
     print(
         f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}"
@@ -206,7 +205,7 @@ def print_verification_links(microvm_id: str) -> None:
         f"aws --region {r} lambda-microvms terminate-microvm "
         f"--microvm-identifier {microvm_id}"
     )
-    print(f"  Or run: python3 cleanup.py")
+    print("  Or run: python3 cleanup.py")
 
 
 # --------------------------------------------------------------------------

@@ -39,8 +39,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-import config  # noqa: E402  (top-level module — same folder as this script)
-
+import config
 
 # --------------------------------------------------------------------------
 # Small logging helpers so the operator can follow along
@@ -361,21 +360,20 @@ def create_or_update_image(code_uri: str, build_role: str) -> str:
     envs = config.otel_env()
     info(f"baking {len(envs)} OTEL env vars into the image")
 
-    kwargs = dict(
-        name=config.IMAGE_NAME,
-        codeArtifact={"uri": code_uri},
-        baseImageArn=config.DEFAULT_BASE_IMAGE_ARN,
-        buildRoleArn=build_role,
-        description="Strands agent + ADOT SDK -> AgentCore Observability",
-        cpuConfigurations=[{"architecture": "ARM_64"}],
-        resources=[{"minimumMemoryInMiB": config.BASELINE_MEMORY_MIB}],
-        environmentVariables=envs,
-        logging={"cloudWatch": {"logGroup": config.BUILD_LOG_GROUP}},
-        # Hooks are ENABLED/DISABLED toggles — the HTTP paths themselves
-        # are fixed by Lambda (/aws/lambda-microvms/runtime/v1/ready and
-        # /validate). The port here is where our app listens for the hook
-        # requests.
-        hooks={
+    # Hooks are ENABLED/DISABLED toggles — the HTTP paths themselves are fixed
+    # by Lambda (/aws/lambda-microvms/runtime/v1/ready and /validate). The
+    # port here is where our app listens for the hook requests.
+    kwargs = {
+        "name": config.IMAGE_NAME,
+        "codeArtifact": {"uri": code_uri},
+        "baseImageArn": config.DEFAULT_BASE_IMAGE_ARN,
+        "buildRoleArn": build_role,
+        "description": "Strands agent + ADOT SDK -> AgentCore Observability",
+        "cpuConfigurations": [{"architecture": "ARM_64"}],
+        "resources": [{"minimumMemoryInMiB": config.BASELINE_MEMORY_MIB}],
+        "environmentVariables": envs,
+        "logging": {"cloudWatch": {"logGroup": config.BUILD_LOG_GROUP}},
+        "hooks": {
             "port": 8080,
             "microvmImageHooks": {
                 "ready": "ENABLED",
@@ -384,8 +382,8 @@ def create_or_update_image(code_uri: str, build_role: str) -> str:
                 "validateTimeoutInSeconds": 120,
             },
         },
-        tags={"project": config.PREFIX},
-    )
+        "tags": {"project": config.PREFIX},
+    }
 
     try:
         r = mvm.create_microvm_image(**kwargs)
@@ -444,7 +442,7 @@ def wait_image(image_id: str) -> None:
 # --------------------------------------------------------------------------
 
 def main() -> None:
-    print(f"\033[1mMicroVM + AgentCore Observability demo — deploy\033[0m")
+    print("\033[1mMicroVM + AgentCore Observability demo — deploy\033[0m")
     print(f"account={config.account_id()}  region={config.REGION}  prefix={config.PREFIX}")
 
     enable_transaction_search()
@@ -458,7 +456,7 @@ def main() -> None:
 
     print("\n\033[1;32mDeploy complete.\033[0m")
     print(f"  image ARN: {image_id}")
-    print(f"  next:      python3 invoke.py")
+    print("  next:      python3 invoke.py")
 
 
 if __name__ == "__main__":
