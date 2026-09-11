@@ -85,6 +85,9 @@ AgentCore identity integrates seamlessly with other AgentCore components:
 | `03-m2m-3lo/` | Combined M2M + Auth Code flows in one runtime agent using the AgentCore CLI; Cognito inbound, GitHub + Google outbound |
 | `04-entra-obo-mcp-runtime/` | Advanced: Entra ID On-Behalf-Of token exchange across two runtimes (Agent + MCP Server); user identity preserved end-to-end |
 | `05-certificate-based-auth/` | Outbound `PRIVATE_KEY_JWT` client authentication (RFC 7523) with KMS-hosted signing keys for Okta and Entra ID; M2M, 3LO, and OBO flows |
+| `06-okta-xaa/` | Okta Cross-App Access: an agent reaches a resource app through Okta's identity-assertion grant |
+| `07-consent-portal-auth-code-flow-targets/` | Managed consent dashboard end-to-end: FastAPI BFF → agent on Runtime → Gateway → GitHub MCP server over the authorization code flow (3LO). Users connect GitHub themselves on the AWS-hosted consent portal (Entra ID or Okta) |
+| `obo-training/` | On-Behalf-Of training curriculum: concept guides plus worked Entra and Okta examples for agent-to-downstream and agent-via-gateway |
 | `okta-auth-three-tier-end-to-end-demo/` | End-to-end Okta OAuth2 three-tier demo: per-tier JWT isolation across User → Runtime → Gateway → MCP Server with RBAC |
 | `auth0-multi-agent-obo/` | Multi-agent RFC 8693 On-Behalf-Of token exchange via Auth0: coordinator mints attenuated tokens per sub-agent rather than forwarding the user JWT |
 
@@ -112,33 +115,42 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 | M2M + 3LO combined | 03-m2m-3lo/ | Single agent with both M2M and Auth Code outbound flows |
 | Entra OBO | 04-entra-obo-mcp-runtime/ | Agent calls MCP server carrying user-delegated Graph token |
 | PRIVATE_KEY_JWT (Okta + Entra) | 05-certificate-based-auth/ | KMS-signed client assertions for outbound M2M, 3LO, and OBO flows; no client secret |
+| Okta Cross-App Access | 06-okta-xaa/ | Agent reaches a resource app via Okta's identity-assertion grant |
+| Consent portal + authorization-code-flow MCP target | 07-consent-portal-auth-code-flow-targets/ | Hosted consent dashboard where end users grant the agent GitHub access out of band |
 | Auth0 OBO (multi-agent) | auth0-multi-agent-obo/ | Coordinator mints scoped tokens per sub-agent using RFC 8693 via Auth0 |
 
 ## Finding Things
 
 **By identity provider:**
 - Cognito → `01-inbound-auth/01-inbound-auth-cognito/`, `03-m2m-3lo/`
-- Microsoft Entra ID → `01-inbound-auth/02-inbound-auth-EntraID/`, `04-entra-obo-mcp-runtime/`, `05-certificate-based-auth/entra/`
-- Okta → `01-inbound-auth/03-inbound-auth-okta/`, `05-certificate-based-auth/okta/`
+- Microsoft Entra ID → `01-inbound-auth/02-inbound-auth-EntraID/`, `04-entra-obo-mcp-runtime/`, `05-certificate-based-auth/entra/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/`
+- Okta → `01-inbound-auth/03-inbound-auth-okta/`, `05-certificate-based-auth/okta/`, `06-okta-xaa/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/`
 - PingFederate → `01-inbound-auth/04-inbound-auth-pingfederate/`
+- Auth0 → `auth0-multi-agent-obo/`
 
 **By external API:**
 - OpenAI → `02-outbound-auth/01-outbound-auth-openai/`
 - Google Calendar → `02-outbound-auth/02-outbound-auth-3lo/`, `03-m2m-3lo/`
-- GitHub → `02-outbound-auth/03-outbound-auth-github/`, `03-m2m-3lo/`
-- Microsoft Graph → `01-inbound-auth/02-inbound-auth-EntraID/` (OneNote), `04-entra-obo-mcp-runtime/`
+- GitHub → `02-outbound-auth/03-outbound-auth-github/` (REST API), `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/` (MCP server via Gateway)
+- Microsoft Graph → `01-inbound-auth/02-inbound-auth-EntraID/` (OneNote), `04-entra-obo-mcp-runtime/`, `obo-training/`
 
 **By deployment method:**
-- AgentCore CLI (`agentcore create/deploy`) → `03-m2m-3lo/`
+- AgentCore CLI (`agentcore create/deploy`) → `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/3-examples/`
 - Python SDK (`boto3` `bedrock-agentcore-control`) → all other folders
 - AWS CDK → `01-inbound-auth/04-inbound-auth-pingfederate/`
+
+**By end-user experience:**
+- Hosted consent dashboard (AWS-managed, no consent UI to build) → `07-consent-portal-auth-code-flow-targets/`
+- Local callback server you run → `02-outbound-auth/02-outbound-auth-3lo/`, `02-outbound-auth/03-outbound-auth-github/`
+- No user interaction (M2M / OBO) → `03-m2m-3lo/`, `04-entra-obo-mcp-runtime/`, `obo-training/`
 
 ## Prerequisites
 
 - Python 3.10+
 - AWS CLI configured with credentials
-- Node.js 20+ and `@aws/agentcore` npm package (for `03-m2m-3lo/` only)
-- AWS CDK (`npm install -g aws-cdk`) for `04-inbound-auth-pingfederate/` only
+- Node.js 20+ and `@aws/agentcore` npm package (for `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/`, and `obo-training/3-examples/`)
+- AWS CDK (`npm install -g aws-cdk`) for `04-inbound-auth-pingfederate/`, and for any folder deployed with the AgentCore CLI
+- boto3/botocore **≥ 1.43.88** for `07-consent-portal-auth-code-flow-targets/` — earlier releases have no consent-portal operations in the `bedrock-agentcore-control` model
 - Bedrock model access: enable `claude-haiku-4-5` and/or `claude-sonnet-4-5` in the Bedrock console
 - identity provider accounts as needed (see individual sub-folder READMEs)
 
@@ -196,6 +208,15 @@ python setup_cognito.py
 cd 04-entra-obo-mcp-runtime/
 pip install -r requirements.txt
 python entra_obo_mcp_runtime.py
+
+# Consent portal + GitHub MCP server (multi-step; see its README)
+cd 07-consent-portal-auth-code-flow-targets/
+cp config.example.env .env
+pip install -r requirements.txt
+python deploy/00_create_entra_apps.py     # or 00_create_okta_apps.py
+python deploy/01_create_gateway.py --entra
+python deploy/02_create_portal.py --entra
+# ... see 07-consent-portal-auth-code-flow-targets/README.md for the remaining steps
 
 # PRIVATE_KEY_JWT — Okta (M2M + OBO)
 cd 05-certificate-based-auth/okta/
