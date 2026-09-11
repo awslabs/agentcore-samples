@@ -6,7 +6,14 @@ import json
 import os
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from openai_payment_agent import build_agent, build_model, payment_region, run_agent
+from openai_payment_agent import (
+    DEFAULT_MODEL_ID,
+    DEFAULT_MODEL_REGION,
+    build_agent,
+    build_model,
+    payment_region,
+    run_agent,
+)
 from openai_x402_tool import build_x402_fetch
 
 app = BedrockAgentCoreApp()
@@ -49,8 +56,8 @@ def invoke(payload: dict) -> dict:
     )
     agent = build_agent(
         build_model(
-            os.getenv("BEDROCK_OPENAI_MODEL_REGION", "us-east-1"),
-            os.getenv("BEDROCK_OPENAI_MODEL_ID", "openai.gpt-5.5"),
+            os.getenv("BEDROCK_OPENAI_MODEL_REGION", DEFAULT_MODEL_REGION),
+            os.getenv("BEDROCK_OPENAI_MODEL_ID", DEFAULT_MODEL_ID),
         ),
         x402_fetch,
     )

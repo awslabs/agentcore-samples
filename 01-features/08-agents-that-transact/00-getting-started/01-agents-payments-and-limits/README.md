@@ -145,8 +145,25 @@ python openai_payment_agent.py
 
 This variant creates a $1.00 session, exposes `openai_x402_tool.py` through the OpenAI Agents SDK's
 `function_tool()`, and asks GPT-5.5 on Amazon Bedrock to summarize the paid market-news endpoint.
-The helper validates the URL, handles the x402 challenge, generates the payment proof, and retries
-with a fresh HTTP client. A successful run reports `payment_made: true` and HTTP 200.
+The helper accepts HTTPS GET requests to public addresses, pins the validated IP for both requests
+while preserving TLS hostname verification, and disables redirects and environment proxies.
+It handles the x402 challenge, generates **one payment proof**, and replays the GET once with a
+fresh HTTP client. A successful run reports `payment_made: true` and HTTP 200.
+
+There is no payment retry loop: a repeated 402, merchant error, or lost reply must not create another
+payment automatically. `payment_made: null` means the outcome is unknown; inspect the session's spend
+before deciding whether to try again. A budget rejection reports `payment_made: false`. The former
+`X402_MAX_PAYMENT_ATTEMPTS` setting is no longer used.
+
+The OpenAI SDK's default trace exporter is disabled because this example authenticates only to
+Bedrock. AgentCore's separately configured CloudWatch/OpenTelemetry observability remains available.
+
+To run the offline regression tests after installing this tutorial's dependencies:
+
+```bash
+pip install pytest
+python -m pytest tests/test_openai_payments.py -q
+```
 
 ## Try different budgets (payment limits)
 

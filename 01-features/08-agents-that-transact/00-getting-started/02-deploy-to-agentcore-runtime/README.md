@@ -278,7 +278,7 @@ uv add \
   "aws-bedrock-token-generator>=1.1.0" \
   "bedrock-agentcore>=1.18.0" \
   "botocore[crt]>=1.35.0" \
-  "httpx>=0.27.0" \
+  "httpx>=0.27.1" \
   "openai-agents>=0.19.1" \
   "python-dotenv>=1.0.0"
 cd ../../..
@@ -332,8 +332,13 @@ agentcore invoke \
   --json '{"prompt":"Access this paid endpoint and summarize the result: https://x402-test.genesisblock.ai/api/market-news. Report whether payment succeeded.","payment_manager_arn":"<MANAGER_ARN>","payment_session_id":"<SESSION_ID>","payment_instrument_id":"<INSTRUMENT_ID>","user_id":"<USER_ID>"}'
 ```
 
-A successful response reports HTTP 200 and `payment_made: true`. The initial HTTP 402 in tracing is
-the expected x402 challenge.
+A successful response contains the agent's final answer, reporting HTTP 200 and `payment_made: true`.
+The initial HTTP 402 is the expected x402 challenge. The tool generates one proof and replays the GET
+once; a repeated 402 or merchant failure reports an unknown payment outcome (`payment_made: null`)
+without automatically making another payment. Inspect the session before retrying.
+
+The default OpenAI trace exporter is disabled for this Bedrock-only example. Runtime
+CloudWatch/OpenTelemetry instrumentation is configured separately.
 
 ## What the agent does
 

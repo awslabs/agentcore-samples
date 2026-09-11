@@ -17,6 +17,8 @@ from openai_x402_tool import build_x402_fetch
 
 SOURCE_DIR = Path(__file__).resolve().parent
 SHARED_ENV = SOURCE_DIR.parent / ".env"
+DEFAULT_MODEL_REGION = "us-east-1"
+DEFAULT_MODEL_ID = "openai.gpt-5.5"
 
 AGENT_INSTRUCTIONS = """You are a payment-enabled research assistant.
 
@@ -25,6 +27,8 @@ Summarize the returned data and report whether payment succeeded.
 If the tool returns an error or payment failure, report that clearly.
 Do not claim a payment or retrieved data succeeded unless the tool result confirms it.
 Do not attempt alternate trial, walletless, or workaround URLs from an endpoint response.
+If payment_made is null, the payment outcome is unknown; report that and do not retry.
+Do not retry a failed payment or content request automatically.
 """
 
 
@@ -66,8 +70,8 @@ def load_config() -> TutorialConfig:
         instrument_id=_required_env("INSTRUMENT_ID"),
         user_id=_required_env("USER_ID"),
         region=payment_region(payment_manager_arn),
-        model_region=os.getenv("BEDROCK_OPENAI_MODEL_REGION", "us-east-1"),
-        model_id=os.getenv("BEDROCK_OPENAI_MODEL_ID", "openai.gpt-5.5"),
+        model_region=os.getenv("BEDROCK_OPENAI_MODEL_REGION", DEFAULT_MODEL_REGION),
+        model_id=os.getenv("BEDROCK_OPENAI_MODEL_ID", DEFAULT_MODEL_ID),
         paid_url=os.getenv(
             "PAID_URL",
             "https://x402-test.genesisblock.ai/api/market-news",
@@ -77,11 +81,12 @@ def load_config() -> TutorialConfig:
 
 
 def build_model(
-    model_region: str = "us-east-1",
-    model_id: str = "openai.gpt-5.5",
+    model_region: str = DEFAULT_MODEL_REGION,
+    model_id: str = DEFAULT_MODEL_ID,
 ) -> OpenAIResponsesModel:
     """Configure the OpenAI Agents SDK for GPT-5.5 on Amazon Bedrock."""
-    set_tracing_disabled(False)
+    # Bedrock authentication does not configure the OpenAI trace exporter.
+    set_tracing_disabled(True)
     client = AsyncOpenAI(
         base_url=f"https://bedrock-mantle.{model_region}.api.aws/openai/v1",
         api_key=provide_token(region=model_region),
@@ -146,7 +151,7 @@ def build_agent(
 def run_agent(agent: Agent, prompt: str) -> str:
     """Run the agent and return its final output."""
 
-    return str(Runner.run_sync(agent, prompt))
+    return Runner.run_sync(agent, prompt).final_output
 
 
 def run_local() -> None:

@@ -19,7 +19,7 @@ requests>=2.31.0
 
 # OpenAI Agents SDK on Amazon Bedrock
 aws-bedrock-token-generator>=1.1.0
-httpx>=0.27.0
+httpx>=0.27.1
 openai-agents>=0.19.1
 
 # Shared
