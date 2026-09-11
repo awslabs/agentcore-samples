@@ -10,9 +10,9 @@ the MCP tools/list endpoint.
 
 Environment variables:
     BEDROCK_MODEL_ID  — (optional) Bedrock inference profile ID or ARN;
-                        must be a cross-region inference profile (e.g. us.*, eu.*, ap.*)
+                        must be a cross-region inference profile (e.g. global.*, us.*, eu.*, ap.*)
                         or an inference profile ARN — on-demand model IDs are not supported.
-                        Defaults to us.anthropic.claude-sonnet-4-5-20250514-v1:0
+                        Defaults to global.anthropic.claude-sonnet-4-6
     AWS_DEFAULT_REGION — AWS region (default: us-east-1)
 """
 
