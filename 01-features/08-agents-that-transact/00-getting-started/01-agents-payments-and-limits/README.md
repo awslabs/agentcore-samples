@@ -4,13 +4,13 @@
 |:--------------------|:-------------------------------------------------------------------|
 | Tutorial type       | Conversational                                                     |
 | Agent type          | Single, payment-enabled                                            |
-| Frameworks          | Strands Agents, LangGraph                                          |
-| LLM model           | Anthropic Claude Sonnet 4.6 (`us.anthropic.claude-sonnet-4-6`)     |
-| Components          | `PaymentManager`, `AgentCorePaymentsPlugin`, x402 endpoints, sessions |
+| Frameworks          | Strands Agents, LangGraph, OpenAI Agents SDK                       |
+| LLM models          | Anthropic Claude Sonnet 4.6 and OpenAI GPT-5.5 on Amazon Bedrock   |
+| Components          | `PaymentManager`, payment integrations, x402 endpoints, sessions   |
 | Complexity          | Easy                                                               |
 
 > **Reads** the shared `.env` from Tutorial 00 (`PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`;
-> `NETWORK` optional). **Does** run two local agents that each create a per-run spending session
+> `NETWORK` optional). **Does** run local agents that create a per-run spending session
 > in-code with the SDK and pay x402 endpoints automatically under a budget — nothing new is deployed.
 > → [How the pieces fit together](../README.md#cli-vs-sdk)
 
@@ -19,7 +19,7 @@
 The shared payment stack — payment manager, connector, IAM roles, and a funded wallet (instrument) —
 is already provisioned from [Tutorial 00](../00-setup-agentcore-payments/). Here your agent code
 uses the AgentCore SDK to open a **spending session** (a per-request budget you set per user) and pay
-each HTTP 402 automatically. You run two agents that both call x402-protected endpoints under a
+each HTTP 402 automatically. You run three agents that call x402-protected endpoints under a
 `maxSpendAmount` budget:
 
 - **Strands** — `AgentCorePaymentsPlugin` intercepts 402 responses from the `http_request` tool and
@@ -27,8 +27,11 @@ each HTTP 402 automatically. You run two agents that both call x402-protected en
 - **LangGraph** — `AgentCorePaymentsMiddleware` intercepts a 402, calls
   `PaymentManager.generate_payment_header()`, and retries with the proof header. The LLM never sees
   the 402.
+- **OpenAI Agents SDK** — a small framework-neutral `x402_fetch` function tool handles the same
+  402 → payment proof → retry flow while GPT-5.5 runs through Amazon Bedrock's OpenAI-compatible
+  endpoint.
 
-Both scripts read the same `PaymentManager` ARN and instrument from `.env`, and work with either
+All three scripts read the same `PaymentManager` ARN and instrument from `.env`, and work with either
 wallet provider (Coinbase CDP or Stripe/Privy) and either network (Ethereum Base Sepolia or Solana
 Devnet) — the only thing that changes is the instrument ID from Tutorial 00.
 
@@ -83,6 +86,8 @@ sees the final `200`.
   ([faucet.circle.com](https://faucet.circle.com/)) and have delegated signing enabled (done in
   Tutorial 00). Without it, the 402 payment step fails.
 - **Python 3.10+** and AWS credentials configured (`aws sts get-caller-identity`).
+- **OpenAI GPT-5.5 access on Amazon Bedrock** for the optional OpenAI example. It defaults to
+  `us-east-1` and uses AWS credentials, not an OpenAI API key.
 - **Python deps:**
   ```bash
   pip install -r requirements.txt
@@ -132,6 +137,34 @@ so the session is created lazily on the first 402, capped at `auto_session_budge
 settling each 402 automatically.
 (This is the flow in the **LangGraph Payment Flow** diagram under [Architecture](#architecture) above.)
 
+### Step 4 — Run the OpenAI Agents SDK agent
+
+```bash
+python openai_payment_agent.py
+```
+
+This variant creates a $1.00 session, exposes `openai_x402_tool.py` through the OpenAI Agents SDK's
+`function_tool()`, and asks GPT-5.5 on Amazon Bedrock to summarize the paid market-news endpoint.
+The helper accepts HTTPS GET requests to public addresses, pins the validated IP for both requests
+while preserving TLS hostname verification, and disables redirects and environment proxies.
+It handles the x402 challenge, generates **one payment proof**, and replays the GET once with a
+fresh HTTP client. A successful run reports `payment_made: true` and HTTP 200.
+
+There is no payment retry loop: a repeated 402, merchant error, or lost reply must not create another
+payment automatically. `payment_made: null` means the outcome is unknown; inspect the session's spend
+before deciding whether to try again. A budget rejection reports `payment_made: false`. The former
+`X402_MAX_PAYMENT_ATTEMPTS` setting is no longer used.
+
+The OpenAI SDK's default trace exporter is disabled because this example authenticates only to
+Bedrock. AgentCore's separately configured CloudWatch/OpenTelemetry observability remains available.
+
+To run the offline regression tests after installing this tutorial's dependencies:
+
+```bash
+pip install pytest
+python -m pytest tests/test_openai_payments.py -q
+```
+
 ## Try different budgets (payment limits)
 
 Budget enforcement lives on the session. Change the budget by editing the constant near the top of
@@ -145,13 +178,19 @@ SESSION_BUDGET = {"maxSpendAmount": {"value": "0.0001", "currency": "USD"}}
 SESSION_BUDGET_USD = "0.0001"
 ```
 
+```bash
+# OpenAI — override without editing source
+PAYMENT_SESSION_BUDGET=0.0001 python openai_payment_agent.py
+```
+
 Re-run the agent — the payment is rejected because the $0.0001 budget is smaller than the API cost.
 Enforcement is structural (service-level), not agent logic.
 
-The two scripts show the two ways to set the budget. **LangGraph** takes the minimal path: the
+The examples show two ways to set the budget. **LangGraph** takes the minimal path: the
 middleware creates the session on the first 402 (`auto_session=True`), so `auto_session_budget` — fed
 from `SESSION_BUDGET_USD` — is the only budget knob, and there is no session ID to manage. **Strands**
-opens the session in-code with the SDK, which gives you the session handle to inspect or reuse:
+and **OpenAI** open the session in-code with the SDK, which gives you the session handle to inspect
+or reuse:
 
 ```python
 sess = manager.create_payment_session(
@@ -165,20 +204,21 @@ sess = manager.get_payment_session(user_id=USER_ID, payment_session_id=SESSION_I
 print(sess["availableLimits"]["availableSpendAmount"])
 ```
 
-This is the workshop's division of labor: infrastructure is provisioned once with the agentcore CLI,
+This is the workshop's division of labor: infrastructure is provisioned once with the AgentCore CLI,
 the per-user session is created either in-code with the SDK or automatically by the middleware, and
-the agent's `AgentCorePaymentsPlugin` / middleware handles the pay-and-retry at request time.
+the framework integration or x402 function tool handles the pay-and-retry at request time.
 
 ## What the agents do
 
 Each script's default run does the **happy path** — one paid call under a $1.00 session. Strands calls
-the weather endpoint; LangGraph calls `/api/market-news`. The remaining scenarios below are exercised
-by changing the budget constant (`SESSION_BUDGET` in Strands, `SESSION_BUDGET_USD` in LangGraph) and
-re-running, as described in [Try different budgets](#try-different-budgets-payment-limits) above:
+the weather endpoint; LangGraph and OpenAI call `/api/market-news`. Exercise the remaining scenarios
+by changing the relevant budget setting and re-running, as described in
+[Try different budgets](#try-different-budgets-payment-limits) above:
 
 | Scenario | How to run it | What it shows |
 |----------|---------------|---------------|
 | Happy path | Default run ($1.00 session) | The 402 → sign → retry → 200 flow, fully automatic |
+| OpenAI Agents SDK | `python openai_payment_agent.py` | Framework-neutral x402 tool with GPT-5.5 on Amazon Bedrock |
 | Budget session | Set the budget to `$0.50`, re-run | Remaining spend after a paid call (`get_payment_session`) |
 | Budget exceeded | Set the budget to `$0.0001` (below API cost), re-run | ProcessPayment rejects the payment at the infra level |
 | Built-in tools (Strands) | Default run — agent answers "how much budget is left?" | Plugin tools `get_payment_session` / `get_payment_instrument` / `list_payment_instruments` |
@@ -237,6 +277,7 @@ print(bal["tokenBalance"]["amount"] / 1_000_000, "USDC")   # micro-USDC → USDC
 | Budget exceeded immediately | Session budget below API cost, or wallet has insufficient USDC | Expected for the $0.0001 demo; otherwise fund the wallet at [faucet.circle.com](https://faucet.circle.com/) |
 | `invalid_exact_evm_transaction_failed` / settlement failure | Transient on-chain failure (e.g. back-to-back payments) | Retry — funds are not debited on a failed attempt |
 | `agentcore: command not found` | CLI not installed (only needed for the inspect step) | `npm install -g @aws/agentcore` |
+| OpenAI model request is denied | GPT-5.5 is unavailable in the selected region or AWS credentials are expired | Refresh AWS authentication and check `BEDROCK_OPENAI_MODEL_REGION` / `BEDROCK_OPENAI_MODEL_ID` |
 
 ## Clean Up
 
@@ -255,7 +296,7 @@ agentcore remove all -y    # removes the scaffolded runtime project
 
 ## Next steps
 
-- **[Tutorial 02](../02-deploy-to-agentcore-runtime/)** — deploy this agent to AgentCore Runtime with
+- **[Tutorial 02](../02-deploy-to-agentcore-runtime/)** — deploy the Strands or OpenAI agent to AgentCore Runtime with
   role separation using the AgentCore CLI.
 - **[Tutorial 03](../03-user-onboarding-wallet-funding/)** — per-user wallet onboarding, funding,
   delegation, and balance checks.

@@ -4,16 +4,22 @@
 |:--------------------|:-----------------------------------------------------------------------------|
 | Tutorial type       | Runtime deployment                                                          |
 | Agent type          | Single, payment-enabled                                                     |
-| Agentic Framework   | Strands Agents                                                              |
-| LLM model           | Anthropic Claude Sonnet 4.6 (`us.anthropic.claude-sonnet-4-6`)              |
-| Components          | AgentCore CLI (`create` / `deploy` / `status` / `invoke` / `logs` / `remove`), AgentCore Runtime, `AgentCorePaymentsPlugin`, AgentCore SDK `PaymentManager` (`create_payment_session` / `get_payment_session`) |
+| Agentic Frameworks  | Strands Agents and OpenAI Agents SDK                                        |
+| LLM models          | Anthropic Claude Sonnet 4.6 and OpenAI GPT-5.5 on Amazon Bedrock             |
+| Components          | AgentCore CLI, AgentCore Runtime, payment plugin/function tool, `PaymentManager` |
 | Example complexity  | Intermediate                                                               |
 
-> **Reads** `PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`, `AWS_REGION` from the shared `.env`. **Does** deploy `payment_agent.py` to AgentCore Runtime with the CLI, mint a budgeted session with the AgentCore SDK `PaymentManager`, and invoke the deployed agent over HTTPS — writing `AGENT_RUNTIME_ARN` back to `.env`. → [How the pieces fit together](../README.md#cli-vs-sdk)
+> **Reads** `PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`, `AWS_REGION` from the shared `.env`.
+> **Does** deploy either the Strands or OpenAI agent from Tutorial 01 to AgentCore Runtime, mint a
+> budgeted session with `PaymentManager`, and invoke the deployed agent over HTTPS.
+> → [How the pieces fit together](../README.md#cli-vs-sdk)
 
 ## Overview
 
-Tutorial 01 ran a payment-enabled Strands agent locally. Here you deploy the **same agent** to **AgentCore Runtime** with the **AgentCore CLI** so it can be invoked over HTTPS with SigV4 auth from any AWS-authenticated client. You use two complementary tools: the **AgentCore CLI** provisions and runs the runtime (`agentcore create` → `deploy` → `invoke` → `logs`), and the **AgentCore SDK** `PaymentManager` (`manager.create_payment_session(...)`) mints each request's budgeted payment session before you invoke. The Payment Manager, connector, and wallet instrument already exist from Tutorial 00; this tutorial reads their IDs from the shared `.env` and reuses them.
+Tutorial 01 ran payment-enabled agents locally. Here you deploy either the **Strands** agent or the
+**OpenAI Agents SDK** agent to **AgentCore Runtime** with the **AgentCore CLI**. The CLI provisions
+and invokes the runtime; the SDK creates each request's budgeted payment session. Both variants reuse
+the Payment Manager, connector, and wallet instrument from Tutorial 00.
 
 The deployed agent runs under its own execution role. Its `AgentCorePaymentsPlugin` intercepts HTTP 402 responses and calls `ProcessPayment` within the session budget, so the LLM never calls payment APIs directly. All payment context (manager ARN, session, instrument, user) arrives in the invocation payload, keeping the agent stateless — the same deployed binary can serve different users with different budgets.
 
@@ -46,6 +52,10 @@ App Backend                          AgentCore Runtime
 2. **Payload-driven config** — the agent reads all payment context (`payment_manager_arn`, `user_id`, `payment_session_id`, `payment_instrument_id`) from the invocation payload. This keeps the agent stateless.
 3. **`AgentCorePaymentsPlugin`** — built per request from the payload context (network preferences `eip155:84532` / `base-sepolia`); it intercepts HTTP 402 responses and calls `ProcessPayment` automatically within the session budget.
 
+The OpenAI variant uses the same payload contract. Its thin
+`openai_payment_runtime.py` entrypoint reuses Tutorial 01's OpenAI agent and framework-neutral
+`x402_fetch` helper, while GPT-5.5 is called through Amazon Bedrock's OpenAI-compatible endpoint.
+
 ## Prerequisites
 
 - **Tutorial 00 completed** — the shared `.env` (one directory up, `00-getting-started/.env`) is populated with `PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`, `AWS_REGION`, etc.
@@ -54,6 +64,7 @@ App Backend                          AgentCore Runtime
 - **AgentCore CLI** (Node.js 20+): `npm install -g @aws/agentcore`
 - **AWS CDK** (used by `agentcore deploy`): `npm install -g aws-cdk`
 - **Python 3.10+** and AWS CLI configured (`aws sts get-caller-identity`).
+- **OpenAI GPT-5.5 access on Amazon Bedrock** if you deploy the OpenAI variant.
 
 ```bash
 pip install -r requirements.txt
@@ -129,8 +140,7 @@ agentcore status
 Tutorial 00 already provisioned the Payment Manager and connector, so this project deploys a plain runtime. After the deploy, attach the payment data-plane permissions the agent needs at request time — `ProcessPayment`, `GetPaymentInstrument`, and `GetPaymentSession` — to the auto-created execution role. Find the role name in the `agentcore status` output (it contains `PaymentAgent` and `Execution`), then attach an inline policy scoped to your payment manager:
 
 ```bash
-# Replace <EXECUTION_ROLE_NAME> with the PaymentAgent execution role from `agentcore status`,
-# and <REGION>/<ACCOUNT_ID> with your values.
+# Replace <EXECUTION_ROLE_NAME> and <PAYMENT_MANAGER_ARN> with your values.
 aws iam put-role-policy \
   --role-name <EXECUTION_ROLE_NAME> \
   --policy-name PaymentDataPlaneAccess \
@@ -143,7 +153,10 @@ aws iam put-role-policy \
         "bedrock-agentcore:GetPaymentInstrument",
         "bedrock-agentcore:GetPaymentSession"
       ],
-      "Resource": "arn:aws:bedrock-agentcore:<REGION>:<ACCOUNT_ID>:payment-manager/*"
+      "Resource": [
+        "<PAYMENT_MANAGER_ARN>",
+        "<PAYMENT_MANAGER_ARN>/*"
+      ]
     }]
   }'
 ```
@@ -228,9 +241,115 @@ print("Available budget:", session["availableLimits"]["availableSpendAmount"])
 python check_spend.py "$SESSION_ID"
 ```
 
+## OpenAI Agents SDK variant
+
+The OpenAI path follows the same role-separated design: a trusted caller creates the bounded
+session, and the runtime can only use that existing session.
+
+### 1 — Scaffold and copy the three small source files
+
+Run from this tutorial directory:
+
+```bash
+agentcore create \
+  --project-name OpenAIPaymentAgent \
+  --name OpenAIPaymentAgent \
+  --framework Strands \
+  --model-provider Bedrock \
+  --memory none \
+  --protocol HTTP
+
+cp openai_payment_runtime.py OpenAIPaymentAgent/app/OpenAIPaymentAgent/main.py
+cp ../01-agents-payments-and-limits/openai_payment_agent.py \
+  OpenAIPaymentAgent/app/OpenAIPaymentAgent/openai_payment_agent.py
+cp ../01-agents-payments-and-limits/openai_x402_tool.py \
+  OpenAIPaymentAgent/app/OpenAIPaymentAgent/openai_x402_tool.py
+```
+
+AgentCore CLI 0.22 cannot scaffold the `OpenAIAgents` framework with the Bedrock model provider.
+The Strands selection creates the standard Python/Bedrock Runtime shell; the copied entrypoint
+replaces the generated agent implementation with the OpenAI Agents SDK implementation.
+
+Add the OpenAI dependencies to the generated app:
+
+```bash
+cd OpenAIPaymentAgent/app/OpenAIPaymentAgent
+uv add \
+  "aws-bedrock-token-generator>=1.1.0" \
+  "bedrock-agentcore>=1.18.0" \
+  "botocore[crt]>=1.35.0" \
+  "httpx>=0.27.1" \
+  "openai-agents>=0.19.1" \
+  "python-dotenv>=1.0.0"
+cd ../../..
+```
+
+### 2 — Validate, deploy, and grant runtime access
+
+```bash
+cd OpenAIPaymentAgent
+agentcore validate
+agentcore deploy -y
+agentcore status
+```
+
+Attach the payment policy from Step 5 to the `OpenAIPaymentAgent` execution role. The OpenAI model
+endpoint also needs these two Bedrock Mantle actions:
+
+```bash
+aws iam put-role-policy \
+  --role-name <OPENAI_EXECUTION_ROLE_NAME> \
+  --policy-name OpenAIBedrockAccess \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "CreateInference",
+        "Effect": "Allow",
+        "Action": "bedrock-mantle:CreateInference",
+        "Resource": "arn:aws:bedrock-mantle:<REGION>:<ACCOUNT_ID>:project/default"
+      },
+      {
+        "Sid": "UseBearerToken",
+        "Effect": "Allow",
+        "Action": "bedrock-mantle:CallWithBearerToken",
+        "Resource": "*"
+      }
+    ]
+  }'
+```
+
+`CallWithBearerToken` does not support resource-level scoping, so its wildcard resource is required.
+Neither policy grants `CreatePaymentSession`; session creation remains with the caller.
+
+### 3 — Invoke the runtime
+
+Create a session with Step 6, then invoke from the scaffolded project:
+
+```bash
+agentcore invoke \
+  --runtime OpenAIPaymentAgent \
+  --json '{"prompt":"Access this paid endpoint and summarize the result: https://x402-test.genesisblock.ai/api/market-news. Report whether payment succeeded.","payment_manager_arn":"<MANAGER_ARN>","payment_session_id":"<SESSION_ID>","payment_instrument_id":"<INSTRUMENT_ID>","user_id":"<USER_ID>"}'
+```
+
+A successful response contains the agent's final answer, reporting HTTP 200 and `payment_made: true`.
+The initial HTTP 402 is the expected x402 challenge. The tool generates one proof and replays the GET
+once; a repeated 402 or merchant failure reports an unknown payment outcome (`payment_made: null`)
+without automatically making another payment. Inspect the session before retrying.
+
+The default OpenAI trace exporter is disabled for this Bedrock-only example. Runtime
+CloudWatch/OpenTelemetry instrumentation is configured separately.
+
 ## What the agent does
 
-The agent calls the paid weather endpoint with `http_request`. The endpoint returns HTTP 402; the `AgentCorePaymentsPlugin` intercepts it, settles the payment via `ProcessPayment` against the instrument within the session budget, retries the request, and returns the weather data plus the cost. The agent's scope is `ProcessPayment` only — it spends within the session budget the backend set, and it does not create sessions, override the budget, or provision wallets.
+The agent calls the paid weather endpoint with `http_request`. The endpoint returns HTTP 402; the
+`AgentCorePaymentsPlugin` intercepts it, settles the payment against the instrument within the
+session budget, retries the request, and returns the weather data plus the cost. Its payment policy
+can process payments and read the supplied session/instrument, but cannot create sessions, override
+the budget, or provision wallets.
+
+The OpenAI variant follows the same flow through its `x402_fetch` function tool and calls GPT-5.5
+through Amazon Bedrock rather than using an OpenAI API key.
 
 The full request path — invoke → 402 → `ProcessPayment` → retry → `200` + data — looks like this:
 
@@ -265,6 +384,7 @@ CloudWatch GenAI observability dashboard: `https://<region>.console.aws.amazon.c
 | Deploy fails with CDK bootstrap error | Account/region not bootstrapped | `cdk bootstrap aws://<account-id>/<region>` |
 | `Missing required fields in payload` | Payload missing one of `payment_manager_arn`, `user_id`, `payment_session_id`, `payment_instrument_id` | Include all four fields in the invoke JSON (this agent is payload-driven) |
 | Access-denied on `ProcessPayment` after deploy | Execution role lacks payment data-plane permissions | Attach `ProcessPayment`/`GetPaymentInstrument`/`GetPaymentSession` to the execution role with the `aws iam put-role-policy` command in Step 5 |
+| Access-denied on `CreateInference` or `CallWithBearerToken` | OpenAI runtime role lacks Bedrock Mantle access | Attach the OpenAI-only policy from the OpenAI variant section |
 | `Instrument not found` at invoke | `user_id` doesn't match the instrument's owner | Use the exact `USER_ID` from Tutorial 00's `.env` |
 | `Delegated signing grant is not active` | Wallet consent not completed | Complete the funding/delegation step from Tutorial 00 / 03 |
 
@@ -273,7 +393,7 @@ CloudWatch GenAI observability dashboard: `https://<region>.console.aws.amazon.c
 > **Warning:** Cleanup is irreversible.
 
 ```bash
-cd PaymentAgent
+cd PaymentAgent  # or OpenAIPaymentAgent
 agentcore remove all -y
 ```
 

@@ -63,8 +63,8 @@ Run Tutorial 00 first; then 01–07 and 09 in any order. Each folder's README op
 | # | Folder | What you build | Provisioning |
 |---|--------|----------------|:------------:|
 | 00 | [`00-setup-agentcore-payments/`](00-setup-agentcore-payments/) | Payment manager, connector, IAM roles (CLI) + wallet & session (SDK) | CLI + SDK |
-| 01 | [`01-agents-payments-and-limits/`](01-agents-payments-and-limits/) | Strands & LangGraph agents that pay x402 endpoints with budget limits | SDK |
-| 02 | [`02-deploy-to-agentcore-runtime/`](02-deploy-to-agentcore-runtime/) | Deploy a payment agent to AgentCore Runtime | CLI |
+| 01 | [`01-agents-payments-and-limits/`](01-agents-payments-and-limits/) | Strands, LangGraph, and OpenAI agents that pay x402 endpoints with budget limits | SDK |
+| 02 | [`02-deploy-to-agentcore-runtime/`](02-deploy-to-agentcore-runtime/) | Deploy Strands or OpenAI payment agents to AgentCore Runtime | CLI |
 | 03 | [`03-user-onboarding-wallet-funding/`](03-user-onboarding-wallet-funding/) | Per-user wallet onboarding, funding, delegation, balances | SDK |
 | 04 | [`04-agent-with-coinbase-bazaar-via-gateway/`](04-agent-with-coinbase-bazaar-via-gateway/) | Discover 10,000+ paid MCP tools via AgentCore Gateway | CLI + SDK |
 | 05 | [`05-agent-with-browser-tool-pay-for-content/`](05-agent-with-browser-tool-pay-for-content/) | Pay 402 paywalls inside a browser session | SDK |
@@ -82,6 +82,7 @@ MPP Tutorial is coming soon !
 - **Paying for web/article content?** → 05 (Browser).
 - **Personalized agentic payments with memory?** → 06 (Memory).
 - **Several agents with independent budgets?** → 07 (needs multi-provider setup).
+- **Using the OpenAI Agents SDK?** → 01 locally, then 02 to deploy.
 - **Price not known until the work is done?** → 09 (`upto`, real funds on mainnet).
 
 ## Shared files
