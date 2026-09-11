@@ -127,7 +127,7 @@ This happens even though the harness has no tools configured. The demo works aro
 non-empty allow-list that matches no real tool — read it as "allow no tools":
 
 ```bash
-agentcore invoke --harness <name> --allowed-tools "none" --prompt "..."
+agentcore invoke --harness <name> --session-id "$(uuidgen)" --allowed-tools "none" "..."
 ```
 
 That makes the runtime forward zero tools, so the request is accepted. This is a temporary

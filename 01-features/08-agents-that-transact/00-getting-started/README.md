@@ -33,7 +33,7 @@ the SDK to build paying agents on top of it.**
 
 ## Start here
 
-Start with Tutorial 00; then work through 01–07 (in order, or dip into any that interests you — each
+Start with Tutorial 00; then work through 01–09 (in order, or dip into any that interests you — each
 stands alone). Each folder's `README.md` is a self-contained walkthrough — you run the `agentcore`
 commands and Python snippets yourself and learn each piece as you go.
 

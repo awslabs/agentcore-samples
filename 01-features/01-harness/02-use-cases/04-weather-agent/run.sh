@@ -6,7 +6,11 @@
 #   ./run.sh              Full demo (gateway + guardrail + agent + observability + evals)
 #   ./run.sh --fast       Skip evals (no 90s wait)
 #   ./run.sh --keep       Keep AWS resources after demo (for console inspection)
-#   ./run.sh --cleanup    Delete any leftover resources from a previous --keep run
+#
+# The demo cleans up after itself unless you pass --keep. This standalone script
+# does not persist resource IDs, so there is no "cleanup-only" mode here: if you
+# used --keep, delete the printed Harness/Gateway/Guardrail IDs from the console,
+# or use the web-app flow (./start.sh) whose ./cleanup.sh tears down its resources.
 #
 
 set -e
@@ -33,15 +37,18 @@ for arg in "$@"; do
     case "$arg" in
         --fast)     EXTRA_FLAGS="$EXTRA_FLAGS --skip-evals" ;;
         --keep)     EXTRA_FLAGS="$EXTRA_FLAGS --skip-cleanup" ;;
-        --cleanup)  EXTRA_FLAGS="--cleanup-only" ;;
         --help|-h)
             echo "Usage: ./run.sh [OPTIONS]"
             echo ""
             echo "Options:"
             echo "  --fast     Skip evaluations (saves ~90 seconds)"
             echo "  --keep     Keep AWS resources after demo (inspect in console)"
-            echo "  --cleanup  Delete leftover resources from a previous --keep run"
             echo "  --help     Show this help"
+            echo ""
+            echo "This standalone demo cleans up after itself unless --keep is set."
+            echo "It does not persist resource IDs, so there is no cleanup-only mode:"
+            echo "after --keep, delete the printed IDs from the console. For the web-app"
+            echo "flow, ./start.sh provisions and ./cleanup.sh tears down its resources."
             echo ""
             echo "Prerequisites:"
             echo "  - AWS CLI configured (aws sts get-caller-identity should work)"
