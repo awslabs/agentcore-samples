@@ -20,6 +20,7 @@ Steps:
 Run:
     python3 scripts/deploy.py
 """
+
 from __future__ import annotations
 
 import io
@@ -45,14 +46,18 @@ import config
 # Small logging helpers so the operator can follow along
 # --------------------------------------------------------------------------
 
+
 def step(msg: str) -> None:
     print(f"\n\033[1;36m▶ {msg}\033[0m")
+
 
 def ok(msg: str) -> None:
     print(f"  \033[32m✓\033[0m {msg}")
 
+
 def info(msg: str) -> None:
     print(f"  · {msg}")
+
 
 def warn(msg: str) -> None:
     print(f"  \033[33m!\033[0m {msg}")
@@ -61,6 +66,7 @@ def warn(msg: str) -> None:
 # --------------------------------------------------------------------------
 # Step 1: CloudWatch Transaction Search
 # --------------------------------------------------------------------------
+
 
 def enable_transaction_search() -> None:
     step("1/9 CloudWatch Transaction Search")
@@ -83,6 +89,7 @@ def enable_transaction_search() -> None:
 # Step 2: log group + X-Ray resource policy for the agent's log group
 # --------------------------------------------------------------------------
 
+
 def ensure_log_group_and_policy() -> None:
     step("2/9 Agent log group + X-Ray resource policy")
     logs = boto3.client("logs", region_name=config.REGION)
@@ -99,7 +106,8 @@ def ensure_log_group_and_policy() -> None:
     for stream in (config.AGENT_LOG_STREAM_RUNTIME, config.AGENT_LOG_STREAM_SPANS):
         try:
             logs.create_log_stream(
-                logGroupName=config.AGENT_LOG_GROUP, logStreamName=stream,
+                logGroupName=config.AGENT_LOG_GROUP,
+                logStreamName=stream,
             )
             ok(f"created log stream {stream}")
         except logs.exceptions.ResourceAlreadyExistsException:
@@ -130,15 +138,14 @@ def ensure_log_group_and_policy() -> None:
             }
         ],
     }
-    logs.put_resource_policy(
-        policyName=policy_name, policyDocument=json.dumps(policy_doc)
-    )
+    logs.put_resource_policy(policyName=policy_name, policyDocument=json.dumps(policy_doc))
     ok(f"resource policy '{policy_name}' installed")
 
 
 # --------------------------------------------------------------------------
 # Step 3: S3 bucket
 # --------------------------------------------------------------------------
+
 
 def ensure_bucket() -> str:
     step("3/9 S3 bucket for the code artifact")
@@ -162,8 +169,10 @@ def ensure_bucket() -> str:
     s3.put_public_access_block(
         Bucket=bucket,
         PublicAccessBlockConfiguration={
-            "BlockPublicAcls": True, "IgnorePublicAcls": True,
-            "BlockPublicPolicy": True, "RestrictPublicBuckets": True,
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
         },
     )
     s3.put_bucket_encryption(
@@ -211,9 +220,7 @@ def _create_or_get_role(role_name: str, trust: dict, description: str) -> str:
 
 def _put_inline_policy(role_name: str, policy_name: str, doc: dict) -> None:
     iam = boto3.client("iam")
-    iam.put_role_policy(
-        RoleName=role_name, PolicyName=policy_name, PolicyDocument=json.dumps(doc)
-    )
+    iam.put_role_policy(RoleName=role_name, PolicyName=policy_name, PolicyDocument=json.dumps(doc))
     ok(f"inline policy '{policy_name}' on {role_name}")
 
 
@@ -316,6 +323,7 @@ def ensure_exec_role() -> str:
 # Steps 6-7: package + upload
 # --------------------------------------------------------------------------
 
+
 def package_and_upload(bucket: str) -> str:
     step("6/9 Package app/ into app.zip")
     app_dir = HERE / "app"
@@ -352,6 +360,7 @@ def package_and_upload(bucket: str) -> str:
 # --------------------------------------------------------------------------
 # Step 8: create (or update) the MicroVM image
 # --------------------------------------------------------------------------
+
 
 def create_or_update_image(code_uri: str, build_role: str) -> str:
     step("8/9 Create MicroVM image")
@@ -440,6 +449,7 @@ def wait_image(image_id: str) -> None:
 # --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
+
 
 def main() -> None:
     print("\033[1mMicroVM + AgentCore Observability demo — deploy\033[0m")

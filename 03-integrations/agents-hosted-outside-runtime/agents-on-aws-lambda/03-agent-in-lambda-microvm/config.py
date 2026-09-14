@@ -4,6 +4,7 @@ Shared configuration for the MicroVM + AgentCore Observability demo.
 Every resource this demo creates carries the same PREFIX so cleanup can find
 and delete them without touching anything else in the account.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,9 +17,7 @@ REGION = os.environ.get("AWS_REGION", "us-east-1")
 PREFIX = os.environ.get("MICROVM_DEMO_PREFIX", "microvm-agentcore-obs")
 
 # The Bedrock model the agent uses. Cross-region inference profile for Haiku.
-MODEL_ID = os.environ.get(
-    "AGENT_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-)
+MODEL_ID = os.environ.get("AGENT_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
 # MicroVM sizing. The default baseline (2 GB / 1 vCPU) is more than enough
 # for a single Strands agent, but we set it explicitly for clarity.
@@ -91,6 +90,7 @@ def agent_log_group_arn() -> str:
 # aws-opentelemetry-distro >= 0.18.0 and a Logs resource policy that allows
 # X-Ray to PutLogEvents on that log group (deploy.py installs the policy).
 
+
 def otel_env() -> dict[str, str]:
     log_group = AGENT_LOG_GROUP
     service_name = f"{PREFIX}-agent"
@@ -106,19 +106,14 @@ def otel_env() -> dict[str, str]:
         "OTEL_PYTHON_CONFIGURATOR": "aws_configurator",
         # Point resource attributes + span/log routing at the agent's log group
         "OTEL_RESOURCE_ATTRIBUTES": (
-            f"service.name={service_name},"
-            f"aws.log.group.names={log_group},"
-            f"cloud.platform=aws_lambda_microvm"
+            f"service.name={service_name},aws.log.group.names={log_group},cloud.platform=aws_lambda_microvm"
         ),
         "OTEL_EXPORTER_OTLP_LOGS_HEADERS": (
             f"x-aws-log-group={log_group},"
             f"x-aws-log-stream={AGENT_LOG_STREAM_RUNTIME},"
             f"x-aws-metric-namespace=bedrock-agentcore"
         ),
-        "OTEL_EXPORTER_OTLP_TRACES_HEADERS": (
-            f"x-aws-log-group={log_group},"
-            f"x-aws-log-stream={AGENT_LOG_STREAM_SPANS}"
-        ),
+        "OTEL_EXPORTER_OTLP_TRACES_HEADERS": (f"x-aws-log-group={log_group},x-aws-log-stream={AGENT_LOG_STREAM_SPANS}"),
         "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         "OTEL_TRACES_EXPORTER": "otlp",
     }

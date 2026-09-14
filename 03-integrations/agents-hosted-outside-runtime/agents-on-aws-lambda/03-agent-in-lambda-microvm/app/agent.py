@@ -19,6 +19,7 @@ Session propagation:
   distro forwards on downstream spans.
 - W3C traceparent is also honored by the auto-instrumentation.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ log = logging.getLogger("microvm-agent")
 # ---- config from env --------------------------------------------------------
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-MODEL_ID = os.environ.get(
-    "AGENT_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-)
+MODEL_ID = os.environ.get("AGENT_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "microvm-strands-agent")
 PORT = int(os.environ.get("PORT", "8080"))
 
@@ -93,10 +92,7 @@ def _get_agent() -> Agent:
         _bedrock_model = BedrockModel(model_id=MODEL_ID, region_name=AWS_REGION)
         _agent = Agent(
             model=_bedrock_model,
-            system_prompt=(
-                "You are a helpful travel assistant. Give short, useful "
-                "answers (2-4 sentences)."
-            ),
+            system_prompt=("You are a helpful travel assistant. Give short, useful answers (2-4 sentences)."),
         )
     return _agent
 
@@ -111,9 +107,7 @@ def _run_agent(prompt: str, session_id: str) -> dict[str, Any]:
             span.set_attribute("gen_ai.request.model", MODEL_ID)
             span.set_attribute("session.id", session_id)
             span.set_attribute("aws.lambda.microvm.image_name", MICROVM_IMAGE_NAME)
-            span.set_attribute(
-                "aws.lambda.microvm.image_version", MICROVM_IMAGE_VERSION
-            )
+            span.set_attribute("aws.lambda.microvm.image_version", MICROVM_IMAGE_VERSION)
             span.set_attribute("agent.prompt.length", len(prompt))
             agent = _get_agent()
             t0 = time.time()

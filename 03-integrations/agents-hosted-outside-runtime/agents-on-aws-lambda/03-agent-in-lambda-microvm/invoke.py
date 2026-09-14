@@ -15,6 +15,7 @@ dashboard to have something to show.
 Run:
     python3 scripts/run_and_invoke.py
 """
+
 from __future__ import annotations
 
 import json
@@ -37,14 +38,18 @@ import config
 
 # --------------------------------------------------------------------------
 
+
 def step(msg: str) -> None:
     print(f"\n\033[1;36m▶ {msg}\033[0m")
+
 
 def ok(msg: str) -> None:
     print(f"  \033[32m✓\033[0m {msg}")
 
+
 def info(msg: str) -> None:
     print(f"  · {msg}")
+
 
 def warn(msg: str) -> None:
     print(f"  \033[33m!\033[0m {msg}")
@@ -54,23 +59,21 @@ def warn(msg: str) -> None:
 # Launch
 # --------------------------------------------------------------------------
 
+
 def run_microvm() -> dict[str, Any]:
     step("1/4 Launch MicroVM")
     mvm = boto3.client("lambda-microvms", region_name=config.REGION)
 
     # AWS-managed ingress connector: makes the per-VM endpoint reachable
     # from any authenticated caller on the public internet.
-    ingress = (
-        f"arn:aws:lambda:{config.REGION}:aws:network-connector:"
-        f"aws-network-connector:ALL_INGRESS"
-    )
+    ingress = f"arn:aws:lambda:{config.REGION}:aws:network-connector:aws-network-connector:ALL_INGRESS"
 
     r = mvm.run_microvm(
         imageIdentifier=config.image_arn(),
         executionRoleArn=config.exec_role_arn(),
         ingressNetworkConnectors=[ingress],
         idlePolicy={
-            "maxIdleDurationSeconds": 900,   # 15 min idle before suspend
+            "maxIdleDurationSeconds": 900,  # 15 min idle before suspend
             "suspendedDurationSeconds": 600,  # keep suspended snapshot 10 min
             "autoResumeEnabled": True,
         },
@@ -89,7 +92,7 @@ def wait_running(microvm_id: str) -> dict[str, Any]:
         r = mvm.get_microvm(microvmIdentifier=microvm_id)
         state = r["state"]
         if state != last:
-            info(f"[{int(time.time()-started):>4}s] state={state}")
+            info(f"[{int(time.time() - started):>4}s] state={state}")
             last = state
         if state == "RUNNING":
             ok(f"endpoint: {r['endpoint']}")
@@ -102,6 +105,7 @@ def wait_running(microvm_id: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 # Invoke
 # --------------------------------------------------------------------------
+
 
 def mint_token(microvm_id: str) -> dict[str, str]:
     step("3/4 Mint auth token")
@@ -118,8 +122,7 @@ def mint_token(microvm_id: str) -> dict[str, str]:
     return headers
 
 
-def _post(endpoint: str, path: str, body: dict[str, Any],
-          headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
+def _post(endpoint: str, path: str, body: dict[str, Any], headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
     # The RunMicrovm response returns the endpoint as a bare hostname
     # (e.g. "xxxx.lambda-microvm.us-east-1.on.aws"). Add the scheme.
     if not endpoint.startswith(("http://", "https://")):
@@ -177,6 +180,7 @@ def invoke_agent(endpoint: str, token_headers: dict[str, str]) -> None:
 # Verification links
 # --------------------------------------------------------------------------
 
+
 def print_verification_links(microvm_id: str) -> None:
     r = config.REGION
     acct = config.account_id()
@@ -185,30 +189,20 @@ def print_verification_links(microvm_id: str) -> None:
     print("\n\033[1mVerify telemetry landed in AgentCore Observability\033[0m")
     print("  Give it ~1-2 minutes for OTLP to flush, then open:\n")
     print("  1. GenAI Observability dashboard (agent-level view)")
-    print(
-        f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}"
-        f"#gen-ai-observability/agent-core"
-    )
+    print(f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}#gen-ai-observability/agent-core")
     print("  2. Agent log group (structured logs + spans)")
-    print(
-        f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}"
-        f"#logsV2:log-groups/log-group/{lg}"
-    )
+    print(f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}#logsV2:log-groups/log-group/{lg}")
     print("  3. X-Ray Trace map (session waterfall)")
-    print(
-        f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}"
-        f"#xray/service-map"
-    )
+    print(f"     https://{r}.console.aws.amazon.com/cloudwatch/home?region={r}#xray/service-map")
     print(f"\n  MicroVM ID: {microvm_id}")
     print(
-        f"  Terminate when done: "
-        f"aws --region {r} lambda-microvms terminate-microvm "
-        f"--microvm-identifier {microvm_id}"
+        f"  Terminate when done: aws --region {r} lambda-microvms terminate-microvm --microvm-identifier {microvm_id}"
     )
     print("  Or run: python3 cleanup.py")
 
 
 # --------------------------------------------------------------------------
+
 
 def main() -> None:
     print("\033[1mMicroVM + AgentCore Observability demo — run & invoke\033[0m")

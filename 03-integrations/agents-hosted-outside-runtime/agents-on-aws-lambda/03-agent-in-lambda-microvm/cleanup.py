@@ -18,6 +18,7 @@ Run:
     python3 scripts/cleanup.py           # keep the log group
     python3 scripts/cleanup.py --wipe-logs
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,14 +36,18 @@ import config
 
 # --------------------------------------------------------------------------
 
+
 def step(msg: str) -> None:
     print(f"\n\033[1;36m▶ {msg}\033[0m")
+
 
 def ok(msg: str) -> None:
     print(f"  \033[32m✓\033[0m {msg}")
 
+
 def info(msg: str) -> None:
     print(f"  · {msg}")
+
 
 def warn(msg: str) -> None:
     print(f"  \033[33m!\033[0m {msg}")
@@ -51,6 +56,7 @@ def warn(msg: str) -> None:
 # --------------------------------------------------------------------------
 # 1. Terminate MicroVMs from our image
 # --------------------------------------------------------------------------
+
 
 def terminate_microvms() -> None:
     step("1/5 Terminate MicroVMs launched from our image")
@@ -104,6 +110,7 @@ def terminate_microvms() -> None:
 # 2. Delete image versions + image
 # --------------------------------------------------------------------------
 
+
 def delete_image() -> None:
     step("2/5 Delete MicroVM image")
     mvm = boto3.client("lambda-microvms", region_name=config.REGION)
@@ -128,7 +135,8 @@ def delete_image() -> None:
         for v in versions:
             try:
                 mvm.delete_microvm_image_version(
-                    imageIdentifier=config.IMAGE_NAME, imageVersion=v,
+                    imageIdentifier=config.IMAGE_NAME,
+                    imageVersion=v,
                 )
                 info(f"delete_microvm_image_version {v}")
             except botocore.exceptions.ClientError as e:
@@ -147,6 +155,7 @@ def delete_image() -> None:
 # --------------------------------------------------------------------------
 # 3. IAM roles
 # --------------------------------------------------------------------------
+
 
 def delete_role(role_name: str) -> None:
     iam = boto3.client("iam")
@@ -176,6 +185,7 @@ def delete_roles() -> None:
 # --------------------------------------------------------------------------
 # 4. S3 bucket
 # --------------------------------------------------------------------------
+
 
 def delete_bucket() -> None:
     step("4/5 Empty and delete S3 bucket")
@@ -214,6 +224,7 @@ def delete_bucket() -> None:
 # 5. Log group + resource policy (optional)
 # --------------------------------------------------------------------------
 
+
 def delete_logs() -> None:
     step("5/5 Delete log groups + resource policy (--wipe-logs)")
     logs = boto3.client("logs", region_name=config.REGION)
@@ -239,10 +250,10 @@ def delete_logs() -> None:
 
 # --------------------------------------------------------------------------
 
+
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--wipe-logs", action="store_true",
-                   help="Also delete the CloudWatch log groups + resource policy.")
+    p.add_argument("--wipe-logs", action="store_true", help="Also delete the CloudWatch log groups + resource policy.")
     args = p.parse_args()
 
     print("\033[1mMicroVM + AgentCore Observability demo — cleanup\033[0m")
