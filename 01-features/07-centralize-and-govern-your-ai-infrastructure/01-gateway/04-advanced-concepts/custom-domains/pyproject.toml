@@ -19,7 +19,7 @@ dependencies = [
 agwcd = "agwcd.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest==8.4.2"]
+dev = ["pytest==9.0.3"]
 
 [tool.setuptools]
 packages = ["agwcd", "custom_domains", "custom_domains.targets"]
