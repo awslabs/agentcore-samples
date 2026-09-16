@@ -39,22 +39,15 @@ def lambda_handler(event, context):
 
         # Add custom claims to the ID token
         # Note: You can add to claimsOverrideDetails for ID token
-        if (
-            "claimsOverrideDetails" not in event["response"]
-            or event["response"]["claimsOverrideDetails"] is None
-        ):
+        if "claimsOverrideDetails" not in event["response"] or event["response"]["claimsOverrideDetails"] is None:
             event["response"]["claimsOverrideDetails"] = {}
 
         if "claimsToAddOrOverride" not in event["response"]["claimsOverrideDetails"]:
             event["response"]["claimsOverrideDetails"]["claimsToAddOrOverride"] = {}
 
         # Add custom claims to ID token
-        event["response"]["claimsOverrideDetails"]["claimsToAddOrOverride"][
-            "user_tag"
-        ] = custom_tag
-        event["response"]["claimsOverrideDetails"]["claimsToAddOrOverride"]["email"] = (
-            email
-        )
+        event["response"]["claimsOverrideDetails"]["claimsToAddOrOverride"]["user_tag"] = custom_tag
+        event["response"]["claimsOverrideDetails"]["claimsToAddOrOverride"]["email"] = email
 
         # Add custom claims to the Access token (V2 trigger)
         if (
@@ -63,57 +56,38 @@ def lambda_handler(event, context):
         ):
             event["response"]["claimsAndScopeOverrideDetails"] = {}
 
-        if (
-            "accessTokenGeneration"
-            not in event["response"]["claimsAndScopeOverrideDetails"]
-        ):
-            event["response"]["claimsAndScopeOverrideDetails"][
-                "accessTokenGeneration"
-            ] = {}
+        if "accessTokenGeneration" not in event["response"]["claimsAndScopeOverrideDetails"]:
+            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"] = {}
 
-        if (
-            "claimsToAddOrOverride"
-            not in event["response"]["claimsAndScopeOverrideDetails"][
-                "accessTokenGeneration"
-            ]
-        ):
-            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
-                "claimsToAddOrOverride"
-            ] = {}
+        if "claimsToAddOrOverride" not in event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]:
+            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]["claimsToAddOrOverride"] = {}
 
         # Add email, user_tag, and aud to access token
-        event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
-            "claimsToAddOrOverride"
-        ]["email"] = email
-        event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
-            "claimsToAddOrOverride"
-        ]["user_tag"] = custom_tag
+        event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]["claimsToAddOrOverride"][
+            "email"
+        ] = email
+        event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]["claimsToAddOrOverride"][
+            "user_tag"
+        ] = custom_tag
         # Inject the audience claim so the proxy Lambda and AgentCore Gateway
         # can verify the token is scoped to this resource server.
         # Cognito requires aud to match the current session's app client ID.
         client_id = event.get("callerContext", {}).get("clientId", "")
         if client_id:
-            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
-                "claimsToAddOrOverride"
-            ]["aud"] = client_id
+            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]["claimsToAddOrOverride"][
+                "aud"
+            ] = client_id
 
         # For the readonly test user, suppress the mcp.write and mcp.read scopes so the
         # gateway rejects write operations with insufficient_scope.
         if custom_tag == "readonly_user":
-            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
-                "scopesToSuppress"
-            ] = [
+            event["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"]["scopesToSuppress"] = [
                 f"{RESOURCE_SERVER_ID}/mcp.write",
                 f"{RESOURCE_SERVER_ID}/mcp.read",
             ]
-            logger.info(
-                "Suppressed mcp.write and mcp.read scopes for readonly test user"
-            )
+            logger.info("Suppressed mcp.write and mcp.read scopes for readonly test user")
 
-        logger.info(
-            f"Added custom claims to ID token and Access token: "
-            f"user_tag={custom_tag}, email={email}"
-        )
+        logger.info(f"Added custom claims to ID token and Access token: user_tag={custom_tag}, email={email}")
 
     except Exception as e:
         logger.error(f"Error in pre-token generation: {str(e)}", exc_info=True)
