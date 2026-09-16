@@ -51,8 +51,8 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
 ### Databricks
 
 3. **An account-level OAuth federation policy** whose issuer and audience match your identity provider,
-   with `subject_claim` set to the claim that carries the user's identity (commonly `email`). The policy
-   is account-scoped; a workspace-level policy is not sufficient.
+   with `subject_claim` set to the claim that carries the user's identity (commonly `email`). Create it at
+   the **account** level — that is what this configuration was verified against.
 4. **Each end user must be a member of the target workspace.** Without membership the exchange resolves
    the identity correctly and then fails with
    `user '<identity>' is not a member of workspace <id>`. Identity mapping is working at that point;
@@ -101,7 +101,9 @@ It creates and changes nothing. Verdicts and exit codes:
 ## Notes that save time
 
 - **Set `mcp.mcpServer.listingMode` to `DYNAMIC`** on Managed MCP targets. Without it, target creation
-  fails with `Authorization error when sending message`. The same message also appears when the service
+  may fail with `Authorization error when sending message`. That failure reproduced consistently against
+  some workspaces and not others, so set `DYNAMIC` rather than relying on eager listing. The same message
+  also appears when the service
   principal lacks the entitlements in prerequisite 5, so confirm a direct call to the MCP endpoint works
   before concluding the gateway is at fault.
 - **Send the MCP protocol version the gateway returns from `initialize`.** It pins the session to that
