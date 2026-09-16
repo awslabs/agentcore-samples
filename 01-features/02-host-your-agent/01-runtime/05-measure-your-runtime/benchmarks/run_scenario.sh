@@ -35,19 +35,20 @@
 #   ./run_scenario.sh 1 agentcore-zip   # a single leg
 #   RAMP_TARGET=100 ./run_scenario.sh 1 # a small rehearsal (do this first)
 #
-# IMAGE_SIZE / AGENTCORE_MANAGED_COMPUTE_VERSION: pick WHICH ARN to use out
+# IMAGE_SIZE / AGENTCORE_PLATFORM_VERSION: pick WHICH ARN to use out
 # of several kept in .env at once, matching infrastructure/'s own flags of
-# the same name. .env can hold one ARN per size/version combination you've
-# deployed (see .env.example), named e.g. AGENTCORE_ARN_750MB_V2. When set,
-# these two env vars select which one this run drives, falling back to a
-# less specific name and finally to the plain AGENTCORE_ARN /
-# AGENTCORE_ZIP_ARN if no size/version-specific one is set (see resolve_arn
-# below for the exact fallback order):
+# the same name (AGENTCORE_MANAGED_COMPUTE_VERSION still works as a
+# deprecated alias for AGENTCORE_PLATFORM_VERSION). .env can hold one ARN
+# per size/version combination you've deployed (see .env.example), named
+# e.g. AGENTCORE_ARN_750MB_V2. When set, these two env vars select which one
+# this run drives, falling back to a less specific name and finally to the
+# plain AGENTCORE_ARN / AGENTCORE_ZIP_ARN if no size/version-specific one is
+# set (see resolve_arn below for the exact fallback order):
 #
-#   IMAGE_SIZE=750mb AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./run_scenario.sh 1 agentcore
+#   IMAGE_SIZE=750mb AGENTCORE_PLATFORM_VERSION=V2 ./run_scenario.sh 1 agentcore
 #     -> tries AGENTCORE_ARN_750MB_V2, then AGENTCORE_ARN_V2, then
 #        AGENTCORE_ARN_750MB, then AGENTCORE_ARN
-#   AGENTCORE_MANAGED_COMPUTE_VERSION=V1 ./run_scenario.sh 1 agentcore-zip
+#   AGENTCORE_PLATFORM_VERSION=V1 ./run_scenario.sh 1 agentcore-zip
 #     -> tries AGENTCORE_ZIP_ARN_V1, then AGENTCORE_ZIP_ARN
 #
 # The output filename also picks up the same suffix (e.g.
@@ -97,6 +98,14 @@ if [ -f "${ENV_FILE}" ]; then
   set +a
 else
   echo "[scenario] no env file at ${ENV_FILE} (copy .env.example to .env)" >&2
+fi
+
+# AGENTCORE_MANAGED_COMPUTE_VERSION is a deprecated alias for
+# AGENTCORE_PLATFORM_VERSION (the name now matches the API's own
+# `platformVersion` field) — honored for one release, with a warning.
+if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ] && [ -z "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  echo "[scenario] AGENTCORE_MANAGED_COMPUTE_VERSION is deprecated; use AGENTCORE_PLATFORM_VERSION instead" >&2
+  AGENTCORE_PLATFORM_VERSION="${AGENTCORE_MANAGED_COMPUTE_VERSION}"
 fi
 
 PY="${PYTHON:-}"
@@ -182,11 +191,11 @@ run_leg() {
       agentcore)     leg_rate="${SCEN1_RATE_CONTAINER}"; leg_per="${SCEN1_PER_CONTAINER}" ;;
     esac
   fi
-  # Uppercased so AGENTCORE_MANAGED_COMPUTE_VERSION=v1/v2 (any case) still
+  # Uppercased so AGENTCORE_PLATFORM_VERSION=v1/v2 (any case) still
   # matches the .env variable names, which are always upper (AGENTCORE_ARN_*_V1).
   local version=""
-  [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ] && \
-    version="$(printf '%s' "${AGENTCORE_MANAGED_COMPUTE_VERSION}" | tr '[:lower:]' '[:upper:]')"
+  [ -n "${AGENTCORE_PLATFORM_VERSION:-}" ] && \
+    version="$(printf '%s' "${AGENTCORE_PLATFORM_VERSION}" | tr '[:lower:]' '[:upper:]')"
   local size_upper=""
   [ "${leg}" = "agentcore" ] && [ -n "${IMAGE_SIZE:-}" ] && \
     size_upper="$(printf '%s' "${IMAGE_SIZE}" | tr '[:lower:]' '[:upper:]')"

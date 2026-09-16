@@ -21,16 +21,18 @@
 #   AGENTCORE_ZIP_ROLE_NAME  default: base-agent-agentcore-zip-role
 #   CODE_BUCKET           default: bedrock-agentcore-code-<account>-<region>
 #   PY_RUNTIME            default: PYTHON_3_13
-#   AGENTCORE_MANAGED_COMPUTE_VERSION  default: unset (V1 = warm pool, V2 = SnapStart)
+#   AGENTCORE_PLATFORM_VERSION  default: unset (V1 = Original Runtime, V2 = New Runtime;
+#                         AGENTCORE_MANAGED_COMPUTE_VERSION still works as a
+#                         deprecated alias)
 #   AGENTCORE_NEW_DEPLOY  default: unset (set to any value to force a brand-new
 #                         runtime every run instead of updating the existing one
 #                         with the same name)
 #
 # Usage: ./deploy-agentcore-zip.sh
-#        AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore-zip.sh
+#        AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore-zip.sh
 #        AGENTCORE_NEW_DEPLOY=1 ./deploy-agentcore-zip.sh  # always create, never update
 #
-# AGENTCORE_MANAGED_COMPUTE_VERSION also drives naming: when set, "_V1" or
+# AGENTCORE_PLATFORM_VERSION also drives naming: when set, "_V1" or
 # "_V2" is appended to AGENT_RUNTIME_NAME automatically, so running this once
 # with V1 and once with V2 creates two distinctly named runtimes ready to
 # compare, without having to set AGENT_RUNTIME_NAME by hand each time.
@@ -42,8 +44,8 @@
 # has never been used before. When set, a short unique suffix is appended to
 # AGENT_RUNTIME_NAME so the existing-runtime lookup below always misses.
 #
-# AGENTCORE_MANAGED_COMPUTE_VERSION selects the `platformVersion` field
-# (V1 = warm pool, V2 = SnapStart) on create/update-agent-runtime. The
+# AGENTCORE_PLATFORM_VERSION selects the API's own `platformVersion` field
+# (V1 = Original Runtime, V2 = New Runtime) on create/update-agent-runtime. The
 # `aws` CLI ships its own bundled botocore, frozen at CLI-release time, which
 # can lag behind a freshly `pip install`-ed one — so create/update calls go
 # through agentcore_boto3.py (plain boto3, using this repo's own venv) instead
@@ -62,10 +64,18 @@ source "${SCRIPT_DIR}/common.sh"
 require aws
 require zip
 
+# AGENTCORE_MANAGED_COMPUTE_VERSION is a deprecated alias for
+# AGENTCORE_PLATFORM_VERSION (the name now matches the API's own
+# `platformVersion` field) — honored for one release, with a warning.
+if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ] && [ -z "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  warn "AGENTCORE_MANAGED_COMPUTE_VERSION is deprecated; use AGENTCORE_PLATFORM_VERSION instead"
+  AGENTCORE_PLATFORM_VERSION="${AGENTCORE_MANAGED_COMPUTE_VERSION}"
+fi
+
 # Runtime names allow [a-zA-Z0-9_] only (no hyphens).
 AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME:-ac_zip_x_lambda_bench_agent}"
-if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ]; then
-  AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_${AGENTCORE_MANAGED_COMPUTE_VERSION}"
+if [ -n "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_${AGENTCORE_PLATFORM_VERSION}"
 fi
 if [ -n "${AGENTCORE_NEW_DEPLOY:-}" ]; then
   AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_$(date +%s)"
@@ -233,9 +243,9 @@ LIFECYCLE="$(agentcore_lifecycle_json)"
 log "Lifecycle:    ${LIFECYCLE}"
 
 PLATFORM_VERSION_JSON=""
-if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ]; then
-  log "Platform version: ${AGENTCORE_MANAGED_COMPUTE_VERSION}"
-  PLATFORM_VERSION_JSON=",\"platformVersion\":\"${AGENTCORE_MANAGED_COMPUTE_VERSION}\""
+if [ -n "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  log "Platform version: ${AGENTCORE_PLATFORM_VERSION}"
+  PLATFORM_VERSION_JSON=",\"platformVersion\":\"${AGENTCORE_PLATFORM_VERSION}\""
 fi
 
 BODY_FILE="${TMP_DIR}/agent-runtime-body.json"

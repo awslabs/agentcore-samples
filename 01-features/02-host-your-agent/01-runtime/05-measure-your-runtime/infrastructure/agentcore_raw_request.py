@@ -2,16 +2,17 @@
 """agentcore_raw_request.py
 
 Signed HTTP request against the Bedrock AgentCore control plane, for fields
-the installed `aws` CLI / botocore do not yet know about — e.g.
-`managedComputeConfiguration` (preview: selects V1 "warm pool" or V2
-"SnapStart"). `aws bedrock-agentcore-control create-agent-runtime
+the installed `aws` CLI / botocore do not yet know about — e.g. the preview
+name for what later launched as `platformVersion` (V1 = Original Runtime,
+V2 = New Runtime). `aws bedrock-agentcore-control create-agent-runtime
 --cli-input-json` rejects that key locally with a ParamValidation error
 before any request is sent, because the field is absent from the installed
 service model; this script builds and signs the HTTP request directly
 instead of going through the CLI's shape validation.
 
-Generalizes snapstart_awscurl.py: any artifact (code or container), create
-or update, any extra top-level body fields. Prod only — no stage switch.
+Generalizes an internal predecessor script (not part of this public sample):
+any artifact (code or container), create or update, any extra top-level body
+fields. Prod only — no stage switch.
 
 Unused in this copy: agentcore_boto3.py now handles create/update via plain
 boto3 instead (see its docstring for why), which picks up `platformVersion`

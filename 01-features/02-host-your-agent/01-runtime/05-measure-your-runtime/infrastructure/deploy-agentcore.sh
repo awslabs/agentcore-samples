@@ -17,22 +17,24 @@
 #   IMAGE_SIZE           default: 200mb  (200mb | 500mb | 750mb | 1gb | 2gb —
 #                        must already be pushed under this tag, see
 #                        build-and-push.sh)
-#   AGENTCORE_MANAGED_COMPUTE_VERSION  default: unset (V1 = warm pool, V2 = SnapStart)
+#   AGENTCORE_PLATFORM_VERSION  default: unset (V1 = Original Runtime, V2 = New Runtime;
+#                        AGENTCORE_MANAGED_COMPUTE_VERSION still works as a
+#                        deprecated alias)
 #   AGENTCORE_NEW_DEPLOY default: unset (set to any value to force a brand-new
 #                        runtime every run instead of updating the existing
 #                        one with the same name)
 #
 # Usage: ./deploy-agentcore.sh
-#        IMAGE_SIZE=1gb AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore.sh
+#        IMAGE_SIZE=1gb AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore.sh
 #
-# IMAGE_SIZE and AGENTCORE_MANAGED_COMPUTE_VERSION both drive naming: the
+# IMAGE_SIZE and AGENTCORE_PLATFORM_VERSION both drive naming: the
 # default AGENT_RUNTIME_NAME gets "_<size>" and "_V1"/"_V2" appended
 # automatically, e.g. ac_ctn_x_lambda_agent_750mb_V2, so running this once per
 # size/version combination creates distinctly named runtimes ready to compare
 # side by side without hand-managing AGENT_RUNTIME_NAME.
 #
-# AGENTCORE_MANAGED_COMPUTE_VERSION selects the `platformVersion` field
-# (V1 = warm pool, V2 = SnapStart) on create/update-agent-runtime. The
+# AGENTCORE_PLATFORM_VERSION selects the API's own `platformVersion` field
+# (V1 = Original Runtime, V2 = New Runtime) on create/update-agent-runtime. The
 # `aws` CLI ships its own bundled botocore, frozen at CLI-release time, which
 # can lag behind a freshly `pip install`-ed one — so create/update calls go
 # through agentcore_boto3.py (plain boto3, using this repo's own venv) instead
@@ -55,6 +57,14 @@ source "${SCRIPT_DIR}/common.sh"
 
 require aws
 
+# AGENTCORE_MANAGED_COMPUTE_VERSION is a deprecated alias for
+# AGENTCORE_PLATFORM_VERSION (the name now matches the API's own
+# `platformVersion` field) — honored for one release, with a warning.
+if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ] && [ -z "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  warn "AGENTCORE_MANAGED_COMPUTE_VERSION is deprecated; use AGENTCORE_PLATFORM_VERSION instead"
+  AGENTCORE_PLATFORM_VERSION="${AGENTCORE_MANAGED_COMPUTE_VERSION}"
+fi
+
 IMAGE_SIZE="${IMAGE_SIZE:-200mb}"
 case "${IMAGE_SIZE}" in
   200mb|500mb|750mb|1gb|2gb) ;;
@@ -65,8 +75,8 @@ IMAGE_TAG="${USER_IMAGE_TAG:-${IMAGE_SIZE}}"
 # Runtime names allow [a-zA-Z0-9_] only (no hyphens), so underscores are used.
 AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME:-ac_ctn_x_lambda_agent}"
 AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_${IMAGE_SIZE}"
-if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ]; then
-  AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_${AGENTCORE_MANAGED_COMPUTE_VERSION}"
+if [ -n "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_${AGENTCORE_PLATFORM_VERSION}"
 fi
 if [ -n "${AGENTCORE_NEW_DEPLOY:-}" ]; then
   AGENT_RUNTIME_NAME="${AGENT_RUNTIME_NAME}_$(date +%s)"
@@ -187,9 +197,9 @@ LIFECYCLE="$(agentcore_lifecycle_json)"
 log "Lifecycle:    ${LIFECYCLE}"
 
 PLATFORM_VERSION_JSON=""
-if [ -n "${AGENTCORE_MANAGED_COMPUTE_VERSION:-}" ]; then
-  log "Platform version: ${AGENTCORE_MANAGED_COMPUTE_VERSION}"
-  PLATFORM_VERSION_JSON=",\"platformVersion\":\"${AGENTCORE_MANAGED_COMPUTE_VERSION}\""
+if [ -n "${AGENTCORE_PLATFORM_VERSION:-}" ]; then
+  log "Platform version: ${AGENTCORE_PLATFORM_VERSION}"
+  PLATFORM_VERSION_JSON=",\"platformVersion\":\"${AGENTCORE_PLATFORM_VERSION}\""
 fi
 
 BODY_FILE="${TMP_DIR}/agent-runtime-body.json"

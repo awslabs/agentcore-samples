@@ -19,16 +19,12 @@ Methodology notes (why this isn't a one-liner):
     per-request records, filtered to ok=true, matching the convention used
     throughout this benchmark series. The ramp phase itself carries no
     percentile summary.
-  - Test B's per-step mean/min/max/p50/p90/p99 come straight from the
+  - Test B's per-step mean/min/max/p50/p75/p90/p99 come straight from the
     harness's own precomputed `throughput.steps[].latency` (computed by
-    load_ramp.py over that step's successful requests only) — authoritative,
-    not re-derived. P75 is NOT in that native dict, so it is computed here by
-    slicing the raw records: skip the first `ramp.dispatched` records (the
-    ramp phase), then walk the remainder in `steps[].sent`-sized chunks, in
-    file order (append order == completion order). The chunk-size sum is
-    verified against the recorded throughput-phase record count before
-    trusting the slice; a mismatch prints a warning instead of silently wrong
-    numbers.
+    load_ramp.py over that step's successful requests only, via
+    common.py::_stats) — authoritative, not re-derived. One percentile set is
+    computed once, in the harness, and read the same way everywhere (live
+    progress output, the end-of-run table, and here).
   - The AWS account ID, when a request failed against a quota, is pulled
     directly out of that error message's own text ("...for account
     123456789012...") rather than assumed from configuration, since legs in
@@ -43,7 +39,6 @@ import re
 import statistics
 import sys
 from pathlib import Path
-from typing import Any
 
 
 def pct(values: list[float], p: float) -> float | None:
@@ -75,6 +70,13 @@ def error_message_counts(records: list[dict]) -> dict[str, int]:
     for r in records:
         if not r.get("ok") and r.get("error"):
             key = r["error"].splitlines()[0][:100]
+            # Some quota rejections come back as an HTML error page instead of
+            # a typed exception (see common.py's THROTTLE_MARKERS) -- cut the
+            # markup so the count key stays a readable one-liner instead of a
+            # <head><title>...</title></head> fragment.
+            html_at = key.find("<html")
+            if html_at != -1:
+                key = key[:html_at].rstrip() + " <html error body>"
             counts[key] = counts.get(key, 0) + 1
     return counts
 
@@ -113,17 +115,8 @@ def analyze_test_b(data: dict) -> dict:
     teardown = next((p for p in data["phases"] if p["phase"] == "teardown"), None)
     results = data["results"]
 
-    ramp_dispatched = ramp.get("dispatched", 0)
-    throughput_records = results[ramp_dispatched:]
-    steps_meta = throughput["steps"]
-    expected = sum(s["sent"] for s in steps_meta)
-    slice_ok = len(throughput_records) == expected
-
     steps_out = []
-    cursor = 0
-    for s in steps_meta:
-        chunk = throughput_records[cursor : cursor + s["sent"]] if slice_ok else []
-        p75 = pct([r["latency_ms"] for r in chunk if r.get("ok")], 0.75) if slice_ok else None
+    for s in throughput["steps"]:
         lat = s.get("latency") or {}
         steps_out.append(
             {
@@ -135,12 +128,11 @@ def analyze_test_b(data: dict) -> dict:
                 "min": lat.get("min_ms"),
                 "max": lat.get("max_ms"),
                 "p50": lat.get("p50_ms"),
-                "p75": round(p75, 1) if p75 is not None else None,
+                "p75": lat.get("p75_ms"),
                 "p90": lat.get("p90_ms"),
                 "p99": lat.get("p99_ms"),
             }
         )
-        cursor += s["sent"]
 
     return {
         "kind": "test_b",
@@ -149,11 +141,11 @@ def analyze_test_b(data: dict) -> dict:
         "stop_reason": throughput.get("stop_reason"),
         "stop_detail": throughput.get("stop_detail"),
         "steps": steps_out,
-        "slice_verified": slice_ok,
         "teardown": (
             {
                 "units": teardown.get("units"),
                 "released": teardown.get("released"),
+                "reaped": teardown.get("reaped", 0),
                 "errors": teardown.get("errors"),
             }
             if teardown
@@ -200,9 +192,6 @@ def print_test_b(r: dict) -> None:
     print(f"== {r['file']} ({r['runtime']}) == Test B: warm until break")
     print(f"  target: {r['target']}  built: {r['built']}")
     print(f"  stop: {r['stop_reason']} | {r['stop_detail']}")
-    if not r["slice_verified"]:
-        print("  WARNING: throughput-record slice did not match step 'sent' "
-              "counts; P75 not computed for this file.", file=sys.stderr)
     header = f"  {'offered':>8} {'sent':>7} {'failed':>7} {'mean':>8} {'min':>8} {'max':>10} {'p50':>8} {'p75':>8} {'p90':>8} {'p99':>8}"
     print(header)
     for s in r["steps"]:
@@ -215,7 +204,9 @@ def print_test_b(r: dict) -> None:
         )
     if r["teardown"]:
         t = r["teardown"]
-        print(f"  teardown: {t['released']} of {t['units']} released, {t['errors']} errors")
+        reaped_note = f", {t['reaped']} already reaped" if t.get("reaped") else ""
+        print(f"  teardown: {t['released']} of {t['units']} released"
+              f"{reaped_note}, {t['errors']} real errors")
     if r["accounts_in_errors"]:
         print(f"  accounts in errors: {', '.join(r['accounts_in_errors'])}")
     for msg, count in sorted(r["error_messages"].items(), key=lambda kv: -kv[1]):

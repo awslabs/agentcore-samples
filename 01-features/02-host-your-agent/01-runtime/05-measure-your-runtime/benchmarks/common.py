@@ -80,6 +80,13 @@ THROTTLE_MARKERS = (
     "LimitExceededException",
     "Rate exceeded",
     "SlowDown",
+    # AgentCore's 200/s per-agent invoke quota can come back as a bare HTTP
+    # 403 with an HTML body instead of a typed exception (observed on both
+    # invoke and StopRuntimeSession once a leg is over quota) -- botocore
+    # can't parse a non-JSON error body into Code/Message, so the raw HTML
+    # lands in the exception's own text. "<html" is distinctive enough that a
+    # genuine application error should never contain it.
+    "<html",
 )
 
 # Substrings that mark the ceiling itself: capacity is exhausted, so retrying at
@@ -154,6 +161,7 @@ def _stats(vals: list[float]) -> dict[str, float]:
         "min_ms": round(min(vals), 2),
         "mean_ms": round(statistics.fmean(vals), 2),
         "p50_ms": round(_pct(vals, 50), 2),
+        "p75_ms": round(_pct(vals, 75), 2),
         "p90_ms": round(_pct(vals, 90), 2),
         "p99_ms": round(_pct(vals, 99), 2),
         "max_ms": round(max(vals), 2),
@@ -204,8 +212,9 @@ def print_summary(name: str, s: dict[str, Any]) -> None:
     print(f"  throughput:  {s['throughput_rps']} req/s")
     lat = s["latency"]
     if lat:
-        print(f"  latency ms:  p50={lat['p50_ms']}  p90={lat['p90_ms']}  "
-              f"p99={lat['p99_ms']}  min={lat['min_ms']}  max={lat['max_ms']}")
+        print(f"  latency ms:  p50={lat['p50_ms']}  p75={lat['p75_ms']}  "
+              f"p90={lat['p90_ms']}  p99={lat['p99_ms']}  min={lat['min_ms']}  "
+              f"max={lat['max_ms']}")
     cs = s["cold_start"]
     print(f"  cold starts: cold={cs['cold']}  warm={cs['warm']}  "
           f"unknown={cs['unknown']}")

@@ -429,12 +429,13 @@ def hold(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Phase 2b: throughput staircase (Scenario 3 — warm / unit reuse)
+# Phase 2b: throughput staircase (scenario 2 in this copy — warm / unit reuse)
 # --------------------------------------------------------------------------- #
 def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
     """Drive the EXISTING fleet at rising request rates to find its warm ceiling.
 
-    Scenario 3. The ramp measured how fast units can be *built*; this measures how
+    This is scenario 2 in this copy (the original benchmark's scenario 3).
+    The ramp measured how fast units can be *built*; this measures how
     much traffic they can *serve* once warm. Units are reused round-robin and
     never released, so every request here is warm — the cold cost was already
     paid and reported by the ramp phase.
@@ -458,7 +459,9 @@ def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
         return {"phase": "throughput", "skipped": True,
                 "reason": "no live units"}
 
-    # Scenario 4 expresses the staircase PER UNIT and resolves it here, because
+    # The per-unit staircase (--per-unit-rps-steps; not wired into
+    # run_scenario.sh in this copy, see benchmarks/README.md) expresses the
+    # staircase PER UNIT and resolves it here, because
     # the real fleet size is only known now: the ramp overshoots its target (in-
     # flight acquisitions land after it is reached), so multiplying at parse time
     # would aim at the wrong total. Rates are what we set; the per-unit rate is
@@ -548,7 +551,8 @@ def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
         }
         steps.append(step)
         print(f"\r  [tput {rps:>6.0f}/s] achieved={achieved:8.1f}/s  "
-              f"p50={st.get('p50_ms', 0):7.1f}ms p99={st.get('p99_ms', 0):8.1f}ms  "
+              f"p50={st.get('p50_ms', 0):7.1f}ms p75={st.get('p75_ms', 0):7.1f}ms "
+              f"p99={st.get('p99_ms', 0):8.1f}ms  "
               f"err={rejected}/{sent}")
 
         if baseline_p99 is None and st.get("p99_ms"):
@@ -604,7 +608,7 @@ def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
         "max_achieved_rps": best.get("achieved_rps", 0.0),
         "max_achieved_per_unit_rps": best.get("per_unit_rps", 0.0),
         "at_offered_rps": best.get("offered_rps"),
-        # Scenario 4's headline: the highest per-unit rate served CLEANLY.
+        # The per-unit staircase's headline: the highest per-unit rate served CLEANLY.
         "max_clean_per_unit_rps": top.get("per_unit_rps", 0.0),
         "max_clean_rps": top.get("achieved_rps", 0.0),
         "clean_at_offered_rps": top.get("offered_rps"),
@@ -637,7 +641,10 @@ def teardown(helper, fleet: Fleet, args) -> dict[str, Any]:
 
     Failures are reported rather than swallowed — a unit that will not release
     keeps billing and keeps holding a slot against the quota, which would
-    silently poison the next leg.
+    silently poison the next leg. A unit AgentCore already reaped on its own
+    (AGENTCORE_IDLE_TIMEOUT expired before teardown got to it) is counted
+    separately as `reaped`, not as an error: it is not billing anymore and
+    there is nothing to retry, so it should not read like a teardown failure.
     """
     units = fleet.drain()
     if not units:
@@ -651,11 +658,12 @@ def teardown(helper, fleet: Fleet, args) -> dict[str, Any]:
     errors: list[str] = []
     lock = threading.Lock()
     released = 0
+    reaped = 0
     interval = 1.0 / rps
     t0 = time.perf_counter()
 
     def release(unit: Any) -> None:
-        nonlocal released
+        nonlocal released, reaped
         # Retry a THROTTLED release. Unlike an invoke, a release that gives up
         # leaves a unit running and billing, so the throttle must not be final.
         # Backoff is bounded; a genuine error (not a throttle) is reported on
@@ -667,8 +675,17 @@ def teardown(helper, fleet: Fleet, args) -> dict[str, Any]:
                     released += 1
                 return
             except Exception as exc:  # noqa: BLE001 - reported, see docstring
-                last = f"{unit}: {type(exc).__name__}: {exc}"
-                if classify_error(str(exc)) != "throttle":
+                msg = f"{type(exc).__name__}: {exc}"
+                if "ResourceNotFoundException" in msg:
+                    # Already gone -- most likely AGENTCORE_IDLE_TIMEOUT reaped
+                    # it before teardown got here (see common.sh's comment on
+                    # that var). Not a release failure: nothing is billing
+                    # anymore and there is nothing to retry.
+                    with lock:
+                        reaped += 1
+                    return
+                last = f"{unit}: {msg}"
+                if classify_error(msg) != "throttle":
                     break
                 if attempt + 1 < args.release_attempts:
                     time.sleep(min(2.0 ** attempt * 0.5, 8.0))
@@ -686,6 +703,12 @@ def teardown(helper, fleet: Fleet, args) -> dict[str, Any]:
             pool.submit(release, unit)
     wall = time.perf_counter() - t0
 
+    if reaped:
+        # Expected, not an error -- see the ResourceNotFoundException handling
+        # above and common.sh's AGENTCORE_IDLE_TIMEOUT comment.
+        print(f"  [teardown] {reaped} unit(s) already reaped by "
+              f"AGENTCORE_IDLE_TIMEOUT before teardown got to them "
+              f"(not a failure).")
     if errors:
         print(f"  [teardown] {len(errors)} unit(s) FAILED to release — they keep "
               f"billing until their idle timeout:", file=sys.stderr)
@@ -697,6 +720,7 @@ def teardown(helper, fleet: Fleet, args) -> dict[str, Any]:
         "phase": "teardown",
         "units": len(units),
         "released": released,
+        "reaped": reaped,
         "errors": len(errors),
         "error_sample": errors[:10],
         "wall_seconds": round(wall, 2),
@@ -758,7 +782,7 @@ def run(args) -> int:
         phases.append(ramp(helper, fleet, rec, args))
         if args.hold > 0 and fleet.size() > 0:
             phases.append(hold(helper, fleet, rec, args))
-        # Scenario 3: drive the fleet the ramp just built. It runs in the SAME
+        # Scenario 2: drive the fleet the ramp just built. It runs in the SAME
         # process on purpose — a unit handle is only usable within the context
         # (endpoint, session, auth) that created it, which --no-teardown does
         # not persist, so a staircase resumed from a JSON file could not invoke
@@ -807,12 +831,21 @@ def run(args) -> int:
         print(f"\nWrote results to {args.out}")
 
     ramp_phase = phases[0] if phases else {}
-    # Exit 0 when the ramp did what it was told, or stopped at a ceiling we
-    # asked it to respect (--max-units). Every other stop is non-zero so the
-    # sequential wrapper flags the leg: the numbers are still valid and the
-    # stall point IS the result, but "did not reach the target" should not look
-    # like a clean run to a caller that only checks the status.
-    return 0 if ramp_phase.get("stop_reason") in ("target-reached", "max-units") else 1
+    # Exit 0 iff the fleet's FINAL accepted count actually reached the target
+    # (ramp()'s own "target_reached", computed after the thread pool drains
+    # every in-flight acquisition) or stopped at a ceiling we asked it to
+    # respect (--max-units). Deliberately NOT keyed off stop_reason alone: the
+    # loop can latch a reason like "capacity-ceiling" while accepted is still
+    # just under target, and then in-flight acquisitions that were already
+    # dispatched push accepted to (or past) target before the phase dict is
+    # built — a real, observed case where the final numbers show a full
+    # success (e.g. 5,000/5,000 accepted) but stop_reason still names the
+    # rejection that happened moments earlier. Every other case is non-zero so
+    # the sequential wrapper flags the leg: the numbers are still valid and
+    # the stall point IS the result, but "did not reach the target" should not
+    # look like a clean run to a caller that only checks the status.
+    return 0 if (ramp_phase.get("target_reached")
+                 or ramp_phase.get("stop_reason") == "max-units") else 1
 
 
 def print_report(report: dict[str, Any]) -> None:
@@ -848,12 +881,13 @@ def print_report(report: dict[str, Any]) -> None:
             if p.get("stop_detail"):
                 print(f"    stopped: {p['stop_detail']}")
             print(f"    {'offered':>9} {'achieved':>9} {'per-unit':>9} "
-                  f"{'p50':>8} {'p99':>9}  errors")
+                  f"{'p50':>8} {'p75':>8} {'p99':>9}  errors")
             for s in p["steps"]:
                 lat = s["latency"]
                 print(f"    {s['offered_rps']:>8.0f}/s {s['achieved_rps']:>8.1f}/s "
                       f"{s['per_unit_rps']:>8.2f}/s "
-                      f"{lat.get('p50_ms', 0):>7.1f}ms {lat.get('p99_ms', 0):>8.1f}ms"
+                      f"{lat.get('p50_ms', 0):>7.1f}ms {lat.get('p75_ms', 0):>7.1f}ms "
+                      f"{lat.get('p99_ms', 0):>8.1f}ms"
                       f"  {sum(s['errors'].values())}/{s['sent']}")
             print(f"    peak:    {p['max_achieved_rps']}/s "
                   f"({p['max_achieved_per_unit_rps']}/s per unit) "
@@ -865,7 +899,7 @@ def print_report(report: dict[str, Any]) -> None:
                       f"({p['max_clean_per_unit_rps']}/s per unit) "
                       f"at {p['clean_at_offered_rps']}/s offered")
             if p.get("per_unit_rps_steps"):
-                # Scenario 4's headline number.
+                # The per-unit staircase's headline number.
                 verdict = ("SATURATED" if p.get("saturated")
                            else "NOT saturated (lower bound)")
                 print(f"    per-unit capacity: "
@@ -881,9 +915,11 @@ def print_report(report: dict[str, Any]) -> None:
                 print(f"  teardown:  SKIPPED, {p['left_running']} unit(s) left "
                       f"running")
             elif p.get("units"):
+                reaped_note = (f", {p['reaped']} already reaped"
+                                if p.get("reaped") else "")
                 print(f"  teardown:  {p['released']}/{p['units']} released in "
-                      f"{p['wall_seconds']}s ({p['released_per_s']}/s), "
-                      f"{p['errors']} error(s)")
+                      f"{p['wall_seconds']}s ({p['released_per_s']}/s){reaped_note}, "
+                      f"{p['errors']} real error(s)")
 
     # Cold latency across the whole ramp, and how it moved as the fleet grew:
     # the tail is where saturation shows up.
@@ -921,7 +957,7 @@ def main() -> None:
                    help="probe requests/s during the hold, sampled across the "
                         "fleet; 0 = hold without verifying "
                         "(env: RAMP_HOLD_PROBE_RPS)")
-    # -- throughput staircase (Scenario 3) --
+    # -- throughput staircase (scenario 2 in this copy) --
     p.add_argument("--rps-steps", default=env("RAMP_RPS_STEPS", ""),
                    help="comma-separated request rates to drive the warm fleet "
                         "at, e.g. '25,50,100,200,400,800'. Empty = skip the "
@@ -929,13 +965,14 @@ def main() -> None:
     p.add_argument("--step-seconds", type=float,
                    default=float(env("RAMP_STEP_SECONDS", "30")),
                    help="seconds per staircase step (env: RAMP_STEP_SECONDS)")
-    # -- per-unit staircase (Scenario 4) --
+    # -- per-unit staircase (not wired into run_scenario.sh in this copy) --
     p.add_argument("--per-unit-rps-steps",
                    default=env("RAMP_PER_UNIT_RPS_STEPS", ""),
                    help="staircase expressed PER UNIT, e.g. '5,10,20,40,80'. "
                         "Multiplied by the actual fleet size at run time. Use "
                         "instead of --rps-steps to saturate individual units "
-                        "and measure per-unit capacity — Scenario 4 "
+                        "and measure per-unit capacity. Fully implemented but "
+                        "not exposed by run_scenario.sh in this copy "
                         "(env: RAMP_PER_UNIT_RPS_STEPS)")
     p.add_argument("--latency-factor", type=float,
                    default=float(env("RAMP_LATENCY_FACTOR", "3.0")),

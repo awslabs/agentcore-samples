@@ -13,8 +13,21 @@ AWS_REGION="${AWS_REGION:-us-west-2}"
 # ---- AgentCore session lifecycle ----
 # How long an idle session survives, and its hard maximum lifetime (seconds).
 # API range for both: 60..28800.
-AGENTCORE_IDLE_TIMEOUT="${AGENTCORE_IDLE_TIMEOUT:-300}"
-AGENTCORE_MAX_LIFETIME="${AGENTCORE_MAX_LIFETIME:-900}"
+#
+# 900/1200 (not the API's own defaults) because benchmarks/run_scenario.sh's
+# scenario 1 container leg ramps at 400 units/min to a 5,000-unit target --
+# ~750s just to reach the target, before any throttling stretches it further.
+# At the previous default (300s), every session went idle immediately after
+# its one invoke and was reaped by AgentCore mid-ramp: the ramp's own
+# "active" counter never saw the drop (it only finds out at teardown, via
+# ResourceNotFoundException -- see common.py's THROTTLE_MARKERS-adjacent
+# teardown handling in load_ramp.py), so peak-fleet-size and session-hours
+# were both overstated on any leg whose ramp outlasted the idle timeout. The
+# zip leg's ramp (~200s) was never affected; the container leg's was, badly.
+# Raising this is a real cost lever (see the top-level README's Cost
+# section) -- override it down for a cheaper, shorter rehearsal.
+AGENTCORE_IDLE_TIMEOUT="${AGENTCORE_IDLE_TIMEOUT:-900}"
+AGENTCORE_MAX_LIFETIME="${AGENTCORE_MAX_LIFETIME:-1200}"
 ECR_REPOSITORY="${ECR_REPOSITORY:-runtime-v2-test-agent}"
 # A single shared image tag is used by BOTH runtimes so the comparison runs on
 # the exact same image (same repo, same tag, same bits).
@@ -24,8 +37,11 @@ IMAGE_PLATFORM="${IMAGE_PLATFORM:-linux/arm64}"
 # Directory containing the base-agent Dockerfile (repo layout: ../base-agent).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_CONTEXT="${BUILD_CONTEXT:-${SCRIPT_DIR}/../base-agent}"
-# Repo-root venv (../../.venv from infrastructure/), for agentcore_boto3.py.
-VENV_PYTHON="${SCRIPT_DIR}/../../.venv/bin/python3"
+# Sample-root venv (../.venv from infrastructure/, i.e.
+# 05-measure-your-runtime/.venv — the same one benchmarks/run_scenario.sh
+# resolves to), for agentcore_boto3.py. Overridable in case yours lives
+# somewhere else.
+VENV_PYTHON="${VENV_PYTHON:-${SCRIPT_DIR}/../.venv/bin/python3}"
 
 log()  { printf '\033[1;34m[infra]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[infra]\033[0m %s\n' "$*" >&2; }

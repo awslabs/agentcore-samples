@@ -25,6 +25,12 @@ header for the full rationale):
 - **2 — warm until break.** Build a fleet of 100, then send an increasing
   warm-throughput staircase until latency or a real error rate says stop.
 
+`load_ramp.py` also fully implements a third mode, a **per-unit** staircase
+(`--per-unit-rps-steps` / `RAMP_PER_UNIT_RPS_STEPS`) — the original
+benchmark's scenario 4 — but `run_scenario.sh` never sets it, so it exists
+and works if you call `load_ramp.py` directly, without being one of the two
+numbered scenarios above.
+
 ## Usage
 
 ```bash
@@ -43,13 +49,14 @@ python3 analyze_results.py results-scenario*-*.json
 
 `.env` can hold an ARN for every size/version you've deployed at the same
 time (see `.env.example`) — `IMAGE_SIZE` and
-`AGENTCORE_MANAGED_COMPUTE_VERSION` pick which one a run actually uses:
+`AGENTCORE_PLATFORM_VERSION` (`AGENTCORE_MANAGED_COMPUTE_VERSION` still works
+as a deprecated alias) pick which one a run actually uses:
 
 ```bash
-IMAGE_SIZE=750mb AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./run_scenario.sh 1 agentcore
+IMAGE_SIZE=750mb AGENTCORE_PLATFORM_VERSION=V2 ./run_scenario.sh 1 agentcore
 # -> reads AGENTCORE_ARN_750MB_V2 from .env, writes results-scenario1-agentcore-750mb-V2.json
 
-AGENTCORE_MANAGED_COMPUTE_VERSION=V1 ./run_scenario.sh 1 agentcore-zip
+AGENTCORE_PLATFORM_VERSION=V1 ./run_scenario.sh 1 agentcore-zip
 # -> reads AGENTCORE_ZIP_ARN_V1, writes results-scenario1-agentcore-zip-V1.json
 ```
 

@@ -26,12 +26,15 @@ Runtime two ways, each testable under both managed-compute settings:
 | `deploy-agentcore.sh` | AgentCore Runtime via **container** image (ECR), any `IMAGE_SIZE`. |
 | `deploy-agentcore-zip.sh` | AgentCore Runtime via **direct code (zip)**. |
 | `agentcore_boto3.py` | Create/update/find-existing-runtime via plain boto3 (this repo's own venv), used instead of the `aws` CLI so a just-released field is usable as soon as it's `pip install`-ed, without waiting for a CLI release. |
+| `cleanup.sh` | Deletes everything the deploy scripts can create (runtimes, ECR repo/images, S3 code bucket, IAM roles). Dry run by default; `--yes` to actually delete. See the top-level README's Cost section. |
 
-## Managed-compute version: V1 (warm pool) vs V2 (SnapStart)
+## Platform version: V1 (Original Runtime) vs V2 (New Runtime)
 
-Both deploy scripts accept `AGENTCORE_MANAGED_COMPUTE_VERSION` (`V1` or `V2`),
-which sets the `platformVersion` field on create/update. When set, it does two
-things:
+Both deploy scripts accept `AGENTCORE_PLATFORM_VERSION` (`V1` or `V2`),
+which sets the API's own `platformVersion` field on create/update — the name
+now matches the field it sets. (`AGENTCORE_MANAGED_COMPUTE_VERSION` still
+works as a deprecated alias, with a warning, for one release.) When set, it
+does two things:
 
 1. The create/update call goes through `agentcore_boto3.py` (this repo's
    venv), so it works as soon as the installed boto3 supports the field,
@@ -42,8 +45,8 @@ things:
    runtimes ready to compare, without hand-editing `AGENT_RUNTIME_NAME`.
 
 ```bash
-AGENTCORE_MANAGED_COMPUTE_VERSION=V1 ./deploy-agentcore-zip.sh
-AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore-zip.sh
+AGENTCORE_PLATFORM_VERSION=V1 ./deploy-agentcore-zip.sh
+AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore-zip.sh
 # -> ac_zip_x_lambda_bench_agent_V1 and ..._V2, both live at once
 ```
 
@@ -57,7 +60,7 @@ ECR's layer compression instead of vanishing.
 
 ```bash
 IMAGE_SIZE=750mb ./build-and-push.sh
-IMAGE_SIZE=750mb AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore.sh
+IMAGE_SIZE=750mb AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore.sh
 # -> ac_ctn_x_lambda_agent_750mb_V2
 ```
 
@@ -84,13 +87,13 @@ aws ecr describe-images --repository-name "${ECR_REPOSITORY}" \
 cd infrastructure
 
 # --- zip, both versions ---
-AGENTCORE_MANAGED_COMPUTE_VERSION=V1 ./deploy-agentcore-zip.sh
-AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore-zip.sh
+AGENTCORE_PLATFORM_VERSION=V1 ./deploy-agentcore-zip.sh
+AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore-zip.sh
 
 # --- container, one size, both versions ---
 IMAGE_SIZE=500mb ./build-and-push.sh
-IMAGE_SIZE=500mb AGENTCORE_MANAGED_COMPUTE_VERSION=V1 ./deploy-agentcore.sh
-IMAGE_SIZE=500mb AGENTCORE_MANAGED_COMPUTE_VERSION=V2 ./deploy-agentcore.sh
+IMAGE_SIZE=500mb AGENTCORE_PLATFORM_VERSION=V1 ./deploy-agentcore.sh
+IMAGE_SIZE=500mb AGENTCORE_PLATFORM_VERSION=V2 ./deploy-agentcore.sh
 ```
 
 Each deploy prints the runtime ARN. Force a genuinely new runtime instead of
