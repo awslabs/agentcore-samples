@@ -1,8 +1,8 @@
-# LangGraph with Amazon Bedrock on AgentCore Runtime V2
+# LangGraph with Amazon Bedrock on AgentCore New Runtime
 
 ## Overview
 
-Deploy a [LangGraph](https://langchain-ai.github.io/langgraph/) agent using an Amazon Bedrock model (Claude) to AgentCore Runtime V2. This example shows that AgentCore runtime is framework-agnostic — the deployment process is identical regardless of which agent framework you use. Only the agent code changes.
+Deploy a [LangGraph](https://langchain-ai.github.io/langgraph/) agent using an Amazon Bedrock model (Claude) to AgentCore New Runtime. This example shows that AgentCore runtime is framework-agnostic — the deployment process is identical regardless of which agent framework you use. Only the agent code changes.
 
 ```
 ┌─────────────┐     invoke_agent_runtime()     ┌──────────────────────────┐
@@ -14,7 +14,7 @@ Deploy a [LangGraph](https://langchain-ai.github.io/langgraph/) agent using an A
                                                └──────────────────────────┘
 ```
 
-## Runtime V2 in one field
+## New Runtime in one field
 
 AgentCore prepares your execution environment once at create/update time, snapshots it, and every new execution environment resumes from that snapshot instead of loading your code again. Cold starts get faster; how much depends on how much your agent loads at import.
 
@@ -24,7 +24,7 @@ You select it with one field on `create_agent_runtime`:
 platformVersion="V2"
 ```
 
-**It must be set explicitly** — omitting it does not give you V2, and the create response does not tell you which platform version you got. `deploy.py` calls `get_agent_runtime` afterwards to confirm.
+**It must be set explicitly** — omitting it does not give you New Runtime, and the create response does not tell you which platform version you got. `deploy.py` calls `get_agent_runtime` afterwards to confirm.
 
 The trade-off: **create and update take minutes rather than seconds**, because the snapshot is prepared during the call. Measured on this sample in `us-west-2`, `create_agent_runtime` reached `READY` in roughly 2–3.5 minutes and the endpoint in another 1–3. Raise any client or CI timeout accordingly.
 
@@ -37,7 +37,7 @@ The trade-off: **create and update take minutes rather than seconds**, because t
 - AWS CLI configured with credentials
 - boto3 1.43.95 or later — the first public release that models `platformVersion`
 - Access to Amazon Bedrock models (Claude) in your region
-- An AWS account and region where Runtime V2 is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
+- An AWS account and region where New Runtime is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
 
 ## Step 1: Write the Agent (`agent.py`)
 
@@ -95,11 +95,11 @@ curl -X POST http://localhost:8080/invocations \
 
 ### Graph compilation and the snapshot
 
-`graph_builder.compile()` runs at **import time**, which on V2 is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is precisely the kind of startup cost V2 pre-pays. Note the dependency tree here is not the larger one: this sample's deployment zip measures 43.1 MB against 46.9 MB for the Strands example, so if anything there is slightly less import cost to move.
+`graph_builder.compile()` runs at **import time**, which on New Runtime is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is precisely the kind of startup cost New Runtime pre-pays. Note the dependency tree here is not the larger one: this sample's deployment zip measures 43.1 MB against 46.9 MB for the Strands example, so if anything there is slightly less import cost to move.
 
 The graph in this sample is snapshot-safe because it is pure in-process state — nodes, edges and a bound LLM client, with no I/O until `invoke()` is called. Two things to watch if you extend it:
 
-- **A checkpointer backed by a live connection.** `MemorySaver` is fine, but understand what it means under V2: it is in-process, so its contents are captured in the snapshot and shared by every environment resumed from it. Treat it as per-request state you cannot rely on, not a cache. A Postgres or Redis checkpointer constructed at import will hold a connection that is dead by the time an environment resumes — build those lazily inside the entrypoint.
+- **A checkpointer backed by a live connection.** `MemorySaver` is fine, but understand what it means under New Runtime: it is in-process, so its contents are captured in the snapshot and shared by every environment resumed from it. Treat it as per-request state you cannot rely on, not a cache. A Postgres or Redis checkpointer constructed at import will hold a connection that is dead by the time an environment resumes — build those lazily inside the entrypoint.
 - **Anything that must be unique per environment** — a thread id or run id generated at import is identical in every resumed environment, permanently. Generate them per invocation.
 - **Do not draw uniqueness from the `random` module.** Its state is captured in the snapshot, so even a per-request `random.random()` repeats across environments resumed from the same snapshot — verified. Use `uuid.uuid4()` or `secrets`, which read from the OS.
 
@@ -113,7 +113,7 @@ The IAM role uses the official [AgentCore direct deploy execution role](https://
 
 ## Step 3: Build Deployment Package and Upload to S3 (`deploy.py`)
 
-AgentCore runtime runs on **arm64** microVMs. The deployment zip must include pre-compiled arm64 dependencies — the runtime does NOT run `pip install` at startup. This is unchanged by `platformVersion`, which governs how the runtime starts your code rather than how you package it. arm64 is required either way: it is an AgentCore runtime requirement, not something V2 introduces.
+AgentCore runtime runs on **arm64** microVMs. The deployment zip must include pre-compiled arm64 dependencies — the runtime does NOT run `pip install` at startup. This is unchanged by `platformVersion`, which governs how the runtime starts your code rather than how you package it. arm64 is required either way: it is an AgentCore runtime requirement, not something New Runtime introduces.
 
 ```bash
 # What deploy.py does under the hood:
@@ -152,14 +152,14 @@ control.create_agent_runtime(
     networkConfiguration={"networkMode": "PUBLIC"},
     protocolConfiguration={"serverProtocol": "HTTP"},
 
-    # ─── Runtime V2. Must be set explicitly. ───
+    # ─── New Runtime. Must be set explicitly. ───
     platformVersion="V2",
 )
 ```
 
 The runtime name must use **alphanumeric characters and underscores only** (no hyphens). The deploy script appends a timestamp for uniqueness.
 
-Then poll `get_agent_runtime` until the status is `READY` — **minutes on V2**, because the snapshot is prepared during create — and read `platformVersion` back from that same response to confirm it took effect. From boto3 1.43.95 the response models `platformVersion`, so an absent field means the service returned none rather than your SDK having dropped it — either way it means "unknown" rather than a specific version. `deploy.py` treats confirmed, mismatched and unconfirmable as three distinct outcomes and only fails on a genuine mismatch.
+Then poll `get_agent_runtime` until the status is `READY` — **minutes on New Runtime**, because the snapshot is prepared during create — and read `platformVersion` back from that same response to confirm it took effect. From boto3 1.43.95 the response models `platformVersion`, so an absent field means the service returned none rather than your SDK having dropped it — either way it means "unknown" rather than a specific version. `deploy.py` treats confirmed, mismatched and unconfirmable as three distinct outcomes and only fails on a genuine mismatch.
 
 ## Step 5: Create an Endpoint (`deploy.py`)
 
@@ -167,11 +167,11 @@ Then poll `get_agent_runtime` until the status is `READY` — **minutes on V2**,
 control.create_agent_runtime_endpoint(agentRuntimeId=runtime_id, name="default")
 ```
 
-Poll `list_agent_runtime_endpoints` until the endpoint status is `READY`. This is also slower on V2 — measured at 1–3 minutes for this sample — which is easy to miss because guidance usually mentions only the runtime create/update. Endpoints have no `platformVersion` field; the platform version belongs to the runtime.
+Poll `list_agent_runtime_endpoints` until the endpoint status is `READY`. This is also slower on New Runtime — measured at 1–3 minutes for this sample — which is easy to miss because guidance usually mentions only the runtime create/update. Endpoints have no `platformVersion` field; the platform version belongs to the runtime.
 
 ## Step 6: Invoke the Agent (`invoke.py`)
 
-The data plane is unchanged by `platformVersion`, so this file is identical to a non-V2 deployment:
+The data plane is unchanged by `platformVersion`, so this file is identical to a deployment without New Runtime:
 
 ```python
 client = boto3.client("bedrock-agentcore")
@@ -216,7 +216,7 @@ The **deployment and invocation code is identical**, including the `platformVers
 ## Quick Start
 
 ```bash
-python deploy.py         # Deploy to AgentCore Runtime V2 (several minutes)
+python deploy.py         # Deploy to AgentCore New Runtime (several minutes)
 python invoke.py         # Invoke with math questions
 python cleanup.py        # Clean up all resources
 ```

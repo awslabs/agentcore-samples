@@ -1,5 +1,5 @@
 """
-Deploy a Strands + Azure OpenAI agent to AgentCore Runtime V2.
+Deploy a Strands + Azure OpenAI agent to AgentCore New Runtime.
 
 This agent uses LiteLLM to call Azure OpenAI (GPT-4.1-mini), demonstrating
 that AgentCore Runtime is model-agnostic — any LLM provider works.
@@ -34,7 +34,7 @@ PROTOCOL = "HTTP"
 # AgentCore Runtime platform version. "V2" prepares the execution environment
 # once, at create/update time, and snapshots it; new execution environments
 # resume from that snapshot instead of loading your code on every cold start.
-# This field must be set explicitly — omitting it does not give you V2.
+# This field must be set explicitly — omitting it does not give you New Runtime.
 PLATFORM_VERSION = "V2"
 PYTHON_RUNTIME = "PYTHON_3_13"
 ENTRY_POINT = "agent.py"
@@ -243,17 +243,17 @@ def create_runtime(role_arn: str) -> dict:
         networkConfiguration={"networkMode": "PUBLIC"},
         protocolConfiguration={"serverProtocol": PROTOCOL},
         platformVersion=PLATFORM_VERSION,
-        description="Strands agent with Azure OpenAI (LiteLLM) on Runtime V2 — tutorial example",
+        description="Strands agent with Azure OpenAI (LiteLLM) on New Runtime — tutorial example",
     )
 
     runtime_id = response["agentRuntimeId"]
     runtime_arn = response["agentRuntimeArn"]
     print(f"  ✓ Runtime created: {runtime_id}")
 
-    # On V2 the snapshot is prepared during create, so this wait is measured in
+    # On New Runtime the snapshot is prepared during create, so this wait is measured in
     # minutes rather than seconds. The loop below has no timeout, so it simply
     # waits; budget accordingly in any automation that wraps this script.
-    print("  Waiting for runtime to be ready (V2 prepares a snapshot — expect minutes)...")
+    print("  Waiting for runtime to be ready (New Runtime prepares a snapshot — expect minutes)...")
     while True:
         status_resp = control.get_agent_runtime(agentRuntimeId=runtime_id)
         status = status_resp["status"]
@@ -290,7 +290,7 @@ def create_endpoint(runtime_id: str) -> dict:
     response = control.create_agent_runtime_endpoint(agentRuntimeId=runtime_id, name="default")
     print(f"  ✓ Endpoint created: {response['agentRuntimeEndpointArn']}")
 
-    print("  Waiting for endpoint to be ready (also longer on V2)...")
+    print("  Waiting for endpoint to be ready (also longer on New Runtime)...")
     while True:
         eps = control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
         for ep in eps.get("runtimeEndpoints", []):

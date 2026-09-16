@@ -1,8 +1,8 @@
-# Strands Agents with Azure OpenAI on AgentCore Runtime V2
+# Strands Agents with Azure OpenAI on AgentCore New Runtime
 
 ## Overview
 
-Deploy a [Strands Agents](https://strandsagents.com/) agent using **Azure OpenAI** (GPT-4.1-mini via [LiteLLM](https://docs.litellm.ai/)) to AgentCore Runtime V2. This demonstrates that AgentCore runtime is model-agnostic — you can use any LLM provider, not just Amazon Bedrock.
+Deploy a [Strands Agents](https://strandsagents.com/) agent using **Azure OpenAI** (GPT-4.1-mini via [LiteLLM](https://docs.litellm.ai/)) to AgentCore New Runtime. This demonstrates that AgentCore runtime is model-agnostic — you can use any LLM provider, not just Amazon Bedrock.
 
 ```
 ┌─────────────┐     invoke_agent_runtime()     ┌──────────────────────────┐
@@ -15,7 +15,7 @@ Deploy a [Strands Agents](https://strandsagents.com/) agent using **Azure OpenAI
                                                └──────────────────────────┘
 ```
 
-## Runtime V2 in one field
+## New Runtime in one field
 
 AgentCore prepares your execution environment once at create/update time, snapshots it, and every new execution environment resumes from that snapshot instead of loading your code again. Cold starts get faster; how much depends on how much your agent loads at import.
 
@@ -25,11 +25,11 @@ You select it with one field on `create_agent_runtime`:
 platformVersion="V2"
 ```
 
-**It must be set explicitly** — omitting it does not give you V2, and the create response does not report which platform version you got. `deploy.py` calls `get_agent_runtime` afterwards to confirm.
+**It must be set explicitly** — omitting it does not give you New Runtime, and the create response does not report which platform version you got. `deploy.py` calls `get_agent_runtime` afterwards to confirm.
 
-The trade-off: **create and update take minutes rather than seconds**, because the snapshot is prepared during the call. This sample has the heaviest dependency tree of the three (`litellm` is substantial), which is exactly the load V2 moves off the invocation path — but it also means the packaging step takes a while before the API call even starts.
+The trade-off: **create and update take minutes rather than seconds**, because the snapshot is prepared during the call. This sample has the heaviest dependency tree of the three (`litellm` is substantial), which is exactly the load New Runtime moves off the invocation path — but it also means the packaging step takes a while before the API call even starts.
 
-V2 snapshots the *environment*, not the model. Your provider is still called over the network on every invocation, so an external provider works exactly as it does without V2.
+New Runtime snapshots the *environment*, not the model. Your provider is still called over the network on every invocation, so an external provider works exactly as it does without New Runtime.
 
 > For the full walkthrough of `platformVersion` — accepted values, which operations carry it, the error behaviour, the complete parameter reference, and the rules for writing snapshot-safe agent code — see [`../01-strands-bedrock/README.md`](../01-strands-bedrock/README.md). This README covers what is specific to an external LLM provider.
 
@@ -46,9 +46,9 @@ os.environ["AZURE_API_VERSION"] = "<YOUR_API_VERSION>"  # e.g., "2024-02-01"
 
 Without valid credentials the runtime still deploys and reaches `READY` — the snapshot is prepared successfully, because nothing contacts Azure at import time — but **invocations fail with a 500 from the runtime.** If you see that, check CloudWatch before suspecting the platform version.
 
-### Why this matters more under V2
+### Why this matters more under New Runtime
 
-On V2 your module-level code runs **once**, before the snapshot is taken, and every environment resumed from that snapshot inherits whatever it left behind. For credentials specifically:
+On New Runtime your module-level code runs **once**, before the snapshot is taken, and every environment resumed from that snapshot inherits whatever it left behind. For credentials specifically:
 
 - **Do** pass secrets as `environmentVariables`. The runtime injects them before your code runs, so `os.environ` is correctly populated pre-snapshot and remains correct after a resume. Note that the values **are** returned by `get_agent_runtime`, so anyone who can describe the runtime can read them — this keeps secrets out of your deployment zip, not out of the API.
 - **Don't** bake a literal key into the source. That ships the secret inside your deployment zip, and rotating it means rebuilding and re-uploading the package plus an `update_agent_runtime` — which re-prepares the snapshot and takes minutes.
@@ -63,9 +63,9 @@ Azure API keys are long-lived, so this sample works either way. The pattern matt
 - AWS CLI configured with credentials
 - boto3 1.43.95 or later — the first public release that models `platformVersion`
 - Azure OpenAI API credentials (API key, base URL, API version)
-- An AWS account and region where Runtime V2 is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
+- An AWS account and region where New Runtime is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
 
-Note that Runtime V2 availability is an **AWS** concern — it has nothing to do with your Azure subscription.
+Note that New Runtime availability is an **AWS** concern — it has nothing to do with your Azure subscription.
 
 ## Step 1: Write the Agent (`agent.py`)
 
@@ -113,7 +113,7 @@ Since this agent calls Azure OpenAI (not Bedrock), the IAM role does **not** nee
 
 ## Step 3: Build Deployment Package and Upload to S3 (`deploy.py`)
 
-Same arm64 packaging as the Bedrock examples — the zip must include pre-compiled `aarch64-manylinux2014` wheels, since the runtime does not run `pip install` at startup. The deploy script handles this with `uv`. Packaging is unchanged by `platformVersion`. arm64 is required either way: it is an AgentCore runtime requirement, not something V2 introduces.
+Same arm64 packaging as the Bedrock examples — the zip must include pre-compiled `aarch64-manylinux2014` wheels, since the runtime does not run `pip install` at startup. The deploy script handles this with `uv`. Packaging is unchanged by `platformVersion`. arm64 is required either way: it is an AgentCore runtime requirement, not something New Runtime introduces.
 
 ## Step 4: Create runtime and Endpoint (`deploy.py`)
 
@@ -133,12 +133,12 @@ control.create_agent_runtime(
     networkConfiguration={"networkMode": "PUBLIC"},
     protocolConfiguration={"serverProtocol": "HTTP"},
 
-    # ─── Runtime V2. Must be set explicitly. ───
+    # ─── New Runtime. Must be set explicitly. ───
     platformVersion="V2",
 )
 ```
 
-Then poll `get_agent_runtime` until `READY` — minutes on V2 — read `platformVersion` back from that response to confirm, and call `create_agent_runtime_endpoint`. The endpoint wait is also longer on V2.
+Then poll `get_agent_runtime` until `READY` — minutes on New Runtime — read `platformVersion` back from that response to confirm, and call `create_agent_runtime_endpoint`. The endpoint wait is also longer on New Runtime.
 
 To keep the key out of your deployment zip, pass the credentials here instead of hardcoding them in `agent.py`:
 
@@ -157,7 +157,7 @@ Then read them with `os.environ.get("AZURE_API_KEY")` in `agent.py`. The field a
 
 ## Step 5: Invoke the Agent (`invoke.py`)
 
-The data plane is unchanged by `platformVersion`, so this file is identical to a non-V2 deployment:
+The data plane is unchanged by `platformVersion`, so this file is identical to a deployment without New Runtime:
 
 ```python
 client = boto3.client("bedrock-agentcore", region_name=region)
@@ -204,7 +204,7 @@ Everything else — deployment flow, invocation, cleanup, platform version — i
 ```bash
 # 1. Update credentials in agent.py (replace <YOUR_API_KEY>, etc.)
 
-# 2. Deploy to AgentCore Runtime V2 (several minutes)
+# 2. Deploy to AgentCore New Runtime (several minutes)
 python deploy.py
 
 # 3. Invoke

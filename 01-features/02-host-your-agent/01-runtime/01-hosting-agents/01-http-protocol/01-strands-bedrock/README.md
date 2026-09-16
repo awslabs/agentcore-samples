@@ -1,8 +1,8 @@
-# Strands Agents with Amazon Bedrock on AgentCore Runtime V2
+# Strands Agents with Amazon Bedrock on AgentCore New Runtime
 
 ## Overview
 
-Deploy a [Strands Agents](https://strandsagents.com/) agent using an Amazon Bedrock model (Claude) to AgentCore Runtime V2. This is the simplest path to hosting an agent — write your agent logic, zip it, and deploy with boto3.
+Deploy a [Strands Agents](https://strandsagents.com/) agent using an Amazon Bedrock model (Claude) to AgentCore New Runtime. This is the simplest path to hosting an agent — write your agent logic, zip it, and deploy with boto3.
 
 ![Architecture — agent in AgentCore runtime with Bedrock LLMs](images/architecture_runtime.png)
 
@@ -16,11 +16,11 @@ Deploy a [Strands Agents](https://strandsagents.com/) agent using an Amazon Bedr
                                                └──────────────────────┘
 ```
 
-## What Runtime V2 gives you
+## What New Runtime gives you
 
 Cold starts add significant and *variable* latency. When a new execution environment starts, the microVM is available within milliseconds — but the environment then has to load your agent's code and dependencies before it can serve a request. For direct code deployment that means preparing your zip; for a container image it means pulling from ECR. That load step is the main source of cold-start delay, and because it varies from one start to the next, so does your agent's latency.
 
-Runtime V2 moves that work to deploy time. AgentCore prepares your execution environment once, snapshots it, and every new environment **resumes from that snapshot**, so the code-loading step drops out of the startup path entirely. 
+New Runtime moves that work to deploy time. AgentCore prepares your execution environment once, snapshots it, and every new environment **resumes from that snapshot**, so the code-loading step drops out of the startup path entirely. 
 
 You select it with one field on `create_agent_runtime`:
 
@@ -28,12 +28,12 @@ You select it with one field on `create_agent_runtime`:
 platformVersion="V2"
 ```
 
-**This field must be set explicitly.** Omit it and you do not get V2 — the runtime is created on the platform default instead, and nothing in the create response tells you which you got. See [Step 4b](#step-4b-wait-for-ready-and-confirm-v2) for how to confirm.
+**This field must be set explicitly.** Omit it and you do not get New Runtime — the runtime is created on the platform default instead, and nothing in the create response tells you which you got. See [Step 4b](#step-4b-wait-for-ready-and-confirm-new-runtime) for how to confirm.
 
 
 ### When it fits
 
-V2 suits agents that are sensitive to cold-start latency, especially with intermittent or bursty traffic that cannot rely on being kept warm. If your agent is under constant load and effectively always warm, you will see less benefit and still pay the slower deploy.
+New Runtime suits agents that are sensitive to cold-start latency, especially with intermittent or bursty traffic that cannot rely on being kept warm. If your agent is under constant load and effectively always warm, you will see less benefit and still pay the slower deploy.
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ curl -X POST http://localhost:8080/invocations \
 
 ### Writing agent code that is safe to snapshot
 
-This is the one place V2 changes how you write an agent, so it is worth understanding before you build something more complex than this sample.
+This is the one place New Runtime changes how you write an agent, so it is worth understanding before you build something more complex than this sample.
 
 **Your import-time code runs once, before the snapshot is taken — not on every cold start.** Every environment resumed from that snapshot inherits whatever state your module-level code left behind, and many environments can be serving concurrently from the same snapshot. Assume you get no callback in between to fix anything up.
 
@@ -109,7 +109,7 @@ That makes module-level work *good* for anything expensive and reusable, and *wr
 
 | Do at import | Avoid at import | Why |
 |:-------------|:----------------|:----|
-| Import heavy dependencies | — | Exactly the startup cost V2 pre-pays |
+| Import heavy dependencies | — | Exactly the startup cost New Runtime pre-pays |
 | Build model clients, compile graphs | — | Prepared once, reused by every environment |
 | — | Open sockets, DB connections, pools | Frozen mid-flight; likely dead on resume. Open them lazily in the entrypoint |
 | — | Generate a seed, id, nonce or token | Identical in every resumed environment, permanently. Generate per invocation |
@@ -118,9 +118,9 @@ That makes module-level work *good* for anything expensive and reusable, and *wr
 | — | Fetch a short-lived credential | Long expired by the time an environment resumes. Let boto3 refresh its own |
 | — | Warm a cache you rely on | Contents are frozen and shared. Treat it as cold |
 
-The agent in this sample is snapshot-safe: it builds the model and agent objects at import — the work V2 exists to pre-pay — and does no I/O until the entrypoint runs.
+The agent in this sample is snapshot-safe: it builds the model and agent objects at import — the work New Runtime exists to pre-pay — and does no I/O until the entrypoint runs.
 
-If you want to see this for yourself, have an entrypoint return both an import-time value and a freshly generated one, then drive a few dozen concurrent invocations on distinct session ids and count the distinct values you get back. Measured that way on V2: a per-request `uuid.uuid4()` gave 24 distinct values across 24 sessions, while the import-time uuid gave 2 — and the process reported itself several minutes old on its very first request, because it was resumed rather than started.
+If you want to see this for yourself, have an entrypoint return both an import-time value and a freshly generated one, then drive a few dozen concurrent invocations on distinct session ids and count the distinct values you get back. Measured that way on New Runtime: a per-request `uuid.uuid4()` gave 24 distinct values across 24 sessions, while the import-time uuid gave 2 — and the process reported itself several minutes old on its very first request, because it was resumed rather than started.
 
 ## Step 2: Create an IAM Execution Role (`deploy.py`)
 
@@ -163,7 +163,7 @@ cd .. && zip deployment_package.zip agent.py
 | `--only-binary :all:` | Only download pre-built wheels (no source compilation) |
 | `--target deployment_package` | Install into a local directory, not site-packages |
 
-Packaging is unchanged by `platformVersion` — it governs how the runtime *starts* your code, not how you build it. arm64 is required either way: it is an AgentCore runtime requirement, not something V2 introduces.
+Packaging is unchanged by `platformVersion` — it governs how the runtime *starts* your code, not how you build it. arm64 is required either way: it is an AgentCore runtime requirement, not something New Runtime introduces.
 
 ## Step 4: Create the AgentCore runtime (`deploy.py`)
 
@@ -199,7 +199,7 @@ response = control.create_agent_runtime(
     # Protocol — HTTP for standard request/response
     protocolConfiguration={"serverProtocol": "HTTP"},
 
-    # ─── Runtime V2. Must be set explicitly. ───
+    # ─── New Runtime. Must be set explicitly. ───
     platformVersion="V2",
 
     # Optional
@@ -218,7 +218,7 @@ status = response["status"]                # "CREATING"
 | `agentRuntimeName` | Yes | Unique name. Alphanumeric and underscores only — no hyphens |
 | `agentRuntimeArtifact` | Yes | Either `codeConfiguration` (zip to S3) or `containerConfiguration` (ECR image) |
 | `roleArn` | Yes | IAM execution role ARN. Validated early — a bad role is reported before `platformVersion` is even checked |
-| **`platformVersion`** | No | **`"V2"` selects Runtime V2. Must be set explicitly** |
+| **`platformVersion`** | No | **`"V2"` selects New Runtime. Must be set explicitly** |
 | `networkConfiguration` | Yes | `PUBLIC`, or `VPC` with subnets and security groups. The service model lists only three required members, but omitting this one is rejected with `ValidationException: NetworkConfiguration is required` — verified |
 | `protocolConfiguration` | No | `HTTP` (default), `MCP`, `A2A`, or `AGUI` |
 | `lifecycleConfiguration` | No | `idleRuntimeSessionTimeout` (default 900s) and `maxLifetime` (default 28800s) |
@@ -241,7 +241,7 @@ status = response["status"]                # "CREATING"
 | `entryPoint` | List with the file to execute (e.g., `["agent.py"]`) |
 
 
-### Step 4b: wait for `READY` and confirm V2
+### Step 4b: wait for `READY` and confirm New Runtime
 
 `create_agent_runtime` returns while the runtime is still `CREATING`. There is no botocore waiter for agent runtimes, so poll `get_agent_runtime` yourself. Statuses are `CREATING`, `READY`, `CREATE_FAILED`, `UPDATING`, `UPDATE_FAILED` and `DELETING`.
 
@@ -260,9 +260,9 @@ while True:
 
 `deploy.py` checks those two statuses explicitly. Matching on the `FAILED` suffix instead would also catch any failure status added later — either way, do not loop on `READY` alone or a failed create will spin until your timeout.
 
-> **This wait takes minutes on V2**, because the snapshot is prepared during create. `deploy.py`'s loop has no timeout so it simply waits — but any automation wrapping it needs its own timeout raised accordingly.
+> **This wait takes minutes on New Runtime**, because the snapshot is prepared during create. `deploy.py`'s loop has no timeout so it simply waits — but any automation wrapping it needs its own timeout raised accordingly.
 
-Because create does not echo the field back, confirm V2 actually took effect:
+Because create does not echo the field back, confirm New Runtime actually took effect:
 
 ```python
 runtime = control.get_agent_runtime(agentRuntimeId=runtime_id)
@@ -301,11 +301,11 @@ control.create_agent_runtime_endpoint(
 
 Wait for the endpoint to reach `READY` the same way you waited for the runtime.
 
-> **Budget minutes here too.** Endpoint creation is also slower on V2 — measured at 1–3 minutes for this sample. This is easy to miss, because guidance usually mentions only the runtime create/update. `create_agent_runtime_endpoint` has no `platformVersion` field; the platform version travels with the runtime.
+> **Budget minutes here too.** Endpoint creation is also slower on New Runtime — measured at 1–3 minutes for this sample. This is easy to miss, because guidance usually mentions only the runtime create/update. `create_agent_runtime_endpoint` has no `platformVersion` field; the platform version travels with the runtime.
 
 ## Step 6: Invoke the Agent (`invoke.py`)
 
-Now use the **data plane** client (`bedrock-agentcore`) to send requests. The data plane is unchanged by `platformVersion` — `invoke.py` in this sample is identical to a non-V2 deployment.
+Now use the **data plane** client (`bedrock-agentcore`) to send requests. The data plane is unchanged by `platformVersion` — `invoke.py` in this sample is identical to a deployment without New Runtime.
 
 ```python
 import json, boto3
@@ -385,7 +385,7 @@ uv pip install -r requirements.txt
 # Test locally
 python agent.py
 
-# Deploy to AgentCore Runtime V2 (several minutes — the snapshot is prepared during create)
+# Deploy to AgentCore New Runtime (several minutes — the snapshot is prepared during create)
 python deploy.py
 
 # Invoke the deployed agent
