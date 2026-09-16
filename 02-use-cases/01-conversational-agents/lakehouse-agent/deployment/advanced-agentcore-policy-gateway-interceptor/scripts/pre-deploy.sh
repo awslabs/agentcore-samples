@@ -58,7 +58,7 @@ if ! aws lambda get-function \
     echo "  will fail with HTTP 500."
     echo ""
     echo "  Deploy it first (Phase 1 Step 5b):"
-    echo "    cd $PROJECT_DIR/deployment/5-gateway-setup/interceptor-response"
+    echo "    cd $PROJECT_DIR/deployment/5a-gateway-setup/interceptor-response"
     echo "    AWS_REGION=$REGION ./deploy.sh"
     exit 1
 fi
@@ -69,7 +69,7 @@ echo ""
 echo "[3/3] Updating Request Interceptor Lambda (Design 3 geography support)..."
 
 SRC="$CDK_DIR/lambda/interceptor-request/lambda_function.py"
-DST="$PROJECT_DIR/deployment/5-gateway-setup/interceptor-request/lambda_function.py"
+DST="$PROJECT_DIR/deployment/5a-gateway-setup/interceptor-request/lambda_function.py"
 
 if [ -f "$SRC" ]; then
     cp "$SRC" "$DST"
@@ -78,7 +78,7 @@ if [ -f "$SRC" ]; then
     echo "  To:   $DST"
 
     echo "  Deploying Lambda..."
-    cd "$PROJECT_DIR/deployment/5-gateway-setup/interceptor-request"
+    cd "$PROJECT_DIR/deployment/5a-gateway-setup/interceptor-request"
     AWS_REGION="$REGION" ./deploy.sh
     cd "$CDK_DIR"
     echo "  Lambda updated."
