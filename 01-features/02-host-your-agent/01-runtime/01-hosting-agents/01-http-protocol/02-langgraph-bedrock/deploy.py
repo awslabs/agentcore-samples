@@ -194,6 +194,16 @@ def build_and_upload_package():
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         print(f"\n✓ S3 bucket exists: {S3_BUCKET}")
 
+    s3.put_public_access_block(
+        Bucket=S3_BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
+
     # Clean previous build artifacts
     if os.path.isdir(pkg_dir):
         shutil.rmtree(pkg_dir)
