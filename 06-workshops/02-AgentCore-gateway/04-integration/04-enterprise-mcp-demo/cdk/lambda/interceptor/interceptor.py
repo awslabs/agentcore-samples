@@ -10,6 +10,10 @@ logger.setLevel(logging.INFO)
 GUARDRAIL_ID = os.getenv("GUARDRAIL_ID", None)
 GUARDRAIL_VERSION = os.getenv("GUARDRAIL_VERSION", "1.0")
 MCP_METADATA_KEY = os.getenv("MCP_METADATA_KEY", "com.example/target")
+AUTH_ONBOARDING_URL = os.getenv("AUTH_ONBOARDING_URL", "")
+
+# MCP JSON-RPC error code for elicitation (authorization required)
+ELICITATION_ERROR_CODE = -32042
 
 client = boto3.client("bedrock-runtime")
 
@@ -41,7 +45,9 @@ def lambda_handler(event, context):
                 logger.info(f"Gateway request method: {mcp_method}")
 
             if response_body:
-                logger.info(f"Gateway response body: {json.dumps(response_body, indent=2)}")
+                logger.info(
+                    f"Gateway response body: {json.dumps(response_body, indent=2)}"
+                )
 
             logger.info(f"Processing RESPONSE interceptor - MCP method: {mcp_method}")
 
@@ -56,13 +62,21 @@ def lambda_handler(event, context):
                     target_filter = meta.get(MCP_METADATA_KEY)
 
                 if target_filter:
-                    logger.info(f"Target filter from _meta: {MCP_METADATA_KEY} = '{target_filter}'")
-                    logger.info(f"Will filter tools to only those starting with '{target_filter}___'")
+                    logger.info(
+                        f"Target filter from _meta: {MCP_METADATA_KEY} = '{target_filter}'"
+                    )
+                    logger.info(
+                        f"Will filter tools to only those starting with '{target_filter}___'"
+                    )
                 else:
-                    logger.info("No target filter in _meta - returning ALL tools (no filtering)")
+                    logger.info(
+                        "No target filter in _meta - returning ALL tools (no filtering)"
+                    )
 
                 # Filter tools if target filter is specified
-                if "result" in response_body and "tools" in response_body.get("result", {}):
+                if "result" in response_body and "tools" in response_body.get(
+                    "result", {}
+                ):
                     result = response_body["result"]
                     original_tools = result.get("tools", [])
 
@@ -71,10 +85,14 @@ def lambda_handler(event, context):
                     if target_filter:
                         # Filter by gateway target name prefix (format: "target___tool")
                         filtered_tools = [
-                            tool for tool in original_tools if tool.get("name", "").startswith(f"{target_filter}___")
+                            tool
+                            for tool in original_tools
+                            if tool.get("name", "").startswith(f"{target_filter}___")
                         ]
 
-                        logger.info(f"Filtered to {len(filtered_tools)} tools for target '{target_filter}'")
+                        logger.info(
+                            f"Filtered to {len(filtered_tools)} tools for target '{target_filter}'"
+                        )
 
                         # Log matched tools
                         if filtered_tools:
@@ -87,7 +105,9 @@ def lambda_handler(event, context):
                         # Log filtering summary
                         removed = len(original_tools) - len(filtered_tools)
                         if removed > 0:
-                            logger.info(f"Filtered out {removed} tools not matching target")
+                            logger.info(
+                                f"Filtered out {removed} tools not matching target"
+                            )
 
                         # Create filtered response
                         filtered_body = {
@@ -113,17 +133,106 @@ def lambda_handler(event, context):
                         return response
                     else:
                         # No filtering - log all tools and return unchanged
-                        logger.info(f"No filtering applied - returning all {len(original_tools)} tools")
+                        logger.info(
+                            f"No filtering applied - returning all {len(original_tools)} tools"
+                        )
                         logger.info("Available tools:")
                         for tool in original_tools:
                             logger.info(f"  - {tool.get('name')}")
 
             if mcp_method == "tools/call" and response_body:
                 logger.info("tools/call response detected in RESPONSE interceptor")
-                content = (
-                    response_body.get("result", {}).get("content", [])[0].get("text", {}) if response_body else None
-                )
-                if GUARDRAIL_ID:
+
+                # Check if this is an error response (e.g., elicitation)
+                if "error" in response_body:
+                    error_code = response_body.get("error", {}).get("code")
+                    logger.info(f"Response contains error: {error_code}")
+
+                    # Special handling for elicitation errors (-32042)
+                    if error_code == ELICITATION_ERROR_CODE:
+                        # Check if caller wants raw elicitation (e.g., auth onboarding SPA)
+                        request_body = mcp_data.get("gatewayRequest", {}).get("body", {})
+                        meta = request_body.get("_meta", {}) if isinstance(request_body, dict) else {}
+
+                        if meta.get("rawElicitation"):
+                            logger.info("rawElicitation flag detected — passing through raw")
+                        elif AUTH_ONBOARDING_URL:
+                            # Rewrite elicitation to user-friendly message
+                            # BUT preserve the authorization URL from the elicitation
+                            logger.info("Rewriting elicitation to friendly message")
+                            jsonrpc_id = request_body.get("id", response_body.get("id", 1))
+
+                            # Extract the authorization URL from the elicitation
+                            elicitations = response_body.get("error", {}).get("data", {}).get("elicitations", [])
+                            auth_url = elicitations[0].get("url") if elicitations else None
+
+                            if auth_url:
+                                message = (
+                                    "⚠️ Authorization Required\n\n"
+                                    "You haven't authorized access to the downstream API yet. "
+                                    "Please visit our auth onboarding app to complete authorization:\n\n"
+                                    f"{AUTH_ONBOARDING_URL}\n\n"
+                                    "Or authorize directly using this URL:\n"
+                                    f"{auth_url}\n\n"
+                                    "After completing authorization, retry this tool call."
+                                )
+                            else:
+                                message = (
+                                    "⚠️ Authorization Required\n\n"
+                                    "You haven't authorized access to the downstream API yet. "
+                                    "Please visit our auth onboarding app to complete authorization:\n\n"
+                                    f"{AUTH_ONBOARDING_URL}\n\n"
+                                    "After completing authorization there, retry this tool call."
+                                )
+
+                            rewritten_body = {
+                                "jsonrpc": "2.0",
+                                "id": jsonrpc_id,
+                                "result": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": message,
+                                        }
+                                    ]
+                                },
+                            }
+
+                            response = {
+                                "interceptorOutputVersion": "1.0",
+                                "mcp": {
+                                    "transformedGatewayResponse": {
+                                        "statusCode": 200,
+                                        "body": rewritten_body,
+                                    }
+                                },
+                            }
+                            logger.info("Returning rewritten elicitation response with auth URL")
+                            return response
+
+                    # Pass through error responses unchanged (non-elicitation or raw elicitation requested)
+                    response = {
+                        "interceptorOutputVersion": "1.0",
+                        "mcp": {
+                            "transformedGatewayResponse": {
+                                "body": response_body,
+                                "statusCode": mcp_data.get("gatewayResponse", {}).get(
+                                    "statusCode", 200
+                                ),
+                            }
+                        },
+                    }
+                    logger.info(f"Passing through error response: {json.dumps(response, indent=2)}")
+                    return response
+
+                # Extract content from successful result
+                content = None
+                result = response_body.get("result", {})
+                content_list = result.get("content", [])
+                if content_list and len(content_list) > 0:
+                    content = content_list[0].get("text")
+
+                if content and GUARDRAIL_ID:
                     gr_response = client.apply_guardrail(
                         guardrailIdentifier=GUARDRAIL_ID,
                         guardrailVersion=GUARDRAIL_VERSION,
@@ -140,14 +249,16 @@ def lambda_handler(event, context):
                     )
                     if gr_response.get("action", None) == "GUARDRAIL_INTERVENED":
                         logger.warning("Guardrail intervened on the content. Details:")
-                        guardrail_text = gr_response.get("outputs", [{}])[0].get("text", "")
+                        guardrail_text = gr_response.get("outputs", [{}])[0].get(
+                            "text", ""
+                        )
                         logger.warning(guardrail_text)
                         body_transformed = response_body
                         body_transformed["result"]["content"][0] = {
                             "type": "text",
                             "text": guardrail_text,
                         }
-                        statusCode = 403
+                        statusCode = 200
                         response = {
                             "interceptorOutputVersion": "1.0",
                             "mcp": {
@@ -162,11 +273,19 @@ def lambda_handler(event, context):
                         )
                         return response
                     else:
-                        logger.info("Guardrail did not intervene. Passing through original response.")
+                        logger.info(
+                            "Guardrail did not intervene. Passing through original response."
+                        )
+                elif not content:
+                    logger.info("No content found in tools/call response. Passing through unchanged.")
                 else:
-                    logger.warning("GUARDRAIL_ID environment variable not set. Skipping guardrail application.")
+                    logger.info(
+                        "GUARDRAIL_ID environment variable not set. Skipping guardrail application."
+                    )
             else:
-                logger.info("Non tools/call method detected in RESPONSE interceptor. Passing through unchanged.")
+                logger.info(
+                    "Non tools/call method detected in RESPONSE interceptor. Passing through unchanged."
+                )
 
             # This is a RESPONSE interceptor
             logger.info("Processing RESPONSE interceptor - passing through unchanged")
@@ -176,8 +295,11 @@ def lambda_handler(event, context):
                 "interceptorOutputVersion": "1.0",
                 "mcp": {
                     "transformedGatewayResponse": {
-                        "body": mcp_data.get("gatewayResponse", {}).get("body", {}) or {},
-                        "statusCode": mcp_data.get("gatewayResponse", {}).get("statusCode", 200),
+                        "body": mcp_data.get("gatewayResponse", {}).get("body", {})
+                        or {},
+                        "statusCode": mcp_data.get("gatewayResponse", {}).get(
+                            "statusCode", 200
+                        ),
                     }
                 },
             }
@@ -213,7 +335,9 @@ def lambda_handler(event, context):
 
                     if gr_response.get("action", None) == "GUARDRAIL_INTERVENED":
                         logger.warning("Guardrail intervened on the content. Details:")
-                        guardrail_text = gr_response.get("outputs", [{}])[0].get("text", "{}")
+                        guardrail_text = gr_response.get("outputs", [{}])[0].get(
+                            "text", "{}"
+                        )
                         logger.warning(guardrail_text)
 
                         # Parse the guardrail output back to a dict since the gateway
@@ -222,7 +346,9 @@ def lambda_handler(event, context):
                             transformed_body = json.loads(guardrail_text)
                         except (json.JSONDecodeError, TypeError):
                             # If guardrail output isn't valid JSON, pass through original request
-                            logger.error("Guardrail output is not valid JSON, passing through original request")
+                            logger.error(
+                                "Guardrail output is not valid JSON, passing through original request"
+                            )
                             transformed_body = request_body
 
                         response = {
@@ -233,14 +359,22 @@ def lambda_handler(event, context):
                                 }
                             },
                         }
-                        logger.info(f"Interceptor response after guardrail intervention: {response}")
+                        logger.info(
+                            f"Interceptor response after guardrail intervention: {response}"
+                        )
                         return response
                     else:
-                        logger.info("Guardrail did not intervene. Passing through original request.")
+                        logger.info(
+                            "Guardrail did not intervene. Passing through original request."
+                        )
                 else:
-                    logger.warning("GUARDRAIL_ID environment variable not set. Skipping guardrail application.")
+                    logger.warning(
+                        "GUARDRAIL_ID environment variable not set. Skipping guardrail application."
+                    )
             else:
-                logger.info("Non tools/call method detected in REQUEST interceptor. Passing through unchanged.")
+                logger.info(
+                    "Non tools/call method detected in REQUEST interceptor. Passing through unchanged."
+                )
 
             # Pass through the original request unchanged
             response = {

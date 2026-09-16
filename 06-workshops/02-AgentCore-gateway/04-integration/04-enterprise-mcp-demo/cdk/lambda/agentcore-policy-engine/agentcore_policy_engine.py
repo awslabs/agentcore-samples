@@ -29,7 +29,9 @@ def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             return handle_policy(event, request_type, resource_properties)
         elif resource_type == "PolicyEngineGatewayAssociation":
             # This resource type can be implemented to associate the policy engine with a gateway if needed
-            return handle_policy_engine_gateway_association(event, request_type, resource_properties)
+            return handle_policy_engine_gateway_association(
+                event, request_type, resource_properties
+            )
         else:
             raise ValueError(f"Unknown resource type: {resource_type}")
 
@@ -60,7 +62,9 @@ def handle_policy_engine_gateway_association(
         client = boto3.client("bedrock-agentcore-control", region_name=region)
 
         gateway_id = properties.get("GatewayId", None)
-        policy_engine_configuration_mode = properties.get("PolicyEngineConfigurationMode", "LOG_ONLY")
+        policy_engine_configuration_mode = properties.get(
+            "PolicyEngineConfigurationMode", "LOG_ONLY"
+        )
         if gateway_id:
             try:
                 response = client.get_gateway(gatewayIdentifier=gateway_id)
@@ -87,14 +91,18 @@ def handle_policy_engine_gateway_association(
                         "arn": properties.get("PolicyEngineArn"),
                         "mode": policy_engine_configuration_mode,
                     },
-                    "interceptorConfigurations": response.get("interceptorConfigurations", []),
+                    "interceptorConfigurations": response.get(
+                        "interceptorConfigurations", []
+                    ),
                 }
 
                 logger.info(f"Gateway details: {gateway_update_object}")
 
                 response = client.update_gateway(**gateway_update_object)
 
-                logger.info(f"Associated policy engine with gateway successfully: {response}")
+                logger.info(
+                    f"Associated policy engine with gateway successfully: {response}"
+                )
             except Exception as e:
                 logger.error(f"Error associating policy engine with gateway: {str(e)}")
                 return send_response(
@@ -103,7 +111,9 @@ def handle_policy_engine_gateway_association(
                     f"Error associating policy engine with gateway: {str(e)}",
                 )
         else:
-            logger.warning("No GatewayId provided for association, skipping actual association call")
+            logger.warning(
+                "No GatewayId provided for association, skipping actual association call"
+            )
     else:
         raise ValueError(f"Unknown request type: {request_type}")
     return send_response(
@@ -119,7 +129,9 @@ def handle_policy_engine_gateway_association(
 # ============================================================================
 
 
-def handle_policy_engine(event: Dict[str, Any], request_type: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+def handle_policy_engine(
+    event: Dict[str, Any], request_type: str, properties: Dict[str, Any]
+) -> Dict[str, Any]:
     """Handle PolicyEngine resource lifecycle"""
     if request_type == "Create":
         return create_policy_engine(event, properties)
@@ -131,17 +143,23 @@ def handle_policy_engine(event: Dict[str, Any], request_type: str, properties: D
         raise ValueError(f"Unknown request type: {request_type}")
 
 
-def create_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str, Any]:
+def create_policy_engine(
+    event: Dict[str, Any], properties: Dict[str, Any]
+) -> Dict[str, Any]:
     """Create a new Policy Engine"""
     try:
         region = properties.get("Region", os.environ.get("AWS_REGION", "us-east-1"))
         client = boto3.client("bedrock-agentcore-control", region_name=region)
 
         policy_engine_name = properties.get("PolicyEngineName", "default_policy_engine")
-        policy_engine_description = properties.get("Description", f"Policy Engine: {policy_engine_name}")
+        policy_engine_description = properties.get(
+            "Description", f"Policy Engine: {policy_engine_name}"
+        )
         logger.info(f"Creating policy engine: {policy_engine_name}")
 
-        create_response = client.create_policy_engine(name=policy_engine_name, description=policy_engine_description)
+        create_response = client.create_policy_engine(
+            name=policy_engine_name, description=policy_engine_description
+        )
 
         policy_engine_id = create_response["policyEngineId"]
         policy_egine_arn = create_response["policyEngineArn"]
@@ -169,7 +187,9 @@ def create_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> D
         return send_response(event, "FAILED", str(e))
 
 
-def update_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str, Any]:
+def update_policy_engine(
+    event: Dict[str, Any], properties: Dict[str, Any]
+) -> Dict[str, Any]:
     """Update an existing Policy Engine"""
     try:
         region = properties.get("Region", os.environ.get("AWS_REGION", "us-east-1"))
@@ -220,7 +240,9 @@ def update_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> D
             # Policy engine doesn't exist, create it
             logger.info(f"Policy engine {policy_engine_id} not found, creating new one")
 
-            policy_engine_name = properties.get("PolicyEngineName", "default-policy-engine")
+            policy_engine_name = properties.get(
+                "PolicyEngineName", "default-policy-engine"
+            )
 
             create_response = client.create_policy_engine(
                 name=policy_engine_name,
@@ -248,7 +270,9 @@ def update_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> D
         return send_response(event, "FAILED", str(e))
 
 
-def delete_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str, Any]:
+def delete_policy_engine(
+    event: Dict[str, Any], properties: Dict[str, Any]
+) -> Dict[str, Any]:
     """Delete a Policy Engine"""
     try:
         region = properties.get("Region", os.environ.get("AWS_REGION", "us-east-1"))
@@ -289,7 +313,9 @@ def delete_policy_engine(event: Dict[str, Any], properties: Dict[str, Any]) -> D
 # ============================================================================
 
 
-def handle_policy(event: Dict[str, Any], request_type: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+def handle_policy(
+    event: Dict[str, Any], request_type: str, properties: Dict[str, Any]
+) -> Dict[str, Any]:
     """Handle Policy resource lifecycle"""
     if request_type == "Create":
         return create_policy(event, properties)
@@ -309,7 +335,9 @@ def create_policy(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str
 
         policy_engine_id = properties.get("PolicyEngineId")
         policy_name = properties.get("PolicyName")
-        policy_description = properties.get("PolicyDescription", f"Policy: {policy_name}")
+        policy_description = properties.get(
+            "PolicyDescription", f"Policy: {policy_name}"
+        )
         policy_statement = properties.get("PolicyStatement")
 
         if not policy_engine_id:
@@ -370,7 +398,9 @@ def update_policy(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str
         policy_engine_id = properties.get("PolicyEngineId")
         policy_statement = properties.get("PolicyStatement")
         policy_name = properties.get("PolicyName")
-        policy_description = properties.get("PolicyDescription", f"Policy: {policy_name}")
+        policy_description = properties.get(
+            "PolicyDescription", f"Policy: {policy_name}"
+        )
 
         # Extract policy ID from physical resource ID
         policy_id = physical_resource_id
@@ -457,7 +487,9 @@ def delete_policy(event: Dict[str, Any], properties: Dict[str, Any]) -> Dict[str
 # ============================================================================
 
 
-def wait_for_policy_engine_active(client, policy_engine_id: str, max_wait_time: int = 300):
+def wait_for_policy_engine_active(
+    client, policy_engine_id: str, max_wait_time: int = 300
+):
     """Wait for policy engine to become active"""
     start_time = time.time()
 
@@ -479,10 +511,14 @@ def wait_for_policy_engine_active(client, policy_engine_id: str, max_wait_time: 
             logger.error(f"Error checking policy engine status: {str(e)}")
             raise
 
-    raise Exception(f"Policy engine did not become active within {max_wait_time} seconds")
+    raise Exception(
+        f"Policy engine did not become active within {max_wait_time} seconds"
+    )
 
 
-def wait_for_policy_active(client, policy_engine_id: str, policy_id: str, max_wait_time: int = 300):
+def wait_for_policy_active(
+    client, policy_engine_id: str, policy_id: str, max_wait_time: int = 300
+):
     """Wait for policy to become active"""
     start_time = time.time()
 
@@ -490,7 +526,9 @@ def wait_for_policy_active(client, policy_engine_id: str, policy_id: str, max_wa
         try:
             logger.info(f"Checking policy {policy_id} status...")
 
-            response = client.get_policy(policyEngineId=policy_engine_id, policyId=policy_id)
+            response = client.get_policy(
+                policyEngineId=policy_engine_id, policyId=policy_id
+            )
             status = response.get("status", "UNKNOWN")
 
             logger.info(f"Policy status: {status}")
@@ -502,7 +540,9 @@ def wait_for_policy_active(client, policy_engine_id: str, policy_id: str, max_wa
                 response_copy = response.copy()
                 response_copy.pop("createdAt", None)
                 response_copy.pop("updatedAt", None)
-                logger.error(f"Policy creation failed with status: {json.dumps(response_copy, indent=2)}")
+                logger.error(
+                    f"Policy creation failed with status: {json.dumps(response_copy, indent=2)}"
+                )
                 raise Exception(f"Policy creation failed with status: {status}")
 
             time.sleep(10)
@@ -518,7 +558,9 @@ def wait_for_policy_active(client, policy_engine_id: str, policy_id: str, max_wa
     raise Exception(f"Policy did not become active within {max_wait_time} seconds")
 
 
-def wait_for_policy_deleted(client, policy_engine_id: str, policy_id: str, max_wait_time: int = 300):
+def wait_for_policy_deleted(
+    client, policy_engine_id: str, policy_id: str, max_wait_time: int = 300
+):
     """Wait for policy to be deleted"""
     start_time = time.time()
 
@@ -526,7 +568,9 @@ def wait_for_policy_deleted(client, policy_engine_id: str, policy_id: str, max_w
         try:
             logger.info(f"Checking if policy {policy_id} is deleted...")
 
-            response = client.get_policy(policyEngineId=policy_engine_id, policyId=policy_id)
+            response = client.get_policy(
+                policyEngineId=policy_engine_id, policyId=policy_id
+            )
             status = response.get("status", "UNKNOWN")
 
             logger.info(f"Policy still exists with status: {status}")
@@ -549,7 +593,9 @@ def wait_for_policy_deleted(client, policy_engine_id: str, policy_id: str, max_w
     raise Exception(f"Policy was not deleted within {max_wait_time} seconds")
 
 
-def wait_for_policy_engine_deleted(client, policy_engine_id: str, max_wait_time: int = 300):
+def wait_for_policy_engine_deleted(
+    client, policy_engine_id: str, max_wait_time: int = 300
+):
     """Wait for policy engine to be deleted"""
     start_time = time.time()
 
@@ -571,7 +617,9 @@ def wait_for_policy_engine_deleted(client, policy_engine_id: str, max_wait_time:
 
         except client.exceptions.ResourceNotFoundException:
             # Policy engine has been deleted
-            logger.info(f"Policy engine {policy_engine_id} has been deleted successfully")
+            logger.info(
+                f"Policy engine {policy_engine_id} has been deleted successfully"
+            )
             return
         except Exception as e:
             logger.error(f"Error checking policy engine deletion status: {str(e)}")
@@ -594,7 +642,9 @@ def send_response(
 
     # Use provided physical_resource_id or generate from event
     if not physical_resource_id:
-        physical_resource_id = event.get("PhysicalResourceId", f"failed-{int(time.time())}")
+        physical_resource_id = event.get(
+            "PhysicalResourceId", f"failed-{int(time.time())}"
+        )
 
     response_body = {
         "Status": status,
