@@ -1,0 +1,117 @@
+{
+  "_comment": "Minimal working shape for native AgentCore Gateway TOKEN_EXCHANGE against a Databricks Managed MCP server. Replace every <placeholder>. Secrets must come from your secret store.",
+  "gateway": {
+    "protocolType": "MCP",
+    "authorizerType": "CUSTOM_JWT",
+    "exceptionLevel": "DEBUG",
+    "authorizerConfiguration": {
+      "customJWTAuthorizer": {
+        "discoveryUrl": "https://<your-idp>/.well-known/openid-configuration",
+        "allowedAudience": [
+          "<idp-app-client-id>"
+        ]
+      }
+    }
+  },
+  "credentialProvider": {
+    "name": "dbx-obo-te",
+    "credentialProviderVendor": "CustomOauth2",
+    "oauth2ProviderConfigInput": {
+      "customOauth2ProviderConfig": {
+        "oauthDiscovery": {
+          "discoveryUrl": "https://<workspace-host>/oidc/.well-known/openid-configuration"
+        },
+        "clientId": "<databricks-service-principal-application-id>",
+        "clientSecret": "<REDACTED - databricks SP OAuth secret>",
+        "onBehalfOfTokenExchangeConfig": {
+          "grantType": "TOKEN_EXCHANGE",
+          "tokenExchangeGrantTypeConfig": {
+            "actorTokenContent": "NONE"
+          }
+        }
+      }
+    }
+  },
+  "gatewayTarget": {
+    "name": "dbx-sql-te",
+    "targetConfiguration": {
+      "mcp": {
+        "mcpServer": {
+          "endpoint": "https://<workspace-host>/api/2.0/mcp/sql",
+          "listingMode": "DYNAMIC"
+        }
+      }
+    },
+    "credentialProviderConfigurations": [
+      {
+        "credentialProviderType": "OAUTH",
+        "credentialProvider": {
+          "oauthCredentialProvider": {
+            "providerArn": "arn:aws:bedrock-agentcore:<region>:<account>:token-vault/default/oauth2credentialprovider/dbx-obo-te",
+            "scopes": [
+              "all-apis"
+            ],
+            "grantType": "TOKEN_EXCHANGE",
+            "customParameters": {
+              "requested_token_type": "urn:ietf:params:oauth:token-type:access_token"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "gatewayExecutionRolePolicy": {
+    "_note": "Do NOT region-pin these. A region-pinned policy produces AccessDenied that Gateway surfaces as 'Token exchange failed: insufficient permissions for token exchange'.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "TokenVaultSecrets",
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:<account>:secret:bedrock-agentcore-identity*"
+        ]
+      },
+      {
+        "Sid": "TokenVaultKms",
+        "Effect": "Allow",
+        "Action": [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": "*",
+        "Condition": {
+          "StringLike": {
+            "kms:ViaService": [
+              "secretsmanager.*.amazonaws.com"
+            ]
+          }
+        }
+      },
+      {
+        "Sid": "AgentCoreIdentityTokens",
+        "Effect": "Allow",
+        "Action": [
+          "bedrock-agentcore:GetResourceOauth2Token",
+          "bedrock-agentcore:GetWorkloadAccessToken",
+          "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+          "bedrock-agentcore:GetWorkloadAccessTokenForUserId"
+        ],
+        "Resource": "*"
+      }
+    ]
+  },
+  "databricksFederationPolicy": {
+    "_scope": "ACCOUNT level, not workspace",
+    "oidc_policy": {
+      "issuer": "https://<your-idp-issuer>",
+      "audiences": [
+        "<idp-app-client-id>"
+      ],
+      "subject_claim": "email"
+    }
+  }
+}
