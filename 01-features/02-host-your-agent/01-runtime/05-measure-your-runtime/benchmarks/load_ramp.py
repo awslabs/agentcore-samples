@@ -79,9 +79,9 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
+from typing import Any
 
-from common import Result, classify_error, _stats
+from common import Result, _stats, classify_error
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +129,7 @@ class Recorder:
         # with t0 so a leg that never accepts anything still stalls out.
         self.last_accept = t0
 
-    def _tick(self, phase: Optional[str] = None) -> Tick:
+    def _tick(self, phase: str | None = None) -> Tick:
         """Caller must hold the lock."""
         t = int(time.perf_counter() - self.t0)
         tick = self.ticks.get(t)
@@ -471,7 +471,7 @@ def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
               f"{', '.join(f'{p:g}' for p in per_unit_steps)} req/s/unit "
               f"= {', '.join(f'{r:g}' for r in rps_steps)} req/s total")
 
-    baseline_p99: Optional[float] = None
+    baseline_p99: float | None = None
     steps: list[dict[str, Any]] = []
     stop_reason = "steps-exhausted"
     stop_detail = None
@@ -492,7 +492,12 @@ def throughput(helper, fleet: Fleet, rec: Recorder, args) -> dict[str, Any]:
         interval = 1.0 / rps
         t0 = time.perf_counter()
 
-        def one(index: int) -> None:
+        # lock/lat/errs bound as defaults (evaluated once, at def time, each
+        # loop iteration) rather than captured from the enclosing scope, so
+        # each step's closure is pinned to that step's own objects regardless
+        # of what the next iteration rebinds those names to.
+        def one(index: int, lock: threading.Lock = lock,
+                lat: list[float] = lat, errs: dict[str, int] = errs) -> None:
             unit = units[next(cursor) % len(units)]
             res = helper.invoke(unit, index)
             rec.add_result(res)

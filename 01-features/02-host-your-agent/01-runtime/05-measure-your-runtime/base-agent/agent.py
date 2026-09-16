@@ -15,12 +15,12 @@ fresh process and ``False`` afterwards. The benchmark reads this flag to split
 cold vs warm latency.
 """
 
+import json
 import os
 import threading
-import json
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import FastAPI, Request
 
@@ -42,7 +42,7 @@ def _consume_cold_start() -> bool:
 
 
 @app.post("/invocations")
-async def invoke(request: Request) -> Dict[str, Any]:
+async def invoke(request: Request) -> dict[str, Any]:
     """Echo the request body back, with cold-start and timing metadata.
 
     The body is parsed leniently (any JSON, or raw text) rather than validated
@@ -69,7 +69,7 @@ async def invoke(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/ping")
-async def ping() -> Dict[str, str]:
+async def ping() -> dict[str, str]:
     """Health check endpoint required by the AgentCore Runtime."""
     return {"status": "healthy"}
 

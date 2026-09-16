@@ -17,21 +17,20 @@ but there is no separate stage switch.
 from __future__ import annotations
 
 import json
+import sys
 import time
 import uuid
-from typing import Optional
 
 import boto3
 from botocore.config import Config
-
 from common import Acquired, Result, classify_error, find_cold
 
 
 class AgentCoreHelper:
     def __init__(self, arn: str, region: str, qualifier: str, prompt: str,
-                 concurrency: int, cold_field: Optional[str] = None,
+                 concurrency: int, cold_field: str | None = None,
                  stop_on_teardown: bool = True,
-                 endpoint_url: Optional[str] = None):
+                 endpoint_url: str | None = None):
         if not arn:
             raise ValueError("AGENTCORE_ARN is required")
         self.arn = arn
@@ -114,8 +113,9 @@ class AgentCoreHelper:
                 self.client.stop_runtime_session(
                     agentRuntimeArn=self.arn, runtimeSessionId=sid,
                     qualifier=self.qualifier)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort, not part of the measured latency
+                print(f"[agentcore] stop_runtime_session({sid}) failed: "
+                      f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     def teardown(self) -> None:
         if not self.stop_on_teardown:
@@ -127,8 +127,9 @@ class AgentCoreHelper:
                     runtimeSessionId=unit,
                     qualifier=self.qualifier,
                 )
-            except Exception:  # noqa: BLE001 - best-effort cleanup
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"[agentcore] teardown stop_runtime_session({unit}) failed: "
+                      f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     # -- ramp interface (see common.Acquired) -------------------------------- #
     # The ramp needs create-and-KEEP: sessions must accumulate to reach the

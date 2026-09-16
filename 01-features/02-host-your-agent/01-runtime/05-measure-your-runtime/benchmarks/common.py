@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 # --------------------------------------------------------------------------- #
@@ -28,15 +28,15 @@ class Result:
     index: int
     ok: bool
     latency_ms: float
-    status: Optional[int] = None
-    cold: Optional[bool] = None  # None = unknown (server did not report)
-    unit: Optional[str] = None   # which compute unit served it (session id)
-    batch: Optional[int] = None  # which batch it belonged to
-    error: Optional[str] = None
+    status: int | None = None
+    cold: bool | None = None  # None = unknown (server did not report)
+    unit: str | None = None   # which compute unit served it (session id)
+    batch: int | None = None  # which batch it belonged to
+    error: str | None = None
     # For a runtime where launching a unit is a separate API call from its
     # first request. AgentCore provisions inside the invoke, so the cost is
     # already part of latency_ms and this stays None.
-    provision_ms: Optional[float] = None
+    provision_ms: float | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -65,7 +65,7 @@ class Acquired:
     """
     unit: Any
     result: Result
-    provision_ms: Optional[float] = None
+    provision_ms: float | None = None
 
 
 # Substrings that mark a rate/capacity rejection rather than a real failure.
@@ -93,7 +93,7 @@ CAPACITY_MARKERS = (
 )
 
 
-def classify_error(error: Optional[str]) -> str:
+def classify_error(error: str | None) -> str:
     """Bucket a Result.error into 'none' | 'throttle' | 'capacity' | 'failure'.
 
     'capacity' is checked first: ServiceQuotaExceededException appears in both
@@ -114,7 +114,7 @@ def classify_error(error: Optional[str]) -> str:
 COLD_KEYS = ("cold_start", "coldStart", "is_cold_start", "isColdStart")
 
 
-def find_cold(obj: Any, extra_key: Optional[str] = None) -> Optional[bool]:
+def find_cold(obj: Any, extra_key: str | None = None) -> bool | None:
     """Recursively search a decoded JSON structure for a cold-start flag."""
     keys = COLD_KEYS + ((extra_key,) if extra_key else ())
     if isinstance(obj, dict):
@@ -162,7 +162,7 @@ def _stats(vals: list[float]) -> dict[str, float]:
 
 def summarize(results: list[Result], wall: float, units: int,
               batches: int, wait: float,
-              provision_ms: Optional[list[float]] = None) -> dict[str, Any]:
+              provision_ms: list[float] | None = None) -> dict[str, Any]:
     ok = [r for r in results if r.ok]
     cold = [r for r in ok if r.cold is True]
     warm = [r for r in ok if r.cold is False]
@@ -219,7 +219,7 @@ def print_summary(name: str, s: dict[str, Any]) -> None:
               f"min={wl['min_ms']}  max={wl['max_ms']}")
     pv = s.get("provisioning")
     if pv:
-        print(f"  provisioning (separate unit-launch cost, per unit):")
+        print("  provisioning (separate unit-launch cost, per unit):")
         print(f"    ms:        p50={pv['p50_ms']}  mean={pv['mean_ms']}  "
               f"min={pv['min_ms']}  max={pv['max_ms']}")
     c = s.get("cost")
