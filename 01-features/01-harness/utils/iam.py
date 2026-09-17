@@ -121,6 +121,28 @@ PERMISSIONS_POLICY = {
             "Resource": "*",
         },
         {
+            "Sid": "BrowserStreams",
+            "Effect": "Allow",
+            # Starting a browser session is not enough to drive it: the
+            # agentcore_browser tool opens a CDP WebSocket to the automation
+            # stream, and without these two actions that connection is refused
+            # with "403 Forbidden … not authorized to access automation stream".
+            # The agent then silently falls back to guessing, so the browser
+            # demo appears to "work" while returning fabricated data.
+            "Action": [
+                "bedrock-agentcore:ConnectBrowserAutomationStream",
+                "bedrock-agentcore:ConnectBrowserLiveViewStream",
+            ],
+            # The built-in browser is owned by the `aws` account (verified via
+            # `list-browsers --type SYSTEM`), not the caller's, so an ARN built
+            # from this account's ID would never match. The second entry covers a
+            # custom browser you create in your own account.
+            "Resource": [
+                "arn:aws:bedrock-agentcore:*:aws:browser/aws.browser.v1",
+                "arn:aws:bedrock-agentcore:*:*:browser-custom/*",
+            ],
+        },
+        {
             "Sid": "GetAgentCoreApiKeys",
             "Effect": "Allow",
             "Action": ["bedrock-agentcore:GetResourceApiKey"],
