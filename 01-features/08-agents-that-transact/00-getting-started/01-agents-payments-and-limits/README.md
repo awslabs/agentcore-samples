@@ -158,13 +158,6 @@ before deciding whether to try again. A budget rejection reports `payment_made: 
 The OpenAI SDK's default trace exporter is disabled because this example authenticates only to
 Bedrock. AgentCore's separately configured CloudWatch/OpenTelemetry observability remains available.
 
-To run the offline regression tests after installing this tutorial's dependencies:
-
-```bash
-pip install pytest
-python -m pytest tests/test_openai_payments.py -q
-```
-
 ## Try different budgets (payment limits)
 
 Budget enforcement lives on the session. Change the budget by editing the constant near the top of
