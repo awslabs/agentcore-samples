@@ -124,16 +124,13 @@ discovery document, so `CreateConsentPortal` rejects it as a primary IdP.
 All commands run from this directory.
 
 > [!NOTE]
-> **Validation status.** Both variants were built and run end to end against a
-> real AWS account and real identity providers: Entra ID and Okta sign-in, portal
-> consent, and a live GitHub MCP call through the gateway using the user's own
-> authorization. The optional gateway interceptor was verified too (22
-> invocations, 2 rewrites — it fires only on the consent elicitation).
->
-> The one hop not exercised is the **Bedrock model call**, because the test
-> account's daily token quota is zero pending a Support increase. Everything the
-> model depends on — runtime IAM, the inference profile, tool discovery — is
-> verified, so expect that to be the last mile rather than a rework.
+> **Validation status.** Verified end to end against a real AWS account and real
+> identity providers — Entra ID and Okta sign-in, portal consent, and live GitHub
+> MCP calls through the gateway using the signed-in user's own authorization,
+> with the **Bedrock model** choosing the tool. `Who am I on GitHub?` returns the
+> caller's identity including their private repository count, which only a
+> user-delegated token can see. The optional gateway interceptor was verified
+> too; it fires only on the consent elicitation.
 
 ## Quick start
 
@@ -501,23 +498,32 @@ Have that user Connect on the portal, ask again, and it works.
 ## Sample prompts
 
 Ask these at <http://localhost:8000> once you are signed in and connected. The
-target ships with 44 GitHub tools ([`gateway/github-tools.json`](gateway/github-tools.json)),
-and the model picks which one answers the question.
+target ships with **7 read-only GitHub tools**
+([`gateway/github-tools.json`](gateway/github-tools.json)), and the model picks
+which one answers the question.
 
 | Prompt | Exercises |
 | :--- | :--- |
-| `Search GitHub for amazon-bedrock-agentcore-samples and summarize the top result.` | `search_repositories` — the default prompt, and the lightest read |
-| `Who am I on GitHub?` | `get_me` — the clearest proof the call runs as *you*, not as a service identity |
-| `List my open pull requests.` | `search_pull_requests` against your own account |
-| `What are the 5 most recent commits on the main branch of awslabs/agentcore-samples?` | `list_commits` |
-| `Read the README of awslabs/agentcore-samples and tell me what folder 05 covers.` | `get_file_contents` |
+| `Who am I on GitHub?` | `get_me` — the default prompt, and the clearest proof the call runs as *you* |
+| `Find GitHub repositories about bedrock agentcore samples.` | `search_repositories` |
+| `Find GitHub users named satveer.` | `search_users` |
+| `Search GitHub code for CreateConsentPortal.` | `search_code` |
+| `What GitHub teams am I on?` | `get_teams` |
 
 `Who am I on GitHub?` is the one to demo. Two people asking it get two different
 answers from the same agent, the same gateway and the same target — which is the
-whole point of per-user consent.
+whole point of per-user consent. The reply names the signed-in user and includes
+their **private** repository count, which only a user-delegated token can see.
 
 Before consenting (or as a user who has not), any of these returns the portal
 prompt instead of data — see [step 10](#10-see-the-unconsented-path).
+
+> [!NOTE]
+> GitHub's MCP server exposes 44 tools, but the repo-scoped ones (`owner`/`repo`
+> parameters) cannot be called from a standard MCP client through the gateway —
+> they require per-call `Mcp-Param-*` headers, and MCP sets headers per
+> connection. Only the callable subset ships here, so everything the model is
+> offered actually works. See [`gateway/README.md`](gateway/README.md#which-tools-are-here-and-why-only-seven).
 
 ## Running both identity providers side by side
 
@@ -594,6 +600,9 @@ callback as unregistered, and the failure surfaces as a generic login error.
 | No consent screen on reconnect | GitHub does not re-prompt an already-authorized OAuth App | Revoke it under your GitHub authorized apps to see the prompt again |
 | A consent flow resumed after a break fails | Authorization URLs and session URIs live 10 minutes | Start over rather than debugging it |
 | Signed in as the wrong user, or a 403 after switching IdPs | A session cookie from the other deployment | The frontend drops foreign sessions now; an older cookie needs one visit to `/auth/logout` |
+| The model says a tool does not exist (e.g. no repository search) | `tools/list` is **paginated at 30 tools**; reading only the first page hides the rest | Page until `nextCursor`/`pagination_token` is empty — `list_all_tools` in [`agent/agent.py`](agent/agent.py) does this |
+| `-32020 header mismatch: missing Mcp-Param-repo header` | That tool takes `owner`/`repo` as header-bound parameters, and MCP sets headers per connection, not per call | Not callable from a standard MCP client. This sample ships only the callable tools; see [`gateway/README.md`](gateway/README.md#which-tools-are-here-and-why-only-seven) |
+| Agent replies "GitHub is not connected" although consent exists | Any tool error the model narrates in auth-like terms can trip the consent fallback | Check the runtime logs for the real MCP error before assuming a consent problem |
 | `404 UnknownOperationException` from the agent | `AGENT_RUNTIME_INVOKE_URL` missing `?qualifier=DEFAULT` | Append it |
 | 401 from the gateway during MCP init | Runtime and gateway `allowedAudience` disagree — the passthrough contract is broken | Re-run `deploy/05_patch_agentcore_json.py` and redeploy |
 | Bedrock `ThrottlingException: Too many tokens per day` | The account's daily token quota is zero (common on new accounts) | Raise it via Support for **every** region the cross-region inference profile spans |

@@ -142,6 +142,25 @@ def gateway_mcp_client(user_token: str) -> Iterator[MCPClient]:
         yield client
 
 
+def list_all_tools(mcp_client: MCPClient) -> list:
+    """Every tool on the gateway, following tools/list pagination to the end.
+
+    list_tools_sync() returns ONE page — a PaginatedList carrying a
+    pagination_token — and the gateway pages at 30 tools. Reading only the first
+    page silently hides the rest, and the failure is easy to misread: the model
+    reports that no such tool exists, which looks like a model problem rather
+    than a truncated tool list. Loop until the token runs out.
+    """
+    tools: list = []
+    token = None
+    while True:
+        page = mcp_client.list_tools_sync(pagination_token=token)
+        tools.extend(page)
+        token = getattr(page, "pagination_token", None)
+        if not token:
+            return tools
+
+
 SYSTEM_PROMPT = """
 You are a GitHub assistant. You reach GitHub through tools provided by an
 Amazon Bedrock AgentCore Gateway, which calls the GitHub MCP server with the
@@ -186,11 +205,11 @@ async def invoke(payload, context):
         return
     user_token = auth.split(" ", 1)[1]
 
-    prompt = payload.get("prompt") or "Search GitHub for amazon-bedrock-agentcore-samples."
+    prompt = payload.get("prompt") or "Who am I on GitHub?"
 
     try:
         with gateway_mcp_client(user_token) as mcp_client:
-            tools = mcp_client.list_tools_sync()
+            tools = list_all_tools(mcp_client)
             log.info("Gateway MCP tools discovered: count=%d", len(tools))
 
             agent = Agent(model=MODEL_ID, system_prompt=SYSTEM_PROMPT, tools=tools)

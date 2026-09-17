@@ -68,7 +68,10 @@ AGENT_RUNTIME_INVOKE_URL = os.environ.get("AGENT_RUNTIME_INVOKE_URL", "").strip(
 PORTAL_URL = os.environ.get("PORTAL_URL", "").strip()
 PORTAL_LINK = f"https://{PORTAL_URL.removeprefix('https://').rstrip('/')}" if PORTAL_URL else ""
 
-DEFAULT_PROMPT = "Search GitHub for amazon-bedrock-agentcore-samples and summarize the top result."
+# get_me takes no parameters, so it is the cleanest proof that the call runs as
+# the signed-in user: two people asking it get two different answers from one
+# agent, one gateway and one target.
+DEFAULT_PROMPT = "Who am I on GitHub?"
 
 app = FastAPI(title="AgentCore consent portal + GitHub MCP sample")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
