@@ -42,8 +42,8 @@ webapp_visual_testing.py
 ├── Part 3: invoke_harness → agent writes /tmp/test.mjs
 │              └─ Puppeteer: launch chromium, screenshots, todos, checkboxes
 │
-└── Part 4: ExecuteCommand → base64 screenshots → decode → save locally
-               └─ /tmp/screenshot_1.png, _2.png, _3.png
+└── Part 4: ExecuteCommand → base64 screenshots → verify size+MD5 → save locally
+               └─ /tmp/webapp_screenshots/screenshot_1.png, _2.png, _3.png
 ```
 
 ## Sample Prompts
@@ -66,7 +66,7 @@ webapp_visual_testing.py
 
 **Agent-written tests**: Instead of writing test scripts yourself, you describe the test steps in natural language. The agent generates the Puppeteer script, runs it, and handles errors.
 
-**Screenshot transfer**: Screenshots are binary files on the agent's VM. Use `base64` + `invoke_agent_runtime_command` to transfer them to your local machine.
+**Screenshot transfer**: Screenshots are binary files on the agent's VM. Use `base64` + `invoke_agent_runtime_command` to transfer them to your local machine — and **verify what arrives**. The command stream has been observed delivering a short payload for a ~500 KB file intermittently, with no error event and a zero exit code, so the script reads the file's size and MD5 on the VM first and retries a transfer that does not match. A truncated PNG still has a valid header, so it opens as an image and only looks wrong (a grey band where the missing rows should be) — nothing but an integrity check catches it.
 
 **Production pipeline pattern**:
 ```
@@ -79,13 +79,16 @@ Pull screenshots → upload to S3 or attach to PR
 ## Troubleshooting
 
 ### Issue: Chromium not found at `/usr/bin/chromium`
-**Solution**: The install command uses `apt-get install chromium`. On some Node.js base images, the path may differ. Run `which chromium || which chromium-browser` via ExecuteCommand to find it, then update the Puppeteer launch path.
+**Solution**: The script no longer hardcodes the path — after installing, it resolves Chromium with `command -v chromium || command -v chromium-browser` and passes whatever it finds into the test prompt. If the install itself fails the run stops there with apt-get's own error, instead of going on to write Puppeteer tests against a browser that was never installed.
+
+### Issue: A screenshot opens but has a grey band across the bottom
+**Solution**: The transfer was truncated. A short payload decodes into a PNG that still has a valid header, so it opens as an image and nothing reports an error. Checking the base64 length is not enough on its own: it is a multiple of four for any complete file, but a truncated payload can be four-aligned too, and was in the run that exposed this. The script therefore compares the decoded size **and MD5** against the file on the VM and retries, so a partial transfer is reported as a failure rather than saved. If you write your own transfer, verify it the same way; do not pad or trim the payload to make it decode.
 
 ### Issue: Screenshots are all blank or black
 **Solution**: Chromium in headless mode may need `--no-sandbox --disable-setuid-sandbox` flags. Ensure the Puppeteer launch options include these. The test prompt explicitly requests them.
 
 ### Issue: Server not responding on port 3000
-**Solution**: Check `/tmp/server.log` for errors via `run_command(harness_arn, session_id, "cat /tmp/server.log")`. The `npx serve` command requires network access to download on first run.
+**Solution**: `npx -y serve` downloads the package on first use, so the port is not open the moment the command returns. The script polls for an HTTP 200 (up to 60s) rather than sleeping a fixed interval, and if it never answers it prints the tail of `/tmp/server.log` and stops — the later steps all depend on that server. To inspect it yourself, run `run_command(harness_arn, session_id, "cat /tmp/server.log")`.
 
 ## AgentCore CLI
 
@@ -126,9 +129,9 @@ python webapp_visual_testing.py
 python webapp_visual_testing.py --skip-cleanup
 ```
 
-Screenshots are saved to `/tmp/screenshot_1.png`, `/tmp/screenshot_2.png`, `/tmp/screenshot_3.png`.
+Screenshots are saved under `/tmp/webapp_screenshots/` (`screenshot_1.png`, `screenshot_2.png`, `screenshot_3.png`), each verified against its size and MD5 on the VM before being written.
 
 Open with:
 ```bash
-open /tmp/screenshot_1.png  # macOS
+open /tmp/webapp_screenshots/screenshot_1.png  # macOS
 ```
