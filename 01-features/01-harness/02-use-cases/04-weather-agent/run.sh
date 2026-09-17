@@ -45,7 +45,7 @@ for arg in "$@"; do
             echo ""
             echo "Prerequisites:"
             echo "  - AWS CLI configured (aws sts get-caller-identity should work)"
-            echo "  - AWS_DEFAULT_REGION set (or defaults to us-east-1)"
+            echo "  - AWS_REGION or AWS_DEFAULT_REGION set (or defaults to us-east-1)"
             echo "  - Claude Haiku 4.5 model access enabled in Bedrock console"
             echo "  - CloudWatch Transaction Search enabled (for observability)"
             exit 0
@@ -85,7 +85,7 @@ echo -e "  ${GREEN}Account:${NC} $ACCOUNT_ID"
 echo -e "  ${GREEN}Identity:${NC} ${CALLER_ARN##*/}"
 
 # Region
-REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 export AWS_DEFAULT_REGION="$REGION"
 echo -e "  ${GREEN}Region:${NC} $REGION"
 
