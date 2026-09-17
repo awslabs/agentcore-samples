@@ -4,18 +4,19 @@ MCP OAuth Proxy Lambda - Handles OAuth metadata, callback interception, token pr
 This Lambda function replaces the local mcp_oauth_proxy.py script, enabling serverless deployment.
 """
 
+import base64
 import json
+import logging
 import os
 import re
 import time
-import base64
-import urllib.request
-import urllib.parse
 import urllib.error
-import logging
+import urllib.parse
+import urllib.request
+
+import boto3
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-import boto3
 
 # Configure logging
 logger = logging.getLogger()
@@ -837,12 +838,8 @@ def handle_auth_callback_page(event):
     session_id = query_params.get("session_id")
     if session_id:
         logger.info(f"Session ID (raw): {session_id}")
-        # Try to decode if URL-encoded
-        try:
-            decoded_session_id = urllib.parse.unquote(session_id)
-            logger.info(f"Session ID (decoded): {decoded_session_id}")
-        except Exception as e:
-            logger.warning(f"Could not decode session_id: {e}")
+        # Decode if URL-encoded (unquote never raises on str input)
+        logger.info(f"Session ID (decoded): {urllib.parse.unquote(session_id)}")
     else:
         logger.warning("No session_id in query parameters!")
 
@@ -1441,7 +1438,9 @@ def handle_callback(event):
         logger.debug(f"Original state: {original_state}")
         logger.debug(f"Original redirect_uri: {original_redirect_uri}")
         logger.debug("=== END HANDLE_CALLBACK DEBUG ===")
-    except Exception as e:
+    except (ValueError, AttributeError) as e:
+        # ValueError covers binascii.Error, UnicodeDecodeError and json.JSONDecodeError;
+        # AttributeError covers a decoded JSON payload that is not an object.
         logger.error(f"Error decoding state: {e}, state={encoded_state}")
         logger.error("=== END HANDLE_CALLBACK DEBUG (ERROR) ===")
         return json_response(400, {"error": "Invalid state parameter"})
@@ -1632,13 +1631,9 @@ def proxy_to_gateway(event):
             if auth:
                 req.add_header("Authorization", auth)
 
+        header_dump = "\r\n".join(f"{k}: {v}" for k, v in req.headers.items())
         logger.debug(
-            "{}\n{}\r\n{}\r\n\r\n{}".format(
-                "-----------START-----------",
-                (req.method or "GET") + " " + req.full_url,
-                "\r\n".join("{}: {}".format(k, v) for k, v in req.headers.items()),
-                req.data,
-            )
+            f"-----------START-----------\n{req.method or 'GET'} {req.full_url}\r\n{header_dump}\r\n\r\n{req.data}"
         )
 
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -1684,13 +1679,16 @@ def proxy_to_gateway(event):
             "headers": resp_headers,
             "body": error_rewritten,
         }
-    except Exception as e:
+    except (OSError, ValueError) as e:
+        # OSError covers urllib.error.URLError, socket timeouts and connection failures;
+        # ValueError covers a non-UTF-8 upstream body.
+        logger.error(f"Gateway request failed: {e}")
         return json_response(502, {"error": {"code": -32603, "message": str(e)}})
 
 
 def gateway_base_url():
     """GATEWAY_URL without its trailing /mcp."""
-    return GATEWAY_URL[:-4] if GATEWAY_URL.endswith("/mcp") else GATEWAY_URL
+    return GATEWAY_URL.removesuffix("/mcp")
 
 
 def rewrite_www_authenticate(www_auth, api_url, path):

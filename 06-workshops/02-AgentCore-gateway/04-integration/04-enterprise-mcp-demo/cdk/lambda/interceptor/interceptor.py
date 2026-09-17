@@ -1,6 +1,7 @@
-import logging
 import json
+import logging
 import os
+
 import boto3
 
 # Configure logging
@@ -346,5 +347,5 @@ def lambda_handler(event, context):
         logger.info(f"Interceptor response: {json.dumps(response, indent=2)}")
         return response
     except Exception as e:
-        logger.error(f"Error processing interceptor: {str(e)}")
-        raise e
+        logger.error(f"Error processing interceptor: {e!s}")
+        raise
