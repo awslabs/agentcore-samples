@@ -20,8 +20,8 @@ import { createSigV4Fetch } from '@sample/aws-sigv4-fetch';
  * runtime session header, so we hand the a2a-js client a signing fetch.
  */
 
-// Runtime URL construction lives in the package (runtimeUrlFromArn from
-// @sample/claude-a2a-executor) — main.ts imports it from there.
+// Runtime URL construction comes from the SDK (buildRuntimeUrl in
+// bedrock-agentcore/runtime/a2a) — main.ts imports it from there.
 
 function isAgentCoreRuntimeUrl(url: string): boolean {
   return /^https:\/\/bedrock-agentcore(?:-[a-z0-9]+)?\.[a-z0-9-]+\.amazonaws\.com\//.test(url);
