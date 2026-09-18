@@ -21,3 +21,12 @@ ignore = [
     #        results to named variables for clarity even when not subsequently used
     "F841",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# BLE001 (blind except) became a default rule in ruff 0.16.8. In the
+# bidirectional-streaming samples the broad handlers it flags are cleanup paths,
+# background refresh loops and top-level handlers, where catching broadly is
+# deliberate -- narrowing them would let a voice sample die on an unanticipated
+# error instead of logging it and carrying on. Same rationale as the E722 entry
+# above, scoped to this directory rather than applied repo-wide.
+"01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming/**/*.py" = ["BLE001"]

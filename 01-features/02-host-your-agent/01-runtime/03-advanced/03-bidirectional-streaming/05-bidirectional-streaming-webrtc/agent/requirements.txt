@@ -1,12 +1,23 @@
-aiortc
 boto3
 python-dotenv
 loguru
 fastapi
 uvicorn
-av
-aws-sdk-bedrock-runtime
-smithy-aws-core
-smithy-core
-smithy-http
 aiohttp
+
+# aiortc and av are pinned to the majors this sample was tested against. av wraps
+# FFmpeg through a C extension and audio.py builds an AudioResampler from it, so a
+# major bump is where that API can move; av 18.x is already on PyPI. aiortc drives
+# the WebRTC peer connection and is coupled to av's frame types.
+aiortc>=1.15.0,<2.0.0
+av>=17.1.0,<18.0.0
+
+# Pinned below 0.8.0 on purpose. In 0.8.0 the Nova Sonic SDK renamed
+# BedrockRuntimeClient to AsyncBedrockRuntimeClient and Config to
+# AsyncBedrockRuntimeConfig, and smithy-aws-core 0.8.0 dropped
+# create_default_chain. nova_sonic.py uses all three, so an unpinned install
+# resolves to a version that fails at import and the container never starts.
+aws-sdk-bedrock-runtime>=0.7.0,<0.8.0
+smithy-aws-core>=0.7.0,<0.8.0
+smithy-core>=0.6.0,<0.7.0
+smithy-http>=0.4.0,<0.5.0
