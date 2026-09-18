@@ -1,8 +1,8 @@
 # 05-measure-your-runtime
 
 An AgentCore Runtime benchmark: two deployment paths (zip, container),
-each testable under two managed-compute settings (Original Runtime `V1`, New Runtime `V2`), 
-and the container path testable at five image sizes. Derived from a
+each testable under two platform versions (Original Runtime `V1`, New Runtime
+`V2`), and the container path testable at five image sizes. Derived from a
 larger benchmark that also covered other runtimes and scenarios — those are
 not here; this copy focuses purely on AgentCore's own paths and settings. See
 `infrastructure/README.md` and `benchmarks/README.md` for the reasoning
@@ -18,7 +18,12 @@ behind each cut.
 ## Prerequisites
 
 - AWS credentials in the shell (`aws sts get-caller-identity` should work).
-- `aws` CLI, `docker`, `zip`, `python3` (3.12+ — the zip deploy fetches 3.13
+- `aws` CLI, `docker`, `zip`. AgentCore Runtime images are **arm64**, so on an
+  x86 machine `build-and-push.sh` needs QEMU/binfmt for the cross-build
+  (`docker run --privileged --rm tonistiigi/binfmt --install arm64`); Docker
+  Desktop and Apple Silicon already have it. Only the container path is
+  affected — the zip path builds no image.
+- `python3` (3.12+ — the zip deploy fetches 3.13
   arm64 wheels via `uv` regardless of your local interpreter's version, so
   the local one only needs to run the benchmark harness itself).
 - `uv` on PATH (used by `deploy-agentcore-zip.sh` to build the zip artifact
@@ -54,7 +59,7 @@ more per GB-hour — so a `V1`-vs-`V2` comparison run with this sample is a
 cost comparison too, not just a latency one.
 
 Because billing runs for the whole session lifetime, **`AGENTCORE_IDLE_TIMEOUT`
-(default 300s, in `infrastructure/common.sh`) is the single biggest cost lever
+(default 900s, in `infrastructure/common.sh`) is the single biggest cost lever
 in this sample**: every session here does exactly one invoke and then sits
 idle until that timeout reaps it. From an actual full scenario-1 run (both
 legs, 200mb image, `V2`):
@@ -64,6 +69,14 @@ legs, 200mb image, `V2`):
 | zip | 5,000 | 202 s | 153.1 | 5.49 | $3.29 |
 | container 200mb | 5,010 | 753 s | 320.5 | 7.64 | $6.39 |
 | **total** (incl. a 100-unit rehearsal) | | | **473.7** | **13.1** | **$9.68** |
+
+> **Those numbers were measured at a 300s idle timeout, and the default is now
+> 900s** — raised so the container leg's ~750s ramp stops outliving its own
+> sessions (see the comment in `common.sh`). Budget above the table
+> accordingly: on the container leg the 2,836 sessions that used to be reaped
+> mid-ramp now survive to teardown, so expect roughly 1.5–2× that leg's cost at
+> the default. `AGENTCORE_IDLE_TIMEOUT=300 ./deploy-agentcore.sh` reproduces
+> the cheaper (and less accurate) configuration those figures came from.
 
 Two rules of thumb from those numbers:
 
@@ -141,13 +154,20 @@ Edit `.env`: paste the ARN(s) from step 2 into `AGENTCORE_ARN` (container) and
 about to test — `run_scenario.sh` skips a leg whose ARN is unset rather than
 failing.
 
+Check `AWS_REGION` in `.env` matches the region you deployed into. It defaults
+to `us-east-1` in both `.env.example` and `infrastructure/common.sh`, and
+because `run_scenario.sh` sources `.env` with `set -a` it **overrides an
+`AWS_REGION` already exported in your shell**. `run_scenario.sh` now compares it
+against the region inside each ARN and refuses the leg on a mismatch rather
+than failing every invoke.
+
 `.env` can hold an ARN for every size/version you've deployed at once —
 `AGENTCORE_ARN_750MB_V2`, `AGENTCORE_ZIP_ARN_V1`, and so on (see
 `benchmarks/.env.example`). Pass `IMAGE_SIZE` and/or
 `AGENTCORE_PLATFORM_VERSION` to `run_scenario.sh` to pick which one a
 given run uses, and its output filename picks up the same suffix
-automatically, so runs against different sizes/versions never overwrite each
-other:
+automatically (plus `-t<RAMP_TARGET>` if you set one), so runs against
+different sizes/versions/targets never overwrite each other:
 
 ```bash
 IMAGE_SIZE=750mb AGENTCORE_PLATFORM_VERSION=V2 ./run_scenario.sh 1 agentcore
@@ -160,6 +180,7 @@ AGENTCORE_PLATFORM_VERSION=V1 ./run_scenario.sh 1 agentcore-zip
 
 ```bash
 RAMP_TARGET=100 ./run_scenario.sh 1   # small rehearsal first — do this before a full run
+                                      # -> results-...-t100.json, so it can't clobber the full run
 ./run_scenario.sh 1                   # scenario 1: account ceiling / cold start
 ./run_scenario.sh 2                   # scenario 2: warm-throughput staircase
 ./run_scenario.sh 1 agentcore-zip     # a single leg instead of both
@@ -177,6 +198,46 @@ python3 analyze_results.py results-scenario*-*.json
 Prints target/built/errors and latency percentiles for scenario 1, or the
 per-step warm-throughput table (plus teardown outcome) for scenario 2 — no
 AWS calls, it only reads the JSON `run_scenario.sh` already wrote.
+
+## What good looks like
+
+Reference numbers from one real run of this sample, so you have something to
+compare your own output against. **Cold-start p75**, in seconds — every session
+is created fresh and invoked exactly once, so every measurement is a cold
+start:
+
+| Deployment path | `V1` (Original Runtime) | `V2` (New Runtime) |
+|-----------------|------------------------:|-------------------:|
+| direct code (zip)   | 2.85 | **1.96** |
+| container, 200mb    | 5.37 | **1.94** |
+| container, 500mb    | 7.41 | **2.13** |
+| container, 750mb    | 11.46 | **2.11** |
+| container, 1gb      | 15.48 | **2.13** |
+| container, 2gb      | 29.72 | **2.16** |
+
+The shape of that table is the point, not the individual numbers: on `V1` cold
+start scales with image size (a 10× bigger image cost ~5.5× the cold start),
+while on `V2` all six paths land in a 1.9–2.2 s band. Two more results from the
+same run, for context:
+
+- **A warm invoke on an already-open session measured 152 ms** — about 13× faster
+  than the best cold start here, so session reuse (`runtimeSessionId`) is still
+  the biggest latency lever you control. Cold start is what you pay when you
+  *can't* reuse.
+- **Cold start held flat under concurrency.** Ramping the zip/`V2` leg to 5,000
+  simultaneous sessions, cold p75 went *down* across the ramp — 2.19 s for the
+  first 500 sessions, 1.84 s for the last 500 — with 0 throttled requests in
+  5,027 attempts. The ramp ended at the account's session ceiling, not at a
+  latency knee.
+
+Caveats, because a benchmark number without them is worthless: one AWS account,
+`us-east-1`, September 2026, `PYTHON_3_13` on arm64, the `base-agent` echo
+server with **no model call** (so this measures the runtime, not an LLM), the
+load generator running outside AWS so every figure carries the same
+public-internet round trip, and 500 sessions per container point / 5,000 for
+zip. Your absolute numbers will differ with region, image contents, account
+history and where you run the client from — the `V1`-vs-`V2` *ratio* is the part
+that should reproduce.
 
 ## End-to-end example
 
