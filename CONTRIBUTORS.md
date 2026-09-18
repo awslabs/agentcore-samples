@@ -37,6 +37,7 @@
 - rahullks
 - rameshv29
 - rohillasandeep
+- Roger Thant (rlthant)
 - satveerkhurpa
 - seanslavichaws
 - Shanicus Yee
