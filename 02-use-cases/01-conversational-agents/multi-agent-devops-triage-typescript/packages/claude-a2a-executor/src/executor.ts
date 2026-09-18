@@ -9,7 +9,8 @@ import { TaskState } from '@a2a-js/sdk';
 import type { Options, Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 
-import { getBedrockContext } from './bedrock-context.js';
+import { getContext } from 'bedrock-agentcore/runtime/a2a';
+
 import { logEvent, snippet } from './log.js';
 import { agentMessage, extractText, textPart } from './messages.js';
 
@@ -71,10 +72,11 @@ export class ClaudeAgentExecutor implements AgentExecutor {
     const { taskId, contextId } = requestContext;
     const prompt = extractText(requestContext.userMessage);
 
-    // Correlation with the AgentCore runtime's own request log: sessionId
-    // and requestId come from the injected headers (see bedrock-context.ts)
-    // and are undefined when running outside a serveA2A request scope.
-    const bedrock = getBedrockContext();
+    // Correlation with the AgentCore runtime's own request log: sessionId and
+    // requestId come from the headers the runtime injects, which the SDK's
+    // serveA2A propagates into this ambient context. Undefined when the
+    // executor runs outside a served request (unit tests).
+    const bedrock = getContext();
     logEvent('executor', 'task.received', {
       taskId,
       contextId,

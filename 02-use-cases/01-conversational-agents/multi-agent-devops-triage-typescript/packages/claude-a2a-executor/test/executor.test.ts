@@ -9,14 +9,9 @@ import {
 } from '@a2a-js/sdk/server';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
-import {
-  ClaudeAgentExecutor,
-  buildAgentCard,
-  extractBedrockContext,
-  extractText,
-  runWithBedrockContext,
-  textPart,
-} from '../src/index.js';
+import { buildAgentCard, serveA2A } from 'bedrock-agentcore/runtime/a2a';
+
+import { ClaudeAgentExecutor, extractText, textPart } from '../src/index.js';
 import type { QueryFn } from '../src/index.js';
 
 function userMessage(text: string, taskId: string, contextId: string): Message {
@@ -264,29 +259,54 @@ describe('ClaudeAgentExecutor task lifecycle', () => {
 });
 
 describe('ClaudeAgentExecutor delegation-trail logging', () => {
-  it('includes the Bedrock session and request ids when a context is active', async () => {
+  it('includes the Bedrock session and request ids when served by the SDK', async () => {
     const lines: string[] = [];
     const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
       lines.push(String(line));
     });
-    try {
-      const executor = new ClaudeAgentExecutor({
+    // serveA2A resolves the AgentCore-injected headers into the ambient
+    // context the executor reads. Going over a real socket is the only way to
+    // prove that wiring: the SDK keeps runWithContext internal.
+    const server = await serveA2A({
+      agentCard: buildAgentCard({ name: 'Context Test', description: 'x' }),
+      executor: new ClaudeAgentExecutor({
         systemPrompt: 'test',
         queryFn: mockQuery([resultMessage('done')]),
+      }),
+      port: 0,
+      host: '127.0.0.1',
+    });
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-amzn-bedrock-agentcore-runtime-session-id': 'sess-log',
+          'x-amzn-bedrock-agentcore-runtime-request-id': 'req-log',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'message/send',
+          params: {
+            message: {
+              kind: 'message',
+              messageId: 'msg-log',
+              role: 'user',
+              parts: [{ kind: 'text', text: 'question' }],
+            },
+          },
+        }),
       });
-
-      const context = extractBedrockContext({
-        'x-amzn-bedrock-agentcore-runtime-session-id': 'sess-log',
-        'x-amzn-bedrock-agentcore-runtime-request-id': 'req-log',
-      });
-      await runWithBedrockContext(context, () =>
-        runExecutor(executor, makeRequestContext('question')),
-      );
+      expect(response.status).toBe(200);
 
       const received = lines.find((l) => l.includes('executor task.received'));
       expect(received).toContain('sess-log');
       expect(received).toContain('req-log');
     } finally {
+      server.close();
       spy.mockRestore();
     }
   });
@@ -373,41 +393,5 @@ describe('ClaudeAgentExecutor cancellation', () => {
 
     await executor.cancelTask('unknown-task', bus);
     expect(statusStates(events)).toContain(TaskState.TASK_STATE_CANCELED);
-  });
-});
-
-describe('buildAgentCard', () => {
-  it('populates the card from name/description with sensible defaults', () => {
-    const card = buildAgentCard({
-      name: 'Test Agent',
-      description: 'An agent for testing',
-      skills: [{ id: 'skill-1', name: 'Testing', description: 'Runs tests' }],
-    });
-
-    expect(card.name).toBe('Test Agent');
-    expect(card.description).toBe('An agent for testing');
-    expect(card.capabilities?.streaming).toBe(true);
-    expect(card.skills).toHaveLength(1);
-    expect(card.supportedInterfaces.length).toBeGreaterThanOrEqual(1);
-    expect(card.supportedInterfaces[0]?.url).toBe('http://localhost:9000/');
-    expect(card.supportedInterfaces[0]?.protocolBinding).toBe('JSONRPC');
-  });
-
-  it('respects AGENTCORE_RUNTIME_URL when set (deployed mode)', () => {
-    const runtimeUrl = 'https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn/invocations/';
-    process.env.AGENTCORE_RUNTIME_URL = runtimeUrl;
-    try {
-      const card = buildAgentCard({ name: 'Deployed', description: 'x' });
-      expect(card.supportedInterfaces[0]?.url).toBe(runtimeUrl);
-    } finally {
-      delete process.env.AGENTCORE_RUNTIME_URL;
-    }
-  });
-
-  it('declares a v0.3 mirror interface for legacy clients', () => {
-    const card = buildAgentCard({ name: 'Compat', description: 'x' });
-    const versions = card.supportedInterfaces.map((i) => i.protocolVersion);
-    expect(versions).toContain('1.0');
-    expect(versions).toContain('0.3');
   });
 });
