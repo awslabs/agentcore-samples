@@ -86,7 +86,11 @@ python check_obo_identity.py \
   --token "$END_USER_JWT"
 ```
 
-It creates and changes nothing. Verdicts and exit codes:
+It creates and changes nothing. The identity query runs on a SQL warehouse that may be cold, so it
+gets a 180s budget rather than the handshake's 60s — a cold start that timed out would otherwise be
+reported as `UNKNOWN` for a target that is configured correctly. Override with `OBO_QUERY_TIMEOUT`.
+
+Verdicts and exit codes:
 
 | Verdict | Exit | Meaning |
 |---|---|---|
@@ -96,6 +100,7 @@ It creates and changes nothing. Verdicts and exit codes:
 | `CALLER_PERMISSIONS` | 3 | Your own execution role. Check CloudTrail for `AccessDenied`. |
 | `WORKSPACE_MEMBERSHIP` | 4 | Identity resolved; the user is not a workspace member. |
 | `TARGET_UNREACHABLE` | 4 | Gateway could not fetch tools. See `listingMode` below. |
+| `GATEWAY_UNREACHABLE` | 4 | The gateway URL itself was not reachable, so nothing was tested. Transport, not identity: check the URL, the Region in the hostname, and egress. |
 | `UNKNOWN` | 4 | Could not determine; the report prints what was seen. |
 
 ## Notes that save time
