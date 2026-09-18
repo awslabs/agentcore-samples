@@ -196,8 +196,21 @@ def main():
 
     # --- 3. Associate the web ACL with the gateway ---
     print("\n--- Associating web ACL with gateway ---")
-    wafv2.associate_web_acl(WebACLArn=web_acl_arn, ResourceArn=gateway_arn)
-    print("  Associated.")
+    # The gateway resource is not always immediately visible to WAF right after
+    # target creation (AWS eventual consistency), so associate_web_acl can raise
+    # WAFUnavailableEntityException. Retry with backoff before giving up.
+    for attempt in range(6):
+        try:
+            wafv2.associate_web_acl(WebACLArn=web_acl_arn, ResourceArn=gateway_arn)
+            print("  Associated.")
+            break
+        except wafv2.exceptions.WAFUnavailableEntityException:
+            if attempt == 5:
+                raise
+            print(
+                f"  Gateway not yet visible to WAF; retrying in 10s ({attempt + 1}/6)..."
+            )
+            time.sleep(10)
 
     print("\n  Saved target + web ACL details to .env")
     print("\nNext: uv run python scripts/waf/invoke.py")

@@ -262,7 +262,7 @@ def deploy_agent(guardrail_id: str, guardrail_version: str) -> dict:
         s3.create_bucket(Bucket=S3_BUCKET) if REGION == "us-east-1" else s3.create_bucket(
             Bucket=S3_BUCKET, CreateBucketConfiguration={"LocationConstraint": REGION}
         )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     s3.upload_file("dp_deploy.zip", S3_BUCKET, f"{AGENT_NAME}/dp.zip")
     os.remove("dp_deploy.zip")
@@ -324,7 +324,7 @@ CW_DATA_PROTECTION_POLICY = {
             "Sid": "AuditPolicy",
             "DataIdentifier": [
                 "arn:aws:dataprotection::aws:data-identifier/EmailAddress",
-                "arn:aws:dataprotection::aws:data-identifier/PhoneNumber",
+                "arn:aws:dataprotection::aws:data-identifier/PhoneNumber-US",
                 "arn:aws:dataprotection::aws:data-identifier/Name",
             ],
             "Operation": {"Audit": {"FindingsDestination": {}}},
@@ -333,7 +333,7 @@ CW_DATA_PROTECTION_POLICY = {
             "Sid": "DeidentifyPolicy",
             "DataIdentifier": [
                 "arn:aws:dataprotection::aws:data-identifier/EmailAddress",
-                "arn:aws:dataprotection::aws:data-identifier/PhoneNumber",
+                "arn:aws:dataprotection::aws:data-identifier/PhoneNumber-US",
                 "arn:aws:dataprotection::aws:data-identifier/Name",
             ],
             "Operation": {"Deidentify": {"MaskConfig": {}}},
@@ -355,7 +355,7 @@ def apply_cw_data_protection(runtime_id: str):
         )
         print("  Data protection policy applied.")
         print("  Sensitive data in logs will now be masked as ****.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Warning: {e}")
 
 
@@ -397,14 +397,14 @@ def cleanup(state: dict):
         try:
             bedrock.delete_guardrail(guardrailIdentifier=state["guardrail_id"])
             print("Deleted guardrail")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Warning: {e}")
 
     if state.get("runtime_id"):
         try:
             control.delete_agent_runtime(agentRuntimeId=state["runtime_id"])
             print(f"Deleted runtime {state['runtime_id']}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Warning: {e}")
 
     if state.get("role_name"):
@@ -413,7 +413,7 @@ def cleanup(state: dict):
                 iam.delete_role_policy(RoleName=state["role_name"], PolicyName=p)
             iam.delete_role(RoleName=state["role_name"])
             print(f"Deleted role {state['role_name']}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Warning: {e}")
 
     shutil.rmtree("_dp_agent", ignore_errors=True)
