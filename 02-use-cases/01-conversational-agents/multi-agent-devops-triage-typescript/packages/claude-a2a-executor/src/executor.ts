@@ -80,7 +80,9 @@ export class ClaudeAgentExecutor implements AgentExecutor {
     logEvent('executor', 'task.received', {
       taskId,
       contextId,
-      sessionId: bedrock?.sessionId,
+      // The SDK reports an absent session header as '' — drop it from the log
+      // line rather than printing sessionId="".
+      sessionId: bedrock?.sessionId || undefined,
       requestId: bedrock?.requestId,
       prompt: snippet(prompt),
     });
