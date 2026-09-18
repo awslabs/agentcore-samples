@@ -120,6 +120,7 @@
 - Gui Ruggiero (guiruggiero)
 - Julia Furst Morgado (juliafmorgado)
 - Visakh Madathil (vmmadathil)
+- Riccardo Tomassoli (riccardo1512)
 - JobRamos (jobdram)
 - Neha Thakur (nehabthakur)
 - Will Matos (wilmatos)
