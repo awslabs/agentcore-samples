@@ -1,6 +1,6 @@
 # 05-measure-your-runtime
 
-An AgentCore Runtime benchmark: two deployment paths (zip, container),
+An AgentCore Runtime **cold-start latency** benchmark: two deployment paths (zip, container),
 each testable under two platform versions (Original Runtime `V1`, New Runtime
 `V2`), and the container path testable at five image sizes. Derived from a
 larger benchmark that also covered other runtimes and scenarios — those are
@@ -35,11 +35,15 @@ behind each cut.
   `agentcore_boto3.py` always runs against a real, current boto3 rather than
   whatever `python3` happens to resolve to on PATH.
 
-## Cost
+## Cost of running this experiment
 
-Read this before running Step 4 at its default 5,000-unit target — scenario 1
-is designed to ramp *until the account ceiling stops it*, and nothing in this
-sample deletes what it creates for you.
+Short version: the Step 4 rehearsal (`RAMP_TARGET=100`) costs cents, not dollars
+— do that first. A *full* scenario-1 run across both legs is the expensive one,
+on the order of $10–16 at the current defaults (the table below measured $9.68 at
+a shorter idle timeout than ships today). Read the rest of this section before
+running Step 4 at its default 5,000-unit target — scenario 1 is designed to ramp
+*until the account ceiling stops it*, and nothing in this sample deletes what it
+creates for you.
 
 **How AgentCore Runtime bills** (per the [official pricing page](https://aws.amazon.com/bedrock/agentcore/pricing/)):
 microVM compute is billed per second (1-second minimum) on actual CPU
@@ -54,9 +58,34 @@ by platform version:
 | vCPU-hour | $0.0895 | $0.1276 |
 | GB-hour   | $0.00945 | $0.0169 |
 
-**`V2` is not price-neutral vs `V1`** — about 43% more per vCPU-hour and 79%
-more per GB-hour — so a `V1`-vs-`V2` comparison run with this sample is a
-cost comparison too, not just a latency one.
+Those per-unit rates are higher on `V2` — about 43% more per vCPU-hour and 79%
+more per GB-hour — but a rate is only half of a bill; the other half is how many
+units get metered. `V2` loads memory on demand rather than holding your whole
+container image resident for the life of the session, so for the same agent it
+meters **fewer GB-hours**. In this sample's own runs `V2`'s billed footprint
+stayed flat at ~1.2 GB across every image size from 500 MB to 2 GB, while `V1`'s
+grew with the image — ~2.7 GB at a 500 MB image, ~8.4 GB at 2 GB.
+
+> **This harness is not a cost benchmark, and shouldn't be used as one.** It is
+> built to isolate one thing: cold-start latency. Every design choice serves
+> that — `base-agent` is an **echo server that makes no model call**, each
+> session does exactly one invoke and is then held open rather than released,
+> and the ramp runs until the account ceiling stops it. That produces clean
+> cold-start numbers and a deliberately unrepresentative billing profile:
+> almost every second you pay for here is a session sitting idle after its one
+> request, which is not how a real agent spends its time. Use the figures in this
+> section to predict *what this experiment will cost you*, not to model your own
+> workload's bill.
+
+With that said, the direction is worth understanding, because which way a
+`V1`-vs-`V2` comparison lands depends on your image: the more of it your agent
+never touches, the further the GB-hour saving outruns the higher rate. On the zip
+path `base-agent` has no image at all — nothing to load on demand — so that leg
+shows the rate increase with none of the offset, which makes it close to the
+least favorable case for `V2` that can be constructed rather than a typical one.
+Push the ladder in Step 1 (`200mb` through `2gb`) and compare against something
+shaped like your own image before drawing any conclusion about your bill, and
+measure a real agent doing real work before drawing a firm one.
 
 Because billing runs for the whole session lifetime, **`AGENTCORE_IDLE_TIMEOUT`
 (default 900s, in `infrastructure/common.sh`) is the single biggest cost lever
@@ -80,9 +109,13 @@ legs, 200mb image, `V2`):
 
 Two rules of thumb from those numbers:
 
-- A session held roughly 1 GB resident (echo app, no LLM call), so
-  **session-hours ≈ GB-hours** is a fair estimate before you run anything —
-  and memory dominates the bill (~$8 of the ~$9.68 above).
+- On the **zip** path a session held roughly 1 GB resident (echo app, no LLM
+  call), so **session-hours ≈ GB-hours** is a fair estimate there — and memory
+  dominates the bill (~$8 of the ~$9.68 above). Do **not** carry that 1 GB over
+  to the container path on `V1`, where the footprint scales with the image
+  (measured ~2.7 GB at a 500 MB image, ~8.4 GB at 2 GB): estimate that leg as
+  session-hours × the footprint you actually measure, or a big container run will
+  cost several times what this rule of thumb predicts.
 - **vCPU-hours billed were 2–3× the wall time actually spent serving
   requests** — cold-start/session-boot CPU is billed the same as
   request-serving CPU, so a slow cold start costs money, not just latency.
@@ -90,6 +123,17 @@ Two rules of thumb from those numbers:
 Idle sessions, not requests, are what you pay for. Start with the rehearsal
 (`RAMP_TARGET=100`, already called out in Step 4) to see the shape and rough
 cost of a run before committing to the full 5,000-unit ceiling test.
+
+**Checking what you actually got billed.** The figures above came from
+CloudWatch, not from an estimate: namespace `AWS/Bedrock-AgentCore`, metrics
+`MemoryUsed-GBHours` and `CPUUsed-vCPUHours`, dimensions `Resource` = the full
+runtime ARN and `Service` = `AgentCore.Runtime`. Usage lands in a burst when
+sessions are torn down, so query at 5-minute resolution or finer and you can pick
+individual runs out of the day. Two things worth knowing before you trust a
+number you pull this way: a daily total lumps every run against that runtime
+together (a rehearsal and a real run will silently add up), and dividing
+GB-hours by session count mixes footprint with how long your sessions lived —
+divide by session-hours instead if what you want is the footprint.
 
 **Cleanup:** `infrastructure/cleanup.sh` deletes everything this sample can
 create — the AgentCore runtimes (both legs, all sizes/versions you deployed),
@@ -224,6 +268,12 @@ same run, for context:
   than the best cold start here, so session reuse (`runtimeSessionId`) is still
   the biggest latency lever you control. Cold start is what you pay when you
   *can't* reuse.
+- **A short run reads slower than a full one, and that is expected.** Cold p75
+  is highest in the first few hundred sessions of a ramp and drifts down as it
+  proceeds — measured in 500-session buckets it starts at ~2.2 s and settles
+  near ~1.9 s. So a quick `RAMP_TARGET=500` try lands around 2.2 s rather than
+  the 1.96 s above, which is the early ramp being sampled, not a regression.
+  Reproduced on two separate days in `us-east-1`, both starting at 2.18 s.
 - **Cold start held flat under concurrency.** Ramping the zip/`V2` leg to 5,000
   simultaneous sessions, cold p75 went *down* across the ramp — 2.19 s for the
   first 500 sessions, 1.84 s for the last 500 — with 0 throttled requests in
