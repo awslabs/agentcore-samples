@@ -52,8 +52,10 @@
 #     -> tries AGENTCORE_ZIP_ARN_V1, then AGENTCORE_ZIP_ARN
 #
 # The output filename also picks up the same suffix (e.g.
-# results-scenario1-agentcore-750mb-V2.json), so runs against different
-# sizes/versions never overwrite each other's results.
+# results-scenario1-agentcore-750mb-V2.json), plus -t<RAMP_TARGET> when you set
+# one, so runs against different sizes/versions/targets never overwrite each
+# other's results. A fallback to a less specific ARN is warned about but does
+# NOT change the filename, so mind that warning.
 #
 # Any extra args after the leg name go straight to load_ramp.py.
 set -euo pipefail
@@ -204,6 +206,10 @@ run_leg() {
   local out_suffix=""
   [ -n "${size_upper}" ] && out_suffix="${out_suffix}-${IMAGE_SIZE}"
   [ -n "${version}" ] && out_suffix="${out_suffix}-${version}"
+  # An explicit RAMP_TARGET goes in the filename too, so the README's own
+  # rehearsal (RAMP_TARGET=100) cannot overwrite the full run it precedes.
+  # Default runs are unaffected: RAMP_TARGET unset -> filename unchanged.
+  [ -n "${RAMP_TARGET:-}" ] && out_suffix="${out_suffix}-t${RAMP_TARGET}"
   local out="results-scenario${SCENARIO}-${leg}${out_suffix}.json"
 
   local resolved arn_var arn_val plain_var
@@ -224,6 +230,32 @@ run_leg() {
   arn_var="${resolved%%=*}"
   arn_val="${resolved#*=}"
   echo "[scenario] ${leg}: using \$${arn_var}"
+
+  # resolve_arn falls back to a less specific name, so asking for V2 with only
+  # a plain (or _V1) ARN in .env benchmarks that one instead -- while the output
+  # file is still named for the version you asked for. Say so loudly; the whole
+  # point of the run is usually the version comparison.
+  if [ -n "${version}" ]; then
+    case "${arn_var}" in
+      *_"${version}") ;;
+      *) echo "[scenario] WARNING: asked for ${version} but \$${arn_var} is the closest ARN in .env." \
+              "This run does NOT necessarily use ${version}; results will still be named" \
+              "'${out}'. Set ${plain_var}_${size_upper:+${size_upper}_}${version} in .env to be sure." >&2 ;;
+    esac
+  fi
+
+  # The deploy scripts and the benchmark read AWS_REGION independently (and
+  # .env wins over the shell, because it is sourced under `set -a`), so a
+  # mismatch shows up as every single invoke failing. Compare against the
+  # region embedded in the ARN instead of finding out 5,000 attempts later.
+  local arn_region
+  arn_region="$(printf '%s' "${arn_val}" | cut -d: -f4)"
+  if [ -n "${arn_region}" ] && [ "${arn_region}" != "${AWS_REGION:-us-east-1}" ]; then
+    echo "[scenario] skip ${leg}: \$${arn_var} is in ${arn_region}, but AWS_REGION=${AWS_REGION:-us-east-1}." \
+         "Set AWS_REGION=${arn_region} in ${ENV_FILE} (it overrides your shell) or redeploy in" \
+         "${AWS_REGION:-us-east-1}." >&2
+    return 1
+  fi
 
   if [ "${_has_run}" -eq 1 ] && [ "${LEG_DELAY}" -gt 0 ]; then
     echo ""

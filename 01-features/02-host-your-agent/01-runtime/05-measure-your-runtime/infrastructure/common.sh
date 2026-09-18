@@ -4,11 +4,15 @@
 # Prod only: every AgentCore call goes to the public regional endpoint.
 #
 # Override any value via environment variables, e.g.:
-#   AWS_REGION=us-east-1 ECR_REPOSITORY=my-agent ./build-and-push.sh
+#   AWS_REGION=us-west-2 ECR_REPOSITORY=my-agent ./build-and-push.sh
 set -euo pipefail
 
 # ---- Configuration (override via environment) ----
-AWS_REGION="${AWS_REGION:-us-west-2}"
+# Must match benchmarks/.env's AWS_REGION -- the deploy scripts create the
+# runtime here, and the benchmark invokes whatever AWS_REGION it reads out of
+# .env. If they disagree, every invoke fails against a region that has no
+# runtime. Keep this default and .env.example's in sync when changing either.
+AWS_REGION="${AWS_REGION:-us-east-1}"
 
 # ---- AgentCore session lifecycle ----
 # How long an idle session survives, and its hard maximum lifetime (seconds).
