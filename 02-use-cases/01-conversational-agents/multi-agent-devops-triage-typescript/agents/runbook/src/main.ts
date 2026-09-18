@@ -1,9 +1,6 @@
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import {
-  buildAgentCard,
-  ClaudeAgentExecutor,
-  serveA2A,
-} from '@sample/claude-a2a-executor';
+import { buildAgentCard, serveA2A } from 'bedrock-agentcore/runtime/a2a';
+import { ClaudeAgentExecutor } from '@sample/claude-a2a-executor';
 import { createMcpProxy, createSigV4Fetch } from '@sample/aws-sigv4-fetch';
 
 /**
@@ -28,7 +25,10 @@ do not answer ownership or runbook questions from memory.
 Reply with a concise summary: owning team, escalation contact, and the runbook
 steps relevant to the reported symptom.`;
 
-const PORT = Number(process.env.PORT ?? 9000);
+// serveA2A resolves A2A_PORT itself; read it here too so the agent card
+// advertises the port this process actually listens on (local dev runs the two
+// workers on 9001/9002). Deployed, AGENTCORE_RUNTIME_URL wins.
+const PORT = Number(process.env.A2A_PORT ?? 9000);
 const gatewayMcpUrl = process.env.GATEWAY_MCP_URL;
 const localMcpUrl = process.env.SERVICE_CATALOG_MCP_URL ?? 'http://localhost:8900/mcp';
 

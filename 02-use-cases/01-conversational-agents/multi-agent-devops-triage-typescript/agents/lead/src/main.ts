@@ -1,6 +1,6 @@
 import { BedrockAgentCoreApp } from 'bedrock-agentcore/runtime';
 import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk';
-import { runtimeUrlFromArn } from '@sample/claude-a2a-executor';
+import { buildRuntimeUrl } from 'bedrock-agentcore/runtime/a2a';
 import { z } from 'zod';
 
 import { notifyIncidentChannel } from './notify.js';
@@ -26,7 +26,7 @@ const REGION = process.env.AWS_REGION ?? 'us-east-1';
 
 function workerUrl(arnVar: string, urlVar: string, fallback: string): string {
   const arn = process.env[arnVar];
-  if (arn) return runtimeUrlFromArn(arn, REGION);
+  if (arn) return buildRuntimeUrl(arn, REGION);
   return process.env[urlVar] ?? fallback;
 }
 
