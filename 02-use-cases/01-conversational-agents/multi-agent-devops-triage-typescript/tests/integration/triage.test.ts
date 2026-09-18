@@ -63,11 +63,13 @@ beforeAll(async () => {
   start('mock-catalog', 'scripts/mock-service-catalog/src/main.ts', {
     PORT: String(MOCK_CATALOG_PORT),
   });
+  // The A2A protocol path reads A2A_PORT (the HTTP path and the mock tool
+  // use PORT) — see the SDK's serveA2A.
   start('log-analyst', 'agents/log-analyst/src/main.ts', {
-    PORT: String(LOG_ANALYST_PORT),
+    A2A_PORT: String(LOG_ANALYST_PORT),
   });
   start('runbook', 'agents/runbook/src/main.ts', {
-    PORT: String(RUNBOOK_PORT),
+    A2A_PORT: String(RUNBOOK_PORT),
     SERVICE_CATALOG_MCP_URL: `http://localhost:${MOCK_CATALOG_PORT}/mcp`,
   });
   start('lead', 'agents/lead/src/main.ts', {

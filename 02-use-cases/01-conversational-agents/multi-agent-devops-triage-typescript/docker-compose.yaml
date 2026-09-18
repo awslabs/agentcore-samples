@@ -39,7 +39,7 @@ services:
     environment:
       <<: *aws-env
       AGENT_DIR: agents/log-analyst
-      PORT: "9000"
+      A2A_PORT: "9000"
       # A2A clients route via the URL in the agent card; inside the compose
       # network that must be the service DNS name, not localhost. The same
       # var carries the runtime endpoint when deployed on AgentCore.
@@ -55,7 +55,7 @@ services:
     environment:
       <<: *aws-env
       AGENT_DIR: agents/runbook
-      PORT: "9000"
+      A2A_PORT: "9000"
       AGENTCORE_RUNTIME_URL: http://runbook:9000/
       SERVICE_CATALOG_MCP_URL: http://mock-service-catalog:8900/mcp
     ports:
