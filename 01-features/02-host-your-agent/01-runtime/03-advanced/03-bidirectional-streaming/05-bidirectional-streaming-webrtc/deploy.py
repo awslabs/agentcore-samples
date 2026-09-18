@@ -327,7 +327,7 @@ agent can reach the KVS TURN servers. See README.md for VPC setup.
             security_groups=security_groups,
             channel_name=args.channel_name,
         )
-    except Exception as e:  # noqa: BLE001 - surface any failure to the operator
+    except Exception as e:  # broad on purpose: surface any failure to the operator
         log(f"\nDeployment failed: {e}")
         return 1
 

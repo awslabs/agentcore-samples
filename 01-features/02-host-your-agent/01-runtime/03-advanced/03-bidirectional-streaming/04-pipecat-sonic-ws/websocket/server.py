@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -39,10 +38,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
     UserTurnStoppedMessage,
 )
-from pipecat.runner.types import RunnerArguments  # noqa: F401
+from pipecat.runner.types import RunnerArguments
+from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.aws.nova_sonic.llm import AWSNovaSonicLLMService
 from pipecat.services.llm_service import FunctionCallParams
-from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
@@ -70,8 +69,8 @@ def get_imdsv2_token():
         )
         if resp.status_code == 200:
             return resp.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -265,7 +264,7 @@ tools = ToolsSchema(
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-from contextlib import asynccontextmanager  # noqa: E402
+from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
@@ -422,7 +421,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
-        logger.error(f"WebSocket session error: {e}", exc_info=True)
+        logger.exception("WebSocket session error")
 
 
 # ---------------------------------------------------------------------------

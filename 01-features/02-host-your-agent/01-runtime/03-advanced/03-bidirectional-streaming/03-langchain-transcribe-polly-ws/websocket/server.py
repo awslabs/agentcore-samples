@@ -5,21 +5,19 @@ FastAPI server with IMDS credential management and WebSocket endpoint.
 Agent logic lives in agent.py (following the strands pattern).
 """
 
-import logging
-import uvicorn
-import os
-import json
 import asyncio
+import json
+import logging
+import os
 import time
 from datetime import datetime
 
 import requests
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-
+import uvicorn
 from agent import handle_websocket_session
-
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,8 +59,8 @@ def get_imdsv2_token():
         )
         if resp.status_code == 200:
             return resp.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -212,7 +210,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global _credential_refresh_task
     logger.info("🛑 Shutting down...")
     if _credential_refresh_task and not _credential_refresh_task.done():
         _credential_refresh_task.cancel()
