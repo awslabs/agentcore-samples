@@ -18,18 +18,16 @@ Examples:
 import argparse
 import json
 import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 import time
 import traceback
-import yaml
-from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from pathlib import Path
 
 import boto3
-from botocore.exceptions import ClientError
+import yaml
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 
 # The starter toolkit is used only to build the ARM64 image and push it to ECR.
@@ -39,6 +37,7 @@ from bedrock_agentcore_starter_toolkit.operations.runtime.launch import (
     _execute_codebuild_workflow,
 )
 from bedrock_agentcore_starter_toolkit.utils.runtime.config import load_config
+from botocore.exceptions import ClientError
 
 # AgentCore Runtime V2 prepares and snapshots the execution environment during create,
 # so create does not complete immediately and there is no boto3 waiter for it. Poll
@@ -106,7 +105,7 @@ class AgentCoreDeployer:
         """Print warning message"""
         self._print(f"⚠️  {message}", Colors.YELLOW)
 
-    def _run_command(self, cmd: list, cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+    def _run_command(self, cmd: list, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
         """Run a shell command and return the result"""
         try:
             result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check)
@@ -118,7 +117,7 @@ class AgentCoreDeployer:
                 raise
             return e
 
-    def create_memory(self) -> Optional[Dict]:
+    def create_memory(self) -> dict | None:
         """Create an AgentCore Memory resource for the strands agent."""
         if self.websocket_folder != "02-strands-ws":
             return None
@@ -140,8 +139,9 @@ class AgentCoreDeployer:
                         memory_id = mem["id"]
                         self._info(f"Found existing memory: {memory_name} (ID: {memory_id})")
                         return {"memory_id": memory_id, "memory_name": memory_name}
-            except Exception:
-                pass  # list may not be supported or empty, proceed to create
+            except Exception as e:
+                # list may not be supported or empty, proceed to create
+                self._info(f"Could not list existing memories ({e}); creating a new one")
 
             memory = client.create_memory(
                 name=memory_name,
@@ -162,7 +162,7 @@ class AgentCoreDeployer:
             self._info("You can create memory manually and set MEMORY_ID env var")
             return None
 
-    def deploy_mcp_gateway(self) -> Optional[Dict]:
+    def deploy_mcp_gateway(self) -> dict | None:
         """Deploy MCP Gateways (for strands and langchain agents that use MCP tools)"""
         if self.websocket_folder not in (
             "02-strands-ws",
@@ -247,7 +247,7 @@ class AgentCoreDeployer:
                                 self._success(f"Retrieved existing gateway: {gw['gatewayId']}")
                                 break
                         if not gateway:
-                            raise Exception(f"Gateway '{gateway_name}' exists but could not be found")
+                            raise RuntimeError(f"Gateway '{gateway_name}' exists but could not be found")
                     else:
                         raise
 
@@ -513,7 +513,7 @@ class AgentCoreDeployer:
                     self._info(f"   log stream: {name}")
                 return True
             return False
-        except Exception:  # noqa: BLE001 - a log lookup must never break a deploy
+        except Exception:
             return False
 
     def create_runtime_v2(
@@ -576,9 +576,9 @@ class AgentCoreDeployer:
     def deploy_agent(
         self,
         role_arn: str,
-        gateway_info: Optional[Dict] = None,
-        memory_info: Optional[Dict] = None,
-    ) -> Dict:
+        gateway_info: dict | None = None,
+        memory_info: dict | None = None,
+    ) -> dict:
         """Build the image, then create the runtime on AgentCore Runtime V2"""
         self._print(f"\n🚀 Deploying agent to AgentCore Runtime {PLATFORM_VERSION}...", Colors.YELLOW)
 
@@ -710,7 +710,7 @@ class AgentCoreDeployer:
         finally:
             os.chdir(original_dir)
 
-    def save_configuration(self, deployment_info: Dict):
+    def save_configuration(self, deployment_info: dict):
         """Save deployment configuration to JSON file"""
         self._print("\n💾 Saving configuration...", Colors.YELLOW)
 
@@ -737,7 +737,7 @@ class AgentCoreDeployer:
 
         self._success(f"Configuration saved to {self.config_file}")
 
-    def print_summary(self, deployment_info: Dict):
+    def print_summary(self, deployment_info: dict):
         """Print deployment summary"""
         self._print("\n" + "=" * 80, Colors.GREEN)
         self._print("✅ Deployment Complete!", Colors.GREEN)

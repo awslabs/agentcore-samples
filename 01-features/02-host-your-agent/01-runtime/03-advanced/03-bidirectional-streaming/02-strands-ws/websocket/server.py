@@ -1,16 +1,15 @@
-import logging
-import uvicorn
-import os
-import json
 import asyncio
-import requests
+import json
+import logging
+import os
 from datetime import datetime
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
+import requests
+import uvicorn
 from agent import handle_websocket_session
-
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # ---------------------------------------------------------------------------
 # Large-event splitting (adapted from Sonic server for Strands event format)
@@ -105,8 +104,8 @@ def get_imdsv2_token():
         )
         if response.status_code == 200:
             return response.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -272,7 +271,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global _credential_refresh_task
 
     logger.info("🛑 Shutting down...")
 
