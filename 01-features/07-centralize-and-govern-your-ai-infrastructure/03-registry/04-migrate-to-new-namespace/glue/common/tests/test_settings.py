@@ -590,6 +590,38 @@ class NumericKnobsRejectBooleans(unittest.TestCase):
         validate_runtime_configuration(self._settings(recordsPerObject=500, loadConcurrency=8), [])
 
 
+class DuplicateNameModes(unittest.TestCase):
+    """``transform.duplicateNames`` decides what a target name collision does, so a typo must not pass.
+
+    The claim guard treats any value that is not ``suffix`` as ``fail``, so an unrecognised spelling
+    would silently give the stricter behaviour: a run that was asked to rename colliding records
+    would refuse them instead, one at a time, with nothing pointing at the config as the cause.
+    """
+
+    def _settings(self, **transform):
+        return {
+            "schemaVersion": 1,
+            "load": {"mode": "FULL", "changedAfter": None},
+            "transform": {"namePrefix": "migrated", **transform},
+            "api": {"target": {}},
+        }
+
+    def test_both_documented_modes_are_accepted(self):
+        for mode in ("fail", "suffix"):
+            with self.subTest(mode=mode):
+                validate_runtime_configuration(self._settings(duplicateNames=mode), [])
+
+    def test_an_absent_setting_is_the_default(self):
+        """A deployment made before this setting existed still loads, on the strict default."""
+        validate_runtime_configuration(self._settings(), [])
+
+    def test_an_unrecognised_mode_is_refused_and_names_the_alternatives(self):
+        with self.assertRaises(ConfigurationError) as raised:
+            validate_runtime_configuration(self._settings(duplicateNames="Suffix"), [])
+        self.assertIn("duplicateNames", str(raised.exception))
+        self.assertIn("suffix", str(raised.exception))
+
+
 class BooleanFlags(unittest.TestCase):
     """Flags come from the command line only, so the environment cannot change job behaviour."""
 
@@ -669,6 +701,9 @@ class FileBackedConfiguration(unittest.TestCase):
         # The transform rules must be complete, including the implementation hash the replay
         # fingerprint depends on -- without it a local extract could not be safely re-loaded.
         self.assertEqual(settings["transform"]["namePrefix"], "migrated")
+        # The strict default: a local run refuses the second source record to claim a target name
+        # rather than renaming it, which is also what an unconfigured deployment does.
+        self.assertEqual(settings["transform"]["duplicateNames"], "fail")
         self.assertRegex(settings["transform"]["implementationHash"], r"^[0-9a-f]{64}$")
 
     def test_a_deployment_config_file_is_accepted_as_is(self):

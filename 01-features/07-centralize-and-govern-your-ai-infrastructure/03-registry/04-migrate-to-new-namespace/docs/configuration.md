@@ -90,7 +90,7 @@ The configuration file is resolved in the following order:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `runtime.transform.duplicateNames` | `fail` | Behavior when two preview records share a name. `fail` stops the run and reports the conflicts. `suffix` migrates both records under distinct target names, removing the original preview name from those records |
+| `runtime.transform.duplicateNames` | `fail` | Behavior when two source records transform to the same target `name` and `recordVersion`, which the new registry requires to be unique. `fail` refuses the second record rather than overwriting the first: that record is skipped and detailed in the run's failure report, and the run ends `PARTIAL_SUCCESS` (or `FAILED`, with `failOnRecordError`). `suffix` migrates one of them under a distinct `name` instead — `<name>-<8 hex>`, derived from that record's own source identity — so its `displayName` keeps the original name and the crosswalk lists both. See [How `suffix` chooses which record is renamed](detaileddoc.md#how-suffix-chooses-which-record-is-renamed) |
 | `runtime.transform.namePrefix` | `migrated` | Prefix used for fallback names when a source record has no usable name |
 | `runtime.transform.allowedRecordTypes` | `AGENT`, `MCP`, `SKILL`, `CUSTOM` | Restricts migration to records whose inferred `recordType` is in this list |
 | `runtime.transform.passthroughFields` | `description` | Fields copied from the source record to the target record without transformation |
