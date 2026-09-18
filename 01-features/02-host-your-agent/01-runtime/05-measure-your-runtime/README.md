@@ -89,9 +89,10 @@ measure a real agent doing real work before drawing a firm one.
 
 Because billing runs for the whole session lifetime, **`AGENTCORE_IDLE_TIMEOUT`
 (default 900s, in `infrastructure/common.sh`) is the single biggest cost lever
-in this sample**: every session here does exactly one invoke and then sits
-idle until that timeout reaps it. From an actual full scenario-1 run (both
-legs, 200mb image, `V2`):
+in this sample**: every session here does exactly one invoke and then sits idle,
+billing its full footprint, until either the run's teardown phase stops it or
+that timeout reaps it. From an actual full scenario-1 run (both legs, 200mb
+image, `V2`):
 
 | Leg | Sessions | Wall | GB-hours | vCPU-hours | Cost @ `V2` rates |
 |-----|---------:|-----:|---------:|-----------:|-------------------:|
@@ -106,6 +107,24 @@ legs, 200mb image, `V2`):
 > mid-ramp now survive to teardown, so expect roughly 1.5–2× that leg's cost at
 > the default. `AGENTCORE_IDLE_TIMEOUT=300 ./deploy-agentcore.sh` reproduces
 > the cheaper (and less accurate) configuration those figures came from.
+
+A run that finishes does not leave sessions idling for 900s — teardown calls
+`StopRuntimeSession` on every one, and that teardown is in a `finally`, so a
+single Ctrl-C still cleans up after itself. The timeout therefore only bites for
+sessions that would otherwise have been reaped part-way through the ramp.
+
+**Three cases do leave a fleet to age out on its own**, and they are where the
+900s default costs you: `--no-teardown` / `NO_TEARDOWN=true`, which skips
+teardown by design; anything that kills the process without unwinding, such as
+`SIGTERM`/`kill`, a closed terminal, a crash, or losing the network mid-run; and a
+second Ctrl-C while teardown is still working. In those cases sessions age out on
+their own — up to `AGENTCORE_IDLE_TIMEOUT` idle, then `AGENTCORE_MAX_LIFETIME`
+(1200s) as a hard cap. With a 5,000-session fleet that is up to ~20 minutes of
+billed idle memory, and because those sessions still count against the account's
+session ceiling, long enough that an immediate retry can stall at the ceiling on
+the fleet you just abandoned. Either wait it out, or run with a shorter timeout
+(`AGENTCORE_IDLE_TIMEOUT=300 ./deploy-agentcore.sh`) while you are still
+iterating and likely to kill runs part-way.
 
 Two rules of thumb from those numbers:
 
