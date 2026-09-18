@@ -275,6 +275,7 @@ plan/
 # Generated configuration and result files
 **/agents_config.json
 **/gateway_config.json
+**/setup_config.json
 **/config.json
 **/evals_results/
 **/results/

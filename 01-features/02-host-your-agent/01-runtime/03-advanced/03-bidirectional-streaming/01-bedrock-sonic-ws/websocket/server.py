@@ -117,6 +117,36 @@ def get_credentials_from_imds():
     return result
 
 
+def refresh_credentials_now():
+    """Re-fetch IMDS credentials into the environment before starting a session.
+
+    Credentials must not be relied on from application startup. AgentCore Runtime
+    V2 snapshots the container during deployment and restores that snapshot for
+    later sessions, so anything captured at startup -- including credentials and
+    the refresh timer -- is frozen at deploy time. A session restored hours later
+    would otherwise sign requests with expired credentials and Bedrock returns
+    403 ExpiredTokenException.
+
+    Called at the start of every session so each one begins with valid credentials.
+    """
+    # Static credentials supplied by the operator take precedence (local mode).
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SESSION_TOKEN") is None:
+        logger.info("Using static credentials from environment, skipping IMDS refresh")
+        return True
+
+    imds_result = get_credentials_from_imds()
+    if not imds_result["success"]:
+        logger.error(f"Could not refresh credentials from IMDS: {imds_result['error']}")
+        return False
+
+    creds = imds_result["credentials"]
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
+    logger.info(f"Credentials refreshed for session (expire {creds.get('Expiration')})")
+    return True
+
+
 async def refresh_credentials_from_imds():
     """
     Background task to periodically refresh credentials from IMDS and update environment variables.
@@ -319,6 +349,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await forward_task
                             except asyncio.CancelledError:
                                 pass
+
+                        # Refresh credentials before each session. Under Runtime V2
+                        # the container may have been restored from a snapshot taken
+                        # at deploy time, so startup credentials are likely expired.
+                        refresh_credentials_now()
 
                         # Create a new stream manager for this connection
                         stream_manager = S2sSessionManager(model_id="amazon.nova-2-sonic-v1:0", region=aws_region)

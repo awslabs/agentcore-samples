@@ -24,7 +24,7 @@ from smithy_aws_core.auth.sigv4 import SigV4AuthScheme
 from smithy_aws_core.identity.chain import create_default_chain
 from smithy_http.aio.aiohttp import AIOHTTPClient
 
-from audio import convert_to_16khz, INPUT_SAMPLE_RATE, OUTPUT_SAMPLE_RATE
+from audio import convert_to_16khz, new_resampler, INPUT_SAMPLE_RATE, OUTPUT_SAMPLE_RATE
 
 MODEL_ID = "amazon.nova-2-sonic-v1:0"
 VOICE_ID = "matthew"
@@ -234,8 +234,9 @@ async def run_session(audio_in, audio_out, region, pc_id):
     # --- Stream microphone audio to Nova Sonic ---
     try:
         frame_count = 0
+        resampler = new_resampler()  # built per session, never at import -- see audio.new_resampler
         while True:
-            pcm = convert_to_16khz(await audio_in.recv())
+            pcm = convert_to_16khz(await audio_in.recv(), resampler)
             if not pcm:
                 continue
 

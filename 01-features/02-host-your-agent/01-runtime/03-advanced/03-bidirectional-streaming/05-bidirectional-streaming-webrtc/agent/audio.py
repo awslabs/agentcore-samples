@@ -19,18 +19,30 @@ BYTES_PER_SAMPLE = 2  # 16-bit PCM
 FRAME_DURATION_MS = 20  # WebRTC frame size
 SAMPLES_PER_FRAME = OUTPUT_SAMPLE_RATE * FRAME_DURATION_MS // 1000  # 480
 
-# Resampler converts WebRTC input (typically 48kHz stereo) to Nova Sonic format
-_resampler = av.AudioResampler(format="s16", layout="mono", rate=INPUT_SAMPLE_RATE)
 
-# Pre-built silence frame for when no audio is available
-_SILENCE = AudioFrame(format="s16", layout="mono", samples=SAMPLES_PER_FRAME)
-_SILENCE.sample_rate = OUTPUT_SAMPLE_RATE
-_SILENCE.planes[0].update(bytes(SAMPLES_PER_FRAME * BYTES_PER_SAMPLE))
+def new_resampler():
+    """Create a resampler that converts WebRTC input (typically 48kHz stereo) to Nova Sonic format.
+
+    Build this per session rather than at import time. The runtime snapshots the container
+    once at deploy time and restores it for each session, so a native FFmpeg object created
+    at import would be frozen into that snapshot and restored in an unusable state --
+    it then yields correctly sized frames containing silence. Creating it per session also
+    avoids sharing resampler state across concurrent peer connections.
+    """
+    return av.AudioResampler(format="s16", layout="mono", rate=INPUT_SAMPLE_RATE)
 
 
-def convert_to_16khz(frame):
+def new_silence_frame():
+    """Create a silence frame for when no audio is available (see new_resampler for why per session)."""
+    frame = AudioFrame(format="s16", layout="mono", samples=SAMPLES_PER_FRAME)
+    frame.sample_rate = OUTPUT_SAMPLE_RATE
+    frame.planes[0].update(bytes(SAMPLES_PER_FRAME * BYTES_PER_SAMPLE))
+    return frame
+
+
+def convert_to_16khz(frame, resampler):
     """Convert a WebRTC audio frame to 16kHz/16-bit/mono PCM bytes."""
-    resampled = _resampler.resample(frame)
+    resampled = resampler.resample(frame)
     return b"".join(f.planes[0] for f in resampled) if resampled else b""
 
 
@@ -47,6 +59,7 @@ class OutputTrack(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self._fifo = av.AudioFifo()
+        self._silence = new_silence_frame()  # per session, not at import -- see new_resampler
         self._start_time = None
         self._timestamp = 0
         self._muted = False
@@ -65,11 +78,11 @@ class OutputTrack(MediaStreamTrack):
 
         # Return silence if muted (barge-in) or buffer empty
         if self._muted:
-            frame = _SILENCE
+            frame = self._silence
         else:
             frame = self._fifo.read(SAMPLES_PER_FRAME, partial=False)
             if frame is None:
-                frame = _SILENCE
+                frame = self._silence
 
         frame.pts = self._timestamp
         frame.time_base = fractions.Fraction(1, OUTPUT_SAMPLE_RATE)

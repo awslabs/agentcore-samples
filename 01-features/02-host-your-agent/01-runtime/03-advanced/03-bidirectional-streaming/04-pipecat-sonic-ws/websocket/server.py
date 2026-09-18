@@ -123,6 +123,27 @@ def get_credentials_from_imds():
     return result
 
 
+def refresh_credentials_now():
+    """Re-fetch IMDS credentials before starting a session.
+
+    AgentCore Runtime V2 snapshots the container at deploy time and restores that
+    snapshot for later sessions, so credentials captured at application startup are
+    frozen and will have expired. Without this, Bedrock returns 403
+    ExpiredTokenException on the first call of a restored session.
+    """
+    result = get_credentials_from_imds()
+    if not result["success"]:
+        logger.error("Could not refresh credentials from IMDS")
+        return False
+
+    creds = result["credentials"]
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["access_key"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["secret_key"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["token"]
+    logger.info("Credentials refreshed for session")
+    return True
+
+
 async def refresh_credentials_periodically():
     """Background task to refresh IMDS credentials before expiry."""
     while True:
@@ -308,6 +329,10 @@ async def invocations():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info(f"WebSocket connected: {websocket.client}")
+
+    # Under Runtime V2 the container may have been restored from a deploy-time
+    # snapshot, so refresh credentials before doing any AWS work in this session.
+    refresh_credentials_now()
 
     try:
         transport = FastAPIWebsocketTransport(
