@@ -30,11 +30,11 @@ graph LR
 
 ## What this sample provides beyond the scenario
 
-The AgentCore **Python** SDK ships A2A hosting (`serve_a2a`) and framework executors. The **TypeScript** SDK (`bedrock-agentcore`) does not yet — so this sample includes two scenario-agnostic packages that fill the gap:
+A2A hosting itself comes from the AgentCore TypeScript SDK: the workers call `serveA2A()` from [`bedrock-agentcore/runtime/a2a`](https://github.com/aws/bedrock-agentcore-sdk-typescript), which implements the A2A container contract and propagates the AgentCore-injected request context. What the SDK does not cover — and this sample adds — are two scenario-agnostic packages:
 
 | Package | What it does |
 |---|---|
-| [`packages/claude-a2a-executor`](packages/claude-a2a-executor/) | `ClaudeAgentExecutor` — bridges a Claude Agent SDK `query()` stream to the `@a2a-js/sdk` `AgentExecutor` interface (task lifecycle, streaming, cancellation). `serveA2A()` — implements the AgentCore A2A container contract in one call (JSON-RPC at `POST /`, agent card, `GET /ping`, AgentCore header extraction via `AsyncLocalStorage`), mirroring the Python SDK's `serve_a2a`. |
+| [`packages/claude-a2a-executor`](packages/claude-a2a-executor/) | `ClaudeAgentExecutor` — bridges a Claude Agent SDK `query()` stream to the `@a2a-js/sdk` `AgentExecutor` interface that `serveA2A()` hosts (task lifecycle, streaming, cancellation). The TypeScript counterpart of the Python SDK's `StrandsA2AExecutor`, for Claude. |
 | [`packages/aws-sigv4-fetch`](packages/aws-sigv4-fetch/) | `createSigV4Fetch` — a fetch-shaped SigV4 signer usable by any fetch-injectable client (MCP SDK, a2a-js). `createMcpProxy` — an in-process MCP server that mirrors the Gateway's tools over the signing fetch and plugs into the Claude Agent SDK as an SDK MCP server. |
 
 ## Prerequisites
@@ -43,6 +43,7 @@ The AgentCore **Python** SDK ships A2A hosting (`serve_a2a`) and framework execu
 2. **AWS CLI** configured with credentials
 3. **Node.js 20+** and npm 9+
 4. **Docker** (or another engine) with `linux/arm64` build support — for compose mode and deployment
+5. **A local `bedrock-agentcore` build** — the SDK's A2A support is merged but not yet on npm, so `npm ci` needs the tarball described in [`vendor/README.md`](vendor/README.md). This step disappears with the next SDK release.
 5. **CDK bootstrapped** in the target account/region — for deployment
 
 Defaults: region `us-east-1`, model `global.anthropic.claude-haiku-4-5-20251001-v1:0` — both overridable via `AWS_REGION` / `ANTHROPIC_MODEL`.
@@ -58,8 +59,8 @@ npm test                      # unit tests (no AWS access needed)
 
 # Terminal 1–4, or use docker compose (below):
 npm run dev:mock-catalog                                     # :8900
-PORT=9001 npm run dev:log-analyst                            # A2A worker
-PORT=9002 SERVICE_CATALOG_MCP_URL=http://localhost:8900/mcp \
+A2A_PORT=9001 npm run dev:log-analyst                        # A2A worker
+A2A_PORT=9002 SERVICE_CATALOG_MCP_URL=http://localhost:8900/mcp \
   npm run dev:runbook                                        # A2A worker
 LOG_ANALYST_URL=http://localhost:9001 RUNBOOK_URL=http://localhost:9002 \
   npm run dev:lead                                           # :8080
@@ -70,6 +71,8 @@ curl -s -X POST localhost:8080/invocations \
   -H "x-amzn-bedrock-agentcore-runtime-session-id: $(uuidgen)" \
   -d '{"prompt": "orders-api latency spiked after the 14:00 deploy. Logs: ERROR timeout connecting to postgres-orders x40 since 14:02. What happened?"}'
 ```
+
+The two workers run on 9001/9002 locally so they don't collide, and `serveA2A()` warns that the port differs from the 9000 contract port. Off-platform that warning is expected — deployed, the runtime always proxies to 9000.
 
 Or run everything with compose:
 
@@ -125,7 +128,15 @@ Use these as the `prompt` in the local `curl` above or with `./invoke.sh` when d
 | `result` (success) | `artifactUpdate` with the answer, then `statusUpdate` → `COMPLETED` |
 | error / cancellation | `statusUpdate` → `FAILED` / `CANCELED` |
 
-`serveA2A()` hosts any executor per the AgentCore A2A container contract: JSON-RPC at `POST /` on `0.0.0.0:9000`, the agent card at `/.well-known/agent-card.json` (URL resolved from `AGENTCORE_RUNTIME_URL`), and `GET /ping`. It also extracts the AgentCore-injected headers (session id, request id, workload access token) into an `AsyncLocalStorage` context, so tool handlers deep inside a Claude session can use AgentCore Identity — the same parity `BedrockAgentCoreApp` provides on the HTTP path.
+Hosting that executor is the SDK's job, not the sample's: `serveA2A()` from `bedrock-agentcore/runtime/a2a` serves the AgentCore A2A container contract in one call — JSON-RPC at `POST /` on `0.0.0.0:9000`, the agent card at `/.well-known/agent-card.json` (URL resolved from `AGENTCORE_RUNTIME_URL`), and `GET /ping`. It also propagates the AgentCore-injected headers (session id, request id, workload access token) into the same request context the HTTP path uses, so `getContext()` and the identity wrappers work inside an executor. Each worker is therefore an executor plus one `serveA2A()` call:
+
+```typescript
+await serveA2A({
+  agentCard: buildAgentCard({ name: 'log-analyst', description: '…', skills: [/* … */] }),
+  executor: new ClaudeAgentExecutor({ systemPrompt: SYSTEM_PROMPT, queryOptions: { /* … */ } }),
+  port: PORT,
+});
+```
 
 ### In-process SigV4 signing (`packages/aws-sigv4-fetch`)
 
@@ -142,7 +153,7 @@ Every component emits one-line, greppable `[a2a]` log entries (delegation sent/a
 ## Repository layout
 
 ```
-packages/claude-a2a-executor/   # Claude Agent SDK ↔ A2A bridge + serveA2A() hosting
+packages/claude-a2a-executor/   # Claude Agent SDK ↔ A2A executor bridge (hosted by the SDK's serveA2A)
 packages/aws-sigv4-fetch/       # SigV4 fetch wrapper + in-process MCP proxy
 agents/log-analyst/             # A2A worker: reasons over log snippets
 agents/runbook/                 # A2A worker: service catalog via MCP (mock or Gateway)
