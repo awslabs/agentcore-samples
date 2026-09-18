@@ -100,60 +100,6 @@ image, `V2`):
 | container 200mb | 5,010 | 753 s | 320.5 | 7.64 | $6.39 |
 | **total** (incl. a 100-unit rehearsal) | | | **473.7** | **13.1** | **$9.68** |
 
-> **Those numbers were measured at a 300s idle timeout, and the default is now
-> 900s** — raised so the container leg's ~750s ramp stops outliving its own
-> sessions (see the comment in `common.sh`). Budget above the table
-> accordingly: on the container leg the 2,836 sessions that used to be reaped
-> mid-ramp now survive to teardown, so expect roughly 1.5–2× that leg's cost at
-> the default. `AGENTCORE_IDLE_TIMEOUT=300 ./deploy-agentcore.sh` reproduces
-> the cheaper (and less accurate) configuration those figures came from.
-
-A run that finishes does not leave sessions idling for 900s — teardown calls
-`StopRuntimeSession` on every one, and that teardown is in a `finally`, so a
-single Ctrl-C still cleans up after itself. The timeout therefore only bites for
-sessions that would otherwise have been reaped part-way through the ramp.
-
-**Three cases do leave a fleet to age out on its own**, and they are where the
-900s default costs you: `--no-teardown` / `NO_TEARDOWN=true`, which skips
-teardown by design; anything that kills the process without unwinding, such as
-`SIGTERM`/`kill`, a closed terminal, a crash, or losing the network mid-run; and a
-second Ctrl-C while teardown is still working. In those cases sessions age out on
-their own — up to `AGENTCORE_IDLE_TIMEOUT` idle, then `AGENTCORE_MAX_LIFETIME`
-(1200s) as a hard cap. With a 5,000-session fleet that is up to ~20 minutes of
-billed idle memory, and because those sessions still count against the account's
-session ceiling, long enough that an immediate retry can stall at the ceiling on
-the fleet you just abandoned. Either wait it out, or run with a shorter timeout
-(`AGENTCORE_IDLE_TIMEOUT=300 ./deploy-agentcore.sh`) while you are still
-iterating and likely to kill runs part-way.
-
-Two rules of thumb from those numbers:
-
-- On the **zip** path a session held roughly 1 GB resident (echo app, no LLM
-  call), so **session-hours ≈ GB-hours** is a fair estimate there — and memory
-  dominates the bill (~$8 of the ~$9.68 above). Do **not** carry that 1 GB over
-  to the container path on `V1`, where the footprint scales with the image
-  (measured ~2.7 GB at a 500 MB image, ~8.4 GB at 2 GB): estimate that leg as
-  session-hours × the footprint you actually measure, or a big container run will
-  cost several times what this rule of thumb predicts.
-- **vCPU-hours billed were 2–3× the wall time actually spent serving
-  requests** — cold-start/session-boot CPU is billed the same as
-  request-serving CPU, so a slow cold start costs money, not just latency.
-
-Idle sessions, not requests, are what you pay for. Start with the rehearsal
-(`RAMP_TARGET=100`, already called out in Step 4) to see the shape and rough
-cost of a run before committing to the full 5,000-unit ceiling test.
-
-**Checking what you actually got billed.** The figures above came from
-CloudWatch, not from an estimate: namespace `AWS/Bedrock-AgentCore`, metrics
-`MemoryUsed-GBHours` and `CPUUsed-vCPUHours`, dimensions `Resource` = the full
-runtime ARN and `Service` = `AgentCore.Runtime`. Usage lands in a burst when
-sessions are torn down, so query at 5-minute resolution or finer and you can pick
-individual runs out of the day. Two things worth knowing before you trust a
-number you pull this way: a daily total lumps every run against that runtime
-together (a rehearsal and a real run will silently add up), and dividing
-GB-hours by session count mixes footprint with how long your sessions lived —
-divide by session-hours instead if what you want is the footprint.
-
 **Cleanup:** `infrastructure/cleanup.sh` deletes everything this sample can
 create — the AgentCore runtimes (both legs, all sizes/versions you deployed),
 the ECR repository/images, the S3 code bucket, and the two IAM roles. It
@@ -331,6 +277,3 @@ python3 analyze_results.py results-scenario1-agentcore-zip.json
 - **Per-unit capacity (the original benchmark's scenario 4)** and the
   original scenario 2 (400 units/min, never used in this series). Only
   account-ceiling and warm-throughput are covered, renumbered 1 and 2.
-- **Historical result files and reports.** This copy carries only the
-  scripts; past `results-*.json` runs and their HTML writeups live in the
-  original benchmark directory, not here.
