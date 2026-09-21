@@ -2,16 +2,16 @@
 Customer Support Agent — Getting Started Sample
 
 This is the agent code you'll copy into app/CustomerSupport/main.py after
-running `agentcore create`. It replaces the generated sample with a customer
+running `agentcore project create`. It replaces the generated sample with a customer
 support agent that has two tools: product lookup and return policy lookup.
 
 Usage:
-  1. agentcore create --name CustomerSupport --framework Strands --model-provider Bedrock --defaults
+  1. agentcore project create --name CustomerSupport --template agent-python-strands --model-provider bedrock
   2. cd CustomerSupport
   3. Copy this file to app/CustomerSupport/main.py
-  4. agentcore dev          # test locally
-  5. agentcore deploy       # deploy to AWS
-  6. agentcore invoke "What products do you have?" --stream
+  4. agentcore project dev          # test locally
+  5. agentcore project deploy       # deploy to AWS
+  6. agentcore project invoke runtime --payload '{"prompt": "What products do you have?"}'
 """
 
 from strands import Agent, tool
