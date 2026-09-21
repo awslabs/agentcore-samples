@@ -25,7 +25,7 @@ By the end, your agent will be running both locally (for development) and in the
 
 | Requirement | Minimum Version | Install |
 |---|---|---|
-| Node.js | 20.12+ | [nodejs.org](https://nodejs.org/) |
+| Node.js | 20.x | [nodejs.org](https://nodejs.org/) |
 | uv | 0.4+ | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | AWS CLI | 2.x | [AWS CLI install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | Git | 2.x | [git-scm.com](https://git-scm.com/) |
@@ -33,22 +33,9 @@ By the end, your agent will be running both locally (for development) and in the
 ### Install the AgentCore CLI
 
 ```bash
-npm install -g @aws/agentcore@1.0.0
+npm install -g @aws/agentcore
 agentcore --version
 ```
-
-The samples in this repository use the **v1** command surface (`agentcore project ...`,
-`agentcore eval ...`). A v0 CLI is still published under npm's `latest` tag for a while, so
-confirm you are on v1 before running anything — a v0 binary rejects every command below:
-
-```bash
-agentcore --version | grep -q '^1\.' \
-  && echo "AgentCore CLI v1 detected" \
-  || { echo "ERROR: AgentCore CLI v1 required. Run: npm install -g @aws/agentcore@1.0.0"; exit 1; }
-```
-
-If you are migrating from v0, see [Migrating to v1](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-cli-migration.html)
-for the full list of breaking changes.
 
 ### Configure AWS credentials
 
@@ -79,27 +66,35 @@ Your IAM user/role needs permissions for CloudFormation, S3, IAM role management
 Scaffold a new AgentCore project using the CLI:
 
 ```bash
-agentcore project create --name CustomerSupport --template empty
-cd CustomerSupport
-agentcore project add runtime \
+agentcore create \
   --name CustomerSupport \
-  --template agent-python-strands \
-  --model-provider bedrock
+  --framework Strands \
+  --model-provider Bedrock \
+  --defaults
 ```
 
 You should see:
 
 ```
-Created project 'CustomerSupport' in ./CustomerSupport
-Scaffolding runtime in project
-Syncing Python dependencies with uv
-added runtime 'CustomerSupport' to 'CustomerSupport'
+[done]  Create CustomerSupport/ project directory
+[done]  Prepare agentcore/ directory
+[done]  Initialize git repository
+[done]  Add agent to project
+[done]  Set up Python environment
+
+Created:
+  CustomerSupport/
+    app/CustomerSupport/  Python agent (Strands)
+    agentcore/            Config and CDK project
+
+Project created successfully!
 ```
 
-The runtime is added as a second step so it can be given an explicit name. A
-template passed straight to `project create` names the runtime after the
-template, which would put the agent in `app/agent_python_strands/` instead of
-`app/CustomerSupport/` and break the file paths used in the rest of this guide.
+Navigate into the project:
+
+```bash
+cd CustomerSupport
+```
 
 ### What was generated?
 
@@ -265,7 +260,7 @@ if __name__ == "__main__":
 
 ### What's happening here?
 
-This code creates a customer support agent with two local tools (`get_return_policy` and `get_product_info`) using the [Strands Agents SDK](https://strandsagents.com/). The `BedrockAgentCoreApp` from the AgentCore SDK wraps the agent with the runtime entrypoint (`@app.entrypoint`), making it deployable to AgentCore Runtime — both locally via `agentcore project dev` and in the cloud via `agentcore project deploy`. The `@tool` decorator turns plain Python functions into tools the LLM can call, using the docstring as the tool description the model reads to decide when and how to invoke each tool.
+This code creates a customer support agent with two local tools (`get_return_policy` and `get_product_info`) using the [Strands Agents SDK](https://strandsagents.com/). The `BedrockAgentCoreApp` from the AgentCore SDK wraps the agent with the runtime entrypoint (`@app.entrypoint`), making it deployable to AgentCore Runtime — both locally via `agentcore dev` and in the cloud via `agentcore deploy`. The `@tool` decorator turns plain Python functions into tools the LLM can call, using the docstring as the tool description the model reads to decide when and how to invoke each tool.
 
 ---
 
@@ -274,7 +269,7 @@ This code creates a customer support agent with two local tools (`get_return_pol
 Start the local development server:
 
 ```bash
-agentcore project dev
+agentcore dev
 ```
 
 This starts an interactive chat interface in your terminal. The CLI automatically:
@@ -309,13 +304,13 @@ Press `Esc` to exit the dev server.
 You can also invoke the agent from the command line. In one terminal:
 
 ```bash
-agentcore project dev
+agentcore dev --logs
 ```
 
 In another terminal:
 
 ```bash
-agentcore project invoke runtime --local --payload '{"prompt": "What products do you have?"}'
+agentcore dev "What products do you have?" --stream
 ```
 
 ---
@@ -325,7 +320,7 @@ agentcore project invoke runtime --local --payload '{"prompt": "What products do
 Deploy your agent to AgentCore Runtime with a single command:
 
 ```bash
-agentcore project deploy
+agentcore deploy
 ```
 
 The CLI handles everything:
@@ -336,7 +331,7 @@ The CLI handles everything:
 Check the deployment status:
 
 ```bash
-agentcore project status
+agentcore status
 ```
 
 You should see:
@@ -351,7 +346,7 @@ Agents
 ### Invoke the deployed agent
 
 ```bash
-agentcore project invoke runtime --payload '{"prompt": "What'\''s the return policy for audio products?"}'
+agentcore invoke "What's the return policy for audio products?" --stream
 ```
 
 The response streams directly from your cloud-deployed agent.
@@ -359,8 +354,8 @@ The response streams directly from your cloud-deployed agent.
 Try a few more:
 
 ```bash
-agentcore project invoke runtime --payload '{"prompt": "Tell me about product PROD-004"}'
-agentcore project invoke runtime --payload '{"prompt": "What can you help me with?"}'
+agentcore invoke "Tell me about product PROD-004" --stream
+agentcore invoke "What can you help me with?" --stream
 ```
 
 ---
@@ -371,11 +366,11 @@ You now have a working agent running locally and in the cloud. Here are the next
 
 | Feature | CLI Command | What It Does |
 |---|---|---|
-| **Add Memory** | `agentcore project add memory --name SharedMemory --strategies SEMANTIC,SUMMARIZATION --event-expiry-duration 30` | Agent remembers users across sessions |
-| **Add Gateway** | `agentcore project add gateway --name my-gateway | Centralize and share tools across agents via MCP |
-| **Add Evaluations** | `agentcore project add online-eval --name QualityMonitor --agent CustomerSupport --evaluators Builtin.GoalSuccessRate --sampling-rate 100 --enable-on-create` | Continuous quality monitoring |
-| **View Logs** | `agentcore project log` | Stream live logs from your deployed agent |
-| **View Traces** | `agentcore runtime traces list --limit 10` | Inspect OpenTelemetry traces in CloudWatch |
+| **Add Memory** | `agentcore add memory --name SharedMemory --strategies SEMANTIC,SUMMARIZATION --expiry 30` | Agent remembers users across sessions |
+| **Add Gateway** | `agentcore add gateway --name my-gateway --runtimes CustomerSupport` | Centralize and share tools across agents via MCP |
+| **Add Evaluations** | `agentcore add online-eval --name QualityMonitor --agent CustomerSupport --evaluator Builtin.GoalSuccessRate --sampling-rate 100 --enable-on-create` | Continuous quality monitoring |
+| **View Logs** | `agentcore logs` | Stream live logs from your deployed agent |
+| **View Traces** | `agentcore traces list --limit 10` | Inspect OpenTelemetry traces in CloudWatch |
 
 For a full walkthrough of all these features, see the [AgentCore CLI Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77).
 
@@ -392,8 +387,8 @@ For a full walkthrough of all these features, see the [AgentCore CLI Workshop](h
 To tear down all deployed resources:
 
 ```bash
-agentcore project remove all
-agentcore project deploy
+agentcore remove all
+agentcore deploy
 ```
 
 This deletes the AgentCore Runtime and all associated AWS resources (IAM roles, S3 artifacts, CloudFormation stack).
