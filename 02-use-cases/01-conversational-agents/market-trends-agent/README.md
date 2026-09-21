@@ -403,7 +403,7 @@ The [agentcore CLI](https://github.com/aws/agentcore-cli) provides a convenient 
 
 **Install the CLI:**
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 ```
 > See the [AgentCore CLI repository](https://github.com/aws/agentcore-cli) for alternative install methods and latest version info.
 

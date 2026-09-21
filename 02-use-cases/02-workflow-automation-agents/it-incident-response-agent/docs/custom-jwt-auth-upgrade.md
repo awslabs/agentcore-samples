@@ -31,7 +31,7 @@ Before starting, you need:
    - Discovery URL (the `.well-known/openid-configuration` endpoint)
    - API Audience / Identifier (what the token is scoped to)
 
-3. **AgentCore CLI installed** (`npm install -g @aws/agentcore`)
+3. **AgentCore CLI installed** (`npm install -g @aws/agentcore@0.30.0`)
 
 4. **AWS credentials** for your deployment account
 

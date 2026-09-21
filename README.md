@@ -105,7 +105,7 @@ The AgentCore CLI (@aws/agentcore) is now the recommended way to create, develop
 
 For new projects, install the AgentCore CLI:
 
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 Already installed this toolkit? Once you've migrated, uninstall it:
 
 pip uninstall bedrock-agentcore-starter-toolkit
@@ -133,7 +133,7 @@ The [AgentCore CLI](https://github.com/aws/agentcore-cli) is the recommended way
 
 ```bash
 # Install the AgentCore CLI
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 
 # Create a new project (interactive wizard)
 agentcore create

@@ -109,7 +109,7 @@ Then run all cells from top to bottom. The notebook streams deployment and evalu
 The same workflow can be driven entirely from the command line. Install the CLI:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 agentcore --version   # should print 0.13.0 or later
 ```
 

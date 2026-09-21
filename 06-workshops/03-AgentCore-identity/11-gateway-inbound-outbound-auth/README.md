@@ -49,7 +49,7 @@ AgentCore Runtime Agent
 - **AgentCore CLI** installed:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 ```
 
 - **Amazon Bedrock model access**: Enable `claude-haiku-4-5` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/models)

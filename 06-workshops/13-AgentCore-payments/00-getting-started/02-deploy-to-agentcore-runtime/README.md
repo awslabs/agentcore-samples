@@ -50,7 +50,7 @@ agentcore create → agentcore dev → agentcore deploy → agentcore invoke
 
 | Step | Command | What it does |
 |------|---------|-------------|
-| Install CLI | `npm install -g @aws/agentcore` | Install the AgentCore CLI |
+| Install CLI | `npm install -g @aws/agentcore@0.30.0` | Install the AgentCore CLI |
 | Scaffold | `agentcore create --name PaymentAgent` | Generate project structure |
 | Test locally | `agentcore dev` | Start local dev server on :8080 |
 | Deploy | `agentcore deploy` | Package + deploy to AWS via CDK |
@@ -87,7 +87,7 @@ App Backend (ManagementRole)              AgentCore Runtime (Execution Role)
 
 ```bash
 # Install CLI (requires Node.js 20+)
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 
 # Scaffold project
 agentcore create --name PaymentAgent --framework Strands --protocol HTTP --model-provider Bedrock --memory none

@@ -16,7 +16,7 @@ The AgentCore CLI includes an `agentcore import` command that automates the migr
 ## Step 1: Install the AgentCore CLI
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
 ```
 
 If you still have the old Python-based Starter Toolkit CLI installed, uninstall it to avoid command conflicts (both use the `agentcore` command name):

@@ -49,7 +49,7 @@ echo "  AWS CDK installed"
 
 if ! command -v agentcore &> /dev/null; then
     echo "Error: agentcore CLI is not installed"
-    echo "   Install: npm install -g @aws/agentcore"
+    echo "   Install: npm install -g @aws/agentcore@0.30.0"
     exit 1
 fi
 echo "  agentcore CLI installed ($(agentcore --version))"
