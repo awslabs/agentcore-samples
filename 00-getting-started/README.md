@@ -33,7 +33,7 @@ By the end, your agent will be running both locally (for development) and in the
 ### Install the AgentCore CLI
 
 ```bash
-npm install -g @aws/agentcore@0.30.0
+npm install -g @aws/agentcore
 agentcore --version
 ```
 
