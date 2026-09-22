@@ -22,7 +22,7 @@ The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](ht
 
 ```bash
 npm install -g @aws/agentcore@0.11.0
-agentcore --version   # should print 0.11.0
+agentcore --version   # should print 0.30.0
 ```
 
 ### Create and deploy the agent
