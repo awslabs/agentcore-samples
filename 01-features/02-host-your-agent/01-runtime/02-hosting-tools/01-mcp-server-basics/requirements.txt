@@ -6,4 +6,6 @@
 # vendors into the zip. boto3 stays out of it: mcp_server.py never imports boto3,
 # and shipping it would nearly double the deployment artifact.
 -r requirements-server.txt
-boto3>=1.38.0
+# 1.43.95 is the first public release whose service model carries platformVersion,
+# which deploy.py sets on create_agent_runtime for Runtime V2 (platformVersion="V2").
+boto3>=1.43.95
