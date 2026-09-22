@@ -10,7 +10,7 @@ The tutorial demonstrates code-based evaluators in **both on-demand and online e
 
 ## Setup with AgentCore CLI
 
-The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.11.0`).
+The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.30.0`).
 
 ### Prerequisites
 
