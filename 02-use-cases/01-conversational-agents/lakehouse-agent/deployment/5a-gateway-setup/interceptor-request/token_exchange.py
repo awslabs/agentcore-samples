@@ -116,7 +116,8 @@ def exchange_jwt_to_iam(claim_name: str, claim_value: str) -> dict[str, Any] | N
 
         # Create a safe session name from claim_value
         # Remove special characters and limit length
-        safe_claim_value = claim_value.replace("[", "").replace("]", "").replace('"', "").replace(",", "-")
+        # AWS STS roleSessionName pattern: [\w+=,.@-]* (alphanumeric, underscore, plus, equals, comma, dot, at, hyphen)
+        safe_claim_value = claim_value.replace("[", "").replace("]", "").replace('"', "").replace(",", "-").replace("|", "-")
         session_name = f"lakehouse-{safe_claim_value[:32]}"
 
         response = sts_client.assume_role(
@@ -182,6 +183,33 @@ def get_claim_for_exchange(claims: dict[str, Any]) -> tuple | None:
         if username:
             logger.info(f"Found username claim: {username}")
             return ("username", username)
+    elif IDP_PROVIDER == "auth0":
+        # [AUTH0] Auth0 uses custom namespace for groups (via Actions) or permissions
+        # Check custom namespace groups first, then permissions, then email → sub
+        groups = claims.get("https://lakehouse-api/groups") or claims.get("groups")
+        if groups:
+            for group in groups:
+                claim_value = json.dumps([group])
+                logger.info(f"Found Auth0 groups claim (per-group iter): {claim_value}")
+                return ("groups", claim_value)
+
+        # Auth0 permissions from API authorization
+        permissions = claims.get("permissions")
+        if permissions:
+            for perm in permissions:
+                claim_value = json.dumps([perm])
+                logger.info(f"Found Auth0 permissions claim: {claim_value}")
+                return ("permissions", claim_value)
+
+        email = claims.get("email")
+        if email:
+            logger.info(f"Found email claim: {email}")
+            return ("email", email)
+
+        sub = claims.get("sub")
+        if sub:
+            logger.info(f"Found sub claim: {sub}")
+            return ("sub", sub)
     else:  # okta
         # [OKTA] fork verbatim: Okta `groups` includes built-in `Everyone`, so filter
         # built-ins + iterate (per-app-group seed shape); then email → sub.

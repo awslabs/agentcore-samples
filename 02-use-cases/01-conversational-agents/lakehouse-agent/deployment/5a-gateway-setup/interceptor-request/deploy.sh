@@ -39,15 +39,15 @@ echo "   Region: $AWS_REGION"
 
 # IdP selector (DR-8 Flag-2, R4/M3): fail-fast SSM read — NO env override, NO
 # implicit default (matches utils.idp_config.get_idp_provider). The flag is set
-# once in notebook 01 Step-0 (or `python -m utils.idp_config <cognito|okta>`).
+# once in notebook 01 Step-0 (or `python -m utils.idp_config <cognito|okta|auth0>`).
 IDP_PROVIDER=$(aws ssm get-parameter --name /app/lakehouse-agent/idp-provider --query 'Parameter.Value' --output text 2>/dev/null)
 if [ -z "$IDP_PROVIDER" ] || [ "$IDP_PROVIDER" = "None" ]; then
     echo "❌ Error: IDP_PROVIDER not set in SSM (/app/lakehouse-agent/idp-provider)"
-    echo "   Run notebook 01 (Step-0) first, or: python -m utils.idp_config <cognito|okta>"
+    echo "   Run notebook 01 (Step-0) first, or: python -m utils.idp_config <cognito|okta|auth0>"
     exit 1
 fi
-if [ "$IDP_PROVIDER" != "cognito" ] && [ "$IDP_PROVIDER" != "okta" ]; then
-    echo "❌ Error: invalid IDP_PROVIDER='$IDP_PROVIDER' (allowed: cognito|okta)"
+if [ "$IDP_PROVIDER" != "cognito" ] && [ "$IDP_PROVIDER" != "okta" ] && [ "$IDP_PROVIDER" != "auth0" ]; then
+    echo "❌ Error: invalid IDP_PROVIDER='$IDP_PROVIDER' (allowed: cognito|okta|auth0)"
     exit 1
 fi
 echo "   IdP Provider: $IDP_PROVIDER"
@@ -79,6 +79,27 @@ if [ "$IDP_PROVIDER" = "cognito" ]; then
     echo "   Cognito User Pool ID: $COGNITO_USER_POOL_ID"
     echo "   Cognito App Client ID: $COGNITO_APP_CLIENT_ID"
     LAMBDA_ENV_VARS="COGNITO_REGION=$AWS_REGION,COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID,COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID,IDP_PROVIDER=$IDP_PROVIDER,TENANT_ROLE_MAPPING_TABLE=lakehouse_tenant_role_map"
+elif [ "$IDP_PROVIDER" = "auth0" ]; then
+    # [AUTH0] Auth0 tenant configuration
+    set +e
+    AUTH0_DOMAIN=$(aws ssm get-parameter --name /app/lakehouse-agent/auth0-domain --query 'Parameter.Value' --output text 2>&1)
+    DOMAIN_RESULT=$?
+    AUTH0_AUDIENCE=$(aws ssm get-parameter --name /app/lakehouse-agent/auth0-audience --query 'Parameter.Value' --output text 2>&1)
+    AUDIENCE_RESULT=$?
+    set -e
+
+    if [ $DOMAIN_RESULT -ne 0 ] || [ $AUDIENCE_RESULT -ne 0 ]; then
+        echo "❌ Error: Required SSM parameters not found"
+        [ $DOMAIN_RESULT -ne 0 ] && echo "   Missing: /app/lakehouse-agent/auth0-domain ($AUTH0_DOMAIN)"
+        [ $AUDIENCE_RESULT -ne 0 ] && echo "   Missing: /app/lakehouse-agent/auth0-audience ($AUTH0_AUDIENCE)"
+        echo "   Please run Auth0 setup first."
+        exit 1
+    fi
+
+    echo "✅ Configuration loaded from SSM"
+    echo "   Auth0 Domain: $AUTH0_DOMAIN"
+    echo "   Auth0 Audience: $AUTH0_AUDIENCE"
+    LAMBDA_ENV_VARS="AUTH0_DOMAIN=$AUTH0_DOMAIN,AUTH0_AUDIENCE=$AUTH0_AUDIENCE,IDP_PROVIDER=$IDP_PROVIDER,TENANT_ROLE_MAPPING_TABLE=lakehouse_tenant_role_map"
 else
     # [OKTA] custom-auth-server param loads (canonical §6 keys)
     set +e

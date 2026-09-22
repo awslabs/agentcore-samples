@@ -144,6 +144,10 @@ def get_gateway_url(gateway_arn: str, region: str) -> str:
         agentcore_client = boto3.client("bedrock-agentcore-control", region_name=region)
         response = agentcore_client.get_gateway(gatewayIdentifier=gateway_id)
         gateway_url = response["gatewayUrl"]
+        
+        # Ensure the URL has /mcp suffix for MCP protocol
+        if not gateway_url.endswith("/mcp"):
+            gateway_url = gateway_url.rstrip("/") + "/mcp"
 
         logger.info(f"✅ Gateway URL: {gateway_url}")
         return gateway_url
@@ -211,9 +215,21 @@ def _extract_bearer_token(payload: dict[str, Any], context: Any) -> str:
     when it fires, which is what makes an unknown caller observable instead of
     arguable.
     """
+    # DEBUG: Log what we received
+    logger.info(f"🔍 DEBUG: context type: {type(context)}")
+    logger.info(f"🔍 DEBUG: context value: {context}")
+    
     header_value = ""
     request_headers = getattr(context, "request_headers", None) if context is not None else None
+    logger.info(f"🔍 DEBUG: request_headers: {request_headers}")
+    
     if request_headers:
+        raw = request_headers.get("Authorization") or request_headers.get("authorization") or ""
+        logger.info(f"🔍 DEBUG: raw Authorization header (first 50 chars): {raw[:50] if raw else 'None'}...")
+        if raw.lower().startswith("bearer "):
+            header_value = raw[7:].strip()
+        else:
+            header_value = raw.strip()
         raw = request_headers.get("Authorization") or request_headers.get("authorization") or ""
         if raw.lower().startswith("bearer "):
             header_value = raw[7:].strip()
@@ -299,7 +315,9 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
     # The SAME inbound user JWT authenticates BOTH gateways (they validate the
     # same token). GW1 runs its interceptor flow; GW2 runs the Cognito interceptor
     # or Okta OBO (TOKEN_EXCHANGE) transparently — identical at the agent.
-    auth_headers = {"Authorization": f"Bearer {bearer_token}"}
+    # Only include Authorization header if we have a valid token to avoid
+    # sending "Bearer " with no token (which causes httpcore.LocalProtocolError).
+    auth_headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else {}
 
     # Track opened MCP clients so we deterministically close them in finally.
     open_clients = []

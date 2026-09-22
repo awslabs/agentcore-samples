@@ -87,13 +87,39 @@ class SSMConfig:
             print(f"   ✅ Cognito User Pool ARN: {self.cognito_user_pool_arn}")
             print(f"   ✅ Cognito App Client ID: {self.cognito_app_client_id}")
             print(f"   ✅ Cognito Domain: {self.cognito_domain}")
+        elif self.idp_provider == "auth0":
+            # [AUTH0] Auth0 tenant configuration with M2M app for Gateway→Runtime
+            self.auth0_domain = self._get_parameter("/app/lakehouse-agent/auth0-domain")
+            self.auth0_audience = self._get_parameter("/app/lakehouse-agent/auth0-audience")
+            # M2M client for Gateway-to-Runtime leg (client_credentials flow)
+            self.auth0_m2m_client_id = self._get_parameter("/app/lakehouse-agent/auth0-m2m-client-id")
+            self.auth0_m2m_client_secret = self._get_parameter(
+                "/app/lakehouse-agent/auth0-m2m-client-secret", secure=True
+            )
+            # Discovery URL for Auth0
+            self.auth0_discovery_url = f"https://{self.auth0_domain}/.well-known/openid-configuration"
+
+            print(f"   ✅ MCP Server Runtime ARN: {self.mcp_server_runtime_arn}")
+            print(f"   ✅ Interceptor Lambda ARN: {self.interceptor_lambda_arn}")
+            print(f"   ✅ Response Interceptor Lambda ARN: {self.response_interceptor_lambda_arn}")
+            print(f"   ✅ Auth0 Domain: {self.auth0_domain}")
+            print(f"   ✅ Auth0 Audience: {self.auth0_audience}")
+            print(f"   ✅ Auth0 M2M Client ID: {self.auth0_m2m_client_id}")
+            print("   ✅ Auth0 M2M Client Secret: ****** (loaded)")
+            print(f"   ✅ Auth0 Discovery URL: {self.auth0_discovery_url}")
         else:  # okta
-            # [OKTA] custom-auth-server authorizer + single-client provider (canonical §6)
+            # [OKTA] custom-auth-server authorizer + OBO client provider
+            # Note: Two clients in Okta:
+            #   - okta-app-client: user-facing app (Authorization Code + PKCE for UI)
+            #   - okta-obo-client: OBO/M2M service app (client_credentials for Gateway→Runtime)
             self.okta_org_url = self._get_parameter("/app/lakehouse-agent/okta-org-url")
             self.okta_auth_server_id = self._get_parameter("/app/lakehouse-agent/okta-auth-server-id")
+            # User-facing client for JWT authorizer validation
             self.okta_app_client_id = self._get_parameter("/app/lakehouse-agent/okta-app-client-id")
-            self.okta_app_client_secret = self._get_parameter(
-                "/app/lakehouse-agent/okta-app-client-secret", secure=True
+            # OBO/M2M client for Gateway-to-Runtime client_credentials flow
+            self.okta_obo_client_id = self._get_parameter("/app/lakehouse-agent/okta-obo-client-id")
+            self.okta_obo_client_secret = self._get_parameter(
+                "/app/lakehouse-agent/okta-obo-client-secret", secure=True
             )
             self.okta_resource_server_audience = self._get_parameter(
                 "/app/lakehouse-agent/okta-resource-server-audience"
@@ -105,8 +131,9 @@ class SSMConfig:
             print(f"   ✅ Response Interceptor Lambda ARN: {self.response_interceptor_lambda_arn}")
             print(f"   ✅ Okta Org URL: {self.okta_org_url}")
             print(f"   ✅ Okta Auth Server ID: {self.okta_auth_server_id}")
-            print(f"   ✅ Okta App Client ID: {self.okta_app_client_id}")
-            print("   ✅ Okta App Client Secret: ****** (loaded)")
+            print(f"   ✅ Okta App Client ID (user-facing): {self.okta_app_client_id}")
+            print(f"   ✅ Okta OBO Client ID (M2M): {self.okta_obo_client_id}")
+            print("   ✅ Okta OBO Client Secret: ****** (loaded)")
             print(f"   ✅ Okta Resource Server Audience: {self.okta_resource_server_audience}")
             print(f"   ✅ Okta Discovery URL: {self.okta_discovery_url}")
 
@@ -322,7 +349,7 @@ class GatewaySetup:
             role_arn = self.create_gateway_role(gateway_name)
 
             # JWT authorizer differs by IdP (DR-8): Cognito validates by client_id
-            # (Cognito access tokens carry no 'aud'); Okta validates by audience.
+            # (Cognito access tokens carry no 'aud'); Okta/Auth0 validates by audience.
             if self.config.idp_provider == "cognito":
                 # [COGNITO] upstream verbatim
                 user_pool_id = self.config.cognito_user_pool_arn.split("/")[-1]
@@ -333,6 +360,14 @@ class GatewaySetup:
                         "discoveryUrl": discovery_url,
                         "allowedClients": [self.config.cognito_app_client_id],
                         # Cognito access tokens carry no 'aud'; validate via client_id.
+                    }
+                }
+            elif self.config.idp_provider == "auth0":
+                # [AUTH0] Auth0 discovery + audience validation
+                auth_config = {
+                    "customJWTAuthorizer": {
+                        "discoveryUrl": self.config.auth0_discovery_url,
+                        "allowedAudience": [self.config.auth0_audience],
                     }
                 }
             else:  # okta
@@ -483,7 +518,7 @@ class GatewaySetup:
 
             # Provider config differs by IdP (DR-8): Cognito has no OIDC discovery
             # endpoint for its token endpoint → pass authorization-server metadata
-            # directly; Okta exposes /.well-known on its custom auth server → use
+            # directly; Okta/Auth0 expose /.well-known on their auth servers → use
             # the discoveryUrl form.
             if self.config.idp_provider == "cognito":
                 # [COGNITO] upstream verbatim
@@ -497,6 +532,15 @@ class GatewaySetup:
                                 "tokenEndpointAuthMethods": ["client_secret_post"],
                             }
                         },
+                        "clientId": client_id,
+                        "clientSecret": client_secret,
+                    }
+                }
+            elif self.config.idp_provider == "auth0":
+                # [AUTH0] discovery-URL form (Auth0 exposes /.well-known/openid-configuration)
+                oauth2_config = {
+                    "customOauth2ProviderConfig": {
+                        "oauthDiscovery": {"discoveryUrl": self.config.auth0_discovery_url},
                         "clientId": client_id,
                         "clientSecret": client_secret,
                     }
@@ -719,6 +763,9 @@ def main():
     if config.idp_provider == "cognito":
         print(f"   Cognito User Pool: {config.cognito_user_pool_arn}")
         print(f"   Client ID: {config.cognito_app_client_id}")
+    elif config.idp_provider == "auth0":
+        print(f"   Auth0 Discovery URL: {config.auth0_discovery_url}")
+        print(f"   Auth0 Audience: {config.auth0_audience}")
     else:  # okta
         print(f"   Okta Discovery URL: {config.okta_discovery_url}")
         print(f"   Okta App Client ID: {config.okta_app_client_id}")
@@ -758,15 +805,26 @@ def main():
                     cognito_issuer=cognito_issuer,
                 )
                 target_scopes = []
+            elif config.idp_provider == "auth0":
+                # [AUTH0] M2M client for client_credentials flow
+                print("\n🔐 Using Auth0 M2M client for Gateway-to-Runtime authentication")
+                provider_name = "lakehouse-mcp-auth0-oauth-provider"
+                oauth_provider_arn = setup.create_oauth_provider(
+                    provider_name=provider_name,
+                    client_id=config.auth0_m2m_client_id,
+                    client_secret=config.auth0_m2m_client_secret,
+                )
+                target_scopes = ["claims.query"]
             else:  # okta
-                # [OKTA] single Okta app client handles client_credentials directly
-                # (canonical §6 provider name)
-                print("\n🔐 Using Okta app client for Gateway-to-Runtime authentication")
+                # [OKTA] OBO/M2M client for client_credentials flow
+                # The user-facing client (okta-app-client) doesn't support client_credentials;
+                # the OBO service client (okta-obo-client) does.
+                print("\n🔐 Using Okta OBO client for Gateway-to-Runtime authentication")
                 provider_name = "lakehouse-mcp-okta-oauth-provider"
                 oauth_provider_arn = setup.create_oauth_provider(
                     provider_name=provider_name,
-                    client_id=config.okta_app_client_id,
-                    client_secret=config.okta_app_client_secret,
+                    client_id=config.okta_obo_client_id,
+                    client_secret=config.okta_obo_client_secret,
                 )
                 target_scopes = ["claims.query"]
 

@@ -110,6 +110,24 @@ class SSMConfig:
             print(f"   ✅ Okta Resource Server Audience: {self.okta_resource_server_audience}")
             print(f"   ✅ OpenSearch MCP Runtime ARN: {self.opensearch_mcp_runtime_arn}")
             print(f"   ✅ OBO Credential Provider ARN: {self.obo_credential_provider_arn}")
+        elif self.idp_provider == "auth0":
+            # [AUTH0] Auth0 tenant configuration with interceptor (same pattern as claims gateway)
+            self.auth0_domain = self._get(f"{SSM_PREFIX}auth0-domain")
+            self.auth0_audience = self._get(f"{SSM_PREFIX}auth0-audience")
+            # M2M client for Gateway-to-Runtime leg (client_credentials flow)
+            self.auth0_m2m_client_id = self._get(f"{SSM_PREFIX}auth0-m2m-client-id")
+            self.auth0_m2m_client_secret = self._get(f"{SSM_PREFIX}auth0-m2m-client-secret", secure=True)
+            # Discovery URL for Auth0
+            self.auth0_discovery_url = f"https://{self.auth0_domain}/.well-known/openid-configuration"
+            # Interceptor Lambda ARN (same as claims gateway)
+            self.interceptor_lambda_arn = self._get(f"{SSM_PREFIX}interceptor-lambda-arn")
+            print(f"   ✅ OpenSearch MCP Runtime ARN: {self.opensearch_mcp_runtime_arn}")
+            print(f"   ✅ Auth0 Domain: {self.auth0_domain}")
+            print(f"   ✅ Auth0 Audience: {self.auth0_audience}")
+            print(f"   ✅ Auth0 M2M Client ID: {self.auth0_m2m_client_id}")
+            print("   ✅ Auth0 M2M Client Secret: ****** (loaded)")
+            print(f"   ✅ Auth0 Discovery URL: {self.auth0_discovery_url}")
+            print(f"   ✅ Interceptor Lambda ARN: {self.interceptor_lambda_arn}")
         else:  # cognito
             # [COGNITO] interceptor path (DR-9): Cognito authorizer + notes REQUEST
             # interceptor + Cognito M2M provider for the gateway→runtime leg.
@@ -676,6 +694,165 @@ def create_notes_target(client, config: SSMConfig, gateway_id: str, provider_arn
         raise
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# [AUTH0] GW2 interceptor path. Same pattern as claims gateway (GW1):
+# REQUEST interceptor forwards the caller's JWT → DynamoDB role mapping →
+# STS AssumeRole. The gateway→runtime leg uses an Auth0 M2M provider.
+# ─────────────────────────────────────────────────────────────────────────
+
+AUTH0_M2M_PROVIDER_NAME = "lakehouse-notes-auth0-oauth-provider"
+
+
+def create_notes_auth0_provider(client, config: SSMConfig) -> str:
+    """Create (or reuse) the Auth0 M2M OAuth2 provider for the gateway→runtime leg.
+
+    IMPORTANT: Auth0 requires the `audience` parameter for client_credentials flow.
+    Use Auth0Oauth2 vendor with includedOauth2ProviderConfig - CustomOauth2 does NOT
+    send the audience parameter and will fail with "Error parsing ClientCredentials response".
+    """
+    provider_name = AUTH0_M2M_PROVIDER_NAME
+    print(f"\n🔐 Creating Auth0 M2M OAuth2 provider: {provider_name}")
+    try:
+        # Extract domain from discovery URL for explicit endpoints
+        # e.g., "https://dev-xxx.us.auth0.com/.well-known/openid-configuration" -> "dev-xxx.us.auth0.com"
+        auth0_domain = config.auth0_discovery_url.replace("https://", "").replace("/.well-known/openid-configuration", "")
+        
+        response = client.create_oauth2_credential_provider(
+            name=provider_name,
+            credentialProviderVendor="Auth0Oauth2",
+            oauth2ProviderConfigInput={
+                "includedOauth2ProviderConfig": {
+                    "clientId": config.auth0_m2m_client_id,
+                    "clientSecret": config.auth0_m2m_client_secret,
+                    "authorizationEndpoint": f"https://{auth0_domain}/authorize",
+                    "tokenEndpoint": f"https://{auth0_domain}/oauth/token",
+                    "issuer": f"https://{auth0_domain}/",
+                }
+            },
+            tags={"Application": "lakehouse-agent", "Purpose": "notes-auth0-oauth-provider"},
+        )
+        provider_arn = (
+            response.get("oauth2CredentialProviderArn") or response.get("arn") or response.get("credentialProviderArn")
+        )
+        if not provider_arn:
+            raise KeyError(f"No ARN in create response: {list(response.keys())}")
+        print(f"✅ Created provider: {provider_arn}")
+        return provider_arn
+    except Exception as e:
+        if "already exists" in str(e).lower() or "AlreadyExistsException" in str(e):
+            print(f"ℹ️  Provider {provider_name} exists; retrieving ARN...")
+            resp = client.list_oauth2_credential_providers()
+            providers = (
+                resp.get("credentialProviders") or resp.get("oauth2CredentialProviders") or resp.get("items") or []
+            )
+            for p in providers:
+                if p.get("name") == provider_name:
+                    arn = p.get("credentialProviderArn") or p.get("oauth2CredentialProviderArn") or p.get("arn")
+                    if arn:
+                        print(f"✅ Using existing provider: {arn}")
+                        return arn
+        print(f"❌ Error creating Auth0 M2M provider: {e}")
+        raise
+
+
+def create_notes_auth0_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, Any]:
+    """Create the GW2 notes gateway (Auth0): customJWTAuthorizer + REQUEST interceptor.
+
+    Same pattern as the claims gateway (GW1) — uses the shared interceptor Lambda
+    for JWT validation → DynamoDB role mapping → STS AssumeRole.
+    """
+    auth_config = {
+        "customJWTAuthorizer": {
+            "discoveryUrl": config.auth0_discovery_url,
+            "allowedAudience": [config.auth0_audience],
+        }
+    }
+    interceptor_config = [
+        {
+            "interceptor": {"lambda": {"arn": config.interceptor_lambda_arn}},
+            "interceptionPoints": ["REQUEST"],
+            "inputConfiguration": {"passRequestHeaders": True},
+        }
+    ]
+
+    print(f"\n🔧 Creating notes Interceptor_Gateway (Auth0): {GATEWAY_NAME}")
+    print(f"   Discovery URL: {config.auth0_discovery_url}")
+    print(f"   Audience: {config.auth0_audience}")
+    print(f"   Interceptor Lambda: {config.interceptor_lambda_arn}")
+    try:
+        response = client.create_gateway(
+            name=GATEWAY_NAME,
+            roleArn=role_arn,
+            protocolType="MCP",
+            protocolConfiguration={"mcp": {"supportedVersions": MCP_SUPPORTED_VERSIONS}},
+            authorizerType="CUSTOM_JWT",
+            authorizerConfiguration=auth_config,
+            interceptorConfigurations=interceptor_config,
+            description="GW2 notes gateway (Auth0 REQUEST interceptor)",
+            tags={"Application": "lakehouse-agent", "Purpose": "notes-gateway"},
+        )
+        gateway_id = response["gatewayId"]
+        gateway_url = response["gatewayUrl"]
+        gateway_arn = f"arn:aws:bedrock-agentcore:{config.region}:{config.account_id}:gateway/{gateway_id}"
+        print(f"✅ Notes gateway created: {gateway_id}")
+        return {
+            "gatewayId": gateway_id,
+            "gatewayUrl": gateway_url,
+            "gatewayArn": gateway_arn,
+            "gatewayName": GATEWAY_NAME,
+        }
+    except Exception as e:
+        if "already exists" in str(e):
+            print(f"ℹ️  Gateway {GATEWAY_NAME} already exists, retrieving details...")
+            for gateway in client.list_gateways().get("items", []):
+                if gateway["name"] == GATEWAY_NAME:
+                    gateway_id = gateway["gatewayId"]
+                    detail = client.get_gateway(gatewayIdentifier=gateway_id)
+                    # DR-11 pre-flight: refuse to reuse a gateway deployed for the
+                    # other IdP (flag-switch without teardown).
+                    assert_gateway_idp_matches(detail, config.idp_provider, GATEWAY_NAME)
+                    gateway_arn = f"arn:aws:bedrock-agentcore:{config.region}:{config.account_id}:gateway/{gateway_id}"
+                    return {
+                        "gatewayId": gateway_id,
+                        "gatewayUrl": detail["gatewayUrl"],
+                        "gatewayArn": gateway_arn,
+                        "gatewayName": GATEWAY_NAME,
+                    }
+        print(f"❌ Error creating notes gateway: {e}")
+        raise
+
+
+def create_notes_auth0_target(client, config: SSMConfig, gateway_id: str, provider_arn: str) -> dict[str, Any]:
+    """Create the notes gateway target → OpenSearch MCP runtime (Auth0 M2M provider).
+
+    client_credentials (scopes []); identity reaches the server via the
+    interceptor's body-context injection, not this leg.
+    """
+    mcp_url = get_runtime_mcp_url(config.opensearch_mcp_runtime_arn, config.region)
+    print(f"\n🎯 Creating notes gateway target (Auth0): {TARGET_NAME}")
+    print(f"   MCP Server URL: {mcp_url}")
+    try:
+        response = client.create_gateway_target(
+            name=TARGET_NAME,
+            gatewayIdentifier=gateway_id,
+            targetConfiguration={"mcp": {"mcpServer": {"endpoint": mcp_url}}},
+            credentialProviderConfigurations=[
+                {
+                    "credentialProviderType": "OAUTH",
+                    "credentialProvider": {"oauthCredentialProvider": {"providerArn": provider_arn, "scopes": []}},
+                }
+            ],
+        )
+        print("✅ Notes gateway target created (Auth0 M2M client_credentials).")
+        return response
+    except Exception as e:
+        if "already exists" in str(e):
+            print(f"ℹ️  Target {TARGET_NAME} already exists")
+            return {}
+        print(f"❌ Error creating notes target: {e}")
+        raise
+
+
 def main():
     print("=" * 70)
     print("OBO_Gateway Setup")
@@ -703,6 +880,8 @@ def main():
         print("=" * 70)
         if config.idp_provider == "okta":
             gateway = create_obo_gateway(client, config, role_arn)
+        elif config.idp_provider == "auth0":
+            gateway = create_notes_auth0_gateway(client, config, role_arn)
         else:  # cognito
             gateway = create_notes_interceptor_gateway(client, config, role_arn)
 
@@ -718,6 +897,10 @@ def main():
         if config.idp_provider == "okta":
             # [OKTA] OBO target (TOKEN_EXCHANGE — locked shape)
             create_obo_target(client, config, gateway["gatewayId"])
+        elif config.idp_provider == "auth0":
+            # [AUTH0] Auth0 M2M provider + client_credentials target (identity via interceptor)
+            provider_arn = create_notes_auth0_provider(client, config)
+            create_notes_auth0_target(client, config, gateway["gatewayId"], provider_arn)
         else:  # cognito
             # [COGNITO] Cognito M2M provider + client_credentials target (identity via interceptor)
             provider_arn = create_notes_cognito_provider(client, config)
@@ -746,6 +929,8 @@ def main():
         if config.idp_provider == "okta":
             print("   Grant: TOKEN_EXCHANGE (RFC 8693)")
             print(f"   Scopes: {OBO_TARGET_SCOPES}")
+        elif config.idp_provider == "auth0":
+            print("   Auth: Auth0 M2M (client_credentials) + REQUEST interceptor for identity")
         else:  # cognito
             print("   Auth: Cognito M2M (client_credentials) + REQUEST interceptor for identity")
         print("\n📋 Next Steps:")

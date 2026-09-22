@@ -26,6 +26,9 @@ nest_asyncio>=1.6.0
 python-jose[cryptography]>=3.4.0
 cryptography>=41.0.0
 
+# Auth0 setup (for 1-auth0-setup/setup_auth0.py)
+auth0-python>=4.0.0
+
 # Development
 jupyter>=1.0.0
 ipykernel>=6.29.0

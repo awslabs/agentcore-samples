@@ -246,6 +246,36 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
         if username:
             logger.info(f"Found username claim for authorization: {username}")
             return ("username", username)
+    elif IDP_PROVIDER == "auth0":
+        # [AUTH0] Check custom namespace for roles/groups, then permissions, then email/sub
+        # Auth0 uses custom namespaces configured via Actions - try multiple common patterns
+        groups = (
+            claims.get("https://lakehouse-agent/roles")
+            or claims.get("https://lakehouse-api/groups")
+            or claims.get("groups")
+        )
+        if groups:
+            for group in groups:
+                claim_value = json.dumps([group])
+                logger.info(f"Found Auth0 roles/groups claim for authorization: {claim_value}")
+                return ("groups", claim_value)
+
+        # Auth0 permissions from RBAC
+        permissions = claims.get("permissions")
+        if permissions:
+            logger.info(f"Found Auth0 permissions for authorization: {permissions}")
+            # Use first permission as claim value for DynamoDB lookup
+            return ("permissions", json.dumps(permissions))
+
+        email = claims.get("email")
+        if email:
+            logger.info(f"Found email claim for authorization: {email}")
+            return ("email", email)
+
+        sub = claims.get("sub")
+        if sub:
+            logger.info(f"Found sub claim for authorization: {sub}")
+            return ("sub", sub)
     else:  # okta
         # [OKTA] fork verbatim: filter built-in `Everyone` + iterate; then email → sub.
         OKTA_BUILTIN_GROUPS = {"Everyone"}  # Okta-specific; sibling IdPs revisit

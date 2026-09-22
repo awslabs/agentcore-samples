@@ -106,6 +106,37 @@ def get_config() -> dict[str, str]:
             "issuer": f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}",
         }
         logger.info(f"Cognito configuration loaded: region={region}, user_pool_id={user_pool_id}")
+    elif IDP_PROVIDER == "auth0":
+        # [AUTH0] Auth0 tenant configuration
+        region = os.environ.get("AWS_REGION", "us-east-1")
+        auth0_domain = os.environ.get("AUTH0_DOMAIN", "")
+        auth0_audience = os.environ.get("AUTH0_AUDIENCE", "")
+
+        # If not set, try SSM Parameter Store
+        if not auth0_domain or not auth0_audience:
+            logger.info("Loading Auth0 configuration from SSM Parameter Store...")
+            try:
+                ssm = boto3.client("ssm", region_name=region)
+
+                if not auth0_domain:
+                    auth0_domain = ssm.get_parameter(Name="/app/lakehouse-agent/auth0-domain")["Parameter"]["Value"]
+                    logger.info(f"Loaded auth0_domain from SSM: {auth0_domain}")
+
+                if not auth0_audience:
+                    auth0_audience = ssm.get_parameter(Name="/app/lakehouse-agent/auth0-audience")["Parameter"]["Value"]
+                    logger.info(f"Loaded auth0_audience from SSM: {auth0_audience}")
+
+            except Exception as e:
+                logger.error(f"Error loading configuration from SSM: {e}")
+                raise
+
+        _config = {
+            "region": region,
+            "auth0_domain": auth0_domain,
+            "auth0_audience": auth0_audience,
+            "issuer": f"https://{auth0_domain}/",
+        }
+        logger.info(f"Auth0 configuration loaded: region={region}, domain={auth0_domain}, audience={auth0_audience}")
     else:  # okta
         # [OKTA] fork verbatim (canonical §6 okta-* keys)
         region = os.environ.get("AWS_REGION", "us-east-1")
@@ -154,7 +185,7 @@ def get_config() -> dict[str, str]:
 
 
 def get_public_keys() -> dict[str, Any]:
-    """Fetch IdP public keys for JWT validation (DR-8: Cognito vs Okta JWKS URL)."""
+    """Fetch IdP public keys for JWT validation (DR-8: Cognito vs Okta vs Auth0 JWKS URL)."""
     global _jwks
 
     if _jwks is not None:
@@ -162,9 +193,11 @@ def get_public_keys() -> dict[str, Any]:
 
     try:
         config = get_config()
-        # Cognito exposes /.well-known/jwks.json; Okta uses /v1/keys.
+        # Cognito exposes /.well-known/jwks.json; Okta uses /v1/keys; Auth0 uses /.well-known/jwks.json
         if IDP_PROVIDER == "cognito":
             jwks_url = f"{config['issuer']}/.well-known/jwks.json"
+        elif IDP_PROVIDER == "auth0":
+            jwks_url = f"{config['issuer']}.well-known/jwks.json"
         else:  # okta
             jwks_url = f"{config['issuer']}/v1/keys"
         logger.info(f"Fetching JWKS from: {jwks_url}")
@@ -210,7 +243,7 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
             return None
 
         # Decode differs by IdP (DR-8): Cognito access tokens have no 'aud' →
-        # validate client_id; Okta access tokens carry 'aud' → validate directly.
+        # validate client_id; Okta/Auth0 access tokens carry 'aud' → validate directly.
         if IDP_PROVIDER == "cognito":
             # [COGNITO] upstream verbatim
             try:
@@ -238,6 +271,15 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
                         return None
                 else:
                     raise
+        elif IDP_PROVIDER == "auth0":
+            # [AUTH0] Auth0 access tokens have 'aud' claim with API identifier
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=["RS256"],
+                audience=config["auth0_audience"],
+                issuer=config["issuer"],
+            )
         else:  # okta
             # [OKTA] fork verbatim: single-path decode with audience validation
             claims = jwt.decode(
@@ -331,6 +373,10 @@ def extract_user_principal(claims: dict[str, Any]) -> str | None:
     if IDP_PROVIDER == "cognito":
         # [COGNITO] upstream verbatim
         principal = claims.get("email") or claims.get("username") or claims.get("cognito:username") or claims.get("sub")
+    elif IDP_PROVIDER == "auth0":
+        # [AUTH0] Auth0 uses standard OIDC claims: email, sub
+        # For Auth0, email requires 'openid email' scopes; sub is always present
+        principal = claims.get("email") or claims.get("sub")
     else:  # okta
         # [OKTA] fork verbatim (email when scope grants it; sub always present)
         principal = claims.get("email") or claims.get("sub")
@@ -354,12 +400,29 @@ def get_user_scopes(claims: dict[str, Any]) -> list:
         List of scopes
     """
     # Scope/group claim names + shapes differ by IdP (DR-8): Cognito 'scope' is a
-    # space-delimited string + 'cognito:groups'; Okta 'scp' is an array + 'groups'.
+    # space-delimited string + 'cognito:groups'; Okta 'scp' is an array + 'groups';
+    # Auth0 uses 'scope' (space-delimited) and custom namespace for groups/roles.
     if IDP_PROVIDER == "cognito":
         # [COGNITO] upstream verbatim
         scope_string = claims.get("scope", "")
         scopes = scope_string.split() if scope_string else []
         groups = claims.get("cognito:groups", [])
+    elif IDP_PROVIDER == "auth0":
+        # [AUTH0] Auth0 uses 'scope' (space-delimited string) and 'permissions' array
+        # Groups/roles require custom claims via Auth0 Actions/Rules
+        scope_string = claims.get("scope", "")
+        scopes = scope_string.split() if scope_string else []
+        # Auth0 permissions from API authorization
+        permissions = claims.get("permissions", [])
+        if isinstance(permissions, list):
+            scopes.extend(permissions)
+        # Auth0 custom namespace for groups/roles (configured via Auth0 Actions)
+        # Check multiple possible claim names for maximum compatibility
+        groups = (
+            claims.get("https://lakehouse-agent/roles", [])
+            or claims.get("https://lakehouse-api/groups", [])
+            or claims.get("groups", [])
+        )
     else:  # okta
         # [OKTA] fork verbatim
         scopes = list(claims.get("scp", []))
@@ -521,12 +584,24 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Add user identity to headers for downstream MCP server
         # The MCP server binds X-User-Identity into the claims tools' row predicate
         # (WHERE user_id = ?); Lake Formation does column filtering, not row filtering
+        #
+        # IMPORTANT: Forward the original Authorization header to the target Lambda.
+        # Per AWS docs, Authorization header cannot be allowlisted on targets but
+        # CAN be forwarded by an interceptor Lambda. This enables the target to
+        # identify the user directly from the bearer token.
+        auth_header = headers.get("Authorization") or headers.get("authorization")
+        
         transformed_headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
             "X-User-Identity": user_principal,
             "X-User-Scopes": ",".join(scopes) if scopes else "",
         }
+        
+        # Forward the Authorization header to the target if present
+        if auth_header:
+            transformed_headers["Authorization"] = auth_header
+            logger.info("🔑 Forwarding Authorization header to target")
 
         # Add tenant role information to headers if credentials were obtained
         if tenant_credentials:

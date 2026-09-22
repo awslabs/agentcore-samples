@@ -2,17 +2,17 @@
 
 This guide provides the deployment sequence for the Lakehouse Agent system using command-line scripts. For a guided notebook-based approach, see the Jupyter notebooks in the parent directory.
 
-This system supports **two identity providers**, selected by a single flag
-`IDP_PROVIDER ∈ {cognito, okta}` (default `cognito`). One deployment sequence
-serves both: IdP-specific steps are marked **`[COGNITO]`** or **`[OKTA]`** and
-you run only the branch matching your choice; all unmarked steps are shared.
-Pick the IdP once in **Step 0** — the CLI equivalent of notebook `01-deploy-idp`'s
-Step-0 cell.
+This system supports **three identity providers**, selected by a single flag
+`IDP_PROVIDER ∈ {cognito, okta, auth0}` (default `cognito`). One deployment sequence
+serves all three: IdP-specific steps are marked **`[COGNITO]`**, **`[OKTA]`**, or
+**`[AUTH0]`** and you run only the branch matching your choice; all unmarked steps
+are shared. Pick the IdP once in **Step 0** — the CLI equivalent of notebook
+`01-deploy-idp`'s Step-0 cell.
 
 The deployment is organized in two phases:
 
 - **Phase 1 — Base lakehouse-agent (Steps 0–8, this guide).** Chooses the IdP,
-  then deploys the IdP (Cognito user pool **or** Okta app), IAM tenant roles,
+  then deploys the IdP (Cognito user pool **or** Okta app **or** Auth0 tenant), IAM tenant roles,
   S3 Tables + Lake Formation, the claims MCP server, the claims Gateway (GW1)
   with request/response Interceptors, the notes Gateway (GW2) over OpenSearch
   Serverless, and the conversational agent.
@@ -114,6 +114,32 @@ The agent (Step 8) is IdP-agnostic: it wires two prefixed MCP clients
 > the enrollment once, and subsequent logins proceed normally. If you provision
 > your own test users, expect the same first-login prompt.
 
+> **`[AUTH0]` additional prerequisites.** If you deploy the Auth0 path
+> (`IDP_PROVIDER=auth0`), you need an Auth0 tenant (a free account at
+> [auth0.com/signup](https://auth0.com/signup) is sufficient).
+>
+> **⚠️ Bootstrap step required (cannot be automated).** Before running
+> `setup_auth0.py`, you must authorize an M2M application for the **Auth0
+> Management API**. The simplest approach is to use the pre-existing **Default App**:
+>
+> 1. Auth0 Dashboard → Applications → APIs → **Auth0 Management API**
+> 2. Go to **Machine to Machine Applications** tab
+> 3. Find **Default App** and toggle it **ON**
+> 4. Click the dropdown, select **All** permissions, click **Update**
+> 5. Go to Applications → Applications → **Default App**
+> 6. Copy the **Client ID** and **Client Secret** to `.env`:
+>
+> ```bash
+> AUTH0_DOMAIN=your-tenant.us.auth0.com   # Your Auth0 domain (no https://)
+> AUTH0_CLIENT_ID=<default-app-client-id>
+> AUTH0_CLIENT_SECRET=<default-app-client-secret>
+> ```
+>
+> This is a one-time bootstrap step. The setup script then automates creation of
+> the user login app, OBO exchange client, API, roles, and test users.
+>
+> See [1-auth0-setup/README.md](1-auth0-setup/README.md) for full details.
+
 ### AWS Region Configuration
 
 All deployment scripts read the AWS region from your boto3 session. Configure it before running any scripts:
@@ -155,11 +181,11 @@ Every downstream step reads the flag from SSM; the default is `cognito`
 
 ```bash
 cd 02-use-cases/01-conversational-agents/lakehouse-agent
-python -m utils.idp_config cognito   # or: okta
+python -m utils.idp_config cognito   # or: okta, auth0
 ```
 
 This is the command-line equivalent of notebook `01-deploy-idp`'s Step-0 cell
-(DR-12). The flag is chosen here — **not** in `.env` (which holds Okta
+(DR-12). The flag is chosen here — **not** in `.env` (which holds IdP
 credentials only).
 
 SSM Parameters created:

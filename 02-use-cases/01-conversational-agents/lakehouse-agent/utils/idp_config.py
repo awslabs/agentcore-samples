@@ -37,12 +37,12 @@ from typing import Optional
 # The flag contract. Cognito is the default so an unmodified checkout reproduces
 # the upstream (Cognito-only) tutorial behavior.
 FLAG_NAME = "IDP_PROVIDER"
-ALLOWED_VALUES = ("cognito", "okta")
+ALLOWED_VALUES = ("cognito", "okta", "auth0")
 DEFAULT_VALUE = "cognito"
 SSM_PARAM_NAME = "/app/lakehouse-agent/idp-provider"
 
 
-def validate_idp_provider(value: str | None) -> str:
+def validate_idp_provider(value: Optional[str]) -> str:
     """
     Validate an IDP_PROVIDER value and return it normalized (lower-case).
 
@@ -70,7 +70,7 @@ def validate_idp_provider(value: str | None) -> str:
     return normalized
 
 
-def set_idp_provider(ssm_client, value: str | None = None, verbose: bool = True) -> str:
+def set_idp_provider(ssm_client, value: Optional[str] = None, verbose: bool = True) -> str:
     """
     Resolve, validate, and persist the IDP_PROVIDER flag to SSM (notebook 01).
 
@@ -161,12 +161,13 @@ def detect_gateway_idp(live_gateway) -> str:
       - **cognito**: a ``discoveryUrl`` on ``cognito-idp.<region>.amazonaws.com``
         with ``allowedClients`` present (Cognito access tokens carry no ``aud``).
       - **okta**: an Okta-tenant ``discoveryUrl`` with ``allowedAudience`` present.
+      - **auth0**: an Auth0-tenant ``discoveryUrl`` (*.auth0.com) with ``allowedAudience`` present.
 
     Args:
         live_gateway: A get_gateway / list_gateways item (dict) for the live gateway.
 
     Returns:
-        "cognito" or "okta".
+        "cognito", "okta", or "auth0".
 
     Raises:
         ValueError: If the authorizer is missing or the signals are ambiguous.
@@ -179,20 +180,24 @@ def detect_gateway_idp(live_gateway) -> str:
     # Primary signal: the discovery URL host.
     if "cognito-idp." in discovery_url and has_clients:
         return "cognito"
-    if discovery_url and "cognito-idp." not in discovery_url and has_audience:
+    if "auth0.com" in discovery_url and has_audience:
+        return "auth0"
+    if discovery_url and "cognito-idp." not in discovery_url and "auth0.com" not in discovery_url and has_audience:
         return "okta"
     # Fallback: the credential-shape signal when the URL is absent/ambiguous.
     if has_clients and not has_audience:
         return "cognito"
     if has_audience and not has_clients:
-        return "okta"
+        # Can't distinguish okta vs auth0 without URL, default to auth0 (the current setup)
+        return "auth0"
 
     raise ValueError(
         "Cannot determine gateway IdP from its authorizer configuration "
         f"(discoveryUrl={discovery_url!r}, allowedClients={has_clients}, "
         f"allowedAudience={has_audience}). Expected a Cognito "
-        "(cognito-idp.* discoveryUrl + allowedClients) or Okta "
-        "(tenant discoveryUrl + allowedAudience) authorizer."
+        "(cognito-idp.* discoveryUrl + allowedClients), Okta "
+        "(tenant discoveryUrl + allowedAudience), or Auth0 "
+        "(*.auth0.com discoveryUrl + allowedAudience) authorizer."
     )
 
 
@@ -203,6 +208,9 @@ def assert_gateway_idp_matches(live_gateway, flag: str, gateway_name: str) -> No
     A gateway's IdP is baked into its JWT authorizer; an in-place converge (GW1)
     or reuse (GW2) against a gateway deployed for the *other* IdP would silently
     mutate / mis-wire it. Detect the mismatch and refuse, pointing at teardown.
+
+    Note: auth0 and okta gateways are compatible (both use allowedAudience), but
+    the token issuer must match the gateway's discoveryUrl for validation to pass.
 
     Raises:
         RuntimeError: On IdP mismatch, with teardown guidance.

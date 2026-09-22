@@ -1,8 +1,8 @@
 """
-Streamlit UI for the Lakehouse Agent — dual IdP (Cognito or Okta).
+Streamlit UI for the Lakehouse Agent — multi IdP (Cognito, Okta, or Auth0).
 
 The active identity provider is chosen once, in notebook 01's Step-0 cell, and
-persisted to SSM as IDP_PROVIDER ("cognito" | "okta"). This UI reads that flag
+persisted to SSM as IDP_PROVIDER ("cognito" | "okta" | "auth0"). This UI reads that flag
 once at startup and branches ONLY the login widget + config load; the chat UI,
 agent invocation, and the per-persona tools panel are IdP-agnostic and shared.
 """
@@ -44,6 +44,46 @@ from utils.idp_config import get_idp_provider
 nest_asyncio.apply()
 
 st.set_page_config(page_title="Lakehouse Data Assistant", page_icon="🏥", layout="wide")
+
+
+def _escape_dollars_for_markdown(text: str) -> str:
+    """Escape dollar signs to prevent Streamlit from interpreting them as LaTeX.
+    
+    Streamlit's st.markdown() interprets $...$ as LaTeX math delimiters, which
+    causes currency values like $185.50 to render as garbled math. This function
+    escapes $ as \\$ so they display literally.
+    """
+    if not isinstance(text, str):
+        return text
+    return text.replace("$", r"\$")
+
+
+def _parse_event_stream(response: dict) -> str:
+    """Extract text from the boto3 EventStream response."""
+    parts: list[str] = []
+    for event in response.get("response", []):
+        raw = event if isinstance(event, bytes) else event.get("chunk", {}).get("bytes", b"")
+        if raw:
+            try:
+                decoded = json.loads(raw.decode("utf-8"))
+                if isinstance(decoded, str):
+                    parts.append(decoded)
+                elif isinstance(decoded, dict):
+                    content = decoded.get("content", [])
+                    for c in content:
+                        if isinstance(c, dict) and c.get("type") == "text":
+                            parts.append(c["text"])
+                        elif isinstance(c, str):
+                            parts.append(c)
+                    if not content and "message" in decoded:
+                        msg = decoded["message"]
+                        if isinstance(msg, dict):
+                            for c in msg.get("content", []):
+                                if isinstance(c, dict) and c.get("type") == "text":
+                                    parts.append(c["text"])
+            except Exception:
+                parts.append(raw.decode("utf-8"))
+    return "\n".join(parts) if parts else "(no response)"
 
 
 def _resolve_region() -> str:
@@ -216,6 +256,9 @@ def _okta_authorize_url(config: dict, state: str, verifier: str, login_hint: str
         # existing SSO cookie, so a reader can switch test users without signing out
         # of Okta first.
         "prompt": "login",
+        # Audience parameter ensures the access token's `aud` claim matches what
+        # the AgentCore Gateway expects (configured in allowedAudience).
+        "audience": config.get("okta_resource_server_audience", "api://lakehouse-api"),
     }
     if login_hint:
         params["login_hint"] = login_hint
@@ -277,6 +320,130 @@ def _okta_identity_from_tokens(tokens: dict) -> str:
         if not claims:
             continue
         identity = claims.get("email") or claims.get("preferred_username") or claims.get("sub")
+        if identity:
+            return str(identity)
+    return "(unknown)"
+
+
+# ── Auth0 Authorization Code + PKCE, run server-side in this app ──────────────────
+# Auth0 flow is similar to Okta: browser redirect for authorization, then server-side
+# token exchange with the authorization code and PKCE verifier.
+AUTH0_SCOPE = "openid profile email claims.query"
+AUTH0_LOGIN_TTL_SECONDS = 15 * 60
+
+
+@st.cache_resource
+def _auth0_pending_logins() -> dict:
+    """Server-side store for in-flight Auth0 logins, keyed by the OAuth `state` value.
+
+    Same pattern as Okta: survives Streamlit reruns, single-use, expiring entries.
+    """
+    return {}
+
+
+def _auth0_new_pkce_login(login_hint: str = "") -> tuple[str, str]:
+    """Create one Auth0 login attempt: returns (state, verifier) and records it server-side."""
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).decode().rstrip("=")
+    state = secrets.token_urlsafe(24)
+    store = _auth0_pending_logins()
+    _auth0_expire_pending(store)
+    store[state] = {
+        "verifier": verifier,
+        "created_at": time.time(),
+        "login_hint": login_hint,
+    }
+    return state, verifier
+
+
+def _auth0_expire_pending(store: dict, now: float | None = None) -> int:
+    """Drop expired Auth0 entries."""
+    now = time.time() if now is None else now
+    stale = [k for k, v in store.items() if now - v.get("created_at", 0) > AUTH0_LOGIN_TTL_SECONDS]
+    for k in stale:
+        store.pop(k, None)
+    return len(stale)
+
+
+def _auth0_claim_pending(state: str) -> dict | None:
+    """Single-use lookup of an in-flight Auth0 login."""
+    store = _auth0_pending_logins()
+    _auth0_expire_pending(store)
+    if not state:
+        return None
+    return store.pop(state, None)
+
+
+def _auth0_pkce_challenge(verifier: str) -> str:
+    """S256 challenge for a verifier: base64url(sha256(verifier)), unpadded."""
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def _auth0_authorize_url(config: dict, state: str, verifier: str, login_hint: str = "") -> str:
+    """Build the Auth0 /authorize URL for this login attempt."""
+    domain = config["auth0_domain"]
+    params = {
+        "client_id": config["auth0_client_id"],
+        "response_type": "code",
+        "scope": AUTH0_SCOPE,
+        "redirect_uri": REDIRECT_URI,
+        "state": state,
+        "code_challenge": _auth0_pkce_challenge(verifier),
+        "code_challenge_method": "S256",
+        # Auth0 requires the audience parameter to get a JWT access token
+        # (without it, Auth0 returns an opaque token)
+        "audience": config.get("auth0_audience", "https://lakehouse-api"),
+        # Force re-authentication (no SSO session reuse)
+        "prompt": "login",
+    }
+    if login_hint:
+        params["login_hint"] = login_hint
+    return f"https://{domain}/authorize?" + urllib.parse.urlencode(params)
+
+
+def _auth0_exchange_code(config: dict, code: str, verifier: str) -> dict:
+    """Exchange an Auth0 authorization code for tokens."""
+    domain = config["auth0_domain"]
+    response = requests.post(
+        f"https://{domain}/oauth/token",
+        json={
+            "grant_type": "authorization_code",
+            "client_id": config["auth0_client_id"],
+            "client_secret": config["auth0_client_secret"],
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "code_verifier": verifier,
+        },
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        timeout=30,
+    )
+    if response.status_code // 100 != 2:
+        raise RuntimeError(f"Auth0 token exchange failed (HTTP {response.status_code}): {response.text[:300]}")
+    tokens = response.json()
+    if not tokens.get("access_token"):
+        raise RuntimeError(f"Auth0 token response carried no access_token (keys: {sorted(tokens)})")
+    return tokens
+
+
+def _auth0_identity_from_tokens(tokens: dict) -> str:
+    """Best-effort display identity from Auth0 tokens. Unverified decode — display only."""
+
+    def _claims_or_none(raw_token: str) -> dict | None:
+        try:
+            return jwt.decode(raw_token, options={"verify_signature": False})
+        except Exception as decode_error:
+            print(f"⚠️  Could not decode a token for display: {decode_error}")
+            return None
+
+    for token_key in ("id_token", "access_token"):
+        raw = tokens.get(token_key)
+        claims = _claims_or_none(raw) if raw else None
+        if not claims:
+            continue
+        identity = claims.get("email") or claims.get("name") or claims.get("nickname") or claims.get("sub")
         if identity:
             return str(identity)
     return "(unknown)"
@@ -391,6 +558,17 @@ def load_config_from_ssm():
                     "okta_org_url": "/app/lakehouse-agent/okta-org-url",
                     "okta_auth_server_id": "/app/lakehouse-agent/okta-auth-server-id",
                     "okta_app_client_id": "/app/lakehouse-agent/okta-app-client-id",
+                    "okta_resource_server_audience": "/app/lakehouse-agent/okta-resource-server-audience",
+                }
+            )
+        elif IDP_PROVIDER == "auth0":
+            # Auth0 needs the domain + client id + audience to compose the
+            # /authorize and /oauth/token endpoints.
+            params.update(
+                {
+                    "auth0_domain": "/app/lakehouse-agent/auth0-domain",
+                    "auth0_client_id": "/app/lakehouse-agent/auth0-client-id",
+                    "auth0_audience": "/app/lakehouse-agent/auth0-audience",
                 }
             )
         else:
@@ -410,7 +588,7 @@ def load_config_from_ssm():
             except Exception:
                 config[key] = None
 
-        # Okta needs the client secret in-config for the authorization-code token
+        # Okta/Auth0 need the client secret in-config for the authorization-code token
         # exchange (a confidential Auth-Code+PKCE client). Cognito does NOT: its
         # authenticate_user / set_new_password fetch the secret themselves on
         # demand (SecureString, WithDecryption), so we never hold a decrypted
@@ -424,6 +602,15 @@ def load_config_from_ssm():
                 config["okta_app_client_secret"] = response["Parameter"]["Value"]
             except Exception:
                 config["okta_app_client_secret"] = None
+        elif IDP_PROVIDER == "auth0":
+            try:
+                response = ssm.get_parameter(
+                    Name="/app/lakehouse-agent/auth0-client-secret",
+                    WithDecryption=True,
+                )
+                config["auth0_client_secret"] = response["Parameter"]["Value"]
+            except Exception:
+                config["auth0_client_secret"] = None
 
         config["region"] = region
         return config
@@ -555,100 +742,47 @@ def set_new_password(
 
 
 def invoke_agent(runtime_arn: str, prompt: str, access_token: str, id_token: str, region: str) -> str:
-    """Invoke AgentCore Runtime with OAuth bearer token via HTTPS (IdP-agnostic)."""
+    """Invoke AgentCore Runtime with OAuth bearer token via boto3 (SigV4 + Bearer)."""
     # Reset per-turn tool telemetry; the JSON branch below stashes the real
     # tools_used (from the agent's toolUse event log) for the caller to render.
     st.session_state["last_tools_used"] = None
+    
+    # Use boto3 client which handles SigV4 signing automatically
+    client = boto3.client("bedrock-agentcore", region_name=region)
+    handler = None
+    
     try:
-        # URL encode the agent ARN
-        escaped_agent_arn = urllib.parse.quote(runtime_arn, safe="")
-
-        # Construct the AWS API endpoint URL
-        url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{escaped_agent_arn}/invocations?qualifier=DEFAULT"
-
-        # Set up headers with bearer token
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": st.session_state.session_id,
-        }
-
-        # Prepare payload. The access token is NOT sent in the body: the agent reads
-        # it from the Authorization header above, which the runtime validates and
-        # forwards. The agent still accepts a body token as a transitional fallback
-        # and logs a warning when it uses one, so leaving it out here is what makes
-        # that warning meaningful.
-        payload = {"prompt": prompt, "id_token": id_token}
-
+        # Inject bearer token into the request headers (in addition to SigV4)
+        def _inject_bearer(request, **kwargs):
+            print(f"DEBUG: Injecting bearer token (first 50 chars): {access_token[:50] if access_token else 'None'}...")
+            request.headers["Authorization"] = f"Bearer {access_token}"
+        
+        handler = _inject_bearer
+        client.meta.events.register("before-send.bedrock-agentcore.InvokeAgentRuntime", handler)
+        
+        print(f"DEBUG: Handler registered, access_token present: {bool(access_token)}")
         st.info("🔗 Invoking AgentCore Runtime with OAuth")
-
-        # Timeout is a (connect, read) tuple: a real multi-tool agent turn can run
-        # well past 60s (each Athena tool call ≈14s and turns chain several), so the
-        # read timeout is 300s. No retries: the invocation is non-idempotent and
-        # already long-running.
+        
+        # Prepare payload
+        payload = {"prompt": prompt, "id_token": id_token}
+        
         with st.spinner("Agent is working…"):
-            response = requests.post(url, headers=headers, json=payload, timeout=(10, 300))
+            response = client.invoke_agent_runtime(
+                agentRuntimeArn=runtime_arn,
+                runtimeUserId=st.session_state.session_id,
+                qualifier="DEFAULT",
+                payload=json.dumps(payload),
+            )
 
-        # Check for errors
-        if response.status_code != 200:
-            error_msg = f"HTTP {response.status_code}"
-            try:
-                error_detail = response.json()
-                error_msg += f": {error_detail}"
-            except (json.JSONDecodeError, ValueError):
-                error_msg += f": {response.text}"
-            return f"❌ Error: {error_msg}"
+        # Parse boto3 EventStream response
+        text = _parse_event_stream(response)
+        return text if text else "⚠️ No response received"
 
-        # Handle streaming response (text/event-stream)
-        content_type = response.headers.get("Content-Type", "")
-
-        if "text/event-stream" in content_type:
-            # Parse SSE (Server-Sent Events) format
-            content = []
-            for line in response.text.split("\n"):
-                if line.startswith("data: "):
-                    data_str = line[6:].strip()
-                    if data_str:
-                        try:
-                            data = json.loads(data_str)
-                            # Extract content from various possible formats
-                            if isinstance(data, dict):
-                                if "content" in data:
-                                    content.append(str(data["content"]))
-                                elif "response" in data:
-                                    content.append(str(data["response"]))
-                                elif "result" in data:
-                                    content.append(str(data["result"]))
-                                else:
-                                    content.append(str(data))
-                            else:
-                                content.append(str(data))
-                        except json.JSONDecodeError:
-                            content.append(data_str)
-
-            return "\n".join(content) if content else "⚠️ No response received"
-
-        else:
-            # Handle JSON response
-            try:
-                result = response.json()
-                if isinstance(result, dict):
-                    # Stash real per-turn tools for the caller to render (fail-soft).
-                    st.session_state["last_tools_used"] = result.get("tools_used")
-                    if "content" in result:
-                        return result["content"]
-                    elif "response" in result:
-                        return result["response"]
-                    elif "result" in result:
-                        return result["result"]
-                return str(result)
-            except json.JSONDecodeError:
-                return response.text
-
-    except requests.exceptions.RequestException as e:
-        return f"❌ Request error: {e!s}"
     except Exception as e:
         return f"❌ Error: {e!s}"
+    finally:
+        if handler:
+            client.meta.events.unregister("before-send.bedrock-agentcore.InvokeAgentRuntime", handler)
 
 
 # Load configuration from SSM on first run
@@ -668,7 +802,13 @@ with st.sidebar:
     # experiences differ by design (a password form here, a redirect to the provider on
     # Okta), and without this a reader reporting a problem cannot say which they saw.
     st.markdown(f"🔐 **Identity Provider: {IDP_PROVIDER.title()}**")
-    st.caption("Notes auth: OBO token exchange" if IDP_PROVIDER == "okta" else "Notes auth: REQUEST interceptor")
+    # Notes auth model differs by IdP
+    if IDP_PROVIDER == "okta":
+        st.caption("Notes auth: OBO token exchange")
+    elif IDP_PROVIDER == "auth0":
+        st.caption("Notes auth: OBO token exchange")
+    else:
+        st.caption("Notes auth: REQUEST interceptor")
     st.markdown("---")
 
     # Login section — branches by IdP; both populate the shared session contract
@@ -777,6 +917,82 @@ with st.sidebar:
                         st.caption("Takes this tab to the Okta sign-in page, then returns here signed in.")
                 else:
                     st.error("❌ Okta not configured. Run `01-deploy-idp.ipynb` first.")
+        elif IDP_PROVIDER == "auth0":
+            # ── Auth0: Authorization Code + PKCE flow ──────────────────────────
+            with st.expander("🔐 User Login", expanded=True):
+                config = st.session_state.idp_config
+                required_keys = (
+                    "auth0_domain",
+                    "auth0_client_id",
+                    "auth0_client_secret",
+                )
+                if all(config.get(k) for k in required_keys):
+                    # The redirect from Auth0 lands back on THIS page with ?code= and
+                    # ?state=. Handle that first.
+                    query = st.query_params
+                    returned_code = query.get("code")
+                    returned_state = query.get("state")
+                    returned_error = query.get("error")
+
+                    if returned_error:
+                        description = query.get("error_description") or ""
+                        st.error(f"❌ Auth0 returned an error: {returned_error} {description}".strip())
+                        st.query_params.clear()
+                    elif returned_code:
+                        pending = _auth0_claim_pending(returned_state or "")
+                        if pending is None:
+                            st.error(
+                                "❌ Sign-in could not be verified: the returned state does not match "
+                                "an in-flight login. Start the sign-in again. (This also happens if the "
+                                "attempt sat unfinished for more than "
+                                f"{AUTH0_LOGIN_TTL_SECONDS // 60} minutes, or if the page was reloaded "
+                                "with a used link.)"
+                            )
+                            st.query_params.clear()
+                        else:
+                            try:
+                                tokens = _auth0_exchange_code(config, returned_code, pending["verifier"])
+                            except Exception as exchange_error:
+                                st.error(f"❌ Could not complete sign-in: {exchange_error}")
+                                st.query_params.clear()
+                            else:
+                                st.session_state.access_token = tokens.get("access_token")
+                                st.session_state.id_token = tokens.get("id_token")
+                                st.session_state.user_email = _auth0_identity_from_tokens(tokens)
+                                _lakehouse_save_token_if_enabled(
+                                    st.session_state.access_token,
+                                    st.session_state.user_email,
+                                )
+                                st.session_state.persona_tools = None
+                                st.query_params.clear()
+                                st.success(f"✅ Logged in as {st.session_state.user_email}")
+                                st.rerun()
+                    else:
+                        # Start of a login
+                        login_hint = st.text_input(
+                            "Email (optional)",
+                            key="auth0_login_hint",
+                            placeholder="policyholder001@example.com",
+                            help="Pre-fills the email on the Auth0 sign-in page. Leave blank to type it there.",
+                        )
+                        if "auth0_pkce_attempt" not in st.session_state:
+                            st.session_state.auth0_pkce_attempt = _auth0_new_pkce_login(login_hint.strip())
+                        state, verifier = st.session_state.auth0_pkce_attempt
+                        st.markdown(
+                            f"""
+                            <a href="{_auth0_authorize_url(config, state, verifier, login_hint.strip())}"
+                               target="_self"
+                               style="display:block; padding:0.5rem 1rem; text-align:center;
+                                      border:1px solid rgba(49,51,63,0.2); border-radius:0.5rem;
+                                      text-decoration:none; font-weight:600;">
+                               🔑 Login with Auth0
+                            </a>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        st.caption("Takes this tab to the Auth0 sign-in page, then returns here signed in.")
+                else:
+                    st.error("❌ Auth0 not configured. Run `01-deploy-idp.ipynb` first.")
         else:
             # ── Cognito: password-grant flow (upstream, preserved) ───────────
             with st.expander("🔐 User Login", expanded=True):
@@ -866,6 +1082,22 @@ with st.sidebar:
                             st.error("❌ Passwords don't match or are empty")
     else:
         st.success(f"🔓 Logged in as: {st.session_state.user_email}")
+        # DEBUG: Show token claims to diagnose issuer mismatch
+        if st.checkbox("🔍 Show token debug info", value=False):
+            try:
+                # Decode without verification (just to inspect claims)
+                claims = jwt.decode(st.session_state.access_token, options={"verify_signature": False})
+                st.json({
+                    "iss": claims.get("iss"),
+                    "aud": claims.get("aud"),
+                    "sub": claims.get("sub"),
+                    "cid": claims.get("cid"),
+                    "scp": claims.get("scp"),
+                })
+                # Show raw token for testing
+                st.text_area("Access Token (copy for testing):", st.session_state.access_token, height=150)
+            except Exception as e:
+                st.error(f"Could not decode token: {e}")
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.access_token = None
             st.session_state.id_token = None
@@ -1040,7 +1272,7 @@ if not st.session_state.runtime_arn:
 # Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        st.markdown(_escape_dollars_for_markdown(msg["content"]))
         # Optional per-message extras (persist across reruns): tools used + path label + FGAC note.
         if msg.get("tools_used"):
             st.caption("🔧 Tools used: " + ", ".join(msg["tools_used"]))
@@ -1076,7 +1308,7 @@ if "example_prompt" in st.session_state and st.session_state.example_prompt:
             response = data.get("content", response)
         except (json.JSONDecodeError, ValueError):
             pass
-        st.markdown(response)
+        st.markdown(_escape_dollars_for_markdown(response))
 
         # Real per-turn tools (fail-soft; absent/empty → render nothing).
         tools_used = st.session_state.get("last_tools_used")
@@ -1130,7 +1362,7 @@ if prompt:
             response = data.get("content", response)
         except (json.JSONDecodeError, ValueError):
             pass
-        st.markdown(response)
+        st.markdown(_escape_dollars_for_markdown(response))
 
         # Real per-turn tools (fail-soft) + cross-persona nudge.
         tools_used = st.session_state.get("last_tools_used")

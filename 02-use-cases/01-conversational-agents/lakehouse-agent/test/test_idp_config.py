@@ -79,10 +79,11 @@ def main():
     # --- validate_idp_provider ---
     check("validate('cognito') returns 'cognito'", validate_idp_provider("cognito") == "cognito")
     check("validate('okta') returns 'okta'", validate_idp_provider("okta") == "okta")
+    check("validate('auth0') returns 'auth0'", validate_idp_provider("auth0") == "auth0")
     check("validate(' OKTA ') normalizes case/space", validate_idp_provider(" OKTA ") == "okta")
+    check("validate(' Auth0 ') normalizes case/space", validate_idp_provider(" Auth0 ") == "auth0")
     expect_value_error("validate(None) fails fast", lambda: validate_idp_provider(None))
     expect_value_error("validate('') fails fast", lambda: validate_idp_provider(""))
-    expect_value_error("validate('auth0') fails fast", lambda: validate_idp_provider("auth0"))
 
     # Fail-fast messages must name the flag and the allowed values (R1.3).
     try:
@@ -90,7 +91,7 @@ def main():
     except ValueError as e:
         msg = str(e)
         check("invalid-value message names the flag", FLAG_NAME in msg, msg)
-        check("invalid-value message lists allowed values", "cognito" in msg and "okta" in msg)
+        check("invalid-value message lists allowed values", "cognito" in msg and "okta" in msg and "auth0" in msg)
 
     # --- set_idp_provider: explicit value ---
     ssm = FakeSSM()
