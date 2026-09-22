@@ -16,7 +16,7 @@ The Event-Driven Claims Agent is an insurance claims processor built on Amazon B
 ## Prerequisites
 
 - AWS Account with Bedrock model access (Claude Sonnet 4)
-- AgentCore CLI (`agentcore --version` ≥ 1.0.0-preview.13)
+- AgentCore CLI 0.30.0 (`npm install -g @aws/agentcore@0.30.0`; verify with `agentcore --version`)
 - Node.js 18+ (for CDK)
 - Docker or Finch (for container builds)
 - Python 3.12+ with uv
