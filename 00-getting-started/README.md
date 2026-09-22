@@ -74,6 +74,7 @@ agentcore create \
   --name CustomerSupport \
   --framework Strands \
   --model-provider Bedrock \
+  --memory none \
   --defaults
 ```
 
