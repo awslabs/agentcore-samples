@@ -74,7 +74,7 @@ print_summary(
 )
 
 # ── Step 3: Verify Instruments and Create Per-Agent Sessions ──────────────────
-from bedrock_agentcore.payments import PaymentManager  # noqa: E402
+from bedrock_agentcore.payments import PaymentManager
 
 manager = PaymentManager(payment_manager_arn=PAYMENT_MANAGER_ARN, region_name=REGION)
 
@@ -107,15 +107,14 @@ print_summary(
 )
 
 # ── Step 4: Create Plugins and Agents ─────────────────────────────────────────
-from strands import Agent  # noqa: E402
-from strands.models import BedrockModel  # noqa: E402
-from strands.tools import tool  # noqa: E402
-from strands_tools import http_request  # noqa: E402
-
-from bedrock_agentcore.payments.integrations.strands import (  # noqa: E402
+from bedrock_agentcore.payments.integrations.strands import (
     AgentCorePaymentsPlugin,
     AgentCorePaymentsPluginConfig,
 )
+from strands import Agent
+from strands.models import BedrockModel
+from strands.tools import tool
+from strands_tools import http_request
 
 research_plugin = AgentCorePaymentsPlugin(
     config=AgentCorePaymentsPluginConfig(
@@ -300,8 +299,8 @@ def research_agent_tool(task: str) -> str:
     try:
         result = tiny_research_agent(task)
         return result.message.get("content", [{}])[0].get("text", str(result))
-    except Exception as e:
-        return f"PAYMENT FAILED — budget exhausted. Error: {str(e)}"
+    except Exception as e:  # noqa: BLE001 - surfaced to the agent as a tool result
+        return f"PAYMENT FAILED — budget exhausted. Error: {e!s}"
 
 
 @tool
