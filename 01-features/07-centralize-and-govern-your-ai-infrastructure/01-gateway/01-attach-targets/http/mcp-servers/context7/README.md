@@ -33,7 +33,7 @@ Path-based routing forwards `{GATEWAY_URL}/{targetName}/{path}` to `https://mcp.
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Node.js >= 22.7.5
-- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore`
+- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md)
 - Optional: a [Context7 API key](https://context7.com/docs/howto/api-keys) (`ctx7sk-...`) for higher rate limits

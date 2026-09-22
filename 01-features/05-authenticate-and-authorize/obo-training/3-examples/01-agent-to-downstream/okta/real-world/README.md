@@ -87,7 +87,7 @@ The Strands agent is deployed via the Node.js AgentCore CLI (`agentcore create`,
 | **Node.js 20+** | AgentCore CLI (`@aws/agentcore`) is a Node CLI | `brew install node` / nvm |
 | **AWS CLI v2** | Credentials, bootstrap verification | [docs](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | **AWS CDK CLI** | AgentCore CLI deploys via CDK under the hood | `npm install -g aws-cdk` |
-| **AgentCore CLI** | Scaffolds + deploys the Runtime | `npm install -g @aws/agentcore` |
+| **AgentCore CLI** | Scaffolds + deploys the Runtime | `npm install -g @aws/agentcore@0.30.0` |
 
 > Uninstall the deprecated `bedrock-agentcore-starter-toolkit` Python CLI first if it's on your system — it shadows the new Node CLI: `pip uninstall bedrock-agentcore-starter-toolkit` (or `pipx uninstall` / `uv tool uninstall` depending on how you installed it).
 
@@ -140,7 +140,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Node.js AgentCore CLI (if not already installed from the Entra variant)
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### 4. Create AgentCore Identity resources

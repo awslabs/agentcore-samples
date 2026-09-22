@@ -40,7 +40,7 @@ permissions), complete these in a normal terminal first.
 | AWS account with AgentCore payments preview access | `aws sts get-caller-identity` must succeed |
 | Supported region | See [AgentCore supported regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html) (payments row) |
 | Node.js 20+ | `node --version` |
-| AgentCore CLI >= 0.20 | `npm install -g @aws/agentcore` (npm, **not** pip) |
+| AgentCore CLI >= 0.20 | `npm install -g @aws/agentcore@0.30.0` (npm, **not** pip) |
 | Python 3.10+ | `python3 --version` (macOS/Linux) or `python --version` (Windows) |
 
 **Verify the CLI.** `agentcore --version` must print a version (e.g. `0.22.0`).

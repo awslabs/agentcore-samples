@@ -409,7 +409,11 @@ print("Deployment to AgentCore Runtime (optional)")
 print("=" * 60)
 print("""
 # Install AgentCore CLI
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \\
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\\.' \\
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 # Create project
 agentcore create --name PaymentOrchestrator --defaults

@@ -79,9 +79,13 @@ Management / ProcessPayment / ResourceRetrieval **4-role separation**, see the b
   pip install -r requirements.txt
   ```
 - **AgentCore CLI** (Node.js 20+) — this tutorial runs `agentcore` commands. These tutorials were
-  validated against the 1.0.0-preview line; run `agentcore --version` to check yours:
+  validated against the 1.0.0-preview line and have not been re-verified on `0.30.0`; run `agentcore --version` to check yours:
   ```bash
-  npm install -g @aws/agentcore
+  npm install -g @aws/agentcore@0.30.0
+  node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+    || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+  agentcore --version | grep -q '^0\.' \
+    || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
   ```
 - **Wallet-provider credentials in `../.env`** — captured in Step 1 by running one of the
   `providers/*_account_setup.py` scripts. Coinbase CDP needs `COINBASE_API_KEY_ID`,
@@ -332,7 +336,7 @@ print(f"balance: {micro / 1_000_000:.2f} USDC")
 
 | Error | Cause | Fix |
 |---|---|---|
-| `agentcore: command not found` | CLI not installed | `npm install -g @aws/agentcore` |
+| `agentcore: command not found` | CLI not installed | `npm install -g @aws/agentcore@0.30.0` |
 | `add payment-connector` fails on a missing credential | Required provider flag not provided | Re-check the credential keys in `../.env`; re-run with all flags |
 | Payment Manager stuck in `CREATING` | IAM propagation | Wait ~2 min; if `CREATE_FAILED`, check the service role |
 | Instrument status stays `CREATING` | Wallet provisioning is async | Ensure `LINKED_EMAIL` is a real address; keep polling |

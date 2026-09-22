@@ -284,14 +284,14 @@ XAA (ID-JAG) flow complete.
 ## Deploy the agent to AgentCore Runtime (agentcore CLI)
 
 Deployed with the Node-based [AgentCore CLI](https://github.com/aws/agentcore-cli)
-(`@aws/agentcore`, v0.25.x — *not* the deprecated `bedrock-agentcore-starter-toolkit`).
+(`@aws/agentcore`, v0.30.0 — *not* the deprecated `bedrock-agentcore-starter-toolkit`).
 The runtime's **inbound** auth is a `CUSTOM_JWT` authorizer trusting your Okta
 **org** server, with `allowedAudience` = the **login app** id (the invoking ID
 token's `aud`). The agent reads the ID token from the invoke payload (`id_token`)
 or the allow-listed `Authorization` header, then drives the two-leg ID-JAG
 exchange as the AI Agent (`OKTA_CLIENT_ID`).
 
-Prerequisites: Node 20+, `uv`, AWS CLI, `npm install -g @aws/agentcore aws-cdk`,
+Prerequisites: Node 20+, `uv`, AWS CLI, `npm install -g @aws/agentcore@0.30.0 aws-cdk`,
 `cdk bootstrap` once per account/region, and Bedrock model access.
 
 **1. Host the resource app** so the runtime can reach it. This sample runs it on

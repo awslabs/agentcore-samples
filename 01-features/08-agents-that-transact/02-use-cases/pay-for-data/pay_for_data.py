@@ -16,7 +16,7 @@ Usage:
 
 Prerequisites:
     - cp .env.sample .env        (fill in CDP credentials and IAM role ARNs)
-    - npm install -g @aws/agentcore
+    - npm install -g @aws/agentcore@0.30.0
     - AWS CDK v2 installed
 
 Subsequent runs (skip provisioning):

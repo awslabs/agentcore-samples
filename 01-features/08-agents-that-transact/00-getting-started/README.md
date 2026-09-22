@@ -40,7 +40,11 @@ commands and Python snippets yourself and learn each piece as you go.
 1. **Install the tools once:**
    ```bash
    pip install -r 00-setup-agentcore-payments/requirements.txt
-   npm install -g @aws/agentcore          # AgentCore CLI (Node.js 20+)
+   npm install -g @aws/agentcore@0.30.0          # AgentCore CLI (Node.js 20+)
+   node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+     || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+   agentcore --version | grep -q '^0\.' \
+     || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
    ```
 2. **Open [Tutorial 00 — Set Up AgentCore payments](00-setup-agentcore-payments/)** and follow it end
    to end. You'll capture wallet-provider credentials, provision the shared payment stack with the
@@ -97,7 +101,7 @@ MPP Tutorial is coming soon !
 - Python 3.10+ and AWS CLI configured (`aws sts get-caller-identity`)
 - AWS account with access to AgentCore payments, in a supported region: `us-east-1`, `us-west-2`,
   `eu-central-1`, `ap-southeast-2`
-- Node.js 20+ and the AgentCore CLI (`npm install -g @aws/agentcore`) for Tutorials 00, 02, 04, 07
+- Node.js 20+ and the AgentCore CLI (`npm install -g @aws/agentcore@0.30.0`) for Tutorials 00, 02, 04, 07
 - Wallet-provider credentials (Coinbase CDP or Stripe/Privy) — captured in Tutorial 00
 
 ## Cleanup

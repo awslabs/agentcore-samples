@@ -93,7 +93,7 @@ sees the final `200`.
   pip install -r requirements.txt
   ```
 - **AgentCore CLI (optional)** — only needed for the inspect step below
-  (`agentcore status --type payment`). Install with `npm install -g @aws/agentcore` (Node.js 20+).
+  (`agentcore status --type payment`). Install with `npm install -g @aws/agentcore@0.30.0` (Node.js 20+).
   Everything the agents do in this tutorial is pure SDK.
 
 ## Walkthrough
@@ -269,7 +269,7 @@ print(bal["tokenBalance"]["amount"] / 1_000_000, "USDC")   # micro-USDC → USDC
 | Agent gets 402 but payment fails | Delegated signing not granted for the wallet | Coinbase CDP: enable Delegated Signing in CDP Portal → Wallets → Embedded Wallet → Policies. Stripe/Privy: open the Privy reference frontend at `http://localhost:3000`, log in as `LINKED_EMAIL`, choose **Connect agent** |
 | Budget exceeded immediately | Session budget below API cost, or wallet has insufficient USDC | Expected for the $0.0001 demo; otherwise fund the wallet at [faucet.circle.com](https://faucet.circle.com/) |
 | `invalid_exact_evm_transaction_failed` / settlement failure | Transient on-chain failure (e.g. back-to-back payments) | Retry — funds are not debited on a failed attempt |
-| `agentcore: command not found` | CLI not installed (only needed for the inspect step) | `npm install -g @aws/agentcore` |
+| `agentcore: command not found` | CLI not installed (only needed for the inspect step) | `npm install -g @aws/agentcore@0.30.0` |
 | OpenAI model request is denied | GPT-5.5 is unavailable in the selected region or AWS credentials are expired | Refresh AWS authentication and check `BEDROCK_OPENAI_MODEL_REGION` / `BEDROCK_OPENAI_MODEL_ID` |
 
 ## Clean Up

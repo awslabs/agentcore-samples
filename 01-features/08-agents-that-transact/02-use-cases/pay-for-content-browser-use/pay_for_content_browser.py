@@ -17,7 +17,7 @@ Usage:
 Prerequisites:
     - bash setup_roles.sh        (creates the four IAM roles — once per account)
     - cp .env.sample .env        (fill in CDP credentials, role ARNs, CONTENT_DISTRIBUTION_URL)
-    - npm install -g @aws/agentcore
+    - npm install -g @aws/agentcore@0.30.0
     - AWS CDK v2 installed
     - Content provider deployed: cd content-provider && PAY_TO=0x<wallet> bash deploy.sh
       then set CONTENT_DISTRIBUTION_URL in .env to the printed CloudFront URL

@@ -102,7 +102,7 @@ discovery document, so `CreateConsentPortal` rejects it as a primary IdP.
 | :--- | :--- |
 | Python 3.10+ | The scripts and the BFF |
 | **boto3/botocore ≥ 1.43.88** | First release whose `bedrock-agentcore-control` model carries the consent-portal operations. On anything older every call fails with `'BedrockAgentCoreControlPlaneFrontingLayer' object has no attribute 'create_consent_portal'`, which reads like a missing feature rather than a stale SDK. The scripts check and tell you. |
-| Node.js 20+ and `@aws/agentcore` (`npm install -g @aws/agentcore`) | Deploys the runtime |
+| Node.js 20+ and `@aws/agentcore` (`npm install -g @aws/agentcore@0.30.0`) | Deploys the runtime |
 | AWS CDK 2.x (`npm install -g aws-cdk@2`) + a bootstrapped account | The AgentCore CLI deploys through CDK |
 | AWS CLI v2, one credential source | Ambiguous credentials are a common source of confusing failures |
 
