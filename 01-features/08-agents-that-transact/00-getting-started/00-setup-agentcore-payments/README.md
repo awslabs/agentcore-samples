@@ -135,6 +135,12 @@ cd PaymentSetup
 agentcore add payment-manager --name MyPaymentManager --auto-payment true --default-spend-limit 1.00
 ```
 
+> **`add payment-manager` defaults to auto-payment ON with a $10.00 spend cap.** If you omit
+> `--auto-payment` and `--default-spend-limit`, the CLI defaults to `--auto-payment true` and
+> `--default-spend-limit 10.00`. This command explicitly lowers that cap to `1.00` for the tutorial —
+> when adapting this command for your own project, set `--default-spend-limit` deliberately rather
+> than relying on the $10 default.
+
 Add a payment connector for the provider you chose in Step 1 — run **one** of these:
 
 ```bash
