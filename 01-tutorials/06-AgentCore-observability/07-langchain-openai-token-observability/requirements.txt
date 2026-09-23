@@ -1,0 +1,11 @@
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+aws-opentelemetry-distro>=0.10.0
+opentelemetry-instrumentation-langchain==0.48.1
+opentelemetry-semantic-conventions-ai>=0.4.1
+langchain>=0.3.7
+langchain-openai
+langchain-core
+langgraph
+numpy>=2.0.0
+requests
