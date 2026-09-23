@@ -90,15 +90,24 @@ npm run test:integration
 ## Deploying to AWS
 
 ```bash
+npm ci                                # CDK deps live in the infra workspace
 cd infra && npx cdk deploy            # Gateway + Lambda target + roles + ECR
 cd .. && ./deploy.sh                  # push arm64 image, create/update 3 runtimes
 
-# End-to-end against the deployed stack:
+# End-to-end against the deployed stack (deploy.sh prints the ARNs):
 ./invoke.sh <lead-runtime-arn> \
   'orders-api latency spiked after the 14:00 deploy — what happened?'
 ```
 
 Deployed topology: the lead's A2A calls go through SigV4-signed `InvokeAgentRuntime` URLs (derived from the worker runtime ARNs), and the runbook worker reaches the real Gateway through the in-process SigV4 MCP proxy. The same agent code runs in all three modes (local processes, docker compose, deployed).
+
+To confirm a worker really came up on the A2A protocol path:
+
+```bash
+aws bedrock-agentcore-control get-agent-runtime \
+  --agent-runtime-id <worker-runtime-id> --query protocolConfiguration
+# {"serverProtocol": "A2A"}
+```
 
 ## Sample prompts
 
@@ -149,6 +158,15 @@ The lead agent exposes `delegate_to_log_analyst` and `delegate_to_runbook` as in
 ### Observability: the delegation trail
 
 Every component emits one-line, greppable `[a2a]` log entries (delegation sent/answered on the lead; RPC received, tool calls, task result on workers). Filter any agent's CloudWatch log group on `[a2a]` to reconstruct an invocation end to end. Log lines include truncated prompt/response content — set `A2A_LOG_CONTENT=0` to log metadata only.
+
+Deployed, each runtime logs to `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`:
+
+```bash
+aws logs tail /aws/bedrock-agentcore/runtimes/<worker-runtime-id>-DEFAULT --since 15m \
+  | grep '\[a2a\]'
+```
+
+A healthy worker shows `executor task.received` (with the `sessionId` the lead propagated), any `tool.call` lines, then `executor task.result`. Locally the trail is the same, minus `sessionId` — nothing sets the runtime session header outside AgentCore.
 
 ## Repository layout
 
