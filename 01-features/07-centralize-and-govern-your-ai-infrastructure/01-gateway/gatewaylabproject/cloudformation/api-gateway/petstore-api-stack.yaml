@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Sample PetStore REST API for AgentCore Gateway API Gateway target tutorial. Mock integrations with IAM (SigV4) and API Key authorization.'
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+    Description: 'API Gateway deployment stage name'
+
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${AWS::StackName}-petstore'
+      Description: 'Sample PetStore API for AgentCore Gateway integration'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Body:
+        openapi: '3.0.1'
+        info:
+          title: !Sub '${AWS::StackName}-petstore'
+          description: 'Sample PetStore API for AgentCore Gateway integration'
+          version: '1.0'
+        paths:
+          /pets:
+            get:
+              operationId: ListPets
+              summary: List all available pets
+              parameters:
+                - name: type
+                  in: query
+                  schema:
+                    type: string
+                - name: page
+                  in: query
+                  schema:
+                    type: string
+              responses:
+                '200':
+                  description: 200 response
+                  content:
+                    application/json:
+                      schema:
+                        type: array
+              security:
+                - sigv4: []
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: '[{"id":1,"type":"dog","price":249.99},{"id":2,"type":"cat","price":124.99},{"id":3,"type":"fish","price":0.99}]'
+            post:
+              operationId: AddPet
+              summary: Add a new pet
+              responses:
+                '200':
+                  description: 200 response
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+              security:
+                - sigv4: []
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: '{"message":"Pet added successfully","id":4}'
+          /pets/{petId}:
+            get:
+              operationId: GetPetById
+              summary: Get pet by ID
+              parameters:
+                - name: petId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+              responses:
+                '200':
+                  description: 200 response
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+              security:
+                - sigv4: []
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: '{"id":3,"type":"fish","price":0.99,"available":true}'
+          /orders/{orderId}:
+            get:
+              operationId: GetOrderById
+              summary: Get order details by ID
+              parameters:
+                - name: orderId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+              responses:
+                '200':
+                  description: 200 response
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: '{"orderId":"2","status":"shipped","estimatedDelivery":"2025-06-15","items":[{"petId":1,"quantity":1}]}'
+              x-amazon-apigateway-api-key-source: HEADER
+        components:
+          securitySchemes:
+            sigv4:
+              type: apiKey
+              name: Authorization
+              in: header
+              x-amazon-apigateway-authtype: awsSigv4
+            api_key:
+              type: apiKey
+              name: x-api-key
+              in: header
+
+  Deployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref RestApi
+
+  Stage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      StageName: !Ref StageName
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref Deployment
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: Stage
+    Properties:
+      Name: !Sub '${AWS::StackName}-api-key'
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref RestApi
+          StageName: !Ref StageName
+
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: Stage
+    Properties:
+      UsagePlanName: !Sub '${AWS::StackName}-usage-plan'
+      ApiStages:
+        - ApiId: !Ref RestApi
+          Stage: !Ref StageName
+      Throttle:
+        BurstLimit: 10
+        RateLimit: 5
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref UsagePlan
+
+Outputs:
+  RestApiId:
+    Description: 'API Gateway REST API ID'
+    Value: !Ref RestApi
+    Export:
+      Name: !Sub '${AWS::StackName}-RestApiId'
+
+  InvokeUrl:
+    Description: 'API Gateway invoke URL'
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
+
+  ApiKeyId:
+    Description: 'API Key ID'
+    Value: !Ref ApiKey
+
+  ApiKeyRetrieveCommand:
+    Description: 'Run this to retrieve the API key value'
+    Value: !Sub |
+      aws apigateway get-api-key --api-key ${ApiKey} --include-value --query 'value' --output text
+
+  UsagePlanId:
+    Description: 'Usage Plan ID'
+    Value: !Ref UsagePlan
+
+  StageName:
+    Description: 'Deployed stage name'
+    Value: !Ref StageName

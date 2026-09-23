@@ -1,0 +1,5 @@
+# Development/testing dependencies
+pytest>=7.4
+pytest-cov>=4.1
+boto3>=1.43
+botocore>=1.34

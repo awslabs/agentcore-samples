@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Financial Analyst Agent</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0c0b;
+      --surface:  #171512;
+      --panel:    #1e1b17;
+      --sidebar:  #0a0908;
+      --border:   #2d2924;
+      --border2:  #3d3830;
+      --text:     #e8e3d8;
+      --muted:    #7c7266;
+      --accent:   #d97706;
+      --accent2:  #f59e0b;
+      --gold:     #f59e0b;
+      --green:    #10b981;
+      --amber:    #f59e0b;
+      --red:      #ef4444;
+      --user-bg:  #281e0c;
+      --ai-bg:    #131210;
+      --radius:   12px;
+      --mono:     'DM Mono', monospace;
+      --serif:    'Fraunces', serif;
+      --sidebar-w: 260px;
+    }
+
+    html, body, #root {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    /* ── LOGIN ── */
+    .login-root {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+    }
+    .login-root::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 20% 80%, rgba(217,119,6,0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 80% 20%, rgba(245,158,11,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .login-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(45,41,36,0.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45,41,36,0.35) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+    .login-card {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      padding: 48px 40px;
+      background: #252018;
+      border: 1px solid #3d3528;
+      border-radius: 16px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(217,119,6,0.08);
+    }
+    .login-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    .login-logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #92400e, #d97706);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .login-title {
+      font-family: var(--serif);
+      font-size: 20px; font-weight: 400;
+      color: var(--text); letter-spacing: -0.02em; line-height: 1.2;
+    }
+    .login-subtitle {
+      font-size: 11px; color: #c8b89a;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px;
+    }
+    .login-heading {
+      font-family: var(--serif);
+      font-size: 28px; font-weight: 300;
+      color: var(--text); margin-bottom: 8px;
+      letter-spacing: -0.03em; font-style: italic;
+    }
+    .login-desc { font-size: 12px; color: #c8b89a; margin-bottom: 32px; }
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 11px; color: #c8b89a;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px;
+    }
+    .field input {
+      width: 100%; padding: 12px 14px;
+      background: #1a1510; border: 1px solid #3d3528;
+      border-radius: 8px; color: var(--text);
+      font-family: var(--mono); font-size: 13px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,119,6,0.14); }
+    .field input::placeholder { color: #8a7a6a; }
+    .login-btn {
+      width: 100%; padding: 13px; margin-top: 8px;
+      background: var(--accent); border: none; border-radius: 8px;
+      color: #fff; font-family: var(--mono); font-size: 13px;
+      font-weight: 500; cursor: pointer; letter-spacing: 0.04em;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .login-btn:hover:not(:disabled) { background: var(--accent2); box-shadow: 0 4px 20px rgba(217,119,6,0.35); }
+    .login-btn:active:not(:disabled) { transform: translateY(1px); }
+    .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .login-error {
+      margin-top: 12px; padding: 10px 12px;
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25);
+      border-radius: 6px; font-size: 12px; color: #fca5a5;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 16px;
+    }
+    .sidebar-logo-icon {
+      width: 26px; height: 26px;
+      background: linear-gradient(135deg, #92400e, #d97706);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; flex-shrink: 0;
+    }
+    .sidebar-title {
+      font-family: var(--serif);
+      font-size: 13px; font-weight: 400;
+      font-style: italic; letter-spacing: -0.01em;
+      color: var(--text); line-height: 1.3;
+    }
+    .new-chat-btn {
+      width: 100%; padding: 9px 12px;
+      background: rgba(217,119,6,0.1);
+      border: 1px solid rgba(217,119,6,0.22);
+      border-radius: 8px;
+      color: var(--accent2);
+      font-family: var(--mono); font-size: 12px;
+      cursor: pointer; text-align: left;
+      display: flex; align-items: center; gap: 8px;
+      transition: background 0.15s, border-color 0.15s;
+      letter-spacing: 0.02em;
+    }
+    .new-chat-btn:hover {
+      background: rgba(217,119,6,0.16);
+      border-color: rgba(217,119,6,0.38);
+    }
+    .sidebar-section-label {
+      font-size: 10px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 14px 16px 6px;
+      flex-shrink: 0;
+    }
+    .sidebar-sessions {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px 12px;
+    }
+    .session-item {
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+      margin-bottom: 2px;
+    }
+    .session-item:hover { background: rgba(255,255,255,0.04); }
+    .session-item.active { background: rgba(217,119,6,0.1); }
+    .session-item-q {
+      font-size: 12px; color: var(--text);
+      line-height: 1.4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .session-item.active .session-item-q { color: var(--accent2); }
+    .session-item-meta {
+      font-size: 10px; color: var(--muted);
+      margin-top: 2px;
+    }
+    .sidebar-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-user {
+      font-size: 11px; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+    .logout-btn {
+      width: 100%; padding: 7px 10px;
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--muted);
+      font-family: var(--mono); font-size: 11px;
+      cursor: pointer; letter-spacing: 0.05em;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .logout-btn:hover { border-color: var(--border2); color: var(--text); }
+
+    /* ── CHAT AREA ── */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      height: 52px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .header-left {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .header-title {
+      font-family: var(--serif);
+      font-size: 15px; font-weight: 400;
+      font-style: italic; letter-spacing: -0.02em;
+      color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 420px;
+    }
+    .header-tag {
+      font-size: 10px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      border: 1px solid var(--border2); padding: 2px 7px; border-radius: 20px;
+      flex-shrink: 0;
+    }
+
+    /* ── MESSAGES ── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 28px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      flex: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px; color: var(--muted);
+      text-align: center; padding: 40px;
+    }
+    .empty-icon { font-size: 40px; opacity: 0.4; margin-bottom: 4px; }
+    .empty-title {
+      font-family: var(--serif);
+      font-size: 20px; font-weight: 300; font-style: italic;
+      color: var(--text); opacity: 0.6;
+    }
+    .empty-hint { font-size: 12px; color: var(--muted); max-width: 360px; line-height: 1.7; }
+    .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+    .suggestion-chip {
+      padding: 8px 14px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 20px; font-size: 12px; color: var(--muted);
+      cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .suggestion-chip:hover { border-color: var(--accent); color: var(--accent2); background: rgba(217,119,6,0.07); }
+
+    /* ── MESSAGE ROWS ── */
+    .msg-row {
+      display: flex; gap: 12px;
+      max-width: 800px;
+      animation: fadeUp 0.25s ease both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg-row.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg-row.ai   { align-self: flex-start; }
+
+    .avatar {
+      width: 30px; height: 30px; border-radius: 8px;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; margin-top: 2px;
+    }
+    .avatar.ai-avatar   { background: linear-gradient(135deg, #1a1208, #92400e); border: 1px solid #3d2b0a; }
+    .avatar.user-avatar { background: var(--user-bg); border: 1px solid #3d2b0a; font-size: 11px; font-weight: 500; color: var(--accent2); }
+
+    .bubble {
+      padding: 12px 16px; border-radius: var(--radius);
+      max-width: 660px; line-height: 1.7; font-size: 13.5px;
+    }
+    .bubble.user-bubble {
+      background: var(--user-bg); border: 1px solid #3d2b0a;
+      border-radius: var(--radius) 4px var(--radius) var(--radius); color: #fde68a;
+    }
+    .bubble.ai-bubble {
+      background: var(--ai-bg); border: 1px solid var(--border);
+      border-radius: 4px var(--radius) var(--radius) var(--radius); color: var(--text);
+    }
+
+    /* ── MARKDOWN ── */
+    .bubble.ai-bubble p { margin-bottom: 10px; }
+    .bubble.ai-bubble p:last-child { margin-bottom: 0; }
+    .bubble.ai-bubble strong { color: var(--accent2); font-weight: 500; }
+    .bubble.ai-bubble em { color: var(--muted); font-style: italic; }
+    .bubble.ai-bubble ul, .bubble.ai-bubble ol { margin: 8px 0 10px 20px; }
+    .bubble.ai-bubble li { margin-bottom: 4px; }
+    .bubble.ai-bubble h1, .bubble.ai-bubble h2, .bubble.ai-bubble h3 {
+      font-family: var(--serif); font-weight: 400; font-style: italic;
+      color: var(--text); margin: 16px 0 8px; letter-spacing: -0.02em;
+    }
+    .bubble.ai-bubble h2 { font-size: 17px; }
+    .bubble.ai-bubble h3 { font-size: 15px; }
+    .bubble.ai-bubble code {
+      font-family: var(--mono); font-size: 12px;
+      background: rgba(217,119,6,0.1); border: 1px solid rgba(217,119,6,0.18);
+      padding: 1px 6px; border-radius: 4px; color: var(--accent2);
+    }
+    .bubble.ai-bubble pre {
+      background: #0d0b09; border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px; overflow-x: auto; margin: 10px 0;
+    }
+    .bubble.ai-bubble pre code { background: none; border: none; padding: 0; color: #94a3b8; }
+    .bubble.ai-bubble table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; }
+    .bubble.ai-bubble thead tr { border-bottom: 1px solid var(--border2); }
+    .bubble.ai-bubble th {
+      text-align: left; padding: 8px 12px;
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); font-weight: 500;
+    }
+    .bubble.ai-bubble td {
+      padding: 9px 12px; border-bottom: 1px solid rgba(45,41,36,0.6);
+      color: var(--text); vertical-align: middle;
+    }
+    .bubble.ai-bubble tr:last-child td { border-bottom: none; }
+    .bubble.ai-bubble tr:hover td { background: rgba(217,119,6,0.04); }
+
+    /* ── STEPS PANEL ── */
+    .thinking-row {
+      display: flex; gap: 12px;
+      align-self: flex-start; max-width: 800px;
+      animation: fadeUp 0.25s ease both;
+    }
+    .steps-panel {
+      background: var(--ai-bg); border: 1px solid var(--border);
+      border-radius: 4px var(--radius) var(--radius) var(--radius);
+      padding: 14px 16px; min-width: 320px; max-width: 660px;
+    }
+    .steps-header {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--muted);
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px;
+    }
+    .steps-spinner {
+      width: 10px; height: 10px;
+      border: 1.5px solid var(--border2); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── PIPELINE VISUALIZATION ── */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .pipeline-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+      opacity: 0.28;
+      transition: opacity 0.3s ease;
+      min-width: 46px;
+    }
+    .pipeline-stage.active  { opacity: 1; }
+    .pipeline-stage.done    { opacity: 0.65; }
+    .pipeline-stage-icon { font-size: 15px; }
+    .pipeline-stage-label {
+      font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); text-align: center;
+    }
+    .pipeline-stage.active  .pipeline-stage-label { color: var(--accent2); }
+    .pipeline-stage.done    .pipeline-stage-label { color: var(--green); }
+    .pipeline-connector {
+      flex: 1; height: 1px; min-width: 12px; max-width: 28px;
+      background: var(--border2);
+      margin-bottom: 13px;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .pipeline-connector.done { background: var(--green); opacity: 0.5; }
+    .pipeline-connector.active { background: var(--accent); }
+
+    /* ── STEP ITEMS ── */
+    .step-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: var(--muted);
+      padding: 5px 0; border-bottom: 1px solid rgba(45,41,36,0.5);
+      line-height: 1.5; animation: fadeUp 0.2s ease both;
+    }
+    .step-item:last-child { border-bottom: none; }
+    .step-item.current { color: var(--text); }
+    .step-item.done { color: #6ee7b7; opacity: 0.8; }
+    .step-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+      font-weight: 500; flex-shrink: 0; margin-top: 1px;
+    }
+    .step-badge-auth     { background: rgba(217,119,6,0.15);  color: #fbbf24; border: 1px solid rgba(217,119,6,0.25); }
+    .step-badge-registry { background: rgba(167,139,250,0.12); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.22); }
+    .step-badge-skill    { background: rgba(232,121,249,0.12); color: #f0abfc; border: 1px solid rgba(232,121,249,0.22); }
+    .step-badge-mcp      { background: rgba(52,211,153,0.12);  color: #6ee7b7; border: 1px solid rgba(52,211,153,0.22); }
+    .step-badge-bedrock  { background: rgba(96,165,250,0.12);  color: #93c5fd; border: 1px solid rgba(96,165,250,0.22); }
+    .step-badge-exec     { background: rgba(251,146,60,0.12);  color: #fdba74; border: 1px solid rgba(251,146,60,0.22); }
+    .step-badge-default  { background: rgba(148,163,184,0.1);  color: #94a3b8; border: 1px solid rgba(148,163,184,0.18); }
+    .step-text { flex: 1; }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted);
+      animation: pulse 1.4s ease-in-out infinite;
+      display: inline-block;
+    }
+    @keyframes pulse {
+      0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+      30% { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── INPUT BAR ── */
+    .input-area {
+      padding: 14px 24px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+    }
+    .input-bar {
+      display: flex; align-items: flex-end; gap: 10px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 10px 14px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .input-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,119,6,0.12); }
+    .input-bar textarea {
+      flex: 1; background: none; border: none; outline: none;
+      color: var(--text); font-family: var(--mono); font-size: 13.5px;
+      resize: none; line-height: 1.6; max-height: 160px; min-height: 22px;
+      overflow-y: auto;
+    }
+    .input-bar textarea::placeholder { color: var(--muted); }
+    .send-btn {
+      width: 34px; height: 34px;
+      background: var(--accent); border: none; border-radius: 8px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background 0.15s, transform 0.1s; color: #fff;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent2); }
+    .send-btn:active:not(:disabled) { transform: scale(0.95); }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .send-btn svg { width: 16px; height: 16px; }
+    .input-hint {
+      text-align: center; font-size: 10px; color: var(--muted);
+      margin-top: 8px; letter-spacing: 0.04em; opacity: 0.6;
+    }
+
+    /* ── STATUS BADGES ── */
+    .status-green {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3);
+      color: #34d399; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
+    }
+    .status-amber {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3);
+      color: #fbbf24; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
+    }
+    .status-red {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
+      color: #f87171; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
+    }
+
+    /* ── REGISTRY SEARCH RESULTS PANEL ── */
+    .search-panel {
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .search-panel-header {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .search-panel-query {
+      font-size: 11px; color: #c8b89a; margin-bottom: 10px;
+      padding: 5px 9px;
+      background: rgba(217,119,6,0.06); border: 1px solid rgba(217,119,6,0.12);
+      border-radius: 5px; font-style: italic;
+    }
+    .search-panel-query::before { content: '"'; }
+    .search-panel-query::after  { content: '"'; }
+
+    .candidate-list { display: flex; flex-direction: column; gap: 4px; }
+    .candidate-row {
+      display: flex; align-items: flex-start; gap: 7px;
+      padding: 6px 8px; border-radius: 6px;
+      transition: background 0.12s;
+      border: 1px solid transparent;
+    }
+    .candidate-row.selected {
+      background: rgba(217,119,6,0.07);
+      border-color: rgba(217,119,6,0.18);
+    }
+    .candidate-row:not(.selected) { opacity: 0.65; }
+    .candidate-rank {
+      font-size: 9px; color: var(--muted); min-width: 14px;
+      padding-top: 2px; text-align: right; flex-shrink: 0;
+    }
+    .candidate-row.selected .candidate-rank { color: var(--accent2); }
+    .candidate-type-badge {
+      display: inline-flex; align-items: center;
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 9px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .type-agent-skills { background: rgba(232,121,249,0.12); color: #f0abfc; border: 1px solid rgba(232,121,249,0.22); }
+    .type-mcp          { background: rgba(52,211,153,0.12);  color: #6ee7b7; border: 1px solid rgba(52,211,153,0.22); }
+    .type-a2a          { background: rgba(96,165,250,0.12);  color: #93c5fd; border: 1px solid rgba(96,165,250,0.22); }
+    .type-custom       { background: rgba(148,163,184,0.1);  color: #94a3b8; border: 1px solid rgba(148,163,184,0.18); }
+    .candidate-info { flex: 1; min-width: 0; }
+    .candidate-name {
+      font-size: 12px; color: var(--text); font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .candidate-row.selected .candidate-name { color: var(--accent2); }
+    .candidate-desc {
+      font-size: 10.5px; color: var(--muted); line-height: 1.4; margin-top: 2px;
+    }
+    .candidate-tools-row {
+      margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;
+      align-items: center;
+    }
+    .candidate-tools-label {
+      font-size: 9px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .tool-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 1px 7px; border-radius: 3px;
+      font-size: 9.5px; font-family: var(--mono);
+      background: rgba(52,211,153,0.08); color: #6ee7b7;
+      border: 1px solid rgba(52,211,153,0.18);
+    }
+    .selected-check {
+      font-size: 10px; color: var(--accent2); flex-shrink: 0; padding-top: 2px;
+    }
+
+    /* ── SUGGESTION GROUPS ── */
+    .sugg-group { margin-top: 12px; text-align: left; width: 100%; max-width: 600px; }
+    .sugg-group-label {
+      font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 7px; padding-left: 2px; display: flex; align-items: center; gap: 5px;
+    }
+    .sugg-group-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .sugg-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const CHAT_STREAM_URL = "/chat/stream";
+const MODEL_DISPLAY   = "Claude Sonnet 4.6 (us-east-1 cross-region)";
+const COGNITO_POOL    = "<YOUR_COGNITO_POOL_ID>";
+const COGNITO_REGION  = "us-east-1";
+const COGNITO_CLIENT_ID = "<YOUR_COGNITO_APP_CLIENT_ID>";
+// ───────────────────────────────────────────────────────────────────────────
+
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ── Cognito auth ──────────────────────────────────────────────────────────
+async function cognitoLogin(email, password) {
+  const res = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+    },
+    body: JSON.stringify({
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: COGNITO_CLIENT_ID,
+      AuthParameters: { USERNAME: email, PASSWORD: password },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.__type || "Authentication failed");
+  return data.AuthenticationResult.AccessToken;
+}
+
+// ── Markdown → HTML ───────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  let html = marked.parse(text);
+  html = html.replace(/\bGREEN\b/g, '<span class="status-green">● GREEN</span>');
+  html = html.replace(/\bAMBER\b/g, '<span class="status-amber">● AMBER</span>');
+  html = html.replace(/\bRED\b/g,   '<span class="status-red">● RED</span>');
+  return html;
+}
+
+// ── Auto-resize textarea ──────────────────────────────────────────────────
+function useAutoResize(ref) {
+  return useCallback(() => {
+    if (!ref.current) return;
+    ref.current.style.height = "auto";
+    ref.current.style.height = Math.min(ref.current.scrollHeight, 160) + "px";
+  }, [ref]);
+}
+
+// ── Login screen ──────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      const token = await cognitoLogin(email, password);
+      onLogin(token, email);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="login-root">
+      <div className="login-grid" />
+      <div className="login-card">
+        <div className="login-logo">
+          <div className="login-logo-icon">📊</div>
+          <div>
+            <div className="login-title">Financial Analyst Agent</div>
+            <div className="login-subtitle">Powered by Amazon Bedrock</div>
+          </div>
+        </div>
+        <div className="login-heading">Sign in</div>
+        <div className="login-desc">Enter your credentials to access the analyst</div>
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" placeholder="you@company.com" value={email}
+              onChange={e => setEmail(e.target.value)} required autoFocus />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input type="password" placeholder="••••••••" value={password}
+              onChange={e => setPassword(e.target.value)} required />
+          </div>
+          <button className="login-btn" type="submit" disabled={loading}>
+            {loading ? "Authenticating…" : "Sign in →"}
+          </button>
+          {error && <div className="login-error">{error}</div>}
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Step classification ───────────────────────────────────────────────────
+const PIPELINE_STAGES = [
+  { id: "registry", icon: "🔍", label: "Registry" },
+  { id: "skill",    icon: "📦", label: "Skill" },
+  { id: "mcp",      icon: "🛠", label: "MCP" },
+  { id: "bedrock",  icon: "🧠", label: "Bedrock" },
+  { id: "done",     icon: "✅", label: "Done" },
+];
+
+const STAGE_ORDER = PIPELINE_STAGES.map(s => s.id);
+
+function classifyStep(text) {
+  const t = (text || "").toLowerCase();
+  if (t.includes("registry") || t.includes("agentcore") || t.includes("discover") ||
+      t.includes("search") && (t.includes("skill") || t.includes("record")))
+    return { stage: "registry", badge: "step-badge-registry", icon: "🔍", label: "Registry" };
+  if (t.includes("skill") || t.includes("s3") || t.includes("load") ||
+      t.includes("artifact") || t.includes("file") || t.includes("stage"))
+    return { stage: "skill",    badge: "step-badge-skill",    icon: "📦", label: "Skill" };
+  if (t.includes("mcp") || t.includes("get_financial") || t.includes("get_kpi") ||
+      t.includes("financial data") || t.includes("benchmark") || t.includes("tool call") ||
+      t.includes("calling tool") || t.includes("tool result"))
+    return { stage: "mcp",      badge: "step-badge-mcp",      icon: "🛠", label: "MCP Tool" };
+  if (t.includes("python") || t.includes("exec") || t.includes("calculat") ||
+      t.includes("running") || t.includes("compute"))
+    return { stage: "bedrock",  badge: "step-badge-exec",     icon: "⚡", label: "Execute" };
+  if (t.includes("bedrock") || t.includes("claude") || t.includes("model") ||
+      t.includes("generat") || t.includes("analyz") || t.includes("reason") ||
+      t.includes("llm") || t.includes("invoking"))
+    return { stage: "bedrock",  badge: "step-badge-bedrock",  icon: "🧠", label: "Bedrock" };
+  return       { stage: null,   badge: "step-badge-default",  icon: "→",  label: "Step" };
+}
+
+// ── Registry search results panel ────────────────────────────────────────
+const TYPE_LABEL = {
+  AGENT_SKILLS: "Skill",
+  MCP:          "MCP",
+  A2A:          "A2A",
+  CUSTOM:       "Custom",
+};
+const TYPE_CSS = {
+  AGENT_SKILLS: "type-agent-skills",
+  MCP:          "type-mcp",
+  A2A:          "type-a2a",
+  CUSTOM:       "type-custom",
+};
+
+function RegistrySearchPanel({ data }) {
+  const { query, total_found, candidates, selected_skill, mcp_tools } = data;
+  return (
+    <div className="search-panel">
+      <div className="search-panel-header">
+        <span>🔍</span> AWS Agent Registry · Semantic Search
+        <span style={{marginLeft:"auto", color:"#6ee7b7", fontSize:"9px"}}>
+          {total_found} result{total_found !== 1 ? "s" : ""}
+        </span>
+      </div>
+      <div className="search-panel-query">{query}</div>
+      <div className="candidate-list">
+        {candidates.map((c, i) => {
+          const cssClass = TYPE_CSS[c.type] || "type-custom";
+          const label    = TYPE_LABEL[c.type] || c.type;
+          return (
+            <div key={i} className={`candidate-row${c.selected ? " selected" : ""}`}>
+              <div className="candidate-rank">#{i + 1}</div>
+              <span className={`candidate-type-badge ${cssClass}`}>{label}</span>
+              <div className="candidate-info">
+                <div className="candidate-name">{c.name}</div>
+                {c.description && (
+                  <div className="candidate-desc">{c.description}</div>
+                )}
+                {c.selected && mcp_tools && mcp_tools.length > 0 && (
+                  <div className="candidate-tools-row">
+                    <span className="candidate-tools-label">MCP tools declared:</span>
+                    {mcp_tools.map(t => (
+                      <span key={t} className="tool-chip">🔧 {t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {c.selected && <span className="selected-check" title="Selected">✓</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Steps panel ───────────────────────────────────────────────────────────
+function StepsRow({ steps, done, searchData }) {
+  // Determine which pipeline stages have been reached
+  const reachedStages = new Set();
+  let activeStage = null;
+
+  steps.forEach(s => {
+    const { stage } = classifyStep(s);
+    if (stage) reachedStages.add(stage);
+  });
+
+  if (done) {
+    reachedStages.add("done");
+    activeStage = "done";
+  } else if (steps.length > 0) {
+    // Active = last classified stage
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const { stage } = classifyStep(steps[i]);
+      if (stage) { activeStage = stage; break; }
+    }
+    if (!activeStage && steps.length > 0) activeStage = null;
+  }
+
+  // Build connector states between stages
+  function stageStatus(stageId) {
+    const idx = STAGE_ORDER.indexOf(stageId);
+    if (stageId === "done") {
+      return done ? "done" : "idle";
+    }
+    if (reachedStages.has(stageId)) {
+      return stageId === activeStage && !done ? "active" : "done";
+    }
+    return "idle";
+  }
+
+  function connectorStatus(leftId, rightId) {
+    const li = STAGE_ORDER.indexOf(leftId);
+    const ri = STAGE_ORDER.indexOf(rightId);
+    const activeIdx = STAGE_ORDER.indexOf(activeStage);
+    if (done) return "done";
+    if (activeIdx >= ri) return "done";
+    if (activeIdx >= li) return "active";
+    return "";
+  }
+
+  return (
+    <div className="thinking-row">
+      <div className="avatar ai-avatar">🤖</div>
+      <div className="steps-panel">
+        {/* Header */}
+        <div className="steps-header">
+          {!done && <div className="steps-spinner" />}
+          {done
+            ? "✓ Complete · all pipeline stages finished"
+            : `Processing · ${steps.length} step${steps.length !== 1 ? "s" : ""}…`}
+        </div>
+
+        {/* Registry search results — shown inline in the step flow */}
+        {searchData && <RegistrySearchPanel data={searchData} />}
+
+        {/* Pipeline visualization */}
+        <div className="pipeline">
+          {PIPELINE_STAGES.map((stage, i) => {
+            const status = stageStatus(stage.id);
+            return (
+              <React.Fragment key={stage.id}>
+                <div className={`pipeline-stage ${status}`}>
+                  <div className="pipeline-stage-icon">{stage.icon}</div>
+                  <div className="pipeline-stage-label">{stage.label}</div>
+                </div>
+                {i < PIPELINE_STAGES.length - 1 && (
+                  <div className={`pipeline-connector ${connectorStatus(stage.id, PIPELINE_STAGES[i+1].id)}`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Step list */}
+        {steps.length === 0 && !done ? (
+          <div className="step-item current">
+            <span className="dot" style={{marginRight:4, marginTop:6}} />
+            <span className="step-text">Calling Amazon Bedrock · {MODEL_DISPLAY}…</span>
+          </div>
+        ) : (
+          steps.map((s, i) => {
+            const { badge, icon, label } = classifyStep(s);
+            const isCurrent = i === steps.length - 1 && !done;
+            const isDone    = !isCurrent;
+            return (
+              <div key={i} className={`step-item${isCurrent ? " current" : isDone ? " done" : ""}`}>
+                <span className={`step-badge ${badge}`}>{icon} {label}</span>
+                <span className="step-text">{s}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Message bubble ────────────────────────────────────────────────────────
+function MessageRow({ msg, userInitial }) {
+  const isUser = msg.role === "user";
+  return (
+    <div className={`msg-row ${isUser ? "user" : "ai"}`}>
+      <div className={`avatar ${isUser ? "user-avatar" : "ai-avatar"}`}>
+        {isUser ? userInitial : "🤖"}
+      </div>
+      {isUser ? (
+        <div className="bubble user-bubble">{msg.content}</div>
+      ) : (
+        <div className="bubble ai-bubble"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+      )}
+    </div>
+  );
+}
+
+// ── Suggestions grouped by which skill they invoke ───────────────────────
+const SUGGESTION_GROUPS = [
+  {
+    label: "Executive Briefing skill",
+    icon: "📋",
+    chips: [
+      "Give me a one-page executive financial briefing for Q3 2025",
+      "How is the business doing? Quick financial update",
+      "Board update — financial health check",
+    ],
+  },
+  {
+    label: "Revenue Growth Analyst skill",
+    icon: "📈",
+    chips: [
+      "Analyze revenue growth trends across all quarters",
+      "Is our revenue momentum accelerating or decelerating?",
+      "What is driving revenue changes from Q4 2024 to Q3 2025?",
+    ],
+  },
+  {
+    label: "Cost Efficiency Analyzer skill",
+    icon: "💸",
+    chips: [
+      "Break down our cost structure and spending efficiency",
+      "Are we spending too much? Analyze COGS vs operating expenses",
+      "Is margin compression coming from the cost side?",
+    ],
+  },
+  {
+    label: "Multi-Quarter Trend Analysis skill",
+    icon: "📊",
+    chips: [
+      "Show financial trends across all four quarters",
+      "How are gross margin and EBITDA trending over time?",
+    ],
+  },
+  {
+    label: "Quarterly KPI Calculator skill",
+    icon: "🧮",
+    chips: [
+      "Calculate all KPIs for Q3 2025 vs benchmark",
+      "Show Gross Margin %, EBITDA %, and OpEx ratio for Q3 2025",
+    ],
+  },
+];
+
+function EmptyState({ onSuggestion }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">📈</div>
+      <div className="empty-title">Ask your financial analyst</div>
+      <div className="empty-hint">
+        Each question below demonstrates <strong style={{color:"var(--accent2)"}}>semantic search</strong> —
+        the agent queries the AWS Agent Registry and routes to the best-matching skill.
+      </div>
+      {SUGGESTION_GROUPS.map(group => (
+        <div className="sugg-group" key={group.label}>
+          <div className="sugg-group-label">
+            <span>{group.icon}</span> {group.label}
+          </div>
+          <div className="sugg-row">
+            {group.chips.map(s => (
+              <button key={s} className="suggestion-chip"
+                onClick={() => onSuggestion(s)}>{s}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────
+function Sidebar({ sessions, activeId, onSelect, onNew, email, onLogout }) {
+  return (
+    <div className="sidebar">
+      <div className="sidebar-header">
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-icon">📊</div>
+          <div className="sidebar-title">Financial<br/>Analyst Agent</div>
+        </div>
+        <button className="new-chat-btn" onClick={onNew}>
+          <span style={{fontSize:14}}>+</span> New conversation
+        </button>
+      </div>
+
+      {sessions.length > 0 && (
+        <div className="sidebar-section-label">History</div>
+      )}
+
+      <div className="sidebar-sessions">
+        {sessions.map(sess => (
+          <div
+            key={sess.id}
+            className={`session-item${sess.id === activeId ? " active" : ""}`}
+            onClick={() => onSelect(sess.id)}
+          >
+            <div className="session-item-q">{sess.title}</div>
+            <div className="session-item-meta">{sess.ts}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-user">{email}</div>
+        <button className="logout-btn" onClick={onLogout}>sign out</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Chat area ─────────────────────────────────────────────────────────────
+function ChatArea({ token, session, onMessageSent, userInitial }) {
+  const { messages, setMessages } = session;
+  const [input, setInput]         = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [steps, setSteps]         = useState([]);
+  const [stepsDone, setStepsDone] = useState(false);
+  const [searchData, setSearchData] = useState(null);   // registry search results
+  const [error, setError]         = useState("");
+  const bottomRef = useRef(null);
+  const textaRef  = useRef(null);
+  const autoResize = useAutoResize(textaRef);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  // Reset transient state when switching sessions
+  useEffect(() => {
+    setInput("");
+    setLoading(false);
+    setSteps([]);
+    setStepsDone(false);
+    setSearchData(null);
+    setError("");
+    if (textaRef.current) textaRef.current.style.height = "auto";
+  }, [session.id]);
+
+  async function sendMessage(text) {
+    if (!text.trim() || loading) return;
+    const userMsg = { role: "user", content: text.trim() };
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
+    setInput("");
+    setError("");
+    setSteps([]);
+    setStepsDone(false);
+    setSearchData(null);
+    setLoading(true);
+    if (textaRef.current) textaRef.current.style.height = "auto";
+
+    // Build history for multi-turn: all prior turns before the new user message
+    const history = messages.map(m => ({
+      role:    m.role === "ai" ? "assistant" : "user",
+      content: m.content,
+    }));
+
+    // Notify parent so sidebar gets the title from first question
+    onMessageSent(session.id, text.trim());
+
+    try {
+      const res = await fetch(CHAT_STREAM_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: text.trim(), history }),
+      });
+
+      if (res.status === 401) { window.location.reload(); return; }
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Server error ${res.status}: ${body}`);
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      const processSSE = (raw) => {
+        const events    = raw.split(/\n\n+/);
+        const remainder = events.pop();
+        for (const block of events) {
+          if (!block.trim()) continue;
+          let eventType = null, dataLine = null;
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataLine = line.slice(5).trim();
+          }
+          if (!eventType || !dataLine) continue;
+          try {
+            const payload = JSON.parse(dataLine);
+            if (eventType === "step" && payload.text) {
+              setSteps(prev => [...prev, payload.text]);
+            } else if (eventType === "search") {
+              // Registry semantic search results — rendered as a candidate list
+              setSearchData(payload);
+            } else if (eventType === "result") {
+              setStepsDone(true);
+              setMessages(prev => [...prev, { role: "ai", content: payload.text }]);
+            } else if (eventType === "error") {
+              setError(payload.text);
+            }
+          } catch (_) {}
+        }
+        return remainder || "";
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buf.trim()) processSSE(buf + "\n\n");
+          break;
+        }
+        buf += decoder.decode(value, { stream: true });
+        buf = processSSE(buf);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
+  }
+
+  const headerTitle = session.title || "New conversation";
+
+  return (
+    <div className="chat-area">
+      <header className="header">
+        <div className="header-left">
+          <span className="header-title" title={headerTitle}>{headerTitle}</span>
+        </div>
+        <span className="header-tag">Bedrock · Claude Sonnet</span>
+      </header>
+
+      <div className="messages">
+        {messages.length === 0 && !loading ? (
+          <EmptyState onSuggestion={text => { setInput(text); textaRef.current?.focus(); }} />
+        ) : (
+          <>
+            {messages.map((msg, i) => (
+              <MessageRow key={i} msg={msg} userInitial={userInitial} />
+            ))}
+            {(loading || (stepsDone && steps.length > 0)) && (
+              <StepsRow steps={steps} done={stepsDone} searchData={searchData} />
+            )}
+            {error && (
+              <div style={{
+                alignSelf: "center", padding: "10px 16px",
+                background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)",
+                borderRadius: "8px", fontSize: "12px", color: "#fca5a5",
+                maxWidth: "500px", textAlign: "center",
+              }}>{error}</div>
+            )}
+          </>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="input-area">
+        <div className="input-bar">
+          <textarea
+            ref={textaRef} rows={1}
+            placeholder="Ask about financial KPIs, P&L, benchmarks…"
+            value={input}
+            onChange={e => { setInput(e.target.value); autoResize(); }}
+            onKeyDown={handleKey}
+            disabled={loading}
+          />
+          <button className="send-btn" onClick={() => sendMessage(input)}
+            disabled={!input.trim() || loading} title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+        <div className="input-hint">Enter to send · Shift+Enter for new line</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+let _sessionCounter = 0;
+function newSession() {
+  _sessionCounter++;
+  return {
+    id:       `sess-${_sessionCounter}-${Date.now()}`,
+    title:    "",
+    ts:       new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    messages: [],
+  };
+}
+
+// ── Main chat screen (sessions + sidebar) ─────────────────────────────────
+function ChatScreen({ token, email, onLogout }) {
+  const [sessions, setSessions]   = useState(() => [newSession()]);
+  const [activeId, setActiveId]   = useState(() => sessions[0].id);
+  const userInitial = email ? email[0].toUpperCase() : "U";
+
+  const activeSession = sessions.find(s => s.id === activeId) || sessions[0];
+
+  const sessionProxy = {
+    ...activeSession,
+    setMessages: (updater) => {
+      setSessions(prev => prev.map(s =>
+        s.id === activeId
+          ? { ...s, messages: typeof updater === "function" ? updater(s.messages) : updater }
+          : s
+      ));
+    },
+  };
+
+  function handleNewSession() {
+    const s = newSession();
+    setSessions(prev => [s, ...prev]);
+    setActiveId(s.id);
+  }
+
+  function handleMessageSent(sessId, text) {
+    setSessions(prev => prev.map(s =>
+      s.id === sessId && !s.title ? { ...s, title: text.length > 50 ? text.slice(0, 47) + "…" : text } : s
+    ));
+  }
+
+  return (
+    <div className="app">
+      <Sidebar
+        sessions={sessions}
+        activeId={activeId}
+        onSelect={setActiveId}
+        onNew={handleNewSession}
+        email={email}
+        onLogout={onLogout}
+      />
+      <ChatArea
+        key={activeId}
+        token={token}
+        session={sessionProxy}
+        onMessageSent={handleMessageSent}
+        userInitial={userInitial}
+      />
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────
+function App() {
+  const [token, setToken] = useState(null);
+  const [email, setEmail] = useState("");
+
+  if (!token) return <LoginScreen onLogin={(t, e) => { setToken(t); setEmail(e); }} />;
+  return <ChatScreen token={token} email={email} onLogout={() => { setToken(null); setEmail(""); }} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

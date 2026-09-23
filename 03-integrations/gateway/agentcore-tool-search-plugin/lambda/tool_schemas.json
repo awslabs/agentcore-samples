@@ -1,0 +1,493 @@
+[
+  {
+    "name": "search_flights",
+    "description": "Search for available flights based on origin, destination, and date",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_flight_details",
+    "description": "Get detailed information about a specific flight",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "flight_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_availability",
+    "description": "Check seat availability for a specific flight",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "flight_id": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_seat_map",
+    "description": "Get the seat map for a specific flight",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "flight_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_baggage_policy",
+    "description": "Get baggage policy for a specific airline",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "airline": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_flight_status",
+    "description": "Get real-time status of a specific flight",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "flight_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search_connecting_flights",
+    "description": "Search for connecting flight options between two cities",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_airline_info",
+    "description": "Get information about a specific airline",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "airline": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "compare_flight_prices",
+    "description": "Compare prices for the same route across multiple airlines",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search_hotels",
+    "description": "Search for hotels in a specified location",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "check_in": {
+          "type": "string"
+        },
+        "check_out": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_hotel_details",
+    "description": "Get detailed information about a specific hotel",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hotel_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_room_availability",
+    "description": "Check room availability for specific dates",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hotel_id": {
+          "type": "string"
+        },
+        "check_in": {
+          "type": "string"
+        },
+        "check_out": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_hotel_amenities",
+    "description": "Get detailed amenity information for a hotel",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hotel_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search_car_rentals",
+    "description": "Search for available car rentals at a location",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "pickup_date": {
+          "type": "string"
+        },
+        "return_date": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_rental_details",
+    "description": "Get detailed information about a specific car rental",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rental_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_car_availability",
+    "description": "Check availability of a specific car rental",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rental_id": {
+          "type": "string"
+        },
+        "pickup_date": {
+          "type": "string"
+        },
+        "return_date": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search_restaurants",
+    "description": "Search for restaurants in a specified area",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "cuisine": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_restaurant_details",
+    "description": "Get detailed information about a specific restaurant",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "restaurant_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_menu",
+    "description": "Get the menu for a specific restaurant",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "restaurant_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_reservations",
+    "description": "Check reservation availability at a restaurant",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "restaurant_id": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "party_size": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_restaurant_reviews",
+    "description": "Get reviews for a specific restaurant",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "restaurant_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "convert_currency",
+    "description": "Convert an amount from one currency to another",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "number"
+        },
+        "from_currency": {
+          "type": "string"
+        },
+        "to_currency": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_exchange_rates",
+    "description": "Get current exchange rates for a base currency",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "base_currency": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_supported_currencies",
+    "description": "Get list of supported currencies for conversion",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_loyalty_balance",
+    "description": "Get loyalty program points balance for a member",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "member_id": {
+          "type": "string"
+        },
+        "program": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "redeem_points",
+    "description": "Redeem loyalty points for rewards",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "member_id": {
+          "type": "string"
+        },
+        "points": {
+          "type": "integer"
+        },
+        "reward_type": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_loyalty_program_info",
+    "description": "Get information about a loyalty program",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "program": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_weather_forecast",
+    "description": "Get weather forecast for a location",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "days": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_current_weather",
+    "description": "Get current weather conditions for a location",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search_activities",
+    "description": "Search for activities and attractions in a location",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_activity_details",
+    "description": "Get detailed information about a specific activity",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_activity_availability",
+    "description": "Check availability for a specific activity on a date",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "participants": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "create_itinerary",
+    "description": "Create a trip itinerary based on destination and preferences",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string"
+        },
+        "days": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_travel_tips",
+    "description": "Get travel tips and recommendations for a destination",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      }
+    }
+  }
+]

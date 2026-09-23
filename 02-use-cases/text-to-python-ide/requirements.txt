@@ -1,9 +1,0 @@
-bedrock-agentcore
-boto3
-fastapi
-uvicorn
-python-multipart
-websockets
-pydantic
-python-dotenv
-strands-agents>=0.1.8

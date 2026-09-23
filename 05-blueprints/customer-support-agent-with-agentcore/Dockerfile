@@ -1,4 +1,5 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM public.ecr.aws/docker/library/python:3.13-slim-trixie
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # All environment variables in one layer

@@ -1,0 +1,13 @@
+# Deploy-populated secrets — never commit
+.env
+
+# Python virtual env
+.venv/
+__pycache__/
+*.pyc
+
+# AgentCore CLI scaffolded project (regenerated on each `agentcore create`)
+oboUc2OktaAgent/
+
+# macOS
+.DS_Store

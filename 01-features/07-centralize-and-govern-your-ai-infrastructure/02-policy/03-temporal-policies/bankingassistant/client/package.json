@@ -1,0 +1,20 @@
+{
+  "name": "banking-assistant-webapp",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace server run build && npm --workspace web run build",
+    "start": "npm --workspace server run start",
+    "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,17 @@
+# Deployment state and secrets. `.env.*` matters as much as `.env`: running a
+# second identity provider side by side puts a full set of client secrets and
+# admin tokens in .env.okta, .env.<anything> and so on. config.example.env is
+# the tracked template and is deliberately not matched by these patterns.
+.env
+.env.*
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+
+# The AgentCore CLI scaffolds a project folder named after AGENT_RUNTIME_NAME —
+# one per deployment. Generated, so not tracked.
+consentGithubAgent/
+consentGithubOkta/

@@ -1,0 +1,7 @@
+boto3
+langchain_aws
+bedrock_agentcore
+langgraph 
+langgraph-checkpoint-aws 
+langchain-aws
+langchain>=1.0

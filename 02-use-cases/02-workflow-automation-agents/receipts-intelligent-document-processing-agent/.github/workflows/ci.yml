@@ -1,0 +1,70 @@
+name: receipts-idp-ci
+
+# Mirrors the local test runner (Makefile). Same automation, no manual steps.
+#   unit  — pure-function tests, run on every push/PR (no AWS, no mocks)
+#   e2e   — REAL deploy -> assert live -> destroy; gated (needs AWS creds + a
+#           container engine), so it runs on demand / on main, not every PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run the live deploy->assert->destroy e2e"
+        type: boolean
+        default: false
+
+# Least-privilege by default (Checkov CKV2_GHA_1): the workflow gets read-only
+# access, and each job requests only the extra scopes it actually needs.
+permissions: read-all
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    # Pure-function tests: only needs to read the repo.
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: sample
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest boto3
+      - run: make unit
+
+  e2e:
+    # Live AWS. Runs on main or when manually dispatched with run_e2e=true.
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.run_e2e)
+    runs-on: ubuntu-latest
+    # id-token: write is required for the OIDC role assumption below
+    # (aws-actions/configure-aws-credentials); contents: read for the checkout.
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: sample
+    env:
+      AWS_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # OIDC role assumption — no long-lived keys. Set AWS_DEPLOY_ROLE_ARN as a repo secret.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+      - run: pip install pytest boto3 uv
+      - run: npm install -g @aws/agentcore@0.30.0
+      # Docker is preinstalled on ubuntu runners; the deploy auto-selects it.
+      - run: pip install pytest boto3 && make e2e

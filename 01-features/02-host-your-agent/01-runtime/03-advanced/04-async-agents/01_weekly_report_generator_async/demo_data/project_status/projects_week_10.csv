@@ -1,0 +1,6 @@
+project_name,owner,status,progress,budget_used,team_size,blockers,next_milestone,milestone_date
+CloudSync Pro Launch,Sarah Chen,On Track,85,78,12,None,Beta Testing Complete,2026-03-08
+Mobile App Redesign,Marcus Johnson,At Risk,62,71,8,Waiting on design approval,UI Mockups Final,2026-03-03
+API v3 Migration,Priya Patel,On Track,45,42,6,None,Deprecation Notice Sent,2026-03-06
+Security Audit Remediation,David Kim,Behind,38,55,5,Need additional security engineer,Critical Fixes Deployed,2026-03-05
+Customer Portal Enhancement,Jennifer Lopez,On Track,91,88,7,None,Production Deployment,2026-03-08

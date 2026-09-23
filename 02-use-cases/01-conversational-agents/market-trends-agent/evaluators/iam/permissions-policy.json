@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeEvaluatorLambdas",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction",
+        "lambda:GetFunction"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function:market-trends-eval-*"
+    },
+    {
+      "Sid": "ReadAgentSpansFromCloudWatch",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "logs:StartQuery",
+        "logs:GetQueryResults"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "WriteEvaluationResults",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/bedrock-agentcore/evaluations/results/*"
+    }
+  ]
+}

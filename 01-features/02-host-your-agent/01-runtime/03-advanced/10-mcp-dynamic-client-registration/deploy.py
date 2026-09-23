@@ -1,0 +1,244 @@
+"""
+Deploy the MCP server with Dynamic Client Registration (Auth0) to AgentCore Runtime.
+
+This MCP server supports OAuth-based authentication via Auth0's Dynamic Client
+Registration (DCR) feature. The server exposes three tools: add_numbers,
+multiply_numbers, and greet_user.
+
+Prerequisites:
+    - Auth0 tenant configured with DCR enabled
+    - Set AUTH0_DOMAIN and AUTH0_AUDIENCE environment variables
+
+Usage:
+    export AUTH0_DOMAIN="your-tenant.auth0.com"
+    export AUTH0_AUDIENCE="your-api-identifier"
+    python deploy.py
+"""
+
+import json
+import os
+import sys
+import time
+import boto3
+from boto3.session import Session
+
+AGENT_NAME = "mcp_dcr_auth0"
+PROTOCOL = "MCP"
+PYTHON_RUNTIME = "PYTHON_3_13"
+ENTRY_POINT = "server.py"
+CODE_FILES = ["server.py", "requirements.txt"]
+
+session = Session()
+REGION = session.region_name
+ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
+S3_BUCKET = f"agentcore-code-{ACCOUNT_ID}-{REGION}"
+S3_PREFIX = f"{AGENT_NAME}/code.zip"
+
+
+def create_execution_role() -> str:
+    iam = boto3.client("iam", region_name=REGION)
+    role_name = f"agentcore-{AGENT_NAME}-role"
+    trust = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+                "Action": "sts:AssumeRole",
+                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT_ID}},
+            }
+        ],
+    }
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                "Resource": "arn:aws:logs:*:*:*",
+            },
+        ],
+    }
+    try:
+        resp = iam.create_role(
+            RoleName=role_name,
+            AssumeRolePolicyDocument=json.dumps(trust),
+            Description=f"Execution role for {AGENT_NAME}",
+        )
+        role_arn = resp["Role"]["Arn"]
+    except iam.exceptions.EntityAlreadyExistsException:
+        role_arn = f"arn:aws:iam::{ACCOUNT_ID}:role/{role_name}"
+    iam.put_role_policy(
+        RoleName=role_name,
+        PolicyName=f"{AGENT_NAME}-policy",
+        PolicyDocument=json.dumps(policy),
+    )
+    print(f"✓ IAM role: {role_arn}")
+    time.sleep(10)
+    return role_arn
+
+
+def zip_and_upload_code():
+    import shutil
+    import subprocess
+
+    s3 = boto3.client("s3", region_name=REGION)
+    pkg_dir = "deployment_package"
+    zip_file = "deployment_package.zip"
+
+    try:
+        if REGION == "us-east-1":
+            s3.create_bucket(Bucket=S3_BUCKET)
+        else:
+            s3.create_bucket(
+                Bucket=S3_BUCKET,
+                CreateBucketConfiguration={"LocationConstraint": REGION},
+            )
+    except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
+        pass
+
+    if os.path.isdir(pkg_dir):
+        shutil.rmtree(pkg_dir)
+    if os.path.exists(zip_file):
+        os.remove(zip_file)
+
+    python_version = PYTHON_RUNTIME.replace("PYTHON_", "").replace("_", ".").lower()
+    print("  Installing arm64 dependencies with uv...")
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python-platform",
+            "aarch64-manylinux2014",
+            "--python-version",
+            python_version,
+            "--target",
+            pkg_dir,
+            "--only-binary",
+            ":all:",
+            "-r",
+            "requirements.txt",
+        ],
+        check=True,
+    )
+
+    print("  Creating deployment zip...")
+    subprocess.run(
+        ["zip", "-r", f"../{zip_file}", "."],
+        cwd=pkg_dir,
+        check=True,
+        capture_output=True,
+    )
+    for f in CODE_FILES:
+        if f.endswith(".py"):
+            subprocess.run(["zip", zip_file, f], check=True, capture_output=True)
+
+    zip_size = os.path.getsize(zip_file) / (1024 * 1024)
+    print(f"  Package: {zip_file} ({zip_size:.1f} MB)")
+
+    s3.upload_file(zip_file, S3_BUCKET, S3_PREFIX)
+    print(f"\u2713 Code uploaded to s3://{S3_BUCKET}/{S3_PREFIX}")
+
+    shutil.rmtree(pkg_dir)
+    os.remove(zip_file)
+
+
+def create_runtime(role_arn: str) -> dict:
+    control = boto3.client("bedrock-agentcore-control", region_name=REGION)
+
+    # Build environment variables for Auth0 configuration
+    env_vars = {}
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    auth0_audience = os.environ.get("AUTH0_AUDIENCE")
+    if auth0_domain:
+        env_vars["AUTH0_DOMAIN"] = auth0_domain
+    if auth0_audience:
+        env_vars["AUTH0_AUDIENCE"] = auth0_audience
+
+    create_kwargs = dict(
+        agentRuntimeName=AGENT_NAME,
+        agentRuntimeArtifact={
+            "codeConfiguration": {
+                "code": {"s3": {"bucket": S3_BUCKET, "prefix": S3_PREFIX}},
+                "runtime": PYTHON_RUNTIME,
+                "entryPoint": [ENTRY_POINT],
+            }
+        },
+        roleArn=role_arn,
+        networkConfiguration={"networkMode": "PUBLIC"},
+        protocolConfiguration={"serverProtocol": PROTOCOL},
+        description="MCP server with Auth0 Dynamic Client Registration",
+    )
+
+    if env_vars:
+        create_kwargs["environmentVariables"] = env_vars
+
+    response = control.create_agent_runtime(**create_kwargs)
+    runtime_id, runtime_arn = response["agentRuntimeId"], response["agentRuntimeArn"]
+    while True:
+        s = control.get_agent_runtime(agentRuntimeId=runtime_id)
+        print(f"  Status: {s['status']}")
+        if s["status"] == "READY":
+            break
+        if "FAILED" in s["status"]:
+            print(f"  ✗ Failed: {s.get('failureReason')}")
+            sys.exit(1)
+        time.sleep(15)
+    return {"runtime_id": runtime_id, "runtime_arn": runtime_arn}
+
+
+def create_endpoint(runtime_id: str):
+    control = boto3.client("bedrock-agentcore-control", region_name=REGION)
+    control.create_agent_runtime_endpoint(agentRuntimeId=runtime_id, name="default")
+    while True:
+        eps = control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
+        if eps.get("runtimeEndpoints") and eps["runtimeEndpoints"][0]["status"] == "READY":
+            break
+        time.sleep(15)
+    print("✓ Endpoint ready")
+
+
+def main():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    print(f"Deploying {AGENT_NAME}\n")
+
+    # Check for Auth0 configuration
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    auth0_audience = os.environ.get("AUTH0_AUDIENCE")
+    if auth0_domain:
+        print(f"  Auth0 domain: {auth0_domain}")
+    else:
+        print("  ⚠ AUTH0_DOMAIN not set — Auth0 integration will need manual configuration")
+    if auth0_audience:
+        print(f"  Auth0 audience: {auth0_audience}")
+    else:
+        print("  ⚠ AUTH0_AUDIENCE not set — Auth0 integration will need manual configuration")
+    print()
+
+    role_arn = create_execution_role()
+    zip_and_upload_code()
+    runtime = create_runtime(role_arn)
+    create_endpoint(runtime["runtime_id"])
+    with open("runtime_config.json", "w") as f:
+        json.dump(
+            {
+                "agent_name": AGENT_NAME,
+                "runtime_id": runtime["runtime_id"],
+                "runtime_arn": runtime["runtime_arn"],
+                "region": REGION,
+            },
+            f,
+            indent=2,
+        )
+    print("\n✓ Deployment complete!")
+    print(f"  Runtime ARN: {runtime['runtime_arn']}")
+    print("\nTo invoke with Auth0 OAuth flow, run: python mcp_auth0_client.py")
+
+
+if __name__ == "__main__":
+    main()

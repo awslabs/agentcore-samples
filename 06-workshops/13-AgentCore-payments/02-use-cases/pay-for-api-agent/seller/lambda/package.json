@@ -1,0 +1,14 @@
+{
+  "name": "x402-seller-pay-for-api",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "x402 Fun Facts seller — pay-for-API sample",
+  "dependencies": {
+    "@x402/hono": "^2.7.0",
+    "@x402/core": "^2.7.0",
+    "@x402/evm": "^2.7.0",
+    "@x402/svm": "^2.7.0",
+    "@x402/extensions": "^2.7.0",
+    "hono": "^4.0.0"
+  }
+}

@@ -29,23 +29,20 @@ def extract_region_from_arn(arn):
         parts = arn.split(":")
         if len(parts) < 4:
             raise ValueError(
-                f"Invalid ARN format: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         region = parts[3]
         if not region:
             raise ValueError(
-                f"Region not found in ARN: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Region not found in ARN: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         return region
 
     except IndexError:
         raise ValueError(
-            f"Invalid ARN format: {arn}\n"
-            f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+            f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
         )
 
 
@@ -86,23 +83,17 @@ async def test_mcp_server(agent_arn, bearer_token, region):
 
                 # Test add_numbers
                 print("\n➕ Testing add_numbers(5, 3)...")
-                add_result = await session.call_tool(
-                    name="add_numbers", arguments={"a": 5, "b": 3}
-                )
+                add_result = await session.call_tool(name="add_numbers", arguments={"a": 5, "b": 3})
                 print(f"   Result: {add_result.content[0].text}")
 
                 # Test multiply_numbers
                 print("\n✖️  Testing multiply_numbers(4, 7)...")
-                multiply_result = await session.call_tool(
-                    name="multiply_numbers", arguments={"a": 4, "b": 7}
-                )
+                multiply_result = await session.call_tool(name="multiply_numbers", arguments={"a": 4, "b": 7})
                 print(f"   Result: {multiply_result.content[0].text}")
 
                 # Test greet_user
                 print("\n👋 Testing greet_user('Alice')...")
-                greet_result = await session.call_tool(
-                    name="greet_user", arguments={"name": "Alice"}
-                )
+                greet_result = await session.call_tool(name="greet_user", arguments={"name": "Alice"})
                 print(f"   Result: {greet_result.content[0].text}")
 
                 print("\n✅ MCP tool testing completed!")
@@ -117,9 +108,7 @@ def main():
         print("Usage: python test_mcp_server.py <agent_arn> <bearer_token> [region]")
         print("\nRegion is optional - will be extracted from ARN if not provided")
         print("\nExample:")
-        print(
-            "  python test_mcp_server.py arn:aws:bedrock-agentcore:<region>:... eyJraWQiOiJ..."
-        )
+        print("  python test_mcp_server.py arn:aws:bedrock-agentcore:<region>:... eyJraWQiOiJ...")
         sys.exit(1)
 
     agent_arn = sys.argv[1]

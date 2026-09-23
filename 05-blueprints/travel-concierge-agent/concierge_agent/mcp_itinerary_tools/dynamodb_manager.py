@@ -66,9 +66,7 @@ class DynamoDBManager:
             }
 
             self.itinerary_table.put_item(Item=itinerary_item)
-            logger.info(
-                f"Added itinerary item '{item.get('title')}' for user {user_id}"
-            )
+            logger.info(f"Added itinerary item '{item.get('title')}' for user {user_id}")
             return itinerary_item
 
         except ClientError as e:

@@ -1,0 +1,35 @@
+# AgentCore payments getting-started — local artifacts to keep out of git.
+# (Secrets like .env, plus .venv / __pycache__, are already covered by the repo-root .gitignore;
+#  this file adds the scaffolded AgentCore CLI project directories these tutorials generate.)
+
+# Scaffolded AgentCore CLI projects (created by `agentcore create --name <X>`).
+# These contain generated CDK/Docker/config and an .env.local with provider credentials —
+# never commit them.
+PaymentSetup/
+PaymentAgent/
+OpenAIPaymentAgent/
+PaymentOrchestrator/
+BazaarAgent/
+
+# Any other agentcore project scaffold (agentcore.json marks the project root) + its local config.
+**/agentcore.json
+**/aws-targets.json
+**/.env.local
+.bedrock_agentcore/
+.bedrock_agentcore.yaml
+cdk.out/
+
+# Local test scratch (venv, caches, secret .env, and any .env backups) — belt-and-suspenders
+# even though the repo root already ignores these.
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.sample
+!.env.coinbase.sample
+!.env.privy.sample
+
+# Local-only authoring/review tooling — never part of the published tutorials.
+.preview_server.py
+REVIEW_NOTES.md

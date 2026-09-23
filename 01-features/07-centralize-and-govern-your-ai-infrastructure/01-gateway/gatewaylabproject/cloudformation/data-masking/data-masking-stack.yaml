@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Data Masking tutorial — deploys a Bedrock Guardrail (PII anonymization),
+  a RESPONSE interceptor Lambda, and a mock employee data tool Lambda.
+
+Resources:
+  PiiGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: agentcore-pii-masking-guardrail
+      Description: Guardrail for anonymizing sensitive PII data in tool responses
+      BlockedInputMessaging: Input contains sensitive information that has been anonymized.
+      BlockedOutputsMessaging: Output contains sensitive information that has been anonymized.
+      SensitiveInformationPolicyConfig:
+        PiiEntitiesConfig:
+          - Type: ADDRESS
+            Action: ANONYMIZE
+          - Type: AGE
+            Action: ANONYMIZE
+          - Type: EMAIL
+            Action: ANONYMIZE
+          - Type: NAME
+            Action: ANONYMIZE
+          - Type: PHONE
+            Action: ANONYMIZE
+          - Type: USERNAME
+            Action: ANONYMIZE
+          - Type: PASSWORD
+            Action: ANONYMIZE
+          - Type: CREDIT_DEBIT_CARD_CVV
+            Action: ANONYMIZE
+          - Type: CREDIT_DEBIT_CARD_EXPIRY
+            Action: ANONYMIZE
+          - Type: CREDIT_DEBIT_CARD_NUMBER
+            Action: ANONYMIZE
+          - Type: PIN
+            Action: ANONYMIZE
+          - Type: INTERNATIONAL_BANK_ACCOUNT_NUMBER
+            Action: ANONYMIZE
+          - Type: SWIFT_CODE
+            Action: ANONYMIZE
+          - Type: US_BANK_ACCOUNT_NUMBER
+            Action: ANONYMIZE
+          - Type: US_BANK_ROUTING_NUMBER
+            Action: ANONYMIZE
+          - Type: US_INDIVIDUAL_TAX_IDENTIFICATION_NUMBER
+            Action: ANONYMIZE
+          - Type: US_PASSPORT_NUMBER
+            Action: ANONYMIZE
+          - Type: US_SOCIAL_SECURITY_NUMBER
+            Action: ANONYMIZE
+          - Type: DRIVER_ID
+            Action: ANONYMIZE
+          - Type: UK_NATIONAL_HEALTH_SERVICE_NUMBER
+            Action: ANONYMIZE
+          - Type: UK_NATIONAL_INSURANCE_NUMBER
+            Action: ANONYMIZE
+          - Type: UK_UNIQUE_TAXPAYER_REFERENCE_NUMBER
+            Action: ANONYMIZE
+          - Type: CA_HEALTH_NUMBER
+            Action: ANONYMIZE
+          - Type: CA_SOCIAL_INSURANCE_NUMBER
+            Action: ANONYMIZE
+          - Type: IP_ADDRESS
+            Action: ANONYMIZE
+          - Type: MAC_ADDRESS
+            Action: ANONYMIZE
+          - Type: URL
+            Action: ANONYMIZE
+          - Type: AWS_ACCESS_KEY
+            Action: ANONYMIZE
+          - Type: AWS_SECRET_KEY
+            Action: ANONYMIZE
+          - Type: VEHICLE_IDENTIFICATION_NUMBER
+            Action: ANONYMIZE
+          - Type: LICENSE_PLATE
+            Action: ANONYMIZE
+
+  InterceptorRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: agentcore-data-masking-interceptor-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockGuardrailAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:ApplyGuardrail
+                Resource: !GetAtt PiiGuardrail.GuardrailArn
+
+  ToolRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agentcore-data-masking-tool-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  InterceptorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-data-masking-interceptor
+      Runtime: python3.12
+      Handler: interceptor.lambda_handler
+      Role: !GetAtt InterceptorRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Description: AgentCore RESPONSE interceptor — PII masking via Bedrock Guardrails
+      Environment:
+        Variables:
+          GUARDRAIL_ID: !GetAtt PiiGuardrail.GuardrailId
+          GUARDRAIL_VERSION: "DRAFT"
+      Code: ../../app/data-masking/
+
+  InterceptorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InterceptorFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+  ToolFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-data-masking-employee-tool
+      Runtime: python3.12
+      Handler: employee_data_tool.lambda_handler
+      Role: !GetAtt ToolRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Description: Mock employee data tool — returns PII for testing masking
+      Code: ../../app/data-masking/
+
+  ToolPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ToolFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+Outputs:
+  InterceptorFunctionArn:
+    Description: ARN of the PII masking interceptor Lambda
+    Value: !GetAtt InterceptorFunction.Arn
+  ToolFunctionArn:
+    Description: ARN of the mock employee data tool Lambda
+    Value: !GetAtt ToolFunction.Arn
+  GuardrailId:
+    Description: Bedrock Guardrail ID
+    Value: !GetAtt PiiGuardrail.GuardrailId

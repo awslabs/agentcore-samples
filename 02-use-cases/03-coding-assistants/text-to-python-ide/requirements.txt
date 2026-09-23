@@ -1,0 +1,14 @@
+bedrock-agentcore
+boto3
+fastapi
+uvicorn
+python-multipart
+websockets
+websocket-client
+requests
+pydantic
+python-dotenv
+strands-agents>=0.1.8
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-propagator-aws-xray
+opentelemetry-sdk-extension-aws

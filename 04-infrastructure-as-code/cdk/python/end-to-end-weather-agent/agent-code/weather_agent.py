@@ -24,9 +24,7 @@ console = Console()
 
 # Configuration
 BROWSER_ID = os.getenv("BROWSER_ID", "agentcore_dev_browser-Df3lyxkbjo")
-CODE_INTERPRETER_ID = os.getenv(
-    "CODE_INTERPRETER_ID", "agentcore_dev_code_interpreter-IqIg8bqnKn"
-)
+CODE_INTERPRETER_ID = os.getenv("CODE_INTERPRETER_ID", "agentcore_dev_code_interpreter-IqIg8bqnKn")
 MEMORY_ID = os.getenv("MEMORY_ID", "agentcore_dev_TestAgentCoreMemory-N7LCAH8ZCK")
 RESULTS_BUCKET = os.getenv("RESULTS_BUCKET", "default-results-bucket")
 region = "us-west-2"
@@ -67,9 +65,7 @@ async def initialize_browser_session():
             timeout=150000,
         )
 
-        browser_session = BrowserSession(
-            cdp_url=ws_url, browser_profile=browser_profile, keep_alive=True
-        )
+        browser_session = BrowserSession(cdp_url=ws_url, browser_profile=browser_profile, keep_alive=True)
 
         console.print("[cyan]🔄 Initializing browser session...[/cyan]")
         await browser_session.start()
@@ -193,9 +189,7 @@ def generate_analysis_code(weather_data: str) -> Dict[str, Any]:
 
         pattern = r"```(?:json|python)\n(.*?)\n```"
         match = re.search(pattern, result.message["content"][0]["text"], re.DOTALL)
-        python_code = (
-            match.group(1).strip() if match else result.message["content"][0]["text"]
-        )
+        python_code = match.group(1).strip() if match else result.message["content"][0]["text"]
 
         return {"status": "success", "content": [{"text": python_code}]}
     except Exception as e:
@@ -239,9 +233,7 @@ def get_activity_preferences() -> Dict[str, Any]:
             include_payload=True,
         )
 
-        preferences = (
-            response[0]["payload"][0]["blob"] if response else "No preferences found"
-        )
+        preferences = response[0]["payload"][0]["blob"] if response else "No preferences found"
         return {"status": "success", "content": [{"text": preferences}]}
     except Exception as e:
         return {"status": "error", "content": [{"text": f"Error: {str(e)}"}]}

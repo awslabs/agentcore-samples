@@ -1,0 +1,21 @@
+# Secrets / local env
+.env
+
+# AgentCore CLI state + generated target file
+agentcore/aws-targets.json
+.cli/
+.agentcore/
+
+# CDK
+agentcore/cdk/node_modules/
+agentcore/cdk/dist/
+agentcore/cdk/cdk.out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+uv.lock
+
+# OS
+.DS_Store

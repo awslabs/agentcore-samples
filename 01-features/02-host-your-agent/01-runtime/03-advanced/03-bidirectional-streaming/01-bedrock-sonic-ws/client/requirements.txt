@@ -1,0 +1,11 @@
+# Strands Client Requirements
+# 
+# These are the Python dependencies needed to run the Strands client tools.
+# All dependencies use only standard AWS SDK packages.
+
+# AWS SDK for authentication and signing
+boto3>1.42.0
+botocore>=1.34.0
+
+# Note: The web service uses only Python standard library for HTTP server
+# No additional web framework dependencies required

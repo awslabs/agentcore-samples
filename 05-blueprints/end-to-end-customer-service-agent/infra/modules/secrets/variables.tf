@@ -47,11 +47,6 @@ variable "gateway_api_key" {
   sensitive   = true
 }
 
-variable "tavily_api_key" {
-  description = "Tavily API key"
-  type        = string
-  sensitive   = true
-}
 variable "kms_key_id" {
   description = "KMS key ID for encrypting secrets"
   type        = string

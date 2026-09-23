@@ -1,0 +1,7 @@
+boto3
+botocore
+bedrock-agentcore
+pyjwt
+strands-agents
+strands-agents-builder
+botocore[crt]

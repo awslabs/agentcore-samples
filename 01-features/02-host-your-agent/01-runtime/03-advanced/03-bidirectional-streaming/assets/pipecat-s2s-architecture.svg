@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="500" viewBox="0 0 920 500" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555" />
+    </marker>
+    <marker id="arrow-up" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e65100" />
+    </marker>
+    <marker id="arrow-down" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1565c0" />
+    </marker>
+    <marker id="arrow-bidi" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e91e63" />
+    </marker>
+    <marker id="arrow-tool" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7e57c2" />
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="460" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#000">Pipecat Voice Agent — Native S2S Pipeline</text>
+  <text x="460" y="52" text-anchor="middle" font-size="12" fill="#666">Pipecat framework with Nova Sonic over WebSocket via AgentCore Proxy</text>
+
+  <!-- ===== CLIENT BOX ===== -->
+  <rect x="30" y="75" width="170" height="330" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="115" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Client (Vite + JS)</text>
+
+  <rect x="45" y="115" width="140" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="132" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🎤 Microphone</text>
+  <text x="115" y="148" text-anchor="middle" font-size="9" fill="#666">PCM 16kHz capture</text>
+
+  <rect x="45" y="165" width="140" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="182" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🔊 WavStreamPlayer</text>
+  <text x="115" y="198" text-anchor="middle" font-size="9" fill="#666">24kHz playback + interrupt</text>
+
+  <rect x="45" y="215" width="140" height="50" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="232" text-anchor="middle" font-size="11" font-weight="600" fill="#000">📦 RTVI Protocol</text>
+  <text x="115" y="248" text-anchor="middle" font-size="9" fill="#666">ProtobufFrameSerializer</text>
+  <text x="115" y="260" text-anchor="middle" font-size="9" fill="#666">audio + message frames</text>
+
+  <rect x="45" y="275" width="140" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="292" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🔌 /start → Signing</text>
+  <text x="115" y="308" text-anchor="middle" font-size="9" fill="#666">client.py presigned URL</text>
+
+  <rect x="45" y="325" width="140" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="342" text-anchor="middle" font-size="11" font-weight="600" fill="#000">💬 Log Display</text>
+  <text x="115" y="358" text-anchor="middle" font-size="9" fill="#666">transcript + events</text>
+
+  <!-- ===== AGENTCORE PROXY BOX ===== -->
+  <rect x="240" y="75" width="120" height="330" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="300" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">AgentCore</text>
+  <text x="300" y="116" text-anchor="middle" font-size="11" fill="#555">WS Proxy</text>
+
+  <rect x="253" y="135" width="94" height="55" rx="8" fill="white" stroke="#aaa" />
+  <text x="300" y="155" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Bidirectional</text>
+  <text x="300" y="169" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Relay</text>
+  <text x="300" y="183" text-anchor="middle" font-size="9" fill="#666">protobuf frames</text>
+
+  <rect x="253" y="205" width="94" height="45" rx="8" fill="white" stroke="#aaa" />
+  <text x="300" y="225" text-anchor="middle" font-size="10" font-weight="600" fill="#000">SigV4 Auth</text>
+  <text x="300" y="241" text-anchor="middle" font-size="9" fill="#666">Pre-signed URLs</text>
+
+  <rect x="253" y="265" width="94" height="45" rx="8" fill="white" stroke="#aaa" />
+  <text x="300" y="285" text-anchor="middle" font-size="10" font-weight="600" fill="#000">IAM / IMDS</text>
+  <text x="300" y="301" text-anchor="middle" font-size="9" fill="#666">Credential mgmt</text>
+
+  <!-- ===== SERVER BOX ===== -->
+  <rect x="400" y="75" width="500" height="330" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="650" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Server (FastAPI + Pipecat Pipeline)</text>
+
+  <!-- Transport Input -->
+  <rect x="420" y="115" width="150" height="50" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="495" y="135" text-anchor="middle" font-size="10" font-weight="600" fill="#000">📥 Transport Input</text>
+  <text x="495" y="149" text-anchor="middle" font-size="9" fill="#666">FastAPIWebsocketTransport</text>
+  <text x="495" y="161" text-anchor="middle" font-size="9" fill="#666">ProtobufFrameSerializer</text>
+
+  <!-- User Aggregator -->
+  <rect x="420" y="180" width="150" height="50" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="495" y="200" text-anchor="middle" font-size="10" font-weight="600" fill="#000">👤 User Aggregator</text>
+  <text x="495" y="214" text-anchor="middle" font-size="9" fill="#666">LLMContextAggregator</text>
+  <text x="495" y="226" text-anchor="middle" font-size="9" fill="#666">Silero VAD</text>
+
+  <!-- Nova Sonic LLM -->
+  <rect x="600" y="115" width="280" height="100" rx="8" fill="white" stroke="#999" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="740" y="137" text-anchor="middle" font-size="12" font-weight="700" fill="#000">🤖 AWSNovaSonicLLMService</text>
+  <text x="740" y="155" text-anchor="middle" font-size="9" fill="#333">amazon.nova-2-sonic-v1:0</text>
+  <text x="740" y="169" text-anchor="middle" font-size="9" fill="#666">16kHz in • 24kHz out • Native S2S</text>
+  <text x="740" y="183" text-anchor="middle" font-size="9" fill="#666">Built-in VAD • Barge-in • Voice: tiffany</text>
+  <text x="740" y="197" text-anchor="middle" font-size="9" fill="#666">Tool calling via FunctionSchema</text>
+
+  <!-- Transport Output -->
+  <rect x="600" y="230" width="140" height="50" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="670" y="250" text-anchor="middle" font-size="10" font-weight="600" fill="#000">📤 Transport Output</text>
+  <text x="670" y="264" text-anchor="middle" font-size="9" fill="#666">audio → client WS</text>
+  <text x="670" y="276" text-anchor="middle" font-size="9" fill="#666">RTVI messages</text>
+
+  <!-- Assistant Aggregator -->
+  <rect x="770" y="230" width="110" height="50" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="825" y="250" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🤖 Assistant</text>
+  <text x="825" y="264" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Aggregator</text>
+  <text x="825" y="276" text-anchor="middle" font-size="9" fill="#666">context mgmt</text>
+
+  <!-- Tools -->
+  <rect x="420" y="250" width="150" height="90" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="495" y="270" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🔧 Tool Callbacks</text>
+  <text x="495" y="286" text-anchor="middle" font-size="9" fill="#666">get_account_balance</text>
+  <text x="495" y="300" text-anchor="middle" font-size="9" fill="#666">get_recent_transactions</text>
+  <text x="495" y="314" text-anchor="middle" font-size="9" fill="#666">get_mortgage_rates</text>
+  <text x="495" y="328" text-anchor="middle" font-size="9" fill="#666">FunctionSchema + ToolsSchema</text>
+
+  <!-- Dashed pipeline label -->
+  <rect x="415" y="108" width="475" height="240" rx="10" fill="none" stroke="#555" stroke-width="2" stroke-dasharray="6,3" />
+  <text x="895" y="230" text-anchor="middle" font-size="10" font-weight="600" fill="#555" transform="rotate(90, 895, 230)">Pipecat Pipeline</text>
+
+  <!-- IMDS / Credentials -->
+  <rect x="600" y="300" width="280" height="45" rx="8" fill="white" stroke="#999" />
+  <text x="740" y="318" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🔑 IMDS Credential Refresh</text>
+  <text x="740" y="334" text-anchor="middle" font-size="9" fill="#666">Background task • 5-min interval • Auto env vars</text>
+
+  <!-- Pipeline flow label -->
+  <rect x="420" y="360" width="460" height="30" rx="6" fill="white" stroke="#ccc" />
+  <text x="650" y="380" text-anchor="middle" font-size="10" font-weight="600" fill="#555">Pipeline: Input → UserAggregator → NovaSonic → Output → AssistantAggregator</text>
+
+  <!-- ===== ARROWS ===== -->
+  <!-- Client ↔ Proxy -->
+  <line x1="200" y1="180" x2="238" y2="180" stroke="#e65100" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="219" y="173" text-anchor="middle" font-size="8" fill="#e65100">protobuf</text>
+  <line x1="238" y1="200" x2="200" y2="200" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="219" y="215" text-anchor="middle" font-size="8" fill="#1565c0">audio + RTVI</text>
+
+  <!-- Proxy ↔ Server -->
+  <line x1="360" y1="155" x2="398" y2="155" stroke="#e65100" stroke-width="2" marker-end="url(#arrow-up)" />
+  <line x1="398" y1="175" x2="360" y2="175" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+
+  <!-- Input → User Aggregator -->
+  <line x1="495" y1="165" x2="495" y2="178" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- User Aggregator → Nova Sonic -->
+  <line x1="570" y1="200" x2="598" y2="165" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="590" y="178" text-anchor="middle" font-size="8" fill="#555">context</text>
+
+  <!-- Nova Sonic → Transport Output -->
+  <line x1="700" y1="215" x2="670" y2="228" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="678" y="224" text-anchor="middle" font-size="8" fill="#555">audio</text>
+
+  <!-- Transport Output → Assistant Aggregator -->
+  <line x1="740" y1="255" x2="768" y2="255" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- Tools ↔ Nova Sonic -->
+  <line x1="570" y1="280" x2="598" y2="195" stroke="#7e57c2" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow-tool)" />
+  <text x="575" y="240" text-anchor="middle" font-size="8" fill="#7e57c2">tool calls</text>
+
+  <!-- Legend -->
+  <rect x="30" y="435" width="860" height="35" rx="8" fill="white" stroke="#ccc" />
+  <line x1="50" y1="453" x2="80" y2="453" stroke="#e65100" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="85" y="457" font-size="9" fill="#333">Client → Server</text>
+  <line x1="195" y1="453" x2="225" y2="453" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="230" y="457" font-size="9" fill="#333">Server → Client</text>
+  <line x1="340" y1="453" x2="370" y2="453" stroke="#555" stroke-width="1.5" />
+  <text x="375" y="457" font-size="9" fill="#333">Pipeline flow</text>
+  <line x1="460" y1="453" x2="490" y2="453" stroke="#7e57c2" stroke-width="1.5" stroke-dasharray="4,2" />
+  <text x="495" y="457" font-size="9" fill="#333">Tool call</text>
+  <rect x="570" y="445" width="12" height="12" rx="2" fill="none" stroke="#555" stroke-width="2" stroke-dasharray="6,3" />
+  <text x="590" y="457" font-size="9" fill="#333">Pipecat Pipeline boundary</text>
+</svg>

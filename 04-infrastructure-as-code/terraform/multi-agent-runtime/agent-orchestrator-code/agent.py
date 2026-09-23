@@ -102,11 +102,7 @@ async def invoke(payload=None):
     """Main entrypoint for orchestrator agent"""
     try:
         # Get the query from payload
-        query = (
-            payload.get("prompt", "Hello, how are you?")
-            if payload
-            else "Hello, how are you?"
-        )
+        query = payload.get("prompt", "Hello, how are you?") if payload else "Hello, how are you?"
 
         # Create and use the orchestrator agent
         agent = create_orchestrator_agent()

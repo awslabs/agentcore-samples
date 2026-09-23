@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.bedrock_agentcore.yaml
+.venv/

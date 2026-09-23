@@ -1,9 +1,0 @@
-# Cost Optimization Agent Dependencies
-# For uv users: Use pyproject.toml instead (recommended)
-# For pip users: Use this file
-
-bedrock-agentcore>=0.2.0
-bedrock-agentcore-starter-toolkit>=0.2.0
-strands-agents>=0.1.0
-boto3>=1.34.0
-botocore>=1.34.0

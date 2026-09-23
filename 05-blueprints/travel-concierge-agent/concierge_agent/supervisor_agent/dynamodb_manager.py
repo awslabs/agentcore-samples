@@ -28,9 +28,7 @@ class DynamoDBManager:
         self.wishlist_table = self.dynamodb.Table(self.wishlist_table_name)
 
         logger.info(f"DynamoDB Manager initialized with region: {self.region_name}")
-        logger.info(
-            f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}"
-        )
+        logger.info(f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}")
 
     def get_wishlist_items(self, user_id: str):
         """Get all individual wishlist items for a user using GSI."""
@@ -92,9 +90,7 @@ class DynamoDBManager:
                 )
 
             self.wishlist_table.put_item(Item=wishlist_item)
-            logger.info(
-                f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}"
-            )
+            logger.info(f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}")
 
         except ClientError as e:
             logger.error(f"Error adding wishlist item: {e}")
@@ -117,9 +113,7 @@ class DynamoDBManager:
             for item in items_to_delete:
                 self.wishlist_table.delete_item(Key={"id": item["id"]})
 
-            logger.info(
-                f"Removed {len(items_to_delete)} items with ASIN {asin} for user {user_id}"
-            )
+            logger.info(f"Removed {len(items_to_delete)} items with ASIN {asin} for user {user_id}")
             return len(items_to_delete)
 
         except ClientError as e:
@@ -158,9 +152,7 @@ class DynamoDBManager:
             logger.error(f"Error getting user profile: {e}")
             raise
 
-    def update_itinerary_item_date(
-        self, user_id: str, identifier: str, item_type: str, new_date: str
-    ):
+    def update_itinerary_item_date(self, user_id: str, identifier: str, item_type: str, new_date: str):
         """
         Update the date field for itinerary items (flights/hotels).
 
@@ -197,9 +189,7 @@ class DynamoDBManager:
                 if should_update:
                     # Update the item
                     update_expression = "SET updatedAt = :updated"
-                    expression_values = {
-                        ":updated": datetime.now(timezone.utc).isoformat()
-                    }
+                    expression_values = {":updated": datetime.now(timezone.utc).isoformat()}
 
                     # Add date field based on item type
                     if item_type == "flight":

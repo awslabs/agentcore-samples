@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Token Passthrough tutorial — REQUEST interceptor that forwards the client's
+  Authorization header to targets, plus an echo tool Lambda.
+
+Resources:
+  InterceptorRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: agentcore-token-passthrough-interceptor-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ToolRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agentcore-token-passthrough-tool-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  InterceptorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-token-passthrough-interceptor
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt InterceptorRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Description: REQUEST interceptor — passes client Authorization header through to targets
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              mcp_data = event.get("mcp", {})
+              gateway_request = mcp_data.get("gatewayRequest", {})
+              headers = gateway_request.get("headers", {})
+              body = gateway_request.get("body", {})
+
+              # Pass through the original Authorization header from the client
+              # This overrides the gateway's credential provider token
+              auth_header = ""
+              for k, v in headers.items():
+                  if k.lower() == "authorization":
+                      auth_header = v
+                      break
+
+              out_headers = dict(headers)
+              if auth_header:
+                  out_headers["Authorization"] = auth_header
+                  print(f"[TOKEN-PASSTHROUGH] Forwarding client Authorization (first 20 chars): {auth_header[:20]}...")
+
+              return {
+                  "interceptorOutputVersion": "1.0",
+                  "mcp": {"transformedGatewayRequest": {"headers": out_headers, "body": body}}
+              }
+
+  InterceptorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InterceptorFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+  ToolFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-token-passthrough-echo-tool
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt ToolRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Description: Echo tool — reports received Authorization token (truncated)
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              propagated_headers = {}
+
+              if hasattr(context, 'client_context') and context.client_context:
+                  custom = context.client_context.custom or {}
+                  propagated_headers = custom.get('bedrockAgentCorePropagatedHeaders', {})
+
+              auth_token = propagated_headers.get('Authorization', 'not-received')
+              token_preview = auth_token[:30] + "..." if len(auth_token) > 30 else auth_token
+
+              message = event.get('message', 'no message')
+
+              return {
+                  "statusCode": 200,
+                  "body": {
+                      "message": message,
+                      "token_received": token_preview,
+                      "token_length": len(auth_token),
+                      "is_passthrough": auth_token != 'not-received'
+                  }
+              }
+
+  ToolPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ToolFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+Outputs:
+  InterceptorFunctionArn:
+    Description: ARN of the token-passthrough interceptor Lambda
+    Value: !GetAtt InterceptorFunction.Arn
+  ToolFunctionArn:
+    Description: ARN of the echo tool Lambda
+    Value: !GetAtt ToolFunction.Arn

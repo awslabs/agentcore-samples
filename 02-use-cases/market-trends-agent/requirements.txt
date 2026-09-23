@@ -1,7 +1,0 @@
-langgraph
-langchain-aws
-langchain-core
-boto3
-playwright
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit

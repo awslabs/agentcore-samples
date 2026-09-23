@@ -15,6 +15,94 @@ export function applyNagSuppressions(stack: Stack): void {
     },
   ]);
 
+  // Suppress Lambda4: Lambda DLQ
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-Lambda4',
+      reason: 'DLQ not required for educational template Lambda functions; add in production workloads',
+    },
+  ]);
+
+  // Suppress Lambda6: Lambda reserved concurrency
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-Lambda6',
+      reason: 'Reserved concurrency not set for educational templates; configure in production',
+    },
+  ]);
+
+  // Suppress Lambda10: Lambda code signing
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-Lambda10',
+      reason: 'Code signing not required for educational templates',
+    },
+  ]);
+
+  // Suppress EC23: Security group allows all inbound
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-EC23',
+      reason: 'Sample security groups intentionally permissive for demo connectivity',
+    },
+  ]);
+
+  // Suppress EC27: No description on security group rules
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-EC27',
+      reason: 'Security group rule descriptions not required for educational templates',
+    },
+  ]);
+
+  // Suppress ECS4: Container insights not enabled
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-ECS4',
+      reason: 'Container insights optional for educational templates; enable in production',
+    },
+  ]);
+
+  // Suppress ECS7: No awslogs log driver
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-ECS7',
+      reason: 'Log driver configuration optional for educational templates',
+    },
+  ]);
+
+  // Suppress DDB3: DynamoDB PITR
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-DDB3',
+      reason: 'PITR not required for educational template data; enable in production',
+    },
+  ]);
+
+  // Suppress S10: S3 deny public access policy
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-S10',
+      reason: 'S3 bucket policy configuration simplified for educational templates',
+    },
+  ]);
+
+  // Suppress RDS10: Multi-AZ
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-RDS10',
+      reason: 'Multi-AZ not required for educational template databases; enable in production',
+    },
+  ]);
+
+  // Suppress RDS11: Aurora reader instances
+  NagSuppressions.addStackSuppressions(stack, [
+    {
+      id: 'AwsSolutions-RDS11',
+      reason: 'Aurora reader not required for educational template; add in production',
+    },
+  ]);
+
   // Suppress IAM5: Wildcard Permissions
   // Justification: Bedrock and OpenSearch operations require wildcards for dynamic resources
   NagSuppressions.addStackSuppressions(stack, [

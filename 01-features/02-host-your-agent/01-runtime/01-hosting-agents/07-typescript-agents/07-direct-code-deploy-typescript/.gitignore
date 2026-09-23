@@ -1,0 +1,20 @@
+__pycache__
+*.pyc
+.venv/
+.env
+.ipynb_checkpoints/
+.kiro/
+.vscode/
+.DS_Store
+tmp/
+**/chat_app/
+**/travel_chat/
+dist/
+node_modules
+my-agent.zip
+
+
+# to-remove
+models/
+config.py
+travel_chat

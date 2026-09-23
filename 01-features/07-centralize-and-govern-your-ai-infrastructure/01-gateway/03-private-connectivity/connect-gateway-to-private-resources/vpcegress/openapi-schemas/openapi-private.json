@@ -1,0 +1,96 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Private Items API",
+    "version": "1.0.0",
+    "description": "A private REST API hosted on Amazon API Gateway with mock integrations"
+  },
+  "servers": [
+    {
+      "url": "https://{api-id}-{vpce-id}.execute-api.{region}.amazonaws.com/prod",
+      "description": "Private API Gateway via VPCE"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check endpoint",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List all items",
+        "responses": {
+          "200": {
+            "description": "List of items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string" },
+                      "price": { "type": "number" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create a new item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "price": { "type": "number" }
+                },
+                "required": ["name", "price"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Item created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

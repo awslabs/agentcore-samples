@@ -1,0 +1,15 @@
+# Credentials and config — never commit
+.env
+*.env
+private.pem
+public.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+**/PaymentAgent/*
+

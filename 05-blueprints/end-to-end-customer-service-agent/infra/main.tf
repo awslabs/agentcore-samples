@@ -87,12 +87,178 @@ module "secrets" {
   langfuse_secret_key = var.langfuse_secret_key
   gateway_url         = var.gateway_url
   gateway_api_key     = var.gateway_api_key
-  tavily_api_key      = var.tavily_api_key
 
   depends_on = [module.cognito]
 }
 
+# ---------------------------------------------------------------------------
+# Gateway Interceptor Lambda
+# ---------------------------------------------------------------------------
+
+# IAM role for the interceptor Lambda
+resource "aws_iam_role" "interceptor_lambda_role" {
+  name = "cx-gateway-interceptor-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "interceptor_basic" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  role       = aws_iam_role.interceptor_lambda_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "interceptor_xray" {
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+  role       = aws_iam_role.interceptor_lambda_role.name
+}
+
+resource "aws_iam_role_policy" "interceptor_dlq_policy" {
+  name = "interceptor-dlq-send"
+  role = aws_iam_role.interceptor_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sqs:SendMessage"]
+      Resource = aws_sqs_queue.interceptor_dlq.arn
+    }]
+  })
+}
+
+# DynamoDB table for rate limiting (per-caller call counters)
+resource "aws_dynamodb_table" "rate_limit_table" {
+  name         = "agentcore-gateway-rate-limits"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  # TTL so stale counters are automatically cleaned up
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Purpose = "AgentCore Gateway rate limiting"
+  }
+}
+
+# Allow interceptor Lambda to read/write the rate limit table
+resource "aws_iam_role_policy" "interceptor_dynamodb_policy" {
+  name = "interceptor-dynamodb-rate-limit"
+  role = aws_iam_role.interceptor_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+      ]
+      Resource = aws_dynamodb_table.rate_limit_table.arn
+    }]
+  })
+}
+
+# Allow interceptor Lambda to call Bedrock InvokeGuardrailChecks
+resource "aws_iam_role_policy" "interceptor_bedrock_policy" {
+  name = "interceptor-bedrock-guardrails"
+  role = aws_iam_role.interceptor_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock:InvokeGuardrailChecks"]
+      Resource = "*"
+    }]
+  })
+}
+
+# Package the interceptor source file
+data "archive_file" "interceptor_lambda_zip" {
+  type             = "zip"
+  output_path      = "interceptor_lambda.zip"
+  source_file      = "lambda/gateway_interceptor.py"
+  output_file_mode = "0666"
+}
+
+# Interceptor Lambda function
+resource "aws_lambda_function" "gateway_interceptor" {
+  filename         = data.archive_file.interceptor_lambda_zip.output_path
+  source_code_hash = data.archive_file.interceptor_lambda_zip.output_base64sha256
+  function_name    = "cx-gateway-interceptor"
+  role             = aws_iam_role.interceptor_lambda_role.arn
+  handler          = "gateway_interceptor.lambda_handler"
+  runtime          = "python3.12"
+  timeout          = 10 # keep low — interceptor is on the hot path
+
+  reserved_concurrent_executions = 100
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.interceptor_dlq.arn
+  }
+
+  environment {
+    variables = {
+      RATE_LIMIT_TABLE        = aws_dynamodb_table.rate_limit_table.name
+      RATE_LIMIT_MAX          = tostring(var.interceptor_rate_limit_max)
+      RATE_LIMIT_WINDOW       = tostring(var.interceptor_rate_limit_window)
+      ENABLE_RATE_LIMIT       = tostring(var.interceptor_enable_rate_limit)
+      ENABLE_GUARDRAIL_CHECKS = tostring(var.interceptor_enable_guardrail_checks)
+      GUARDRAIL_BLOCK_THRESHOLD    = tostring(var.interceptor_guardrail_block_threshold)
+      GUARDRAIL_ESCALATE_THRESHOLD = tostring(var.interceptor_guardrail_escalate_threshold)
+    }
+  }
+
+  depends_on = [data.archive_file.interceptor_lambda_zip]
+}
+
+# Dead letter queue for interceptor Lambda
+resource "aws_sqs_queue" "interceptor_dlq" {
+  name                    = "cx-gateway-interceptor-dlq"
+  message_retention_seconds = 1209600 # 14 days
+  sqs_managed_sse_enabled = true
+}
+
+# Allow AgentCore Gateway to invoke the interceptor Lambda
+resource "aws_lambda_permission" "allow_gateway_interceptor" {
+  statement_id  = "AllowAgentCoreGatewayInterceptor"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.gateway_interceptor.function_name
+  principal     = "bedrock-agentcore.amazonaws.com"
+  source_arn    = aws_bedrockagentcore_gateway.cx_gateway.gateway_arn
+}
+
+# ---------------------------------------------------------------------------
 # Gateway IAM Role
+# ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "gateway_assume_role" {
   statement {
     effect  = "Allow"
@@ -123,20 +289,22 @@ resource "aws_iam_role_policy" "gateway_policy" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "*"
+        Resource = "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/*"
       },
       {
         Effect = "Allow"
-        Action = [
-          "lambda:InvokeFunction"
+        Action = ["lambda:InvokeFunction"]
+        Resource = [
+          aws_lambda_function.gateway_interceptor.arn,
         ]
-        Resource = aws_lambda_function.tavily_search.arn
       }
     ]
   })
 }
 
-# Bedrock AgentCore Gateway
+# ---------------------------------------------------------------------------
+# Bedrock AgentCore Gateway  (with interceptor attached)
+# ---------------------------------------------------------------------------
 resource "aws_bedrockagentcore_gateway" "cx_gateway" {
   name     = "cx-agent-gateway"
   role_arn = aws_iam_role.gateway_role.arn
@@ -150,103 +318,40 @@ resource "aws_bedrockagentcore_gateway" "cx_gateway" {
   }
 
   protocol_type = "MCP"
+
+  # ---------------------------------------------------------------------------
+  # Interceptor configuration
+  # NOTE: The exact attribute names below depend on the AWS provider version.
+  # As of provider v6.47, the gateway interceptor is configured via the
+  # authorizer_configuration block or a separate interceptor argument.
+  # Verify against: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/bedrockagentcore_gateway
+  #
+  # If the provider does not yet expose interceptor config as a Terraform
+  # attribute, attach the interceptor manually via the AWS console or CLI:
+  #
+  #   aws bedrock-agentcore-control update-gateway \
+  #     --gateway-identifier cx-agent-gateway \
+  #     --request-interceptor-lambda-arn <arn> \
+  #     --response-interceptor-lambda-arn <arn> \
+  #     --region us-east-1
+  # ---------------------------------------------------------------------------
+
+  depends_on = [aws_lambda_function.gateway_interceptor]
 }
 
-# Lambda function for Tavily integration
-resource "aws_lambda_function" "tavily_search" {
-  filename         = "tavily_lambda.zip"
-  function_name    = "tavily-search-function"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "tavily_search.handler"
-  runtime         = "python3.9"
-  timeout         = 30
-
-  tracing_config {
-    mode = "Active"
-  }
-
-  environment {
-    variables = {
-      TAVILY_API_KEY = var.tavily_api_key
-    }
-  }
-}
-
-# Lambda IAM Role
-resource "aws_iam_role" "lambda_role" {
-  name = "tavily-lambda-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-  role       = aws_iam_role.lambda_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_xray" {
-  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-  role       = aws_iam_role.lambda_role.name
-}
-
-# Lambda permission for gateway to invoke
-resource "aws_lambda_permission" "allow_gateway" {
-  statement_id  = "AllowExecutionFromGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.tavily_search.function_name
-  principal     = "bedrock-agentcore.amazonaws.com"
-  source_arn    = aws_bedrockagentcore_gateway.cx_gateway.gateway_arn
-}
-
-# Lambda deployment package
-data "archive_file" "tavily_lambda_zip" {
-  type        = "zip"
-  output_path = "tavily_lambda.zip"
-  source_file = "lambda/tavily_search.py"
-  output_file_mode = "0666"
-}
-
-# Gateway Target for Tavily
-resource "aws_bedrockagentcore_gateway_target" "tavily_target" {
-  name               = "tavily-search-target"
-  gateway_identifier = aws_bedrockagentcore_gateway.cx_gateway.gateway_id
-  description        = "Tavily web search integration"
-
-  credential_provider_configuration {
-    gateway_iam_role {}
-  }
-
-  target_configuration {
-    mcp {
-      lambda {
-        lambda_arn = aws_lambda_function.tavily_search.arn
-
-        tool_schema {
-          inline_payload {
-            name        = "tavily_search"
-            description = "Search the web using Tavily API"
-
-            input_schema {
-              type        = "object"
-              description = "Search query object"
-            }
-          }
-        }
-      }
-    }
-  }
-}
+# Gateway Target: AgentCore Web Search Tool (managed connector)
+# ---------------------------------------------------------------------------
+# The AWS Terraform provider does not yet expose the connector target type.
+# After terraform apply, add the Web Search target via AWS console or CLI:
+#
+#   aws bedrock-agentcore-control create-gateway-target \
+#     --gateway-identifier <gateway-id> \
+#     --name "web-search-target" \
+#     --target-configuration '{"mcp":{"connector":{"connectorId":"web-search"}}}' \
+#     --region us-east-1
+#
+# Or via the console: Gateway → Add target → Connectors → Web Search
+# ---------------------------------------------------------------------------
 
 # Deploy the endpoint
 resource "aws_bedrockagentcore_agent_runtime" "agent_runtime" {

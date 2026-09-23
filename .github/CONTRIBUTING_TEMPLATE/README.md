@@ -3,7 +3,7 @@
 Welcome to the Amazon Bedrock AgentCore examples repository! To help you submit your contributions to the right place, here's what you need to know:
 Where Should I Submit My PR?
 
-## 📚 Tutorials (01-tutorials/)
+## 📚 Tutorials (06-workshops/)
 
 This folder is primarily maintained by AWS teams to provide fundamental learning materials. Only submit PRs here if:
 

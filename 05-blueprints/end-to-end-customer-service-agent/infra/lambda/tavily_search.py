@@ -7,9 +7,7 @@ import urllib.parse
 def handler(event, context):
     print("=== LANGGRAPH TOOL CALL DEBUG ===")
     print(f"Event type: {type(event)}")
-    print(
-        f"Event keys: {list(event.keys()) if isinstance(event, dict) else 'Not a dict'}"
-    )
+    print(f"Event keys: {list(event.keys()) if isinstance(event, dict) else 'Not a dict'}")
     print(f"Full event object: {json.dumps(event, indent=2)}")
     print(f"Context: {context}")
     print("=== END DEBUG ===")
@@ -66,9 +64,7 @@ def handler(event, context):
             print(f"Tavily API response status: {response.status}")
             result = json.loads(response.read().decode("utf-8"))
             print(f"Tavily API response: {json.dumps(result)[:500]}...")
-            print(
-                f"Full result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}"
-            )
+            print(f"Full result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
 
             # Format response for agent understanding
             if "results" in result:
@@ -78,9 +74,7 @@ def handler(event, context):
                         {
                             "title": item.get("title", ""),
                             "url": item.get("url", ""),
-                            "content": item.get("content", "")[
-                                :500
-                            ],  # Truncate content
+                            "content": item.get("content", "")[:500],  # Truncate content
                         }
                     )
                 formatted_response = {
@@ -88,16 +82,12 @@ def handler(event, context):
                     "answer": result.get("answer", ""),
                     "query": query,
                 }
-                print(
-                    f"Returning formatted response: {json.dumps(formatted_response)[:200]}..."
-                )
+                print(f"Returning formatted response: {json.dumps(formatted_response)[:200]}...")
                 print(f"Formatted response keys: {list(formatted_response.keys())}")
                 return formatted_response
 
             print(f"Returning raw result: {json.dumps(result)[:200]}...")
-            print(
-                f"Raw result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}"
-            )
+            print(f"Raw result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
             return result
     except Exception as e:
         print(f"ERROR in Lambda function: {str(e)}")

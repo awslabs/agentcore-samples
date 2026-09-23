@@ -1,0 +1,12 @@
+node_modules/
+dist/
+package-lock.json
+.env
+*.log
+.vite/
+
+# Python artifacts (reference CLI kept for history only)
+.venv/
+.ruff_cache/
+__pycache__/
+uv.lock

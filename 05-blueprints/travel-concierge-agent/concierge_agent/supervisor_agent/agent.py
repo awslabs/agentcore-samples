@@ -19,9 +19,7 @@ from cart_subagent import cart_manager
 from travel_subagent import travel_assistant
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 app = BedrockAgentCoreApp()
@@ -62,9 +60,7 @@ def get_user_profile_data(user_id: str) -> str:
 
         # IMPORTANT: Always include userId first - this is the user's unique identifier
         if profile.get("userId"):
-            profile_parts.append(
-                f"User ID (use this for all tool calls): {profile['userId']}"
-            )
+            profile_parts.append(f"User ID (use this for all tool calls): {profile['userId']}")
 
         if profile.get("name"):
             profile_parts.append(f"Name: {profile['name']}")
@@ -90,9 +86,7 @@ def get_user_profile_data(user_id: str) -> str:
                 profile_parts.append(f"Preferences: {preferences}")
 
         if profile.get("onboardingCompleted"):
-            profile_parts.append(
-                f"Onboarding completed: {profile['onboardingCompleted']}"
-            )
+            profile_parts.append(f"Onboarding completed: {profile['onboardingCompleted']}")
 
         if profile_parts:
             profile_text = f", Profile: {'; '.join(profile_parts)}"
@@ -117,18 +111,14 @@ def create_supervisor_agent(user_id: str, session_id: str) -> Agent:
         user_profile = "User profile not available"
 
     # Get base prompt and add user profile context
-    base_prompt = get_prompt("travel_agent_supervisor").format(
-        user_profile=user_profile
-    )
+    base_prompt = get_prompt("travel_agent_supervisor").format(user_profile=user_profile)
 
     # Configure AgentCore Memory integration
     agentcore_memory_config = AgentCoreMemoryConfig(
         memory_id=MEMORY_ID, session_id=session_id, actor_id=f"supervisor-{user_id}"
     )
 
-    session_manager = AgentCoreMemorySessionManager(
-        agentcore_memory_config=agentcore_memory_config, region_name=REGION
-    )
+    session_manager = AgentCoreMemorySessionManager(agentcore_memory_config=agentcore_memory_config, region_name=REGION)
 
     logger.info("Creating supervisor agent with session manager...")
 
@@ -169,9 +159,7 @@ async def agent_stream(payload):
         return
 
     try:
-        logger.info(
-            f"Starting streaming invocation for user: {user_id}, session: {session_id}"
-        )
+        logger.info(f"Starting streaming invocation for user: {user_id}, session: {session_id}")
         logger.info(f"Query: {user_query}")
 
         agent = create_supervisor_agent(user_id, session_id)

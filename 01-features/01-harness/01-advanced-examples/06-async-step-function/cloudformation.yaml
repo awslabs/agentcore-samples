@@ -1,0 +1,473 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Complete weather workflow: Harness + Step Functions + DynamoDB'
+
+Parameters:
+  TableName:
+    Type: String
+    Default: weather-data
+    Description: DynamoDB table name
+
+  StateMachineName:
+    Type: String
+    Default: WeatherWorkflow
+    Description: Step Functions state machine name
+
+  HarnessName:
+    Type: String
+    Default: WeatherHarness
+    Description: AgentCore harness name
+
+Resources:
+  # DynamoDB Table
+  WeatherTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: city
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: city-index
+          KeySchema:
+            - AttributeName: city
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # IAM Role for Harness
+  HarnessExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${HarnessName}-ExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: HarnessExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockModelInvocation
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: BedrockMantleInference
+                Effect: Allow
+                Action:
+                  - bedrock-mantle:CreateInference
+                Resource: !Sub arn:aws:bedrock-mantle:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: BedrockMantleCallWithBearerToken
+                Effect: Allow
+                Action:
+                  - bedrock-mantle:CallWithBearerToken
+                Resource: '*'
+              - Sid: EcrPublicTokenAccess
+                Effect: Allow
+                Action:
+                  - ecr-public:GetAuthorizationToken
+                Resource: '*'
+              - Sid: StsForEcrPublicPull
+                Effect: Allow
+                Action:
+                  - sts:GetServiceBearerToken
+                Resource: '*'
+              - Sid: XRayTracingAccess
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+              - Sid: CloudWatchLogsGroup
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DescribeLogStreams
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*
+              - Sid: CloudWatchLogsDescribeGroups
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+              - Sid: CloudWatchLogsStream
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*
+              - Sid: CloudWatchMetricsPublish
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Sid: AgentCoreWorkloadIdentity
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default
+                  # The identity a harness gets is named `harness_<HarnessName>-<suffix>`
+                  # (e.g. harness_WeatherHarness-JhUExN3fko), so the doubled
+                  # `harness_harness_*` prefix here matched nothing.
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/harness_*
+              - Sid: AgentCoreBrowserDefault
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:StartBrowserSession
+                  - bedrock-agentcore:StopBrowserSession
+                  - bedrock-agentcore:GetBrowserSession
+                  - bedrock-agentcore:ListBrowserSessions
+                  - bedrock-agentcore:UpdateBrowserStream
+                  - bedrock-agentcore:ConnectBrowserAutomationStream
+                  - bedrock-agentcore:ConnectBrowserLiveViewStream
+                Resource: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:aws:browser/*
+              - Sid: AgentCoreCodeInterpreterDefault
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:StartCodeInterpreterSession
+                  - bedrock-agentcore:StopCodeInterpreterSession
+                  - bedrock-agentcore:GetCodeInterpreterSession
+                  - bedrock-agentcore:ListCodeInterpreterSessions
+                  - bedrock-agentcore:InvokeCodeInterpreter
+                Resource: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:aws:code-interpreter/*
+              # Creating a harness auto-provisions a managed memory
+              # (harness_<HarnessName>_*). Without these actions the very first
+              # InvokeHarness fails with AccessDeniedException on ListEvents —
+              # and because the Step Functions Catch routes that to a
+              # success-shaped result, executions report SUCCEEDED while nothing
+              # is ever written to DynamoDB. These mirror the shared
+              # utils/iam.py policy the Python samples use.
+              - Sid: AgentCoreMemoryAccess
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetMemory
+                  - bedrock-agentcore:DeleteMemory
+                  - bedrock-agentcore:CreateEvent
+                  - bedrock-agentcore:GetEvent
+                  - bedrock-agentcore:ListEvents
+                  - bedrock-agentcore:RetrieveMemoryRecords
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/*
+              # CreateMemory and ListMemories act on the account, not on a memory
+              # that exists yet, so they cannot be scoped to `memory/*` — doing so
+              # leaves them implicitly denied (confirmed with
+              # iam:SimulateCustomPolicy). They must sit in their own statement.
+              - Sid: AgentCoreMemoryAccountScoped
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateMemory
+                  - bedrock-agentcore:ListMemories
+                Resource: '*'
+              - Sid: EFSClientAccess
+                Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/*
+                Condition:
+                  ArnLike:
+                    elasticfilesystem:AccessPointArn: !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/*
+              - Sid: EFSDescribe
+                Effect: Allow
+                Action:
+                  - elasticfilesystem:DescribeAccessPoints
+                  - elasticfilesystem:DescribeMountTargets
+                Resource:
+                  - !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/*
+                  - !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/*
+              - Sid: S3FilesClientAccess
+                Effect: Allow
+                Action:
+                  - s3files:ClientMount
+                  - s3files:ClientWrite
+                  - s3files:ClientRootAccess
+                Resource: !Sub arn:aws:s3files:${AWS::Region}:${AWS::AccountId}:file-system/*
+                Condition:
+                  ArnLike:
+                    s3files:AccessPointArn: !Sub arn:aws:s3files:${AWS::Region}:${AWS::AccountId}:file-system/*/access-point/*
+              - Sid: S3FilesDescribe
+                Effect: Allow
+                Action:
+                  - s3files:GetAccessPoint
+                  - s3files:ListMountTargets
+                Resource:
+                  - !Sub arn:aws:s3files:${AWS::Region}:${AWS::AccountId}:file-system/*
+                  - !Sub arn:aws:s3files:${AWS::Region}:${AWS::AccountId}:file-system/*/access-point/*
+
+  # AgentCore Harness
+  WeatherHarness:
+    Type: AWS::BedrockAgentCore::Harness
+    DependsOn: HarnessExecutionRole
+    Properties:
+      HarnessName: !Ref HarnessName
+      ExecutionRoleArn: !GetAtt HarnessExecutionRole.Arn
+      Model:
+        BedrockModelConfig:
+          ModelId: global.anthropic.claude-haiku-4-5-20251001-v1:0
+      SystemPrompt:
+        - Text: You are a weather assistant that searches the web for real-time weather data. When asked about weather for a specific city and date, use your search tool to find accurate forecasts. Always return results as a JSON object with the exact fields requested - id (uuid), timestamp (unix timestamp), city, date, temperature_c, temperature_f, and conditions (brief description).
+      Tools:
+        - Name: exa_search
+          Type: remote_mcp
+          Config:
+            RemoteMcp:
+              Url: https://mcp.exa.ai/mcp
+
+  # IAM Role for Step Functions
+  StepFunctionsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StateMachineName}-ExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeHarness
+                  - bedrock-agentcore:InvokeAgentRuntime
+                Resource: !GetAtt WeatherHarness.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt WeatherTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  # CloudWatch Log Group
+  StepFunctionsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/stepfunctions/${StateMachineName}
+      RetentionInDays: 7
+
+  # Step Functions State Machine
+  WeatherStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn: WeatherHarness
+    Properties:
+      StateMachineName: !Ref StateMachineName
+      RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StepFunctionsLogGroup.Arn
+      DefinitionSubstitutions:
+        HarnessArn: !GetAtt WeatherHarness.Arn
+        TableName: !Ref TableName
+      DefinitionString: |
+        {
+          "Comment": "Weather workflow with Harness, JSON extraction, and DynamoDB",
+          "StartAt": "InvokeHarness",
+          "States": {
+            "InvokeHarness": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::bedrockagentcore:invokeHarness",
+              "Parameters": {
+                "RuntimeSessionId.$": "States.UUID()",
+                "Messages": [
+                  {
+                    "Content": [
+                      {
+                        "Text.$": "States.Format('Get weather forecast for {} on {}. Search the web for real weather data. Return a JSON object with: id (generate a uuid), timestamp (unix timestamp), city (string), date (string), temperature_c (number), temperature_f (number), conditions (string description)', $.city, $.date)"
+                      }
+                    ],
+                    "Role": "user"
+                  }
+                ],
+                "HarnessArn": "${HarnessArn}"
+              },
+              "ResultPath": "$.harnessOutput",
+              "TimeoutSeconds": 300,
+              "Retry": [
+                {
+                  "Comment": "Caller-fault errors are never fixed by trying again. Retriers are evaluated in order, so matching these first with MaxAttempts 0 makes them fail fast. Without this, the States.TaskFailed retrier below matched every failure and a bad IAM policy or harness ARN was billed as four identical invocations before surfacing.",
+                  "ErrorEquals": [
+                    "BedrockAgentCore.AccessDeniedException",
+                    "BedrockAgentCore.ValidationException",
+                    "BedrockAgentCore.ResourceNotFoundException",
+                    "BedrockAgentCore.RuntimeClientErrorException"
+                  ],
+                  "MaxAttempts": 0
+                },
+                {
+                  "ErrorEquals": ["States.Timeout", "States.TaskFailed"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "HandleError"
+                }
+              ],
+              "Next": "ExtractJson"
+            },
+            "ExtractJson": {
+              "Comment": "Pull the JSON object out of the agent's reply with a single JSONata regex match. The previous version split the text on '{' and took element 1, which crashed with States.Runtime/Invalid arguments in States.ArrayGetItem whenever the model replied with bare JSON (no leading prose, so no element 1), and silently truncated any nested object at its first '}'. Matching greedily from the first '{' to the last '}' handles bare, prose-wrapped and ```json-fenced replies, and keeps nested objects intact. The $exists guard turns 'no JSON at all' into an empty string so the Choice below can report it clearly instead of failing with an opaque JSONata error.",
+              "Type": "Pass",
+              "QueryLanguage": "JSONata",
+              "Output": {
+                "city": "{% $states.input.city %}",
+                "date": "{% $states.input.date %}",
+                "jsonText": "{% ( $m := $match($states.input.harnessOutput.Output.Message.Content[0].Text, /\\{[\\s\\S]*\\}/).match; $exists($m) ? $m : '' ) %}"
+              },
+              "Next": "CheckJsonFound"
+            },
+            "CheckJsonFound": {
+              "Type": "Choice",
+              "QueryLanguage": "JSONata",
+              "Choices": [
+                {
+                  "Condition": "{% $states.input.jsonText != '' %}",
+                  "Next": "ParseJson"
+                }
+              ],
+              "Default": "HandleUnparseableResponse"
+            },
+            "ParseJson": {
+              "Type": "Pass",
+              "QueryLanguage": "JSONata",
+              "Output": {
+                "city": "{% $states.input.city %}",
+                "date": "{% $states.input.date %}",
+                "parsed": "{% $parse($states.input.jsonText) %}"
+              },
+              "Next": "StoreToDynamoDB"
+            },
+            "StoreToDynamoDB": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Parameters": {
+                "TableName": "${TableName}",
+                "Item": {
+                  "id": {
+                    "S.$": "$.parsed.id"
+                  },
+                  "timestamp": {
+                    "S.$": "States.Format('{}', $.parsed.timestamp)"
+                  },
+                  "city": {
+                    "S.$": "$.parsed.city"
+                  },
+                  "date": {
+                    "S.$": "$.parsed.date"
+                  },
+                  "temperature_c": {
+                    "N.$": "States.Format('{}', $.parsed.temperature_c)"
+                  },
+                  "temperature_f": {
+                    "N.$": "States.Format('{}', $.parsed.temperature_f)"
+                  },
+                  "conditions": {
+                    "S.$": "$.parsed.conditions"
+                  },
+                  "input_city": {
+                    "S.$": "$.city"
+                  },
+                  "input_date": {
+                    "S.$": "$.date"
+                  }
+                }
+              },
+              "End": true
+            },
+            "HandleUnparseableResponse": {
+              "Comment": "The harness answered, but the answer contained no JSON object to store.",
+              "Type": "Fail",
+              "Error": "AgentResponseNotJson",
+              "Cause": "The harness reply contained no parseable JSON object, so there was nothing to write to DynamoDB. Inspect the InvokeHarness output text in the execution history."
+            },
+            "HandleError": {
+              "Comment": "Fail the execution so a caught harness error surfaces as FAILED. A Pass/End here would report SUCCEEDED while nothing was written to DynamoDB, hiding the failure behind a green checkmark.",
+              "Type": "Fail",
+              "Error": "HarnessInvocationFailed",
+              "Cause": "The harness invocation did not complete successfully. See the InvokeHarness task error in the execution history for the underlying cause. No item was written to DynamoDB."
+            }
+          }
+        }
+
+Outputs:
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref WeatherTable
+    Export:
+      Name: !Sub ${AWS::StackName}-TableName
+
+  DynamoDBTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt WeatherTable.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TableArn
+
+  StateMachineArn:
+    Description: Step Functions state machine ARN
+    Value: !Ref WeatherStateMachine
+    Export:
+      Name: !Sub ${AWS::StackName}-StateMachineArn
+
+  HarnessArn:
+    Description: AgentCore harness ARN
+    Value: !GetAtt WeatherHarness.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-HarnessArn
+
+  HarnessId:
+    Description: AgentCore harness ID
+    # !Ref on AWS::BedrockAgentCore::Harness returns the ARN, not the ID, so this
+    # output used to duplicate HarnessArn. Take the last path segment of the ARN
+    # to get the real harness ID that GetHarness/DeleteHarness expect.
+    Value: !Select [1, !Split ['harness/', !GetAtt WeatherHarness.Arn]]
+    Export:
+      Name: !Sub ${AWS::StackName}-HarnessId

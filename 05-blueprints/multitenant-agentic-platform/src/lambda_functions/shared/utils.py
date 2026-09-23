@@ -14,9 +14,7 @@ CORS_HEADERS = {
 }
 
 
-def create_response(
-    status_code: int, body: Dict[str, Any], headers: Dict[str, str] = None
-) -> Dict[str, Any]:
+def create_response(status_code: int, body: Dict[str, Any], headers: Dict[str, str] = None) -> Dict[str, Any]:
     """
     Create a standardized API Gateway response
 

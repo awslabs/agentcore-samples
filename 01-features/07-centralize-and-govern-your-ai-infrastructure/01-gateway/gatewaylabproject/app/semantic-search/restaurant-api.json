@@ -1,0 +1,32 @@
+[
+    {
+        "name": "create_booking",
+        "description": "Create a new booking at restaurant_name",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "The date of the booking in the format YYYY-MM-DD. Do NOT accept relative dates like today or tomorrow. Ask for today's date for relative date."
+                },
+                "hour": {
+                    "type": "string",
+                    "description": "the hour of the booking in the format HH:MM"
+                },
+                "restaurant_name": {
+                    "type": "string",
+                    "description": "name of the restaurant handling the reservation"
+                },
+                "guest_name": {
+                    "type": "string",
+                    "description": "The name of the customer to have in the reservation"
+                },
+                "num_guests": {
+                    "type": "integer",
+                    "description": "The number of guests for the booking"
+                }
+            },
+            "required": ["date", "hour", "restaurant_name", "guest_name", "num_guests"]
+        }
+    }
+]

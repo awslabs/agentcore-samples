@@ -37,11 +37,7 @@ def get_secret(secret_name, region_name="us-east-1"):
     secret_value = response["SecretString"]
 
     # For PEM files (certificates/keys), replace common escape sequences if accidentally stored
-    if (
-        "cert" in secret_name.lower()
-        or "key" in secret_name.lower()
-        or "pem" in secret_name.lower()
-    ):
+    if "cert" in secret_name.lower() or "key" in secret_name.lower() or "pem" in secret_name.lower():
         # Replace literal \n with actual newlines
         # codeql[py/clear-text-logging-sensitive-data] Logs processing status only, not secret content
         if "\\n" in secret_value:
@@ -111,9 +107,9 @@ def get_ntp_time():
             logger.info(f"  Querying NTP server: {ntp_server}")
             response = client.request(ntp_server, version=3, timeout=5)
             ntp_time_seconds = int(response.tx_time)
-            _ntp_time_readable = datetime.fromtimestamp(
-                response.tx_time, tz=timezone.utc
-            ).strftime("%Y-%m-%d %H:%M:%S UTC")
+            _ntp_time_readable = datetime.fromtimestamp(response.tx_time, tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S UTC"
+            )
             logger.info(f"  NTP time retrieved successfully from {ntp_server}")
             return ntp_time_seconds
         except Exception as e:
@@ -150,9 +146,7 @@ def encrypt_card_data(payload, encryption_api_key, encryption_shared_secret):
     ).digest()  # CodeQL[py/weak-cryptographic-algorithm] SHA256 is mandated by Visa API specification
 
     # Create JWK object for symmetric key
-    symmetric_key = jwk.JWK(
-        kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode("utf-8").rstrip("=")
-    )
+    symmetric_key = jwk.JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode("utf-8").rstrip("="))
 
     # Step 4: Create protected header
     protected_header = {
@@ -191,9 +185,7 @@ def decrypt_token_info(encrypted_jwe, encryption_shared_secret):
     key_bytes = hashlib.sha256(
         encryption_shared_secret.encode("utf-8")
     ).digest()  # CodeQL[py/weak-cryptographic-algorithm] SHA256 is mandated by Visa API specification
-    symmetric_key = jwk.JWK(
-        kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode("utf-8").rstrip("=")
-    )
+    symmetric_key = jwk.JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode("utf-8").rstrip("="))
 
     # Step 2: Deserialize and decrypt the JWE token
     jwetoken = jwe.JWE()

@@ -1,0 +1,53 @@
+# Composition agent image.
+#
+# Deliberately has NO RUN steps. Every dependency is vendored on the build host
+# with `uv --python-platform x86_64-manylinux2014` and copied in, so this builds
+# for linux/amd64 from an arm64 Mac in seconds. A single `pip install` here would
+# execute under QEMU emulation instead.
+#
+# GPU families on AgentCore capacity providers are all x86_64, so the platform is
+# pinned rather than inherited.
+#
+# Measured: 180 MB, against the 2 GB hard cap on an AgentCore Runtime image. The
+# generative stack (torch + CUDA + ACE-Step, about 6.3 GB installed) does not fit
+# in any image and lives on the capacity provider's `models` volume instead;
+# model_stack/prepare.py builds it there on first use.
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/python:3.12-slim
+
+WORKDIR /app
+
+# Vendored wheels, unpacked by deploy.py into build/agentdeps.
+COPY build/agentdeps /app/deps
+ENV PYTHONPATH=/app/deps
+ENV PYTHONUNBUFFERED=1
+
+# AgentCore injects the NVIDIA driver into /usr/lib64 at run time. This base image
+# is Debian, whose dynamic linker searches /usr/lib/x86_64-linux-gnu and /usr/lib
+# but NOT /usr/lib64 -- there is no entry for it in /etc/ld.so.conf.d, and
+# ldconfig cannot help because the driver appears after the image is built.
+#
+# Without this, libcuda.so.1 is present on disk and still unloadable, so torch
+# reports cuda_available=False and silently runs on the CPU. Measured on a live
+# g6.xlarge: `ctypes.CDLL("libcuda.so.1")` raises "cannot open shared object
+# file", and the same call with LD_LIBRARY_PATH=/usr/lib64 succeeds and torch then
+# reports one NVIDIA L4.
+#
+# An Amazon Linux based image would not need this, because /usr/lib64 is a
+# standard library path there.
+ENV LD_LIBRARY_PATH=/usr/lib64
+
+COPY audio_dsp.py composition_agent.py /app/
+COPY model_stack /app/model_stack
+
+# Runs as root so the agent can write to the capacity provider volume. The mount
+# is 2775 root:agentcore-runtime-user and the agent process holds that
+# supplementary group; a command shell in the same runtime does not, which is why
+# only the agent can populate the volume. Drop privileges only if you move the
+# workspace to an EFS or S3 Files access point where you set the POSIX UID/GID.
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+    CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/ping',timeout=3)"
+
+CMD ["python", "composition_agent.py"]

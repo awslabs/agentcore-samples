@@ -1,0 +1,67 @@
+[project]
+name = "market-trends-agent"
+version = "0.1.0"
+description = "Intelligent financial analysis agent using Amazon Bedrock AgentCore"
+
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph",
+    "langchain-aws",
+    "langchain-core",
+    # boto3 1.42+ is required for the AgentCore Evaluations control-plane APIs
+    # (list_evaluators, create_evaluator, create_online_evaluation_config).
+    "boto3>=1.42.0",
+    "playwright",
+    # 1.7.0+ is required for SimulatedScenario, BatchEvaluationRunner, and
+    # the optimization APIs (start_recommendation, create_configuration_bundle,
+    # create_ab_test, create_gateway).
+    # The [simulation] extra pulls in strands-agents-evals, which drives
+    # LLM-actor conversations in SimulatedScenario evaluations.
+    "bedrock-agentcore[simulation]==1.8.0",
+    # Exact runtime dependencies for the isolated native AgentSkills variant.
+    "strands-agents[otel]==1.38.0",
+    "aws-opentelemetry-distro==0.19.0",
+    "jinja2",
+    # AgentCore observability — framework-level auto-instrumentation for
+    # LangChain / LangGraph. Emits gen_ai.*, traceloop.entity.* attributes
+    # and tool-call spans that code-based evaluators can reason over.
+    # See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html
+    "opentelemetry-instrumentation-langchain",
+    # Pin wrapt to avoid TypeError in opentelemetry-instrumentation-langchain:
+    # wrapt 1.16.0+ made wrap_function_wrapper() args positional-only, breaking
+    # LangchainInstrumentor().instrument() which passes module= as a keyword arg.
+    "wrapt<1.16.0",
+    # Pin jsonschema to satisfy openapi-spec-validator 0.8.4's constraint.
+    "jsonschema>=4.24.0,<4.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

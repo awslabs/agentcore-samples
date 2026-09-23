@@ -56,8 +56,7 @@ def _load_config():
     """Load deployment-specific config from cdk-outputs.json."""
     if not _CDK_OUTPUTS_FILE.exists():
         print(
-            f"Error: {_CDK_OUTPUTS_FILE} not found.\n"
-            "Run  scripts/deploy.sh  first to deploy the stack.",
+            f"Error: {_CDK_OUTPUTS_FILE} not found.\nRun  scripts/deploy.sh  first to deploy the stack.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -66,11 +65,7 @@ def _load_config():
         outputs = json.load(f)
 
     stack = outputs.get(_CDK_STACK_KEY, {})
-    missing = [
-        k
-        for k in ("UserPoolId", "ClientId", "CognitoDomain", "Region")
-        if k not in stack
-    ]
+    missing = [k for k in ("UserPoolId", "ClientId", "CognitoDomain", "Region") if k not in stack]
     if missing:
         print(
             f"Error: cdk-outputs.json is missing keys: {', '.join(missing)}\n"
@@ -171,9 +166,7 @@ def copy_to_clipboard(text):
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
-            subprocess.run(
-                ["xclip", "-selection", "clipboard"], input=text.encode(), check=True
-            )
+            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -275,9 +268,7 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                     </body></html>
                 """)
             elif "error" in params:
-                CallbackHandler.error = params.get(
-                    "error_description", params["error"]
-                )[0]
+                CallbackHandler.error = params.get("error_description", params["error"])[0]
                 self.send_response(400)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
@@ -416,17 +407,13 @@ def main():
         choices=["standard", "premium", "vip"],
         help="Cognito group to assign (default: standard)",
     )
-    parser.add_argument(
-        "--login", action="store_true", help="Login via browser and get a bearer token"
-    )
+    parser.add_argument("--login", action="store_true", help="Login via browser and get a bearer token")
     parser.add_argument(
         "--export",
         action="store_true",
         help="With --login, output only the export line (for eval)",
     )
-    parser.add_argument(
-        "--logout", action="store_true", help="Logout current Cognito session"
-    )
+    parser.add_argument("--logout", action="store_true", help="Logout current Cognito session")
     args = parser.parse_args()
 
     if not any([args.create, args.login, args.logout]):

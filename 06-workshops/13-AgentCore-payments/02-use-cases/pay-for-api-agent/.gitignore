@@ -1,0 +1,7 @@
+# Privy Wallet Hub frontend.
+# The notebook clones https://github.com/privy-io/aws-agentcore-sdk
+# into `privy-delegation/` on first run (see §4.5e). The folder is a
+# vendored upstream tree, not part of this sample, so we never commit
+# it back. This rule keeps it out of `git status` for contributors who
+# run the notebook locally.
+privy-delegation/

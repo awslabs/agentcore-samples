@@ -71,9 +71,7 @@ def test_multi_agent():
             agentRuntimeArn=agent1_arn,
             qualifier="DEFAULT",
             payload=json.dumps(
-                {
-                    "prompt": "Provide a detailed analysis of the benefits and drawbacks of serverless architecture"
-                }
+                {"prompt": "Provide a detailed analysis of the benefits and drawbacks of serverless architecture"}
             ),
         )
 

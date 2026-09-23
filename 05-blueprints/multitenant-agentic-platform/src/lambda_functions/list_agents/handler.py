@@ -21,15 +21,15 @@ def lambda_handler(event, context):
         # Scan DynamoDB for all agents with pagination
         agents = []
         last_evaluated_key = None
-        
+
         while True:
             if last_evaluated_key:
                 response = table.scan(ExclusiveStartKey=last_evaluated_key)
             else:
                 response = table.scan()
-            
+
             agents.extend(response.get("Items", []))
-            
+
             last_evaluated_key = response.get("LastEvaluatedKey")
             if not last_evaluated_key:
                 break

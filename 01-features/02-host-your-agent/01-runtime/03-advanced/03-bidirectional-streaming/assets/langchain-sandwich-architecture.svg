@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555" />
+    </marker>
+    <marker id="arrow-up" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2d6a4f" />
+    </marker>
+    <marker id="arrow-down" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1565c0" />
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#000">LangChain Voice Agent — Sandwich Architecture</text>
+  <text x="450" y="52" text-anchor="middle" font-size="12" fill="#666">STT → Agent → TTS pipeline over WebSocket via AgentCore Proxy</text>
+
+  <!-- ===== CLIENT BOX ===== -->
+  <rect x="30" y="75" width="170" height="400" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="115" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Client (Browser)</text>
+
+  <rect x="50" y="115" width="130" height="44" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="134" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🎤 Microphone</text>
+  <text x="115" y="150" text-anchor="middle" font-size="9" fill="#666">PCM 16kHz capture</text>
+
+  <rect x="50" y="175" width="130" height="44" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="194" text-anchor="middle" font-size="11" font-weight="600" fill="#000">⌨️ Text Input</text>
+  <text x="115" y="210" text-anchor="middle" font-size="9" fill="#666">text_input messages</text>
+
+  <rect x="50" y="240" width="130" height="54" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="259" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🔊 Audio Playback</text>
+  <text x="115" y="275" text-anchor="middle" font-size="9" fill="#666">Web Audio API</text>
+  <text x="115" y="287" text-anchor="middle" font-size="9" fill="#555">Mutes mic during TTS</text>
+
+  <rect x="50" y="310" width="130" height="54" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="329" text-anchor="middle" font-size="11" font-weight="600" fill="#000">⚙️ Config</text>
+  <text x="115" y="345" text-anchor="middle" font-size="9" fill="#666">voice, region, prompt</text>
+  <text x="115" y="357" text-anchor="middle" font-size="9" fill="#666">sample rates</text>
+
+  <rect x="50" y="380" width="130" height="44" rx="8" fill="white" stroke="#aaa" />
+  <text x="115" y="399" text-anchor="middle" font-size="11" font-weight="600" fill="#000">💬 Chat Display</text>
+  <text x="115" y="415" text-anchor="middle" font-size="9" fill="#666">transcript + agent text</text>
+
+  <!-- ===== AGENTCORE PROXY BOX ===== -->
+  <rect x="245" y="75" width="130" height="400" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="310" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">AgentCore</text>
+  <text x="310" y="116" text-anchor="middle" font-size="11" fill="#555">WebSocket Proxy</text>
+
+  <rect x="260" y="135" width="100" height="70" rx="8" fill="white" stroke="#aaa" />
+  <text x="310" y="158" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Message</text>
+  <text x="310" y="172" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Relay</text>
+  <text x="310" y="192" text-anchor="middle" font-size="9" fill="#555">⚠️ Echoes server</text>
+
+  <rect x="260" y="225" width="100" height="50" rx="8" fill="white" stroke="#aaa" />
+  <text x="310" y="248" text-anchor="middle" font-size="10" font-weight="600" fill="#000">SigV4 Auth</text>
+  <text x="310" y="264" text-anchor="middle" font-size="9" fill="#666">Pre-signed URLs</text>
+
+  <rect x="260" y="295" width="100" height="50" rx="8" fill="white" stroke="#aaa" />
+  <text x="310" y="318" text-anchor="middle" font-size="10" font-weight="600" fill="#000">IAM / IMDS</text>
+  <text x="310" y="334" text-anchor="middle" font-size="9" fill="#666">Credential mgmt</text>
+
+  <!-- ===== SERVER BOX ===== -->
+  <rect x="420" y="75" width="460" height="400" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="650" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Server (FastAPI + agent.py)</text>
+
+  <!-- Echo filter -->
+  <rect x="440" y="115" width="140" height="50" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="510" y="137" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🔁 Echo Filter</text>
+  <text x="510" y="153" text-anchor="middle" font-size="9" fill="#666">Drops server-sent types</text>
+
+  <!-- VAD -->
+  <rect x="440" y="180" width="140" height="60" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="510" y="200" text-anchor="middle" font-size="10" font-weight="600" fill="#000">📊 VAD</text>
+  <text x="510" y="214" text-anchor="middle" font-size="9" fill="#666">RMS energy detection</text>
+  <text x="510" y="228" text-anchor="middle" font-size="9" fill="#666">silence=0.6s, threshold=500</text>
+
+  <!-- STT -->
+  <rect x="610" y="115" width="140" height="65" rx="8" fill="none" stroke="#999" filter="url(#shadow)" />
+  <text x="680" y="137" text-anchor="middle" font-size="11" font-weight="700" fill="#000">1. STT</text>
+  <text x="680" y="153" text-anchor="middle" font-size="10" fill="#333">Amazon Transcribe</text>
+  <text x="680" y="167" text-anchor="middle" font-size="9" fill="#666">Streaming API</text>
+
+  <!-- Agent -->
+  <rect x="610" y="200" width="250" height="110" rx="8" fill="none" stroke="#999" filter="url(#shadow)" />
+  <text x="735" y="222" text-anchor="middle" font-size="11" font-weight="700" fill="#000">2. LangChain Agent</text>
+  <text x="735" y="240" text-anchor="middle" font-size="10" fill="#333">Bedrock Nova 2 Lite</text>
+  <text x="735" y="256" text-anchor="middle" font-size="9" fill="#666">Extended thinking (low effort)</text>
+  <text x="735" y="272" text-anchor="middle" font-size="9" fill="#666">create_react_agent + MemorySaver</text>
+  <text x="735" y="290" text-anchor="middle" font-size="9" fill="#666">stream_mode="messages"</text>
+
+  <!-- Tools -->
+  <rect x="440" y="260" width="140" height="80" rx="8" fill="white" stroke="#999" filter="url(#shadow)" />
+  <text x="510" y="280" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🔧 Tools</text>
+  <text x="510" y="296" text-anchor="middle" font-size="9" fill="#666">get_account_balance</text>
+  <text x="510" y="308" text-anchor="middle" font-size="9" fill="#666">get_recent_transactions</text>
+  <text x="510" y="320" text-anchor="middle" font-size="9" fill="#666">get_mortgage_rates</text>
+
+  <!-- TTS -->
+  <rect x="610" y="330" width="140" height="65" rx="8" fill="none" stroke="#999" filter="url(#shadow)" />
+  <text x="680" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#000">3. TTS</text>
+  <text x="680" y="368" text-anchor="middle" font-size="10" fill="#333">Amazon Polly</text>
+  <text x="680" y="382" text-anchor="middle" font-size="9" fill="#666">PCM output, chunked</text>
+
+  <!-- Sandwich label -->
+  <rect x="600" y="110" width="270" height="295" rx="10" fill="none" stroke="#555" stroke-width="2" stroke-dasharray="6,3" />
+  <text x="860" y="265" text-anchor="middle" font-size="10" font-weight="600" fill="#555" transform="rotate(90, 860, 265)">Sandwich Pipeline</text>
+
+  <!-- ===== ARROWS ===== -->
+  <!-- Client → Proxy -->
+  <line x1="200" y1="200" x2="243" y2="200" stroke="#2d6a4f" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="222" y="193" text-anchor="middle" font-size="8" fill="#2d6a4f">audio</text>
+  <text x="222" y="213" text-anchor="middle" font-size="8" fill="#2d6a4f">text</text>
+
+  <!-- Proxy → Client -->
+  <line x1="243" y1="260" x2="200" y2="260" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="222" y="253" text-anchor="middle" font-size="8" fill="#1565c0">tts_audio</text>
+  <text x="222" y="273" text-anchor="middle" font-size="8" fill="#1565c0">agent_chunk</text>
+
+  <!-- Proxy → Server -->
+  <line x1="375" y1="170" x2="418" y2="170" stroke="#2d6a4f" stroke-width="2" marker-end="url(#arrow-up)" />
+
+  <!-- Server → Proxy -->
+  <line x1="418" y1="190" x2="375" y2="190" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+
+  <!-- VAD → STT -->
+  <line x1="580" y1="195" x2="608" y2="155" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="598" y="168" text-anchor="middle" font-size="8" fill="#555">PCM</text>
+
+  <!-- STT → Agent -->
+  <line x1="680" y1="180" x2="680" y2="198" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="698" y="194" text-anchor="middle" font-size="8" fill="#555">transcript</text>
+
+  <!-- Agent → TTS -->
+  <line x1="680" y1="310" x2="680" y2="328" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="698" y="324" text-anchor="middle" font-size="8" fill="#555">text</text>
+
+  <!-- Tools ↔ Agent -->
+  <line x1="580" y1="290" x2="608" y2="270" stroke="#7e57c2" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow)" />
+
+  <!-- Legend -->
+  <rect x="440" y="420" width="420" height="45" rx="8" fill="white" stroke="#ccc" />
+  <line x1="455" y1="440" x2="485" y2="440" stroke="#2d6a4f" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="490" y="444" font-size="9" fill="#333">Client → Server</text>
+  <line x1="580" y1="440" x2="610" y2="440" stroke="#1565c0" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="615" y="444" font-size="9" fill="#333">Server → Client</text>
+  <line x1="710" y1="440" x2="740" y2="440" stroke="#555" stroke-width="1.5" />
+  <text x="745" y="444" font-size="9" fill="#333">Internal pipeline</text>
+  <line x1="810" y1="440" x2="840" y2="440" stroke="#7e57c2" stroke-width="1.5" stroke-dasharray="4,2" />
+  <text x="845" y="444" font-size="9" fill="#333">Tool call</text>
+</svg>

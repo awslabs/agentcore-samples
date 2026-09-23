@@ -1,0 +1,10 @@
+.deploy_state.json
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+bin/
+lib/
+include/
+share/
+pyvenv.cfg

@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: springai-agentcore-agent
+  ai:
+    bedrock:
+      converse:
+        chat:
+          options:
+            model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+server:
+  address: 0.0.0.0
+  port: 8080

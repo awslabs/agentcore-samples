@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+
+# Locally-derived certificate — regenerated from the KMS public key by
+# setup/01. Not secret (public-key material only), but not source-controlled.
+entra_cert.pem
+entra_cert.der

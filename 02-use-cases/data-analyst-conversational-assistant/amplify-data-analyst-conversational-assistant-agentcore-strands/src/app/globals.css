@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Design Tokens — change colors here, they apply everywhere
+   ============================================================ */
+:root {
+  /* Brand — primary action color */
+  --color-primary:        #7c3aed;
+  --color-primary-hover:  #6d28d9;
+  --color-primary-active: #5b21b6;
+  --color-primary-light:  rgba(124, 58, 237, 0.12);
+  --color-primary-subtle: rgba(124, 58, 237, 0.06);
+
+  /* Brand — secondary / gradient end */
+  --color-secondary:      #a855f7;
+
+  /* Surfaces */
+  --color-bg:             #ffffff;
+  --color-surface:        #ffffff;
+  --color-surface-tint:   #f5f3ff;
+  --color-border:         #e2e8f0;
+  --color-border-muted:   rgba(148, 163, 184, 0.4);
+
+  /* Text */
+  --color-text:           #1e293b;
+  --color-text-muted:     #475569;
+  --color-text-subtle:    #94a3b8;
+  --color-label:          #374151;
+
+  /* Feedback */
+  --color-error:          #dc2626;
+  --color-error-bg:       #fef2f2;
+  --color-error-border:   #fecaca;
+
+  /* Legacy aliases used by dashboard */
+  --background:           var(--color-bg);
+  --foreground:           var(--color-text);
+  --color-surface-border: #ddd6fe;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--color-text);
+  background: var(--color-bg);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-amplify-authenticator] {
+  width: 100%;
+}
+
+/* ============================================================
+   Assistant animations
+   ============================================================ */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+@keyframes tab-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-tab-fade {
+  animation: tab-fade 0.25s ease-in-out forwards;
+}
+
+/* Force the chat scroll container to be scrollable */
+#chatHelper {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Memory panel — full width on tablet and below, constrained on desktop */
+.memory-panel {
+  max-width: 100%;
+}
+@media (min-width: 1024px) {
+  .memory-panel {
+    max-width: 480px;
+  }
+}

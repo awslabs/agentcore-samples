@@ -29,9 +29,7 @@ def get_ssm_parameter(name: str, with_decryption: bool = True) -> str:
     return response["Parameter"]["Value"]
 
 
-def put_ssm_parameter(
-    name: str, value: str, parameter_type: str = "String", with_encryption: bool = False
-) -> None:
+def put_ssm_parameter(name: str, value: str, parameter_type: str = "String", with_encryption: bool = False) -> None:
     ssm = boto3.client("ssm")
 
     put_params = {
@@ -124,8 +122,7 @@ def read_config(file_path: str) -> Dict[str, Any]:
                         return yaml.safe_load(content)
                     except yaml.YAMLError:
                         raise ValueError(
-                            f"Unsupported configuration file format: {ext}. "
-                            f"Supported formats: .json, .yaml, .yml"
+                            f"Unsupported configuration file format: {ext}. Supported formats: .json, .yaml, .yml"
                         )
 
     except json.JSONDecodeError as e:
@@ -177,9 +174,7 @@ def delete_customer_support_secret():
     region = boto_session.region_name
     secrets_client = boto3.client("secretsmanager", region_name=region)
     try:
-        secrets_client.delete_secret(
-            SecretId=cognito_config_name, ForceDeleteWithoutRecovery=True
-        )
+        secrets_client.delete_secret(SecretId=cognito_config_name, ForceDeleteWithoutRecovery=True)
         print("✅ Deleted secret")
         return True
     except Exception as e:
@@ -229,7 +224,7 @@ def get_or_create_cognito_pool(refresh_token=False):
         cognito_client.admin_create_user(
             UserPoolId=pool_id,
             Username=username,
-            TemporaryPassword="Temp123!",
+            TemporaryPassword="Temp123!",  # pragma: allowlist secret
             MessageAction="SUPPRESS",
         )
 
@@ -237,15 +232,13 @@ def get_or_create_cognito_pool(refresh_token=False):
         cognito_client.admin_set_user_password(
             UserPoolId=pool_id,
             Username=username,
-            Password="MyPassword123!",
+            Password="MyPassword123!",  # pragma: allowlist secret
             Permanent=True,
         )
 
         message = bytes(username + client_id, "utf-8")
         key = bytes(client_secret, "utf-8")
-        secret_hash = base64.b64encode(
-            hmac.new(key, message, digestmod=hashlib.sha256).digest()
-        ).decode()
+        secret_hash = base64.b64encode(hmac.new(key, message, digestmod=hashlib.sha256).digest()).decode()
 
         # Authenticate User and get Access Token
         auth_response = cognito_client.initiate_auth(
@@ -253,7 +246,7 @@ def get_or_create_cognito_pool(refresh_token=False):
             AuthFlow="USER_PASSWORD_AUTH",
             AuthParameters={
                 "USERNAME": username,
-                "PASSWORD": "MyPassword123!",
+                "PASSWORD": "MyPassword123!",  # pragma: allowlist secret
                 "SECRET_HASH": secret_hash,
             },
         )
@@ -275,9 +268,7 @@ def get_or_create_cognito_pool(refresh_token=False):
         }
         put_ssm_parameter("/app/customersupport/agentcore/client_id", client_id)
         put_ssm_parameter("/app/customersupport/agentcore/pool_id", pool_id)
-        put_ssm_parameter(
-            "/app/customersupport/agentcore/cognito_discovery_url", discovery_url
-        )
+        put_ssm_parameter("/app/customersupport/agentcore/cognito_discovery_url", discovery_url)
         put_ssm_parameter("/app/customersupport/agentcore/client_secret", client_secret)
 
         save_customer_support_secret(json.dumps(cognito_config))
@@ -301,26 +292,18 @@ def cleanup_cognito_resources(pool_id):
         if pool_id:
             try:
                 # List and delete all app clients
-                clients_response = cognito_client.list_user_pool_clients(
-                    UserPoolId=pool_id, MaxResults=60
-                )
+                clients_response = cognito_client.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60)
 
                 for client in clients_response["UserPoolClients"]:
                     print(f"Deleting app client: {client['ClientName']}")
-                    cognito_client.delete_user_pool_client(
-                        UserPoolId=pool_id, ClientId=client["ClientId"]
-                    )
+                    cognito_client.delete_user_pool_client(UserPoolId=pool_id, ClientId=client["ClientId"])
 
                 # List and delete all users
-                users_response = cognito_client.list_users(
-                    UserPoolId=pool_id, AttributesToGet=["email"]
-                )
+                users_response = cognito_client.list_users(UserPoolId=pool_id, AttributesToGet=["email"])
 
                 for user in users_response.get("Users", []):
                     print(f"Deleting user: {user['Username']}")
-                    cognito_client.admin_delete_user(
-                        UserPoolId=pool_id, Username=user["Username"]
-                    )
+                    cognito_client.admin_delete_user(UserPoolId=pool_id, Username=user["Username"])
 
                 # Delete the user pool
                 print(f"Deleting user pool: {pool_id}")
@@ -330,9 +313,7 @@ def cleanup_cognito_resources(pool_id):
                 return True
 
             except cognito_client.exceptions.ResourceNotFoundException:
-                print(
-                    f"User pool {pool_id} not found. It may have already been deleted."
-                )
+                print(f"User pool {pool_id} not found. It may have already been deleted.")
                 return True
 
             except Exception as e:
@@ -356,16 +337,14 @@ def reauthenticate_user(client_id, client_secret):
 
     message = bytes(username + client_id, "utf-8")
     key = bytes(client_secret, "utf-8")
-    secret_hash = base64.b64encode(
-        hmac.new(key, message, digestmod=hashlib.sha256).digest()
-    ).decode()
+    secret_hash = base64.b64encode(hmac.new(key, message, digestmod=hashlib.sha256).digest()).decode()
 
     auth_response = cognito_client.initiate_auth(
         ClientId=client_id,
         AuthFlow="USER_PASSWORD_AUTH",
         AuthParameters={
             "USERNAME": username,
-            "PASSWORD": "MyPassword123!",
+            "PASSWORD": "MyPassword123!",  # pragma: allowlist secret
             "SECRET_HASH": secret_hash,
         },
     )
@@ -390,9 +369,7 @@ def create_agentcore_runtime_execution_role():
                 "Action": "sts:AssumeRole",
                 "Condition": {
                     "StringEquals": {"aws:SourceAccount": account_id},
-                    "ArnLike": {
-                        "aws:SourceArn": f"arn:aws:bedrock-agentcore:{region}:{account_id}:*"
-                    },
+                    "ArnLike": {"aws:SourceArn": f"arn:aws:bedrock-agentcore:{region}:{account_id}:*"},
                 },
             }
         ],
@@ -411,9 +388,7 @@ def create_agentcore_runtime_execution_role():
             {
                 "Effect": "Allow",
                 "Action": ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
-                "Resource": [
-                    f"arn:aws:logs:{region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*"
-                ],
+                "Resource": [f"arn:aws:logs:{region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*"],
             },
             {
                 "Effect": "Allow",
@@ -447,9 +422,7 @@ def create_agentcore_runtime_execution_role():
                 "Effect": "Allow",
                 "Resource": "*",
                 "Action": "cloudwatch:PutMetricData",
-                "Condition": {
-                    "StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}
-                },
+                "Condition": {"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
             },
             {
                 "Sid": "GetAgentAccessToken",
@@ -503,9 +476,7 @@ def create_agentcore_runtime_execution_role():
                     "bedrock-agentcore:GetGateway",
                     "bedrock-agentcore:InvokeGateway",
                 ],
-                "Resource": [
-                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:gateway/*"
-                ],
+                "Resource": [f"arn:aws:bedrock-agentcore:{region}:{account_id}:gateway/*"],
             },
         ],
     }
@@ -597,9 +568,7 @@ def delete_agentcore_runtime_execution_role():
         except Exception:
             pass
 
-        delete_ssm_parameter(
-            "/app/customersupport/agentcore/runtime_execution_role_arn"
-        )
+        delete_ssm_parameter("/app/customersupport/agentcore/runtime_execution_role_arn")
 
     except Exception as e:
         print(f"❌ Error during cleanup: {str(e)}")
@@ -658,16 +627,12 @@ def gateway_target_cleanup(gateway_id: str = None):
     print(f"🗑️  Deleting all targets for gateway: {gateway_id}")
 
     # List and delete all targets
-    list_response = gateway_client.list_gateway_targets(
-        gatewayIdentifier=gateway_id, maxResults=100
-    )
+    list_response = gateway_client.list_gateway_targets(gatewayIdentifier=gateway_id, maxResults=100)
 
     for item in list_response["items"]:
         target_id = item["targetId"]
         print(f"   Deleting target: {target_id}")
-        gateway_client.delete_gateway_target(
-            gatewayIdentifier=gateway_id, targetId=target_id
-        )
+        gateway_client.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
         print(f"   ✅ Target {target_id} deleted")
 
     # Delete the gateway
@@ -679,14 +644,10 @@ def gateway_target_cleanup(gateway_id: str = None):
 def runtime_resource_cleanup(runtime_arn: str = None):
     try:
         # Initialize AWS clients
-        agentcore_control_client = boto3.client(
-            "bedrock-agentcore-control", region_name=REGION
-        )
+        agentcore_control_client = boto3.client("bedrock-agentcore-control", region_name=REGION)
         if runtime_arn:
             runtime_id = runtime_arn.split(":")[-1].split("/")[-1]
-            response = agentcore_control_client.delete_agent_runtime(
-                agentRuntimeId=runtime_id
-            )
+            response = agentcore_control_client.delete_agent_runtime(agentRuntimeId=runtime_id)
             print(f"  ✅ Agent runtime deleted: {response['status']}")
         else:
             ecr_client = boto3.client("ecr", region_name=REGION)
@@ -695,9 +656,7 @@ def runtime_resource_cleanup(runtime_arn: str = None):
             # print("  🗑️  Deleting AgentCore Runtime...")
             runtimes = agentcore_control_client.list_agent_runtimes()
             for runtime in runtimes["agentRuntimes"]:
-                response = agentcore_control_client.delete_agent_runtime(
-                    agentRuntimeId=runtime["agentRuntimeId"]
-                )
+                response = agentcore_control_client.delete_agent_runtime(agentRuntimeId=runtime["agentRuntimeId"])
                 print(f"  ✅ Agent runtime deleted: {response['status']}")
 
         # Delete the ECR repository
@@ -705,9 +664,7 @@ def runtime_resource_cleanup(runtime_arn: str = None):
         repositories = ecr_client.describe_repositories()
         for repo in repositories["repositories"]:
             if "bedrock-agentcore-customer_support_agent" in repo["repositoryName"]:
-                ecr_client.delete_repository(
-                    repositoryName=repo["repositoryName"], force=True
-                )
+                ecr_client.delete_repository(repositoryName=repo["repositoryName"], force=True)
                 print(f"  ✅ ECR repository deleted: {repo['repositoryName']}")
 
     except Exception as e:
@@ -724,9 +681,7 @@ def delete_observability_resources():
     # Delete log stream first (must be done before deleting log group)
     try:
         print(f"  🗑️  Deleting log stream '{log_stream_name}'...")
-        logs_client.delete_log_stream(
-            logGroupName=log_group_name, logStreamName=log_stream_name
-        )
+        logs_client.delete_log_stream(logGroupName=log_group_name, logStreamName=log_stream_name)
         print(f"  ✅ Log stream '{log_stream_name}' deleted successfully")
     except Exception as e:
         if e.response["Error"]["Code"] == "ResourceNotFoundException":
@@ -773,6 +728,4 @@ def local_file_cleanup():
     if deleted_files:
         print(f"\n📁 Successfully deleted {len(deleted_files)} files")
     if missing_files:
-        print(
-            f"ℹ️  {len(missing_files)} files were already missing: {', '.join(missing_files)}"
-        )
+        print(f"ℹ️  {len(missing_files)} files were already missing: {', '.join(missing_files)}")

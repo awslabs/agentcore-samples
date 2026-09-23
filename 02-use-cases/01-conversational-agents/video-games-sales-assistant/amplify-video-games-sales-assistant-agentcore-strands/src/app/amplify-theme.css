@@ -1,0 +1,249 @@
+/* ============================================================
+   Amplify Authenticator Theme
+   All colors come from CSS tokens defined in globals.css.
+   To retheme: edit the :root block in globals.css only.
+   ============================================================ */
+
+/* Page container — centers the card */
+.auth-page-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+/* ============================================================
+   Card
+   Official Amplify CSS vars:
+   https://ui.docs.amplify.aws/react/connected-components/authenticator/customization
+   ============================================================ */
+[data-amplify-authenticator] {
+  width: 100% !important;
+  max-width: 400px !important;
+
+  --amplify-components-authenticator-router-border-width: 1px;
+  --amplify-components-authenticator-router-border-style: solid;
+  --amplify-components-authenticator-router-border-color: var(--color-border);
+  --amplify-components-authenticator-router-box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --amplify-components-authenticator-router-background-color: var(--color-surface);
+  --amplify-components-authenticator-state-inactive-background-color: transparent;
+}
+
+[data-amplify-authenticator] [data-amplify-container] {
+  background: transparent !important;
+  width: 100% !important;
+}
+
+[data-amplify-authenticator] [data-amplify-router] {
+  background-color: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06) !important;
+  width: 100% !important;
+  max-width: 400px !important;
+}
+
+[data-amplify-authenticator] [data-amplify-router] > div:first-child,
+[data-amplify-authenticator] [data-amplify-router] > div:last-child,
+[data-amplify-authenticator] [data-amplify-router-content] {
+  background: transparent !important;
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+[data-amplify-authenticator] [role="tablist"],
+[data-amplify-authenticator] .amplify-tabs,
+[data-amplify-authenticator] .amplify-tabs__list {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--color-border-muted) !important;
+  box-shadow: none !important;
+}
+
+[data-amplify-authenticator] [role="tab"] {
+  background: transparent !important;
+  color: var(--color-text-subtle) !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  font-size: 0.875rem;
+  transition: all 0.15s ease;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+[data-amplify-authenticator] [role="tab"][aria-selected="true"] {
+  color: var(--color-text) !important;
+  border: none !important;
+  border-bottom: 2px solid var(--color-primary) !important;
+  font-weight: 600;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[data-amplify-authenticator] [role="tab"]:hover:not([aria-selected="true"]) {
+  color: var(--color-text-muted) !important;
+  background: transparent !important;
+}
+
+/* ============================================================
+   Form headings — confirmed class via DevTools: amplify-heading--3
+   ============================================================ */
+[data-amplify-authenticator] .amplify-heading--3 {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+  color: var(--color-text) !important;
+  letter-spacing: -0.2px !important;
+}
+
+/* ============================================================
+   Labels
+   ============================================================ */
+[data-amplify-authenticator] label {
+  color: var(--color-label) !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+}
+
+/* ============================================================
+   Inputs
+   ============================================================ */
+[data-amplify-authenticator] input:not([type="checkbox"]) {
+  background-color: var(--color-surface) !important;
+  border: 1px solid var(--color-border-muted) !important;
+  border-radius: 8px !important;
+  color: var(--color-text) !important;
+  font-size: 0.875rem !important;
+  transition: all 0.2s ease;
+}
+
+[data-amplify-authenticator] input:not([type="checkbox"]):hover {
+  border-color: rgba(148, 163, 184, 0.6) !important;
+}
+
+[data-amplify-authenticator] input:not([type="checkbox"]):focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-light) !important;
+  outline: none !important;
+}
+
+[data-amplify-authenticator] input::placeholder {
+  color: var(--color-text-subtle) !important;
+}
+
+[data-amplify-authenticator] .amplify-field__show-password {
+  background: transparent !important;
+  border-color: var(--color-border-muted) !important;
+  color: var(--color-text-subtle) !important;
+}
+
+/* ============================================================
+   Submit button
+   ============================================================ */
+[data-amplify-authenticator] button[type="submit"] {
+  background-color: var(--color-primary) !important;
+  border: 1px solid rgba(27, 31, 36, 0.1) !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+  width: 100%;
+  box-shadow: 0 1px 0 rgba(27, 31, 36, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  transition: all 0.15s ease;
+}
+
+[data-amplify-authenticator] button[type="submit"]:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+
+[data-amplify-authenticator] button[type="submit"]:active {
+  background-color: var(--color-primary-active) !important;
+  transform: translateY(1px);
+}
+
+/* ============================================================
+   Link buttons (Forgot password, Back to Sign In)
+   ============================================================ */
+[data-amplify-authenticator] .amplify-button--link,
+[data-amplify-authenticator] button[data-variation="link"] {
+  color: var(--color-primary) !important;
+  background: transparent !important;
+  border: none !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  transition: color 0.15s ease;
+}
+
+[data-amplify-authenticator] .amplify-button--link:hover,
+[data-amplify-authenticator] button[data-variation="link"]:hover {
+  color: var(--color-primary-hover) !important;
+  background: var(--color-primary-subtle) !important;
+  text-decoration: underline;
+}
+
+/* ============================================================
+   Error messages
+   ============================================================ */
+[data-amplify-authenticator] [role="alert"] {
+  background-color: var(--color-error-bg) !important;
+  border: 1px solid var(--color-error-border) !important;
+  border-radius: 8px !important;
+  color: var(--color-error) !important;
+  font-size: 0.875rem !important;
+}
+
+/* ============================================================
+   Focus visible
+   ============================================================ */
+[data-amplify-authenticator] *:focus-visible {
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Header / Footer slots (plain divs — no Amplify token bleed)
+   ============================================================ */
+.auth-header {
+  text-align: center;
+  padding: 2rem 2rem 1rem;
+  background: transparent;
+}
+
+.auth-app-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.75rem;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.auth-footer {
+  text-align: center;
+  padding: 0.75rem 2rem 1.5rem;
+  background: transparent;
+}
+
+.auth-copyright {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 640px) {
+  .auth-page-container {
+    padding: 1.5rem 1rem;
+    align-items: flex-start;
+    padding-top: 3rem;
+  }
+
+  [data-amplify-authenticator] [data-amplify-router] {
+    border-radius: 8px !important;
+  }
+}

@@ -1,0 +1,9 @@
+# Notebook dependencies for pay-for-x402-secure-data. Pinned to the versions
+# this use case was validated against; the agent container mirrors these in
+# agent/container/requirements.txt. Bump deliberately and re-test.
+bedrock-agentcore[strands-agents]==1.18.0
+strands-agents==1.47.0
+boto3==1.43.48
+botocore==1.43.48
+requests==2.34.2
+python-dotenv==1.2.2

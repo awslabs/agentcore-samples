@@ -1,0 +1,15 @@
+# Pinned to the versions validated against the live AgentCore payments API +
+# AgentCorePaymentsPlugin 402 handler. Older releases parse the x402 402
+# response (and CreatePaymentSession) differently. Bump deliberately and re-test.
+bedrock-agentcore[strands-agents]==1.18.0
+strands-agents==1.47.0
+requests==2.34.2
+python-dotenv==1.2.2
+fastapi==0.139.0
+# starlette is a transitive dep of fastapi (>=0.46.0, no upper bound). Pin it
+# to a patched release to close CVE-2026-48710 (Host-header auth bypass in
+# starlette < 1.0.1). Bump deliberately and re-test with fastapi.
+starlette==1.3.1
+uvicorn[standard]==0.51.0
+aws-opentelemetry-distro==0.18.0
+boto3==1.43.48

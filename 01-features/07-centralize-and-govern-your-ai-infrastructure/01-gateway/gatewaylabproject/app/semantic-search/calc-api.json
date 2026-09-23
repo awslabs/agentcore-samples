@@ -1,0 +1,1941 @@
+[
+    {
+        "name": "add_numbers",
+        "description": "Adds firstNumber and secondNumber together to get the sum (firstNumber + secondNumber)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "firstNumber": {
+                    "type": "number",
+                    "description": "first number to add"
+                },
+                "secondNumber": {
+                    "type": "number",
+                    "description": "second number to add"
+                }
+            },
+            "required": ["firstNumber", "secondNumber"]
+        }
+    },
+    {
+        "name": "subtract_numbers",
+        "description": "Subtracts the subtrahend from the minuend to find the difference (minuend - subtrahend)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "minuend": {
+                    "type": "number",
+                    "description": "the number to subtract from"
+                },
+                "subtrahend": {
+                    "type": "number",
+                    "description": "the number to subtract from the minuend"
+                }
+            },
+            "required": ["minuend", "subtrahend"]
+        }
+    },
+    {
+        "name": "multiply_numbers",
+        "description": "Multiplies multiplicand and multiplier together to get product (multiplicand * multiplier)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "multiplicand": {
+                    "type": "number",
+                    "description": "the number to multiply"
+                },
+                "multiplier": {
+                    "type": "number",
+                    "description": "the number to multiply against the multiplicand"
+                }
+            },
+            "required": ["multiplicand", "multiplier"]
+        }
+    },
+    {
+        "name": "divide_numbers",
+        "description": "Divides the dividend by the divisor to find the quotient (dividend ÷ divisor)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dividend": {
+                    "type": "number",
+                    "description": "the number to divide into"
+                },
+                "divisor": {
+                    "type": "number",
+                    "description": "the number that dividend will be divided by"
+                }
+            },
+            "required": ["dividend", "divisor"]
+        }
+    },
+
+    {
+        "name": "calculate_portfolio_return",
+        "description": "Calculates the total return of a portfolio over a specified time period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "includeIncome": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_portfolio_positions",
+        "description": "Retrieves all current positions in a specified portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "includeClosedPositions": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_volatility",
+        "description": "Calculates historical volatility of a portfolio over a specified period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "annualized": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_sharpe_ratio",
+        "description": "Calculates the Sharpe ratio of a portfolio over a specified period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "riskFreeRate": {
+                    "type": "number"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_portfolio_asset_allocation",
+        "description": "Retrieves the asset allocation breakdown of a portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "allocationLevel": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "rebalance_portfolio",
+        "description": "Generates rebalancing trades to align a portfolio with its target allocation",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "targetAllocationId": {
+                    "type": "string"
+                },
+                "rebalanceThreshold": {
+                    "type": "number"
+                },
+                "cashBuffer": {
+                    "type": "number"
+                }
+            },
+            "required": ["portfolioId", "targetAllocationId"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_drawdown",
+        "description": "Calculates the maximum drawdown of a portfolio over a specified period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_portfolio_transaction_history",
+        "description": "Retrieves transaction history for a portfolio within a date range",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "transactionTypes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "analyze_portfolio_liquidity",
+        "description": "Analyzes the liquidity profile of a portfolio based on average trading volumes",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "liquidationThreshold": {
+                    "type": "number"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_attribution",
+        "description": "Performs performance attribution analysis on a portfolio for a specified period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "attributionLevel": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "benchmarkId", "startDate", "endDate"]
+        }
+    },
+    
+    {
+        "name": "calculate_var",
+        "description": "Calculates Value at Risk (VaR) for a portfolio or security",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "confidenceLevel": {
+                    "type": "number"
+                },
+                "horizon": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "run_monte_carlo_simulation",
+        "description": "Runs Monte Carlo simulations for portfolio performance projections",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "simulationCount": {
+                    "type": "integer"
+                },
+                "timeHorizon": {
+                    "type": "integer"
+                },
+                "confidenceInterval": {
+                    "type": "number"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "calculate_covariance_matrix",
+        "description": "Calculates the covariance matrix for a set of securities or factors",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                }
+            },
+            "required": ["securities", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "run_factor_analysis",
+        "description": "Performs factor analysis on a portfolio to determine factor exposures",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "factorModel": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "factorModel"]
+        }
+    },
+    {
+        "name": "optimize_portfolio",
+        "description": "Optimizes a portfolio allocation based on mean-variance or other optimization methods",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "objective": {
+                    "type": "string"
+                },
+                "constraints": {
+                    "type": "object",
+                    "properties": {
+                        "minWeight": {
+                            "type": "number"
+                        },
+                        "maxWeight": {
+                            "type": "number"
+                        },
+                        "targetReturn": {
+                            "type": "number"
+                        },
+                        "maxVolatility": {
+                            "type": "number"
+                        }
+                    }
+                }
+            },
+            "required": ["securities", "objective"]
+        }
+    },
+    {
+        "name": "backtest_strategy",
+        "description": "Backtests an investment strategy on historical data",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "strategyId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "initialCapital": {
+                    "type": "number"
+                },
+                "includeTradingCosts": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["strategyId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_expected_shortfall",
+        "description": "Calculates Expected Shortfall (CVaR) for a portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "confidenceLevel": {
+                    "type": "number"
+                },
+                "horizon": {
+                    "type": "integer"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "calculate_beta",
+        "description": "Calculates beta of a security or portfolio against a benchmark",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_correlation",
+        "description": "Calculates correlation between securities or portfolios",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["securities", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "analyze_time_series",
+        "description": "Performs time series analysis on price or return data",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                }
+            },
+            "required": ["securityId", "startDate", "endDate"]
+        }
+    },
+    
+    {
+        "name": "get_credit_rating_history",
+        "description": "Retrieves historical credit ratings for a security or issuer",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "securityId": {
+                    "type": "string"
+                },
+                "agencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "calculate_credit_spread",
+        "description": "Calculates the credit spread of a bond against a benchmark treasury",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId"]
+        }
+    },
+    {
+        "name": "calculate_default_probability",
+        "description": "Calculates the probability of default based on market prices or model parameters",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "timeHorizon": {
+                    "type": "integer"
+                }
+            },
+            "required": ["issuerId"]
+        }
+    },
+    {
+        "name": "analyze_covenant_compliance",
+        "description": "Analyzes compliance with bond covenants based on financial statements",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "bondId": {
+                    "type": "string"
+                },
+                "reportDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "reportDate"]
+        }
+    },
+    {
+        "name": "calculate_recovery_rate",
+        "description": "Estimates recovery rates for debt securities based on historical data and characteristics",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "securityType": {
+                    "type": "string"
+                },
+                "industry": {
+                    "type": "string"
+                }
+            },
+            "required": ["securityType", "industry"]
+        }
+    },
+    {
+        "name": "get_credit_fundamentals",
+        "description": "Retrieves credit-relevant financial fundamentals for an issuer",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["issuerId"]
+        }
+    },
+    {
+        "name": "analyze_debt_structure",
+        "description": "Analyzes the debt structure of an issuer including maturity profile and seniority",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "includeContingentLiabilities": {
+                    "type": "boolean"
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["issuerId"]
+        }
+    },
+    {
+        "name": "calculate_credit_var",
+        "description": "Calculates credit value-at-risk for a bond portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "confidenceLevel": {
+                    "type": "number"
+                },
+                "horizon": {
+                    "type": "integer"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "screen_credit_securities",
+        "description": "Screens fixed income securities based on credit characteristics",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "minimumRating": {
+                    "type": "string"
+                },
+                "maximumMaturity": {
+                    "type": "integer"
+                },
+                "minimumYield": {
+                    "type": "number"
+                },
+                "minimumSize": {
+                    "type": "number"
+                },
+                "sectors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_esg_risk_metrics",
+        "description": "Retrieves ESG risk metrics and scores for an issuer",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issuerId": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["issuerId"]
+        }
+    },
+    
+    {
+        "name": "calculate_bond_yield",
+        "description": "Calculates current yield, yield-to-maturity, or yield-to-call for a bond",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "yieldType": {
+                    "type": "string"
+                },
+                "settlementDate": {
+                    "type": "string"
+                },
+                "dayCountConvention": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "price"]
+        }
+    },
+    {
+        "name": "calculate_bond_duration",
+        "description": "Calculates Macaulay duration, modified duration, or effective duration for a bond",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "durationType": {
+                    "type": "string"
+                },
+                "yieldShift": {
+                    "type": "number"
+                }
+            },
+            "required": ["bondId"]
+        }
+    },
+    {
+        "name": "calculate_bond_convexity",
+        "description": "Calculates convexity for a bond",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "yieldShift": {
+                    "type": "number"
+                }
+            },
+            "required": ["bondId"]
+        }
+    },
+    {
+        "name": "calculate_accrued_interest",
+        "description": "Calculates accrued interest for a bond as of a specific date",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "settlementDate": {
+                    "type": "string"
+                },
+                "dayCountConvention": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "settlementDate"]
+        }
+    },
+    {
+        "name": "calculate_bond_price",
+        "description": "Calculates the price of a bond given a yield",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "yield": {
+                    "type": "number"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "dayCountConvention": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "yield"]
+        }
+    },
+    {
+        "name": "calculate_option_adjusted_spread",
+        "description": "Calculates Option Adjusted Spread (OAS) for a bond with embedded options",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "interestRateCurveId": {
+                    "type": "string"
+                },
+                "volatilityModel": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "price", "interestRateCurveId"]
+        }
+    },
+    {
+        "name": "build_yield_curve",
+        "description": "Constructs a yield curve from benchmark rates or bonds",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "curveType": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "interpolationMethod": {
+                    "type": "string"
+                },
+                "tenors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["curveType", "asOfDate"]
+        }
+    },
+    {
+        "name": "analyze_bond_liquidity",
+        "description": "Analyzes liquidity metrics for fixed income securities",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lookbackPeriod": {
+                    "type": "integer"
+                }
+            },
+            "required": ["bondIds"]
+        }
+    },
+    {
+        "name": "calculate_key_rate_duration",
+        "description": "Calculates key rate durations for a bond or portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "instrumentId": {
+                    "type": "string"
+                },
+                "isPortfolio": {
+                    "type": "boolean"
+                },
+                "keyRates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "shiftSize": {
+                    "type": "number"
+                }
+            },
+            "required": ["instrumentId"]
+        }
+    },
+    {
+        "name": "calculate_z_spread",
+        "description": "Calculates Z-spread for a bond over a yield curve",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bondId": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "yieldCurveId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["bondId", "price", "yieldCurveId"]
+        }
+    },
+    
+    {
+        "name": "calculate_equity_metrics",
+        "description": "Calculates common equity metrics for a stock or portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["securityId"]
+        }
+    },
+    {
+        "name": "screen_equity_securities",
+        "description": "Screens equity securities based on fundamental or technical criteria",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "universe": {
+                    "type": "string"
+                },
+                "fundamentalCriteria": {
+                    "type": "object",
+                    "properties": {
+                        "peRatioMin": {
+                            "type": "number"
+                        },
+                        "peRatioMax": {
+                            "type": "number"
+                        },
+                        "marketCapMin": {
+                            "type": "number"
+                        },
+                        "marketCapMax": {
+                            "type": "number"
+                        },
+                        "dividendYieldMin": {
+                            "type": "number"
+                        },
+                        "debtToEquityMax": {
+                            "type": "number"
+                        },
+                        "roe": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "technicalCriteria": {
+                    "type": "object",
+                    "properties": {
+                        "priceAboveSMA50": {
+                            "type": "boolean"
+                        },
+                        "volumeIncreasePercent": {
+                            "type": "number"
+                        },
+                        "rsiMin": {
+                            "type": "number"
+                        },
+                        "rsiMax": {
+                            "type": "number"
+                        }
+                    }
+                }
+            },
+            "required": ["universe"]
+        }
+    },
+    {
+        "name": "get_equity_fundamentals",
+        "description": "Retrieves fundamental data for equity securities",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "period": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["securities", "metrics"]
+        }
+    },
+    {
+        "name": "calculate_implied_volatility",
+        "description": "Calculates implied volatility for equity options",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "optionId": {
+                    "type": "string"
+                },
+                "underlyingPrice": {
+                    "type": "number"
+                },
+                "optionPrice": {
+                    "type": "number"
+                },
+                "interestRate": {
+                    "type": "number"
+                },
+                "dividendYield": {
+                    "type": "number"
+                }
+            },
+            "required": ["optionId", "optionPrice"]
+        }
+    },
+    {
+        "name": "calculate_option_greeks",
+        "description": "Calculates option Greeks (delta, gamma, theta, vega, rho)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "optionId": {
+                    "type": "string"
+                },
+                "underlyingPrice": {
+                    "type": "number"
+                },
+                "volatility": {
+                    "type": "number"
+                },
+                "interestRate": {
+                    "type": "number"
+                },
+                "dividendYield": {
+                    "type": "number"
+                },
+                "greeks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["optionId", "underlyingPrice", "volatility"]
+        }
+    },
+    {
+        "name": "get_market_depth",
+        "description": "Retrieves market depth (order book) for a security",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "depth": {
+                    "type": "integer"
+                },
+                "venues": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["securityId"]
+        }
+    },
+    {
+        "name": "estimate_market_impact",
+        "description": "Estimates market impact of a trade based on order size and market conditions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "side": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "orderType": {
+                    "type": "string"
+                },
+                "timeHorizon": {
+                    "type": "number"
+                }
+            },
+            "required": ["securityId", "side", "quantity"]
+        }
+    },
+    {
+        "name": "calculate_vwap",
+        "description": "Calculates Volume Weighted Average Price for a security over a time period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "string"
+                },
+                "endTime": {
+                    "type": "string"
+                },
+                "includeExtendedHours": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["securityId", "startTime", "endTime"]
+        }
+    },
+    {
+        "name": "analyze_technical_indicators",
+        "description": "Calculates technical indicators for a security",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "indicators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lookbackPeriod": {
+                    "type": "integer"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["securityId"]
+        }
+    },
+    {
+        "name": "get_news_sentiment",
+        "description": "Analyzes news sentiment for securities or issuers",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "entityType": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["entities"]
+        }
+    },
+    
+    {
+        "name": "calculate_security_return",
+        "description": "Calculates total return for a security over a specified period",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "includeIncome": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["securityId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_historical_prices",
+        "description": "Retrieves historical price data for a security",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                },
+                "priceType": {
+                    "type": "string"
+                }
+            },
+            "required": ["securityId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_index_constituents",
+        "description": "Retrieves constituents of an index with weights",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "indexId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "includeHistoricalConstituents": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["indexId"]
+        }
+    },
+    {
+        "name": "get_economic_indicators",
+        "description": "Retrieves economic indicator data",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "indicators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                }
+            },
+            "required": ["indicators"]
+        }
+    },
+    {
+        "name": "generate_portfolio_report",
+        "description": "Generates a comprehensive portfolio report with key metrics and analysis",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "format": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "evaluate_portfolio_compliance",
+        "description": "Evaluates portfolio compliance against investment guidelines and restrictions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "complianceTemplateId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "includeWarnings": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["portfolioId", "complianceTemplateId"]
+        }
+    },
+    {
+        "name": "calculate_attribution",
+        "description": "Performs attribution analysis to explain sources of portfolio return",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "attributionMethod": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "benchmarkId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "analyze_fund_flows",
+        "description": "Analyzes fund inflows and outflows over time",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fundIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                }
+            },
+            "required": ["fundIds", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_tracking_error",
+        "description": "Calculates tracking error of a portfolio relative to a benchmark",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "benchmarkId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "benchmarkId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "get_risk_factor_exposures",
+        "description": "Retrieves risk factor exposures for a portfolio",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "factorModel": {
+                    "type": "string"
+                },
+                "factorCategories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["portfolioId"]
+        }
+    },
+    {
+        "name": "analyze_peer_comparison",
+        "description": "Compares a portfolio or fund against peers using various metrics",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "peerGroupId": {
+                    "type": "string"
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "timeHorizons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["portfolioId", "peerGroupId"]
+        }
+    },
+    {
+        "name": "simulate_portfolio_stress_test",
+        "description": "Simulates portfolio performance under stress scenarios",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "scenarios": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "customScenario": {
+                    "type": "object",
+                    "properties": {
+                        "equityShock": {
+                            "type": "number"
+                        },
+                        "rateShock": {
+                            "type": "number"
+                        },
+                        "creditSpreadShock": {
+                            "type": "number"
+                        },
+                        "fxShocks": {
+                            "type": "object"
+                        },
+                        "commodityShock": {
+                            "type": "number"
+                        }
+                    }
+                }
+            },
+            "required": ["portfolioId", "scenarios"]
+        }
+    },
+    {
+        "name": "calculate_style_analysis",
+        "description": "Performs returns-based style analysis on a portfolio or fund",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "styleFactors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "rollPeriod": {
+                    "type": "integer"
+                }
+            },
+            "required": ["portfolioId", "styleFactors", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_option_price",
+        "description": "Calculates theoretical option price using various pricing models",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "underlyingPrice": {
+                    "type": "number"
+                },
+                "strikePrice": {
+                    "type": "number"
+                },
+                "timeToExpiration": {
+                    "type": "number"
+                },
+                "volatility": {
+                    "type": "number"
+                },
+                "interestRate": {
+                    "type": "number"
+                },
+                "dividendYield": {
+                    "type": "number"
+                },
+                "optionType": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                }
+            },
+            "required": ["underlyingPrice", "strikePrice", "timeToExpiration", "volatility"]
+        }
+    },
+    {
+        "name": "calculate_forward_curve",
+        "description": "Calculates forward curve for interest rates, commodities, or other asset classes",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "assetClass": {
+                    "type": "string"
+                },
+                "underlyingId": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "tenors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["assetClass", "underlyingId"]
+        }
+    },
+    {
+        "name": "calculate_fx_forward",
+        "description": "Calculates FX forward rates based on interest rate parity",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "baseCurrency": {
+                    "type": "string"
+                },
+                "quoteCurrency": {
+                    "type": "string"
+                },
+                "spotRate": {
+                    "type": "number"
+                },
+                "baseCurrencyRate": {
+                    "type": "number"
+                },
+                "quoteCurrencyRate": {
+                    "type": "number"
+                },
+                "tenors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["baseCurrency", "quoteCurrency", "spotRate", "baseCurrencyRate", "quoteCurrencyRate"]
+        }
+    },
+    {
+        "name": "get_security_metadata",
+        "description": "Retrieves metadata for securities including identifiers and classification",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securityIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "idType": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["securityIds"]
+        }
+    },
+    {
+        "name": "apply_tax_lot_optimization",
+        "description": "Applies tax optimization strategies to portfolio trading decisions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "optimizationGoal": {
+                    "type": "string"
+                },
+                "taxYear": {
+                    "type": "integer"
+                },
+                "maxTaxBill": {
+                    "type": "number"
+                },
+                "targetRaiseAmount": {
+                    "type": "number"
+                }
+            },
+            "required": ["portfolioId", "optimizationGoal"]
+        }
+    },
+    {
+        "name": "generate_investment_ideas",
+        "description": "Generates investment ideas based on specified criteria and market conditions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "universe": {
+                    "type": "string"
+                },
+                "investmentStyle": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "marketCapRange": {
+                    "type": "object",
+                    "properties": {
+                        "min": {
+                            "type": "number"
+                        },
+                        "max": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "sectors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "thematicFocus": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "maxIdeas": {
+                    "type": "integer"
+                }
+            },
+            "required": ["universe"]
+        }
+    },
+    {
+        "name": "get_analyst_recommendations",
+        "description": "Retrieves analyst recommendations and price targets for securities",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "securities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lookbackPeriod": {
+                    "type": "integer"
+                },
+                "consensusOnly": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["securities"]
+        }
+    },
+    {
+        "name": "calculate_risk_weighted_returns",
+        "description": "Calculates risk-weighted returns using various risk metrics",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "riskMetric": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "riskMetric", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_moments",
+        "description": "Calculates statistical moments (mean, variance, skewness, kurtosis) of portfolio returns",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_inflation_adjusted_returns",
+        "description": "Calculates inflation-adjusted returns for a portfolio over time",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "inflationIndex": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "startDate", "endDate"]
+        }
+    },
+    {
+        "name": "calculate_retirement_projections",
+        "description": "Calculates retirement portfolio projections based on contributions, withdrawals, and returns",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "currentAge": {
+                    "type": "integer"
+                },
+                "retirementAge": {
+                    "type": "integer"
+                },
+                "lifeExpectancy": {
+                    "type": "integer"
+                },
+                "currentPortfolioValue": {
+                    "type": "number"
+                },
+                "annualContribution": {
+                    "type": "number"
+                },
+                "annualWithdrawal": {
+                    "type": "number"
+                },
+                "expectedReturn": {
+                    "type": "number"
+                },
+                "expectedVolatility": {
+                    "type": "number"
+                },
+                "inflationRate": {
+                    "type": "number"
+                },
+                "simulationCount": {
+                    "type": "integer"
+                }
+            },
+            "required": ["currentAge", "retirementAge", "currentPortfolioValue", "expectedReturn"]
+        }
+    },
+    {
+        "name": "calculate_portfolio_concentration",
+        "description": "Calculates concentration metrics for a portfolio across various dimensions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "portfolioId": {
+                    "type": "string"
+                },
+                "concentrationDimension": {
+                    "type": "string"
+                },
+                "asOfDate": {
+                    "type": "string"
+                },
+                "metric": {
+                    "type": "string"
+                }
+            },
+            "required": ["portfolioId", "concentrationDimension"]
+        }
+    }
+]

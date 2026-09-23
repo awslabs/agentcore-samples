@@ -1,0 +1,11 @@
+uvicorn[standard]==0.34.2
+fastapi==0.123.9
+websockets==13.1
+langchain>=0.3.0
+langchain-aws>=0.2.0
+langgraph>=0.4.0
+langchain-core>=0.3.0
+amazon-transcribe>=0.6.0
+requests==2.33.0
+boto3>=1.34.0
+botocore>=1.34.0

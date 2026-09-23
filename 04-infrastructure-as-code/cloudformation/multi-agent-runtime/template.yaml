@@ -84,7 +84,7 @@ Resources:
     UpdateReplacePolicy: Delete
     Properties:
       RepositoryName: !Sub "${AWS::StackName}-${ECRRepositoryName}-agent1"
-      ImageTagMutability: MUTABLE
+      ImageTagMutability: IMMUTABLE
       EmptyOnDelete: true
       ImageScanningConfiguration:
         ScanOnPush: true
@@ -112,7 +112,7 @@ Resources:
     UpdateReplacePolicy: Delete
     Properties:
       RepositoryName: !Sub "${AWS::StackName}-${ECRRepositoryName}-agent2"
-      ImageTagMutability: MUTABLE
+      ImageTagMutability: IMMUTABLE
       EmptyOnDelete: true
       ImageScanningConfiguration:
         ScanOnPush: true

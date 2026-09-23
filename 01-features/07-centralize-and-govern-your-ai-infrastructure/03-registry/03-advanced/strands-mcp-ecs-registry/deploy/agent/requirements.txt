@@ -1,0 +1,11 @@
+boto3>=1.42.87
+botocore>=1.42.87
+bedrock-agentcore
+strands-agents
+strands-agents-tools
+mcp>=1.27.0
+python-jose[cryptography]
+fastapi
+uvicorn[standard]
+pydantic
+# streamable_http_sigv4.py is bundled locally (no PyPI package)

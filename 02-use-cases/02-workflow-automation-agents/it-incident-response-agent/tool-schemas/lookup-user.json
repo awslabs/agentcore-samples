@@ -1,0 +1,16 @@
+[
+  {
+    "name": "lookup_user",
+    "description": "Look up an internal user by user_id. Returns profile, quotas, and recent (30-day) ticket history. Use this first to understand the requester's context and detect recurring incidents.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Internal user ID, e.g. U-1001"
+        }
+      },
+      "required": ["user_id"]
+    }
+  }
+]

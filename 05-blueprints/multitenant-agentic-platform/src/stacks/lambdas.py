@@ -45,9 +45,7 @@ class LambdasConstruct(Construct):
             environment={"TABLE_NAME": usage_table.table_name},
         )
         usage_table.grant_write_data(self.sqs_processor)
-        self.sqs_processor.add_event_source(
-            lambda_event_sources.SqsEventSource(usage_queue, batch_size=10)
-        )
+        self.sqs_processor.add_event_source(lambda_event_sources.SqsEventSource(usage_queue, batch_size=10))
 
         # DynamoDB stream processor
         self.stream_processor = self._create_lambda(
@@ -82,9 +80,7 @@ class LambdasConstruct(Construct):
             function_name="build-deploy-bedrock-agent",
             runtime=lambda_.Runtime.PYTHON_3_10,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset(
-                os.path.join(cdk_app_dir, "lambda_functions/build_deploy_agent")
-            ),
+            code=lambda_.Code.from_asset(os.path.join(cdk_app_dir, "lambda_functions/build_deploy_agent")),
             timeout=Duration.minutes(15),
             memory_size=3008,
             log_group=build_deploy_log_group,
@@ -123,14 +119,8 @@ class LambdasConstruct(Construct):
                 actions=[
                     "iam:CreateServiceLinkedRole",
                 ],
-                resources=[
-                    "arn:aws:iam::*:role/aws-service-role/bedrock-agentcore.amazonaws.com/*"
-                ],
-                conditions={
-                    "StringLike": {
-                        "iam:AWSServiceName": "bedrock-agentcore.amazonaws.com"
-                    }
-                },
+                resources=["arn:aws:iam::*:role/aws-service-role/bedrock-agentcore.amazonaws.com/*"],
+                conditions={"StringLike": {"iam:AWSServiceName": "bedrock-agentcore.amazonaws.com"}},
             )
         )
         self.build_deploy_agent.add_to_role_policy(
@@ -138,9 +128,7 @@ class LambdasConstruct(Construct):
                 actions=[
                     "iam:GetRole",
                 ],
-                resources=[
-                    "arn:aws:iam::*:role/aws-service-role/bedrock-agentcore.amazonaws.com/*"
-                ],
+                resources=["arn:aws:iam::*:role/aws-service-role/bedrock-agentcore.amazonaws.com/*"],
             )
         )
         self.build_deploy_agent.add_to_role_policy(
@@ -159,9 +147,7 @@ class LambdasConstruct(Construct):
             "async-deploy-agent",
             "lambda_functions/async_deploy_agent",
             timeout_seconds=10,
-            environment={
-                "BUILD_DEPLOY_FUNCTION_NAME": self.build_deploy_agent.function_name
-            },
+            environment={"BUILD_DEPLOY_FUNCTION_NAME": self.build_deploy_agent.function_name},
         )
         self.build_deploy_agent.grant_invoke(self.async_deploy)
 

@@ -1,0 +1,5 @@
+strands-agents
+strands-agents-tools
+uv
+bedrock-agentcore
+ddgs

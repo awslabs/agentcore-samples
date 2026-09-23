@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "preview": {
+    "transport": "sigv4RestJson",
+    "serviceName": "bedrock-agentcore-control",
+    "signingName": "bedrock-agentcore",
+    "endpointUrl": null,
+    "endpointUrlTemplate": "https://bedrock-agentcore-control.{region}.amazonaws.com",
+    "allowedEndpointHosts": [],
+    "listOperation": "list_registry_records",
+    "getOperation": "get_registry_record",
+    "request": {
+      "registryIdField": "registryId",
+      "recordIdField": "recordId",
+      "pageTokenField": "nextToken",
+      "pageSizeField": "maxResults",
+      "pageSize": 100,
+      "changedAfterField": null
+    },
+    "response": {
+      "itemsPath": "registryRecords",
+      "nextTokenPath": "nextToken",
+      "recordPath": null,
+      "recordIdPath": "recordId",
+      "updatedAtPath": "updatedAt",
+      "recordTypePath": "descriptorType"
+    }
+  },
+  "target": {
+    "transport": "sigv4RestJson",
+    "serviceName": "agent-registry-control",
+    "signingName": "agent-registry",
+    "endpointUrl": null,
+    "endpointUrlTemplate": "https://agent-registry-control.{region}.api.aws",
+    "allowedEndpointHosts": [],
+    "request": {
+      "filtersField": "filters",
+      "pageTokenField": "nextToken",
+      "pageSizeField": "maxResults",
+      "pageSize": 100
+    },
+    "response": {
+      "itemsPath": "registryRecords",
+      "nextTokenPath": "nextToken",
+      "recordIdPath": "recordId",
+      "recordArnPath": "recordArn",
+      "recordNamePath": "name",
+      "recordVersionPath": "recordVersion"
+    },
+    "poll": {
+      "maxAttempts": 90,
+      "intervalSeconds": 2,
+      "inProgressStatuses": ["CREATING", "UPDATING"],
+      "successStatuses": ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "DEPRECATED"],
+      "failureStatuses": ["CREATE_FAILED", "UPDATE_FAILED"]
+    }
+  }
+}

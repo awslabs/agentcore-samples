@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Autonomous Coding Agent on AgentCore (Live)</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',system-ui,sans-serif; background:#0d1117; color:#e6edf3; padding:20px 28px; }
+h1 { font-size:1.25em; } .sub { color:#8b949e; font-size:.82em; margin:2px 0 16px; }
+.topbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+button { background:#E7157B; color:#fff; border:0; padding:8px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:.85em; }
+button.alt { background:#21262d; color:#e6edf3; border:1px solid #30363d; }
+button:disabled { opacity:.5; cursor:default; }
+.pill { font-size:.72em; padding:3px 9px; border-radius:20px; background:#21262d; border:1px solid #30363d; color:#8b949e; }
+.layout { display:grid; grid-template-columns: 1.35fr 1fr; gap:18px; align-items:start; }
+/* grid items default to min-width:auto, letting long unbreakable text (e.g.
+   "swift test --enable-test-discovery") blow a column past its track and overlap
+   the neighbour. min-width:0 forces columns to respect their tracks. */
+.layout > * { min-width:0; }
+.panel { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:14px; overflow:hidden; }
+.panel h2 { font-size:.8em; text-transform:uppercase; letter-spacing:.06em; color:#8b949e; margin-bottom:12px; }
+
+/* ---- architecture diagram ---- */
+.canvas { position:relative; height:430px; }
+.box { position:absolute; border:1.5px solid #30363d; border-radius:8px; padding:8px 10px; background:#0d1117;
+       font-size:.72em; line-height:1.35; cursor:pointer; transition:all .25s; width:150px; }
+.box .t { font-weight:700; } .box .s { color:#8b949e; font-size:.92em; }
+.box:hover { border-color:#58a6ff; }
+.box.blue { border-color:#3B82F6; } .box.green { border-color:#16a34a; } .box.orange { border-color:#EA580C; }
+.box.dashed { border-style:dashed; }
+.box.active { box-shadow:0 0 0 2px #E7157B, 0 0 22px rgba(231,21,123,.55); border-color:#E7157B; animation:pulse 1.3s infinite; }
+.box.done { border-color:#16a34a; }
+@keyframes pulse { 0%,100%{ box-shadow:0 0 0 2px #E7157B,0 0 10px rgba(231,21,123,.4);} 50%{ box-shadow:0 0 0 2px #E7157B,0 0 26px rgba(231,21,123,.8);} }
+svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+svg.wires line { stroke:#30363d; stroke-width:1.5; }
+svg.wires line.lit { stroke:#E7157B; stroke-width:2.5; }
+.lbl { position:absolute; font-size:.62em; color:#6e7681; font-style:italic; }
+
+/* suspend banner */
+.suspend { margin-top:10px; padding:8px 12px; border-radius:8px; font-size:.8em; display:none; }
+.suspend.on { display:block; background:rgba(231,21,123,.12); border:1px solid #E7157B; color:#ff7ac0; animation:pulse 1.6s infinite; }
+
+/* ---- timeline ---- */
+.stages { list-style:none; }
+.stage { display:flex; gap:10px; align-items:flex-start; padding:7px 4px; border-bottom:1px solid #21262d; font-size:.82em; }
+.stage .ic { width:20px; text-align:center; }
+.stage .nm { flex:1; } .stage .nm small { color:#8b949e; display:block; font-size:.85em; }
+.stage .el { color:#6e7681; font-size:.78em; white-space:nowrap; }
+.stage.active { background:rgba(231,21,123,.08); border-radius:6px; }
+.stage.passed .ic, .stage.done .ic { color:#3fb950; } .stage.failed .ic { color:#f85149; }
+
+/* ---- detail panel ---- */
+.detail { max-height:520px; overflow:auto; }
+.detail .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.detail a { color:#58a6ff; font-size:.74em; text-decoration:none; } .detail a:hover { text-decoration:underline; }
+.logline { font-family:ui-monospace,Menlo,monospace; font-size:.74em; padding:2px 0; color:#c9d1d9; border-bottom:1px solid #161b22; white-space:pre-wrap; word-break:break-word; }
+.logline .tm { color:#6e7681; margin-right:8px; }
+.rsn { padding:6px 8px; margin:5px 0; border-radius:6px; font-size:.78em; line-height:1.4;
+       overflow-wrap:anywhere; word-break:break-word; }
+.rsn.REASONING { background:#10243a; border-left:3px solid #58a6ff; }
+.rsn.TOOL { background:#16231a; border-left:3px solid #3fb950; font-family:ui-monospace,monospace; font-size:.74em; }
+.rsn.THINKING { background:#241a2e; border-left:3px solid #a371f7; font-style:italic; }
+.empty { color:#6e7681; font-size:.8em; padding:10px 0; }
+.legend { font-size:.7em; color:#6e7681; margin-top:10px; }
+.legend span { margin-right:14px; }
+
+/* ticket card */
+.tk-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+.tk-id { font-weight:700; font-size:.95em; }
+.tk-tag { font-size:.68em; padding:2px 8px; border-radius:20px; background:#21262d; border:1px solid #30363d; color:#8b949e; }
+.tk-st { font-size:.7em; padding:2px 9px; border-radius:20px; font-weight:700; }
+.tk-st.PASS { background:rgba(63,185,80,.15); color:#3fb950; border:1px solid #238636; }
+.tk-st.FAIL { background:rgba(248,81,73,.15); color:#f85149; border:1px solid #da3633; }
+.tk-st.running, .tk-st.runs { background:rgba(231,21,123,.12); color:#ff7ac0; border:1px solid #E7157B; }
+.tk-title { font-size:.9em; font-weight:600; margin:4px 0; }
+.tk-repo { font-size:.74em; color:#8b949e; margin:2px 0 6px; overflow-wrap:anywhere; }
+.tk-repo a { color:#58a6ff; text-decoration:none; }
+.tk-repo a:hover { text-decoration:underline; }
+.tk-desc { font-size:.78em; color:#8b949e; line-height:1.45; max-height:120px; overflow:auto;
+           overflow-wrap:anywhere; word-break:break-word; }
+</style>
+</head>
+<body>
+<h1>Autonomous Coding Agent on Amazon Bedrock AgentCore <span class="pill" id="livepill">● LIVE</span></h1>
+<p class="sub">Control / data-plane separation · Lambda Durable Function (zero idle cost) · per-repo Memory · Swift sandbox crash-isolation</p>
+
+<div class="topbar">
+  <button onclick="fire('feature')">▶ Fire Ticket 1 (build feature)</button>
+  <button onclick="fire('memory')">▶ Fire Ticket 2 (same repo · memory)</button>
+  <label class="pill" style="gap:6px;display:inline-flex;align-items:center;">watching
+    <input id="watch" value="" placeholder="(fire a ticket)" onchange="setWatch(this.value)"
+           style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:4px;padding:3px 6px;width:150px;font-size:.95em;">
+  </label>
+  <span class="pill" id="status">idle</span>
+  <span class="pill" id="acct"></span>
+</div>
+
+<div class="layout">
+  <!-- LEFT: architecture + timeline -->
+  <div>
+    <div class="panel">
+      <h2>Architecture — choose any component for its live CloudWatch logs</h2>
+      <div class="canvas" id="canvas">
+        <svg class="wires" id="wires">
+          <line id="w_eb_orch" x1="95" y1="200" x2="180" y2="200"/>
+          <line id="w_orch_coder" x1="300" y1="180" x2="430" y2="90"/>
+          <line id="w_orch_s3" x1="300" y1="210" x2="430" y2="210"/>
+          <line id="w_coder_swift" x1="505" y1="120" x2="505" y2="300"/>
+          <line id="w_orch_review" x1="240" y1="160" x2="240" y2="95"/>
+          <line id="w_coder_mem" x1="580" y1="90" x2="650" y2="90" class="dashed"/>
+        </svg>
+        <div class="box orange" id="c_orchestrator" style="left:180px;top:170px;" onclick="pick('orchestrator')">
+          <div class="t">Orchestrator</div><div class="s">Lambda Durable Fn<br>suspends at $0</div></div>
+        <div class="box" id="c_eventbridge" style="left:10px;top:178px;width:80px;">
+          <div class="t">Event<br>Bridge</div></div>
+        <div class="box dashed" id="c_evaluator" style="left:180px;top:40px;" onclick="pick('evaluator')">
+          <div class="t">Evaluator Agent</div><div class="s">separate runtime<br>read-only · Opus 4.8</div></div>
+        <div class="box blue" id="c_coding_agent" style="left:430px;top:55px;" onclick="pick('coding_agent')">
+          <div class="t">Coding Agent</div><div class="s">Claude Agent SDK<br>writes Swift</div></div>
+        <div class="box dashed" id="c_s3" style="left:430px;top:195px;width:90px;" onclick="pick('orchestrator')">
+          <div class="t">S3 mount</div><div class="s">/mnt/shared</div></div>
+        <div class="box green" id="c_sandbox_swift" style="left:430px;top:300px;" onclick="pick('sandbox_swift')">
+          <div class="t">Swift Sandbox</div><div class="s">swift build/test<br>crash-isolated</div></div>
+        <div class="box dashed" id="c_memory" style="left:650px;top:65px;width:120px;" onclick="showMemory()">
+          <div class="t">AgentCore Memory</div><div class="s">per-repo lessons</div></div>
+        <div class="lbl" style="left:100px;top:182px;">ticket</div>
+        <div class="lbl" style="left:340px;top:120px;">invoke + callback</div>
+        <div class="lbl" style="left:512px;top:200px;">test gate</div>
+      </div>
+      <div class="suspend" id="suspend">⏸ ORCHESTRATOR SUSPENDED — agent working in background (HealthyBusy) · <b>$0 compute</b> · not bound by Lambda's 15-min limit</div>
+      <div class="legend">
+        <span style="color:#EA580C;">■ Orchestrator</span><span style="color:#3B82F6;">■ Control plane</span>
+        <span style="color:#16a34a;">■ Data plane</span><span style="color:#E7157B;">■ active</span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h2>Workflow stages</h2>
+      <ul class="stages" id="stages"></ul>
+    </div>
+  </div>
+
+  <!-- RIGHT: ticket card + detail -->
+  <div>
+    <div class="panel" id="ticketCard" style="margin-bottom:16px;">
+      <h2>Ticket</h2>
+      <div id="ticketBody"><div class="empty">Fire a ticket to begin.</div></div>
+    </div>
+    <div class="panel detail">
+      <div class="hd"><h2 id="detailTitle" style="margin:0;">Detail</h2><a id="detailLink" href="#" target="_blank"></a></div>
+      <div id="detailBody"><div class="empty">Choose a component, or fire a ticket to begin.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let WATCH = '', SELECTED = null, CFG = {};
+const STAGE_DEFS = [
+  ['received','Ticket received','EventBridge event'],
+  ['admission','Admission','validate + fetch ticket from S3'],
+  ['hydrate','Hydrate repo','copy Rainbow into /mnt/shared'],
+  ['recall_memory','Recall memory','inject prior lessons into prompt'],
+  ['coder_working','Coding agent working','SUSPENDED · $0 · agent writes Swift'],
+  ['coder_done','Resumed','callback received'],
+  ['test_gate','Test gate','swift test (deterministic exit code)'],
+  ['review','Review','read-only evaluator verdict'],
+  ['finalize','Finalize','write memory + notify'],
+];
+const COMP_FOR_STAGE = { received:'orchestrator', admission:'orchestrator', hydrate:'sandbox_swift',
+  recall_memory:'orchestrator', coder_working:'coding_agent', coder_done:'orchestrator',
+  test_gate:'sandbox_swift', review:'evaluator', finalize:'orchestrator' };
+
+async function j(u){
+  // Tolerate transient fetch/parse failures (server restart, a poll superseding an in-flight
+  // request) so a single bad read never wedges the panel — the next 3s poll recovers.
+  try { const r=await fetch(u); return await r.json(); }
+  catch(e){ return {error:String(e)}; }
+}
+function setWatch(v){ WATCH=(v||'').trim(); refresh(); }
+async function fire(kind){
+  document.getElementById('status').textContent='firing…';
+  const r = await j('/fire?kind='+kind);
+  if(r.fired){ WATCH=r.fired; document.getElementById('watch').value=r.fired; }
+  else { document.getElementById('status').textContent='fire error: '+(r.error||'?'); }
+  refresh();
+}
+
+(async()=>{ CFG=await j('/config'); document.getElementById('acct').textContent=CFG.account+' · '+CFG.region; })();
+
+function elapsed(ms){ if(!ms) return ''; const s=Math.floor((Date.now()-ms)/1000);
+  return s<60? s+'s' : Math.floor(s/60)+'m'+(s%60)+'s'; }
+
+async function renderTicket(){
+  const t = await j('/ticket?ticket='+WATCH);
+  const stCls = (t.status==='PASS'||t.status==='FAIL') ? t.status : 'running';
+  let runs = '';
+  if(t.attempts!=null) runs += `<span class="tk-tag">${t.attempts} attempt(s)</span>`;
+  if(t.lessons_written!=null) runs += `<span class="tk-tag">${t.lessons_written} lesson(s) written</span>`;
+  if(t.current_stage && stCls==='running') runs += `<span class="tk-tag">at: ${t.current_stage}</span>`;
+  document.getElementById('ticketBody').innerHTML = t.error
+    ? `<div class="empty">${esc(t.error)}</div>`
+    : `<div class="tk-row">
+         <span class="tk-id">${esc(t.id||WATCH)}</span>
+         ${t.repo?`<span class="tk-tag">repo: ${esc(t.repo)}</span>`:''}
+         ${t.runtime?`<span class="tk-tag">${esc(t.runtime)}</span>`:''}
+         <span class="tk-st ${stCls}">${esc(t.status||'—')}</span>
+       </div>
+       <div class="tk-title">${esc(t.title||'')}</div>
+       ${t.repo_url?`<div class="tk-repo">🔗 cloned from <a href="${esc(t.repo_url)}" target="_blank">${esc(t.repo_url)}</a></div>`:''}
+       <div class="tk-desc">${esc(t.description||'')}</div>
+       <div class="tk-row" style="margin-top:8px;">${runs}</div>`;
+}
+
+async function refresh(){
+  if(!WATCH){
+    // nothing fired/selected yet — keep everything blank, no stale replay
+    document.getElementById('status').textContent='idle';
+    document.getElementById('ticketBody').innerHTML='<div class="empty">Fire a ticket to begin.</div>';
+    document.getElementById('stages').innerHTML='';
+    document.getElementById('suspend').className='suspend';
+    Object.keys(CFG.components||{}).forEach(c=> setBox(c,false,false));
+    document.querySelectorAll('#wires line').forEach(l=>l.classList.remove('lit'));
+    return;
+  }
+  renderTicket();
+  const st = await j('/state?ticket='+WATCH);
+  const evByStage = {}; (st.events||[]).forEach(e=> evByStage[e.stage]=e);
+  const current = st.current;
+  // status pill
+  const fin = evByStage['finalize'];
+  document.getElementById('status').textContent = fin ? ('finalize: '+(fin.meta?.outcome||fin.status)) : (current? 'running: '+current : 'idle');
+  // suspend banner: coder_working active and not yet resumed
+  const suspended = !!evByStage['coder_working'] && !evByStage['coder_done'];
+  document.getElementById('suspend').className = 'suspend'+(suspended?' on':'');
+  // timeline
+  const ul=document.getElementById('stages'); ul.innerHTML='';
+  STAGE_DEFS.forEach(([key,nm,desc])=>{
+    const e=evByStage[key]; const isCur=current===key && !fin;
+    let ic='⬜', cls='';
+    if(e){ const s=e.status; if(s==='passed'||s==='done'){ic='✅';cls='done';}
+      else if(s==='failed'){ic='❌';cls='failed';} else if(s==='active'){ic='🟡';cls='active';}
+      else if(s==='skipped'){ic='➖';} else {ic='🟡';cls='active';} }
+    if(isCur && ic==='⬜'){ ic='🟡'; cls='active'; }
+    let extra = e&&e.meta? metaText(key,e.meta) : '';
+    ul.innerHTML += `<li class="stage ${cls}"><span class="ic">${ic}</span>
+      <span class="nm">${nm}<small>${desc}${extra}</small></span>
+      <span class="el">${e? new Date(e.ts*1000).toLocaleTimeString():''}</span></li>`;
+  });
+  // diagram component highlight
+  Object.keys(CFG.components||{}).forEach(c=> setBox(c,false,false));
+  Object.values(COMP_FOR_STAGE).forEach(c=>{});
+  (st.events||[]).forEach(e=>{ const c=COMP_FOR_STAGE[e.stage]; if(c) setBox(c,false,true); });
+  const activeComp = current && COMP_FOR_STAGE[current] && !fin ? COMP_FOR_STAGE[current] : null;
+  if(activeComp) setBox(activeComp,true,false);
+  litWires(activeComp, suspended);
+  // refresh open detail panel
+  if(SELECTED==='__memory__') showMemory(true);
+  else if(SELECTED==='coding_agent') showReasoning(true);
+  else if(SELECTED) showLogs(SELECTED,true);
+}
+function metaText(key,m){
+  if(key==='recall_memory') return ' · found '+(m.lessons_found||0)+' lesson(s)';
+  if(key==='hydrate'&&m.files) return ' · '+m.files+' files';
+  if(key==='test_gate') return ' · exit '+(m.exit_code);
+  if(key==='review'&&m.verdict) return ' · '+m.verdict+(m.lessons&&m.lessons.length? ' · '+m.lessons.length+' lesson(s)':'');
+  if(key==='finalize') return ' · '+(m.outcome)+' · '+(m.lessons_written||0)+' lesson(s) written';
+  return '';
+}
+function setBox(c,active,done){ const el=document.getElementById('c_'+c); if(!el)return;
+  el.classList.toggle('active',active); if(done&&!active) el.classList.add('done'); if(!done&&!active) el.classList.remove('done'); }
+function litWires(active, suspended){
+  document.querySelectorAll('#wires line').forEach(l=>l.classList.remove('lit'));
+  const map={coding_agent:['w_orch_coder','w_coder_swift'], sandbox_swift:['w_coder_swift'],
+    evaluator:['w_orch_review'], orchestrator:['w_eb_orch','w_orch_s3']};
+  (map[active]||[]).forEach(id=>document.getElementById(id)?.classList.add('lit'));
+}
+
+function pick(c){ SELECTED=c; showLogs(c); }
+async function showLogs(c, quiet){
+  const d=await j('/logs?component='+c+'&ticket='+WATCH);
+  if(c==='coding_agent'){ return showReasoning(quiet); }
+  document.getElementById('detailTitle').textContent=d.label+' — logs';
+  const a=document.getElementById('detailLink'); a.href=d.console_url; a.textContent='open in CloudWatch ↗';
+  const body=document.getElementById('detailBody');
+  body.innerHTML = (d.lines&&d.lines.length)? d.lines.map(l=>
+    `<div class="logline"><span class="tm">${l.ts? new Date(l.ts).toLocaleTimeString():''}</span>${esc(l.text)}</div>`).join('')
+    : '<div class="empty">No recent activity for this ticket.</div>';
+  if(!quiet) body.scrollTop=body.scrollHeight;
+}
+async function showReasoning(quiet){ SELECTED='coding_agent';
+  const d=await j('/reasoning?ticket='+WATCH);
+  document.getElementById('detailTitle').textContent='Coding Agent — live reasoning & actions';
+  const a=document.getElementById('detailLink'); a.href=d.console_url; a.textContent='open in CloudWatch ↗';
+  const body=document.getElementById('detailBody');
+  body.innerHTML = (d.items&&d.items.length)? d.items.map(i=>
+    `<div class="rsn ${i.kind}">${i.kind==='TOOL'?'🔧 ':i.kind==='THINKING'?'🧠 ':'💭 '}${esc(i.text)}</div>`).join('')
+    : '<div class="empty">Agent has not started reasoning yet (or still cold-starting).</div>';
+  if(!quiet) body.scrollTop=body.scrollHeight;
+}
+async function showMemory(quiet){ SELECTED='__memory__';
+  const d=await j('/memory?repo=rainbow');
+  document.getElementById('detailTitle').textContent='AgentCore Memory — lessons for repo "rainbow"';
+  const a=document.getElementById('detailLink'); a.href='#'; a.textContent='';
+  const body=document.getElementById('detailBody');
+  body.innerHTML = (d.records&&d.records.length)? d.records.map(r=>`<div class="rsn REASONING">🧠 ${esc(r)}</div>`).join('')
+    : '<div class="empty">No lessons yet — they appear after ticket 1 finalizes.</div>';
+}
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+setInterval(refresh, 3000); refresh();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# The MCP Python SDK brings FastMCP with it. No bedrock-agentcore needed: an MCP
+# server does not use BedrockAgentCoreApp, it speaks JSON-RPC over
+# streamable-HTTP directly.
+#
+# Pinned below 2.0 deliberately. mcp 2.0.0 renamed FastMCP to MCPServer and moved
+# it from mcp.server.fastmcp to mcp.server.mcpserver, with no compatibility
+# alias — verified against the 2.0.0 wheel. The import in agent.py is the 1.x one.
+mcp>=1.10.0,<2.0.0

@@ -1,0 +1,5 @@
+model = "openai.gpt-5.5"
+model_provider = "amazon-bedrock"
+
+[model_providers.amazon-bedrock.aws]
+region = "us-east-2"

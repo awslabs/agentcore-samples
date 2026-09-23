@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Sample Extension",
+  "version": "1.0",
+  "description": "A simple sample extension",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "hello_extensions.png"
+  },
+  "icons": {
+    "48": "hello_extensions.png"
+  }
+}

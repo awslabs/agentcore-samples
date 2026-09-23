@@ -1,0 +1,962 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Financial Analyst Agent — ECS Fargate deployment.
+  Components: VPC, ECS Cluster, MCP Server service, Strands Agent service,
+  Chat Interface service, S3 skills bucket, S3 frontend bucket, CloudFront
+  distribution, Cognito User Pool, IAM roles, internal ALBs, SSM parameters.
+
+# ── Parameters ────────────────────────────────────────────────────────────────
+Parameters:
+  ProjectName:
+    Type: String
+    Default: financial-agent
+    Description: Prefix for all resource names
+
+  McpImageUri:
+    Type: String
+    Description: ECR URI for MCP server image, e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/mcp-server:latest
+
+  AgentImageUri:
+    Type: String
+    Description: ECR URI for Strands agent image
+
+  ChatImageUri:
+    Type: String
+    Description: ECR URI for chat interface image
+
+  ModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-6
+    Description: Bedrock model ID for the Strands agent
+
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+
+# ── VPC ───────────────────────────────────────────────────────────────────────
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpc"
+
+  # Two private subnets (ECS tasks — no public IPs)
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-a"
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-b"
+
+  # One public subnet for the internet-facing chat ALB
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.10.0/24"
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.11.0/24"
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-b"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # NAT Gateway for private subnets to reach AWS APIs (Bedrock, Registry, S3)
+  NatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+# ── Security Groups ───────────────────────────────────────────────────────────
+
+  # Chat ALB — accepts HTTP (port 80) for initial testing.
+  # Switch to HTTPS (port 443) once you have an ACM certificate.
+  ChatAlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Chat ALB (public HTTP)
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+
+  # Chat service — accepts traffic only from chat ALB
+  ChatSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Chat ECS service
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ChatAlbSg
+
+  # Agent service — accepts traffic from chat service and from agent ALB (health checks)
+  AgentSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Agent ECS service
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ChatSg
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AgentAlbSg
+
+  # MCP service — accepts traffic from agent service and from MCP ALB (health checks)
+  McpSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MCP ECS service
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AgentSg
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref McpAlbSg
+
+  # Internal ALB for agent — reachable only from chat service SG
+  AgentAlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Agent internal ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ChatSg
+
+  # Internal ALB for MCP — reachable only from agent service SG
+  McpAlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MCP internal ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AgentSg
+
+# ── S3 Bucket (skill artifacts) ───────────────────────────────────────────────
+
+  SkillsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-skills-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+# ── Cognito User Pool (chat authentication) ───────────────────────────────────
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${ProjectName}-users"
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${ProjectName}-app-client"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      AccessTokenValidity: 8
+      IdTokenValidity: 8
+      RefreshTokenValidity: 30
+
+# ── ECS Cluster ───────────────────────────────────────────────────────────────
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-cluster"
+      CapacityProviders:
+        - FARGATE
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+# ── IAM Roles ─────────────────────────────────────────────────────────────────
+
+  # Execution role — ECS uses this to pull images, write logs, and fetch SSM secrets
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-ecs-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SsmSecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*"
+
+  # MCP server task role — only needs S3 read (if tools read data from S3)
+  McpTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-mcp-task-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: McpS3Read
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${SkillsBucket}/*"
+
+  # Agent task role — needs registry search, Bedrock invoke, S3 read
+  AgentTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-agent-task-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+          # Allow the AWS Agent Registry to assume this role when crawling
+          # the MCP server URL (synchronizationType=URL with IAM credential provider)
+          - Effect: Allow
+            Principal:
+              Service: agent-registry.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AgentRegistryAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Registry: search and read records
+              - Effect: Allow
+                Action:
+                  - agent-registry:ListRegistries
+                  - agent-registry:GetRegistry
+                  - agent-registry:SearchDiscoverableRegistryRecords
+                  - agent-registry:GetRegistryRecord
+                Resource: "*"
+              # Bedrock: invoke model
+              # Cross-region inference profiles route to multiple regions,
+              # so we wildcard the region in both resource patterns.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - "arn:aws:bedrock:*::foundation-model/*"
+                  - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
+              # S3: read skill artifacts
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${SkillsBucket}"
+                  - !Sub "arn:aws:s3:::${SkillsBucket}/*"
+              # API Gateway: invoke the MCP HTTPS endpoint (SigV4 IAM auth)
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*"
+              # SSM: read config at startup
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*"
+
+  # Chat task role — only needs to call the internal agent ALB (no AWS API perms needed)
+  ChatTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-chat-task-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+# ── CloudWatch Log Groups ─────────────────────────────────────────────────────
+
+  McpLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}/mcp"
+      RetentionInDays: 14
+
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}/agent"
+      RetentionInDays: 14
+
+  ChatLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}/chat"
+      RetentionInDays: 14
+
+# ── MCP Server — Task Definition + ALB + Service ─────────────────────────────
+
+  McpTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-mcp"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt McpTaskRole.Arn
+      ContainerDefinitions:
+        - Name: mcp
+          Image: !Ref McpImageUri
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            - Name: PORT
+              Value: "8080"
+            - Name: SKILLS_BUCKET
+              Value: !Ref SkillsBucket
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref McpLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: mcp
+
+  McpAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-mcp-alb"
+      Scheme: internal
+      Type: application
+      Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroups: [!Ref McpAlbSg]
+
+  McpTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-mcp-tg"
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  McpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref McpAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref McpTargetGroup
+
+  McpService:
+    Type: AWS::ECS::Service
+    DependsOn: McpListener
+    Properties:
+      ServiceName: !Sub "${ProjectName}-mcp"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref McpTaskDef
+      DesiredCount: 0
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+          SecurityGroups: [!Ref McpSg]
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: mcp
+          ContainerPort: 8080
+          TargetGroupArn: !Ref McpTargetGroup
+
+# ── Agent Service — Task Definition + ALB + Service ──────────────────────────
+
+  AgentTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-agent"
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt AgentTaskRole.Arn
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Ref AgentImageUri
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            - Name: PORT
+              Value: "8080"
+            - Name: MODEL_ID
+              Value: !Ref ModelId
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            # REGISTRY_ARN, SKILLS_BUCKET, COGNITO_JWKS_URL are injected from SSM below.
+            # MCP server URL is NOT in SSM — the agent discovers it from the Registry at startup.
+          Secrets:
+            - Name: REGISTRY_ARN
+              ValueFrom: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/registry-arn"
+            - Name: SKILLS_BUCKET
+              ValueFrom: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/skills-bucket"
+            - Name: COGNITO_JWKS_URL
+              ValueFrom: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/cognito-jwks-url"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: agent
+
+  AgentAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-agent-alb"
+      Scheme: internal
+      Type: application
+      Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroups: [!Ref AgentAlbSg]
+
+  AgentTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-agent-tg"
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  AgentListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AgentAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AgentTargetGroup
+
+  AgentService:
+    Type: AWS::ECS::Service
+    DependsOn: AgentListener
+    Properties:
+      ServiceName: !Sub "${ProjectName}-agent"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref AgentTaskDef
+      DesiredCount: 0
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+          SecurityGroups: [!Ref AgentSg]
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: agent
+          ContainerPort: 8080
+          TargetGroupArn: !Ref AgentTargetGroup
+
+# ── Chat Service — Task Definition + Public ALB + Service ────────────────────
+
+  ChatTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-chat"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt ChatTaskRole.Arn
+      ContainerDefinitions:
+        - Name: chat
+          Image: !Ref ChatImageUri
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            - Name: PORT
+              Value: "8080"
+            - Name: AGENT_URL
+              Value: !Sub "http://${AgentAlb.DNSName}"
+          Secrets:
+            - Name: COGNITO_JWKS_URL
+              ValueFrom: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/cognito-jwks-url"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ChatLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: chat
+
+  ChatAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-chat-alb"
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref ChatAlbSg]
+
+  ChatTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-chat-tg"
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ChatListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ChatAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ChatTargetGroup
+
+  ChatService:
+    Type: AWS::ECS::Service
+    DependsOn: ChatListener
+    Properties:
+      ServiceName: !Sub "${ProjectName}-chat"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref ChatTaskDef
+      DesiredCount: 0
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+          SecurityGroups: [!Ref ChatSg]
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: chat
+          ContainerPort: 8080
+          TargetGroupArn: !Ref ChatTargetGroup
+
+# ── API Gateway HTTP API + VPC Link ──────────────────────────────────────────
+# Gives the internal MCP ALB a public https:// URL so the AgentCore Registry
+# can crawl it via synchronizationType="URL". The agent reads the MCP URL from
+# Registry at startup — no SSM, no hardcoded URLs.
+
+  # SG attached to the ENIs that VPC Link places in the private subnets.
+  # Needs egress to port 80 on the MCP ALB SG.
+  McpApiGwSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName} API Gateway VPC Link ENIs for MCP"
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          DestinationSecurityGroupId: !Ref McpAlbSg
+
+  # Allow MCP ALB to accept traffic from the VPC Link ENIs.
+  # Separate resource to avoid a circular SG dependency.
+  McpAlbApiGwIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref McpAlbSg
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref McpApiGwSg
+
+  McpVpcLink:
+    Type: AWS::ApiGatewayV2::VpcLink
+    Properties:
+      Name: !Sub "${ProjectName}-mcp-vpc-link"
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      SecurityGroupIds:
+        - !Ref McpApiGwSg
+
+  McpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${ProjectName}-mcp-api"
+      ProtocolType: HTTP
+      Description: HTTPS proxy for the internal MCP ALB — used by AgentCore Registry to crawl tool schemas
+
+  # Route all methods and paths via VPC Link to the internal MCP ALB listener.
+  McpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref McpApi
+      IntegrationType: HTTP_PROXY
+      ConnectionType: VPC_LINK
+      ConnectionId: !Ref McpVpcLink
+      IntegrationMethod: ANY
+      IntegrationUri: !Ref McpListener   # ALB listener ARN
+      PayloadFormatVersion: "1.0"
+
+  McpApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: "ANY /{proxy+}"
+      AuthorizationType: AWS_IAM
+      Target: !Sub "integrations/${McpApiIntegration}"
+
+  McpApiRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: "ANY /"
+      AuthorizationType: AWS_IAM
+      Target: !Sub "integrations/${McpApiIntegration}"
+
+  McpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref McpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+# ── Frontend — S3 bucket + CloudFront distribution ───────────────────────────
+# index.html is served from S3 via CloudFront (default origin).
+# /chat and /chat/stream are proxied to the Chat ALB (no caching, SSE-safe).
+# After stack creation, upload deploy/chat/static/index.html to the bucket:
+#   aws s3 cp deploy/chat/static/index.html s3://<FrontendBucketName>/index.html
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-frontend-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendBucketOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectName}-frontend-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "${ProjectName} frontend"
+        Enabled: true
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        # Default origin — S3 bucket serves index.html for all /* requests
+        DefaultCacheBehavior:
+          TargetOriginId: S3Frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 300
+          MaxTTL: 3600
+        # /chat and /chat/stream route to the Chat ALB — no caching, forward auth headers
+        CacheBehaviors:
+          - PathPattern: /chat
+            TargetOriginId: ChatALB
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: false
+            ForwardedValues:
+              QueryString: true
+              Cookies:
+                Forward: none
+              Headers:
+                - Authorization
+                - Content-Type
+            MinTTL: 0
+            DefaultTTL: 0
+            MaxTTL: 0
+          - PathPattern: /chat/stream
+            TargetOriginId: ChatALB
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: false
+            ForwardedValues:
+              QueryString: true
+              Cookies:
+                Forward: none
+              Headers:
+                - Authorization
+                - Content-Type
+            MinTTL: 0
+            DefaultTTL: 0
+            MaxTTL: 0
+        Origins:
+          # S3 origin — accessed via Origin Access Control (no public bucket access)
+          - Id: S3Frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt FrontendBucketOAC.Id
+          # Chat ALB origin — HTTP only (ALB listens on port 80)
+          - Id: ChatALB
+            DomainName: !GetAtt ChatAlb.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 120
+              OriginKeepaliveTimeout: 5
+        # SPA routing — return index.html for 404s so React router works
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponsePagePath: /index.html
+            ResponseCode: "200"
+            ErrorCachingMinTTL: 0
+
+# ── SSM placeholder for Cognito JWKS URL ─────────────────────────────────────
+# Run setup.py after stack creation to populate the other SSM params.
+
+  CognitoJwksParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${ProjectName}/cognito-jwks-url"
+      Type: String
+      Value: !Sub
+        - "https://cognito-idp.${AWS::Region}.amazonaws.com/${PoolId}/.well-known/jwks.json"
+        - PoolId: !Ref CognitoUserPool
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+
+Outputs:
+  ChatEndpoint:
+    Description: Public HTTPS chat endpoint via CloudFront
+    Value: !Sub "https://${FrontendDistribution.DomainName}/chat"
+
+  CloudFrontDomain:
+    Description: CloudFront distribution domain — open this in a browser
+    Value: !GetAtt FrontendDistribution.DomainName
+
+  FrontendBucketName:
+    Description: "S3 bucket for index.html — run: aws s3 cp deploy/chat/static/index.html s3://<FrontendBucketName>/index.html"
+    Value: !Ref FrontendBucket
+
+  AgentAlbDns:
+    Description: Internal ALB DNS for the Strands agent (used by chat service)
+    Value: !GetAtt AgentAlb.DNSName
+
+  McpAlbDns:
+    Description: Internal ALB DNS for the MCP server (internal only — not used directly by agents)
+    Value: !Sub "http://${McpAlb.DNSName}/mcp"
+
+  McpApiGwUrl:
+    Description: Public HTTPS endpoint for MCP server via API Gateway + VPC Link — pass as --apigw-url to setup.py
+    Value: !Sub "https://${McpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp"
+
+  SkillsBucketName:
+    Description: S3 bucket for skill artifacts — use as --bucket in setup.py
+    Value: !Ref SkillsBucket
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+
+  CognitoUserPoolClientId:
+    Description: Cognito App Client ID (for user login)
+    Value: !Ref CognitoUserPoolClient
+
+  EcsClusterName:
+    Description: ECS Cluster name
+    Value: !Ref EcsCluster

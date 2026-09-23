@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>T-Shirt Shop</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>T-Shirt Shop</h1>
+        <button id="viewCart">View Cart (<span id="cartCount">0</span>)</button>
+    </header>
+
+    <main>
+        <section id="products" data-page="home">
+            <h2>Available Products</h2>
+            <div class="product-grid" id="productGrid"></div>
+        </section>
+
+        <section id="cart" data-page="cart" style="display: none;">
+            <h2>Shopping Cart</h2>
+            <div id="cartItems"></div>
+            <button id="backToProducts">Back to Products</button>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>

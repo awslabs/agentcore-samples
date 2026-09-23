@@ -1,8 +1,8 @@
 ---
-name: Bug report [01-tutorials]
-about: Report a bug in 01-tutorials
-title: 01-tutorials - [Bug]
-labels: 01-tutorials, bug
+name: Bug report [06-workshops]
+about: Report a bug in 06-workshops
+title: 06-workshops - [Bug]
+labels: 06-workshops, bug
 assignees: akshseh
 
 ---

@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Adds FGAC resource server and client to the shared Cognito User Pool.
+  Defines per-tool scopes for fine-grained access control demos.
+
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: Existing Cognito User Pool ID (from agentcore-gateway-lab stack)
+  GatewayTargetName:
+    Type: String
+    Default: fgac-mcp-target
+    Description: Gateway target name used in scope patterns
+
+Resources:
+  FGACResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPoolId
+      Identifier: fgac
+      Name: FGAC Resource Server
+      Scopes:
+        - ScopeName: !Ref GatewayTargetName
+          ScopeDescription: Full access to all tools in the FGAC MCP target
+        - ScopeName: !Sub "${GatewayTargetName}:getOrder"
+          ScopeDescription: Access to getOrder tool only
+        - ScopeName: !Sub "${GatewayTargetName}:updateOrder"
+          ScopeDescription: Access to updateOrder tool only
+        - ScopeName: !Sub "${GatewayTargetName}:cancelOrder"
+          ScopeDescription: Access to cancelOrder tool only
+        - ScopeName: !Sub "${GatewayTargetName}:deleteOrder"
+          ScopeDescription: Access to deleteOrder tool only
+
+  FGACClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: FGACResourceServer
+    Properties:
+      UserPoolId: !Ref UserPoolId
+      ClientName: fgac-gateway-client
+      GenerateSecret: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - !Sub "fgac/${GatewayTargetName}"
+        - !Sub "fgac/${GatewayTargetName}:getOrder"
+        - !Sub "fgac/${GatewayTargetName}:updateOrder"
+        - !Sub "fgac/${GatewayTargetName}:cancelOrder"
+        - !Sub "fgac/${GatewayTargetName}:deleteOrder"
+
+Outputs:
+  FGACClientId:
+    Description: FGAC Cognito client ID
+    Value: !Ref FGACClient
+  ResourceServerIdentifier:
+    Description: Resource server identifier (scope prefix)
+    Value: fgac

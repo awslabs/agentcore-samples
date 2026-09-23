@@ -1,0 +1,16 @@
+{
+	"app": "npx ts-node bin/app.ts",
+	"context": {
+		"account": "<YOUR_AWS_ACCOUNT_ID>",
+		"region": "us-east-1",
+		"gatewayId": "<GATEWAY_ID>",
+		"gatewayName": "lakehouse-gateway",
+		"gatewayArn": "<GATEWAY_ARN>",
+		"gatewayRoleArn": "<GATEWAY_ROLE_ARN>",
+		"discoveryUrl": "<COGNITO_DISCOVERY_URL>",
+		"allowedClientId": "<COGNITO_APP_CLIENT_ID>",
+		"requestInterceptorArn": "<REQUEST_INTERCEPTOR_LAMBDA_ARN>",
+		"responseInterceptorArn": "<RESPONSE_INTERCEPTOR_LAMBDA_ARN>",
+		"targetId": "<GATEWAY_TARGET_ID>"
+	}
+}

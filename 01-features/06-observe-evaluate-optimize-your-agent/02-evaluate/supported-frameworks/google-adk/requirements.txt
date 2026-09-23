@@ -1,0 +1,17 @@
+# Agent framework
+google-adk>=1.0.0
+
+# LiteLLM connector (routes to Bedrock — no external API key needed)
+litellm>=1.40.0
+
+# Instrumentation (auto-discovered by ADOT — no explicit code needed)
+openinference-instrumentation-google-adk>=0.1.13
+
+# AgentCore Runtime
+bedrock-agentcore>=0.1.0
+
+# Evaluation SDK
+bedrock-agentcore[evaluation]>=0.1.0
+
+# AWS SDK
+boto3>=1.34.0

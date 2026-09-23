@@ -1,0 +1,27 @@
+# Pay for API — buyer agent container dependencies.
+
+# Core web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# AWS SDK
+# Note: AgentCore Payments observability uses the standard CloudWatch
+# vended-logs pattern. There is no dedicated SDK call to "arm" a
+# Manager — CloudWatch authorizes the
+# bedrock-agentcore:AllowVendedLogDeliveryForResource IAM permission
+# implicitly when the agent calls logs.put_delivery_source against the
+# Manager ARN. Any boto3 release with the standard logs client works.
+boto3>=1.42.0
+botocore>=1.42.0
+
+# AgentCore SDK — provides AgentCorePaymentsPlugin
+bedrock-agentcore>=1.9.0
+
+# Strands Agents framework + http_request tool
+strands-agents>=1.39.0
+strands-agents-tools>=0.5.0
+
+# AWS Distro for OpenTelemetry — auto-instruments FastAPI + boto3 so
+# traces and logs flow to CloudWatch via the ADOT collector that
+# AgentCore Runtime injects into the container.
+aws-opentelemetry-distro>=0.10.1

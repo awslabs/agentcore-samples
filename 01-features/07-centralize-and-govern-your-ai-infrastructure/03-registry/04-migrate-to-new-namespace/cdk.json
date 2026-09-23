@@ -1,0 +1,9 @@
+{
+  "app": "node dist/bin/cdk-app.js",
+  "context": {
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:enablePartitionLiterals": true,
+    "@aws-cdk/core:newStyleStackSynthesis": true
+  }
+}

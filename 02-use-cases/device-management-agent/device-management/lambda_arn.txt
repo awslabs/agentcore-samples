@@ -1,1 +1,0 @@
-LAMBDA_ARN=arn:aws:lambda:us-west-2:288947426911:function:DeviceManagementLambda

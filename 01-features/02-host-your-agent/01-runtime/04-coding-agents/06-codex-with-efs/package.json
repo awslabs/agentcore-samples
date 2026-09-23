@@ -1,0 +1,16 @@
+{
+  "name": "agentcore-codex-with-efs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenAI Codex on Amazon Bedrock AgentCore Runtime with EFS persistence",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.145.0"
+  }
+}

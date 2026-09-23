@@ -1,0 +1,6 @@
+Lunch at restaurant,food,25.50
+Gas station,transport,45.00
+Netflix subscription,entertainment,15.99
+Electricity bill,bills,120.00
+Grocery shopping,food,85.30
+Coffee,food,4.50

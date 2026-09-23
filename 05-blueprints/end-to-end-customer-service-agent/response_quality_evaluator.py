@@ -14,9 +14,7 @@ class ResponseQualityEvaluator:
         self.bedrock = boto3.client("bedrock-runtime", region_name=region_name)
         self.model_id = "anthropic.claude-3-sonnet-20240229-v1:0"
 
-    def evaluate_response(
-        self, query: str, response: str, context: str = ""
-    ) -> Dict[str, float]:
+    def evaluate_response(self, query: str, response: str, context: str = "") -> Dict[str, float]:
         """Evaluate response quality on faithfulness, correctness, and helpfulness"""
 
         prompt = f"""You are an expert evaluator. Rate the following AI assistant response on three dimensions:
@@ -43,9 +41,7 @@ Respond ONLY with a JSON object in this exact format:
                 "messages": [{"role": "user", "content": prompt}],
             }
 
-            response_bedrock = self.bedrock.invoke_model(
-                modelId=self.model_id, body=json.dumps(body)
-            )
+            response_bedrock = self.bedrock.invoke_model(modelId=self.model_id, body=json.dumps(body))
 
             result = json.loads(response_bedrock["body"].read())
             content = result["content"][0]["text"]
@@ -84,9 +80,7 @@ def evaluate_responses_from_csv(csv_path: str, output_path: str = None):
             else str(row["final_response"])
         )
 
-        scores = evaluator.evaluate_response(
-            query=row["user_query"], response=row["final_response"], context=context
-        )
+        scores = evaluator.evaluate_response(query=row["user_query"], response=row["final_response"], context=context)
 
         result = {
             "trace_id": row.get("trace_id", ""),

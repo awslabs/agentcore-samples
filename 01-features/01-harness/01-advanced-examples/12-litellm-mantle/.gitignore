@@ -1,0 +1,12 @@
+# Local-only artifacts — never commit
+# (the full screen recording is attached to the PR, not committed to git)
+demo.env
+*.env
+*.mov
+*.mp4
+.demo-workspace*/
+.demo-state
+**/aws-targets.json
+**/.env.local
+*.log
+.DS_Store

@@ -27,9 +27,7 @@ class DynamoDBManager:
         self.wishlist_table = self.dynamodb.Table(self.wishlist_table_name)
 
         logger.info(f"DynamoDB Manager initialized with region: {self.region_name}")
-        logger.info(
-            f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}"
-        )
+        logger.info(f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}")
 
     def get_wishlist_items(self, user_id: str):
         """Get all individual wishlist items for a user using GSI."""
@@ -69,9 +67,7 @@ class DynamoDBManager:
             }
 
             self.wishlist_table.put_item(Item=wishlist_item)
-            logger.info(
-                f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}"
-            )
+            logger.info(f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}")
 
         except ClientError as e:
             logger.error(f"Error adding wishlist item: {e}")

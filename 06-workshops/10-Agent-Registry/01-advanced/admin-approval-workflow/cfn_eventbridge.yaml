@@ -1,0 +1,521 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EventBridge rule triggering AWS Lambda on AWS Agent Registry state change
+
+Parameters:
+  Prefix:
+    Type: String
+    Description: Prefix to apply to all resource names
+  RegistryId:
+    Type: String
+    Description: The AWS Agent registry ID to monitor for state changes
+  SlackIncomingHookUrl:
+    Type: String
+    Description: The Slack incoming webhook URL for notifications
+    AllowedPattern: "^https://hooks\\.slack\\.com/.*$"
+    ConstraintDescription: Must be a valid Slack webhook URL (https://hooks.slack.com/...)
+  SlackChannelName:
+    Type: String
+    Description: The Slack channel name to post notifications to
+    AllowedPattern: "^#.+"
+    ConstraintDescription: Must be a valid Slack channel name starting with '#'
+  LambdaLayerBucket:
+    Type: String
+    Description: S3 bucket where the CICD dependencies Lambda layer zip is uploaded
+  LambdaLayerKey:
+    Type: String
+    Default: cicd_dependencies_layer.zip
+    Description: S3 key for the Lambda layer zip file
+
+Resources:
+
+  # --- CICD Dependencies Layer ---
+
+  CICDDependenciesLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub ${Prefix}-cicd-dependencies
+      CompatibleRuntimes:
+        - python3.14
+      Content:
+        S3Bucket: !Ref LambdaLayerBucket
+        S3Key: !Ref LambdaLayerKey
+
+  LambdaEnvEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting Lambda environment variables
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: AllowLambdaDecrypt
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt CICDFunctionRole.Arn
+            Action:
+              - kms:Decrypt
+            Resource: '*'
+
+  CICDFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W92
+            reason: >-
+              Sample code - reserved concurrency not required for tutorials
+          - id: W89
+            reason: >-
+              Sample Lambda uses public internet for Bedrock API; VPC not required for tutorial
+          - id: W58
+            reason: >-
+              Lambda role includes CloudWatch logging permissions
+    Properties:
+      FunctionName: !Sub ${Prefix}-lambda-cicd
+      Runtime: python3.14
+      Handler: index.lambda_handler
+      Role: !GetAtt CICDFunctionRole.Arn
+      Timeout: 60
+      KmsKeyArn: !GetAtt LambdaEnvEncryptionKey.Arn
+      Layers:
+        - !Ref CICDDependenciesLayer
+      Environment:
+        Variables:
+          slackIncomingHookUrl: !Ref SlackIncomingHookUrl
+          slackChannelName: !Ref SlackChannelName
+          reportsBucket: !Ref LambdaLayerBucket
+          scanResultsTable: !Ref RegistryRecordMetadataTable
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib3
+          import boto3
+          from datetime import datetime, timezone
+
+          REGION = os.environ.get("AWS_REGION", "us-west-2")
+          print(f"Boto3 version: {boto3.__version__}")
+
+          # boto3 clients for the two AgentCore Registry planes
+          registry_cp_client = boto3.client("bedrock-agentcore-control", region_name=REGION)
+          registry_dp_client = boto3.client("bedrock-agentcore", region_name=REGION)
+
+          def get_registry_record(registry_id, record_id):
+              resp = registry_cp_client.get_registry_record(registryId=registry_id, recordId=record_id)
+              metadata = resp.get("ResponseMetadata", {})
+              aws_request_id = metadata['HTTPHeaders']['x-amzn-requestid']
+              timestamp = metadata.get("HTTPHeaders", {}).get("date", datetime.now(timezone.utc).isoformat())
+              print(f"get_registry_record metadata: requestId={aws_request_id}, timestamp={timestamp}")
+              # Return the record fields, excluding boto3 response metadata
+              return {k: v for k, v in resp.items() if k != "ResponseMetadata"}
+
+          def search_registry_records(registry_id, query, max_results=2, descriptor_type=None):
+              kwargs = dict(
+                  searchQuery=query,
+                  registryIds=[registry_id],
+                  maxResults=max_results,
+              )
+              if descriptor_type:
+                  kwargs['filters'] = {"descriptorType": {"$eq": descriptor_type}}
+  
+              print(f"Search parameters: {kwargs}")
+              
+              resp = registry_dp_client.search_registry_records(**kwargs)
+              metadata = resp.get("ResponseMetadata", {})
+              aws_request_id = metadata['HTTPHeaders']['x-amzn-requestid']
+              timestamp = metadata.get("HTTPHeaders", {}).get("date", datetime.now(timezone.utc).isoformat())
+              resp_body = {k: v for k, v in resp.items() if k != "ResponseMetadata"}
+
+              if 'registryRecords' not in resp_body:
+                  print(f"search_registry_records query: {query}, registry id: {registry_id}, error: {resp_body}")
+              else:
+                  print(f"search_registry_records query: {query}, registry id: {registry_id}, # records found: {len(resp_body['registryRecords'])}")
+
+              print(f"search_registry_records metadata: requestId={aws_request_id}, timestamp={timestamp}")
+              return resp_body
+
+          def run_ai_scan(record):
+              """Run Cisco AI A2A scanner on the registry record and return (summary, report_url)."""
+              import asyncio
+              async def _scan():
+                  try:
+                      from a2ascanner import Scanner
+                      # Extract the A2A agent card from the nested descriptor structure
+                      inline = record.get("descriptors", {}).get("a2a", {}).get("agentCard", {}).get("inlineContent", "{}")
+                      agent_card = json.loads(inline) if isinstance(inline, str) else inline
+                      #print(f"Agent Card: {agent_card}")
+
+                      scanner = Scanner()
+                      result = await scanner.scan_agent_card(agent_card)
+                      severity_counts = {}
+
+                      for f in result.findings:
+                          sev = getattr(f, "severity", "INFO")
+                          severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+                      parts = [f"{v} {k}" for k, v in severity_counts.items()] if severity_counts else ["No issues found"]
+                      summary = f":shield: *AI Scan Findings:* {', '.join(parts)}"
+                      findings_list = [f.to_dict() for f in result.findings]
+                      
+                      print(f"AI scan findings: {json.dumps(findings_list, indent=2)}")
+
+                      # Build HTML report
+                      record_name = record.get("name", "Unknown Agent")
+                      generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                      rows = ""
+                      for f in findings_list:
+                          sev = f.get("severity", "INFO")
+                          sev_color = {"HIGH": "#c0392b", "MEDIUM": "#e67e22", "LOW": "#27ae60"}.get(sev, "#7f8c8d")
+                          details_str = json.dumps(f.get("details", {}), indent=2)
+                          rows += f"""<tr>
+                              <td style="color:{sev_color};font-weight:bold">{sev}</td>
+                              <td>{f.get("analyzer","")}</td>
+                              <td>{f.get("threat_name","")}</td>
+                              <td>{f.get("scanner_category") or "—"}</td>
+                              <td>{f.get("summary","")}</td>
+                              <td><pre style="margin:0;font-size:11px">{details_str}</pre></td>
+                          </tr>"""
+                      html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+                      <title>A2A Security Scan Report</title>
+                      <style>
+                        body{{font-family:Arial,sans-serif;margin:20px;color:#333}}
+                        h1{{font-size:20px}} .meta{{font-size:13px;color:#666;margin-bottom:16px}}
+                        .summary{{display:flex;gap:16px;margin-bottom:20px}}
+                        .badge{{padding:10px 20px;border-radius:6px;text-align:center;color:#fff}}
+                        .HIGH{{background:#c0392b}} .MEDIUM{{background:#e67e22}} .LOW{{background:#27ae60}} .TOTAL{{background:#2980b9}}
+                        .badge .num{{font-size:28px;font-weight:bold}} .badge .lbl{{font-size:12px}}
+                        table{{border-collapse:collapse;width:100%}} th,td{{border:1px solid #ddd;padding:8px;text-align:left;vertical-align:top}}
+                        th{{background:#f2f2f2;font-size:13px}} td{{font-size:13px}}
+                      </style></head><body>
+                      <h1>A2A Security Scan Report</h1>
+                      <div class="meta">Target: {record_name} | Generated: {generated_at}</div>
+                      <h2>Summary</h2>
+                      <div class="summary">
+                        <div class="badge HIGH"><div class="num">{severity_counts.get("HIGH",0)}</div><div class="lbl">High</div></div>
+                        <div class="badge MEDIUM"><div class="num">{severity_counts.get("MEDIUM",0)}</div><div class="lbl">Medium</div></div>
+                        <div class="badge LOW"><div class="num">{severity_counts.get("LOW",0)}</div><div class="lbl">Low</div></div>
+                        <div class="badge TOTAL"><div class="num">{len(findings_list)}</div><div class="lbl">Total</div></div>
+                      </div>
+                      <h2>Findings</h2>
+                      <table><thead><tr><th>Severity</th><th>Analyzer</th><th>Threat</th><th>Category</th><th>Summary</th><th>Details</th></tr></thead>
+                      <tbody>{rows}</tbody></table>
+                      <p style="margin-top:20px;font-size:12px;color:#999">Generated by A2A Scanner</p>
+                      </body></html>"""
+
+                      # Upload to S3 and generate presigned URL
+                      reports_bucket = os.environ.get("reportsBucket", "")
+                      report_url = ""
+                      if reports_bucket:
+                          s3 = boto3.client("s3", region_name=REGION)
+                          record_id = record.get("registryRecordId", record.get("id", "unknown"))
+                          s3_key = f"ai-scan-reports/{record_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.html"
+                          s3.put_object(Bucket=reports_bucket, Key=s3_key, Body=html.encode("utf-8"), ContentType="text/html")
+                          report_url = s3.generate_presigned_url(
+                              "get_object",
+                              Params={"Bucket": reports_bucket, "Key": s3_key},
+                              ExpiresIn=604800  # 7 days
+                          )
+                          print(f"AI scan report uploaded: s3://{reports_bucket}/{s3_key}")
+
+                      return summary, report_url, findings_list
+                  except ImportError:
+                      print("Warning: a2ascanner not available")
+                      return ":shield: *AI Scan:* Scanner unavailable", "", []
+                  except Exception as e:
+                      print(f"Warning: AI scan failed: {e}")
+                      return f":shield: *AI Scan:* Scan error - {str(e)}", "", []
+              return asyncio.run(_scan())
+
+          def lambda_handler(event, context):
+              slackIncomingHookUrl = os.getenv("slackIncomingHookUrl")
+              slackChannelName = os.getenv("slackChannelName")
+
+              #print(f"Event recd: {event}")
+
+              registryId = event["detail"]["registryId"]
+              registryRecordId = event["detail"]["registryRecordId"]
+
+              # Fetch registry record details via REST API
+              record = {}
+              try:
+                  record = get_registry_record(registryId, registryRecordId)
+                  #print(f"Registry record: {json.dumps(record)}")
+              except Exception as e:
+                  print(f"Warning: could not fetch registry record details: {e}")
+
+              record_name = record.get("name", "N/A")
+              record_description = record.get("description", "N/A")
+              record_protocol = record.get("descriptorType", "N/A")
+              record_status = record.get("status", "N/A")
+
+              # Search for top 2 similar records by name and description
+              similar_records_text = ""
+              try:
+                  search_query = f"{record_name} {record_description}".strip()
+                  search_resp = search_registry_records(registryId, search_query, max_results=2, descriptor_type=record_protocol)
+                  #print(search_resp)
+                  matches = [
+                      r for r in search_resp.get("registryRecords", [])
+                      if r.get("recordId") != registryRecordId
+                  ][:2]
+                  if matches:
+                      lines = ["\n*Similar Records Found in Registry:*"]
+                      for i, m in enumerate(matches, 1):
+                          lines.append(
+                              f"  {i}. *{m.get('name', 'N/A')}* (ID: {m.get('recordId', 'N/A')})\n"
+                              f"     Descriptor Type: {m.get('descriptorType', 'N/A')} | Status: {m.get('status', 'N/A')}\n"
+                              f"     Description: {m.get('description', 'N/A')}"
+                          )
+                      similar_records_text = "\n".join(lines)
+                  #print(f"Similar records search result: {json.dumps(search_resp)}")
+              except Exception as e:
+                  print(f"Warning: could not search for similar records: {e}")
+
+              # Run AI scan inline (A2A records only)
+              ai_scan_summary, ai_scan_report_url, ai_scan_findings = "", "", []
+              if record.get("descriptorType") == "A2A":
+                  ai_scan_summary, ai_scan_report_url, ai_scan_findings = run_ai_scan(record)
+              ai_scan_text = f"\n{ai_scan_summary}" if ai_scan_summary else ""
+              if ai_scan_report_url:
+                  ai_scan_text += f"  |  <{ai_scan_report_url}|:page_facing_up: View Full AI Scan Report>"
+
+              # Write AI scan findings to DynamoDB
+              try:
+                  scan_table = os.environ.get("scanResultsTable", "")
+                  if scan_table and record.get("descriptorType") == "A2A":
+                      ddb = boto3.resource("dynamodb", region_name=REGION)
+                      table = ddb.Table(scan_table)
+                      table.put_item(Item={
+                          "registryId": registryId,
+                          "registryRecordId": registryRecordId,
+                          "scanFindings": json.dumps(ai_scan_findings),
+                          "scanSummary": ai_scan_summary,
+                          "reportUrl": ai_scan_report_url,
+                          "scannedAt": datetime.now(timezone.utc).isoformat(),
+                      })
+                      print(f"AI scan findings written to DynamoDB table: {scan_table}")
+              except Exception as e:
+                  print(f"Warning: could not write scan findings to DynamoDB: {e}")
+
+              approve_cmd = (
+                  f"aws bedrock-agentcore-control update-registry-record-status"
+                  f" --registry-id {registryId}"
+                  f" --record-id {registryRecordId}"
+                  f" --status APPROVED"
+                  f" --status-reason 'Admin approved via CLI'"
+              )
+              reject_cmd = (
+                  f"aws bedrock-agentcore-control update-registry-record-status"
+                  f" --registry-id {registryId}"
+                  f" --record-id {registryRecordId}"
+                  f" --status REJECTED"
+                  f" --status-reason 'Admin rejected via CLI'"
+              )
+
+              getdetails_cmd = (
+                  f"aws bedrock-agentcore-control get-registry-record"
+                  f" --registry-id {registryId}"
+                  f" --record-id {registryRecordId}"
+              )
+
+              payload = json.dumps({
+                  "channel": slackChannelName,
+                  "username": "AWS Agent Registry Bot",
+                  "icon_emoji": ":aws:",
+                  "text": (
+                      f"A new registry record has been submitted for approval\n"
+                      f"*Registry Id:* {registryId}\n"
+                      f"*Registry Record Id:* {registryRecordId}\n"
+                      f"*Name:* {record_name}\n"
+                      f"*Description:* {record_description}\n"
+                      f"*Descriptor Type:* {record_protocol}\n"
+                      f"*Status:* {record_status}\n"
+                      f"{similar_records_text}"
+                      f"{ai_scan_text}\n\n"
+                      f":white_check_mark: *To Approve, run:*\n```{approve_cmd}```\n"
+                      f":x: *To Reject, run:*\n```{reject_cmd}```\n"
+                      f":mag: *To Get more details, run:*\n```{getdetails_cmd}```"
+                  )
+              })
+
+              http = urllib3.PoolManager()
+              response = http.request(
+                  "POST",
+                  slackIncomingHookUrl,
+                  body=payload,
+                  headers={"Content-Type": "application/json"}
+              )
+              print(f"Slack response — status: {response.status}, body: {response.data.decode('utf-8')}")
+
+              return {"statusCode": 200}
+
+
+  CICDFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockAgentCoreRegistryAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowCreatingNewRegistry
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateRegistry
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:*
+              - Sid: AllowListingAllRegistries
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:ListRegistries
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:*
+              - Sid: AllowGetUpdateDeleteRegistry
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetRegistry
+                  - bedrock-agentcore:UpdateRegistry
+                  - bedrock-agentcore:DeleteRegistry
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+              - Sid: AllowCreatingRegistryRecords
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateRegistryRecord
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+              - Sid: AllowListingRecordsInRegistry
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:ListRegistryRecords
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+              - Sid: AllowGettingRecordsInRegistry
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetRegistryRecord
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*/record/*
+              - Sid: AllowApproveRejectDeprecateRecords
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:UpdateRegistryRecord
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*/record/*
+              - Sid: SearchRegistryRecords
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:SearchRegistryRecords
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+        - PolicyName: S3ScanReportsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowScanReportUpload
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:aws:s3:::${LambdaLayerBucket}/ai-scan-reports/*
+        - PolicyName: DynamoDBScanResultsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowScanResultsWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt RegistryRecordMetadataTable.Arn
+              - Sid: AllowDynamoDBKMSAccess
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !GetAtt DynamoDBEncryptionKey.Arn
+
+  DynamoDBEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS CMK for encrypting DynamoDB table
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+
+  RegistryRecordMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Prefix}-registry-record-metadata
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt DynamoDBEncryptionKey.Arn
+      AttributeDefinitions:
+        - AttributeName: registryId
+          AttributeType: S
+        - AttributeName: registryRecordId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: registryId
+          KeyType: HASH
+        - AttributeName: registryRecordId
+          KeyType: RANGE
+
+  RegistryStateChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${Prefix}-bedrock-agentcore-registry-pending-approval
+      EventPattern:
+        source:
+          - aws.bedrock-agentcore
+        detail-type:
+          - "Registry Record State changed to Pending Approval"
+        detail:
+          registryId:
+            - !Ref RegistryId
+      Targets:
+        - Arn: !GetAtt CICDFunction.Arn
+          Id: CICDFunctionTarget
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CICDFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt RegistryStateChangeRule.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt CICDFunction.Arn
+  EventBridgeRuleArn:
+    Value: !GetAtt RegistryStateChangeRule.Arn
+  RegistryRecordMetadataTableName:
+    Value: !Ref RegistryRecordMetadataTable

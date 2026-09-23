@@ -1,0 +1,32 @@
+{
+  "name": "agentcore-infra",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for Spring Boot AgentCore Hello World",
+  "main": "lib/agentcore-stack.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.0",
+    "aws-cdk": "^2.150.0",
+    "fast-check": "^3.19.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.4.5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore-control": "^3.750.0",
+    "aws-cdk-lib": "^2.150.0",
+    "constructs": "^10.3.0"
+  },
+  "overrides": {
+    "fast-xml-parser": ">=5.8.0"
+  }
+}

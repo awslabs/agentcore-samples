@@ -1,15 +1,12 @@
 from agents import Agent, Runner, WebSearchTool
 import logging
-import asyncio
 import sys
 
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("openai_agents")
 
@@ -24,12 +21,13 @@ agent = Agent(
     ],
 )
 
+
 async def main(query=None):
     if query is None:
         query = "Which coffee shop should I go to, taking into account my preferences and the weather today in SF?"
-    
+
     logger.debug(f"Running agent with query: {query}")
-    
+
     try:
         logger.debug("Starting agent execution")
         result = await Runner.run(agent, query)
@@ -39,15 +37,18 @@ async def main(query=None):
         logger.error(f"Error during agent execution: {e}", exc_info=True)
         raise
 
+
 # Integration with Bedrock AgentCore
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
 app = BedrockAgentCoreApp()
+
 
 @app.entrypoint
 async def agent_invocation(payload, context):
     logger.debug(f"Received payload: {payload}")
     query = payload.get("prompt", "How can I help you today?")
-    
+
     try:
         result = await main(query)
         logger.debug("Agent execution completed successfully")
@@ -56,7 +57,7 @@ async def agent_invocation(payload, context):
         logger.error(f"Error during agent execution: {e}", exc_info=True)
         return {"result": f"Error: {str(e)}"}
 
-# Run the app when imported
-if __name__== "__main__":
-    app.run()
 
+# Run the app when imported
+if __name__ == "__main__":
+    app.run()

@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 420">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6d28d9;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grayGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#475569;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+    </marker>
+    <marker id="arrowheadPurple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="850" height="420" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="425" y="35" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="600" fill="#1e293b" text-anchor="middle">Evaluation Analyzer Architecture</text>
+
+  <!-- Input Sources Column -->
+  <!-- Strands Evaluation Source - GREEN -->
+  <g transform="translate(30, 55)">
+    <rect width="150" height="80" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="150" height="6" rx="3" fill="url(#greenGrad)" y="0"/>
+    <text x="75" y="28" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b" text-anchor="middle">Strands Evaluations</text>
+    <text x="75" y="46" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">score, explanation</text>
+    <text x="75" y="60" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">trace_id, evaluator_name</text>
+    <text x="75" y="74" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">JSON files</text>
+  </g>
+
+  <!-- "OR" label between sources -->
+  <rect x="85" y="142" width="40" height="18" rx="9" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="105" y="155" font-family="system-ui, sans-serif" font-size="9" font-weight="500" fill="#64748b" text-anchor="middle">OR</text>
+
+  <!-- AgentCore Evaluation Source - GREEN -->
+  <g transform="translate(30, 170)">
+    <rect width="150" height="80" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="150" height="6" rx="3" fill="url(#greenGrad)" y="0"/>
+    <text x="75" y="28" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b" text-anchor="middle">AgentCore Evaluations</text>
+    <text x="75" y="46" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">score, explanation</text>
+    <text x="75" y="60" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">trace_id, evaluator_name</text>
+    <text x="75" y="74" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">JSON files</text>
+  </g>
+
+  <!-- Configuration Input - GRAY/BLACK -->
+  <g transform="translate(30, 280)">
+    <rect width="150" height="70" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="150" height="6" rx="3" fill="url(#grayGrad)" y="0"/>
+    <text x="75" y="28" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#1e293b" text-anchor="middle">Configuration</text>
+    <text x="75" y="46" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">System Prompt</text>
+    <text x="75" y="60" font-family="system-ui, sans-serif" font-size="9" fill="#64748b" text-anchor="middle">Score Threshold</text>
+  </g>
+
+  <!-- Arrow: Strands → Orchestrator -->
+  <path d="M 180 95 L 260 105" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Arrow: AgentCore → Orchestrator -->
+  <path d="M 180 210 L 260 150" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Arrow: Config → Orchestrator -->
+  <path d="M 180 315 L 260 200" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Orchestrator Agent - PURPLE -->
+  <g transform="translate(260, 55)">
+    <rect width="200" height="180" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="200" height="6" rx="3" fill="url(#purpleGrad)" y="0"/>
+    <text x="100" y="30" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1e293b" text-anchor="middle">Orchestrator Agent</text>
+    <text x="100" y="52" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Filters low scores</text>
+    <text x="100" y="68" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Coordinates analysis</text>
+    <text x="100" y="84" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Synthesizes patterns</text>
+    <text x="100" y="100" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Generates report</text>
+
+    <!-- Tool badge -->
+    <rect x="40" y="115" width="120" height="50" rx="6" fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1"/>
+    <text x="100" y="133" font-family="system-ui, sans-serif" font-size="9" fill="#8b5cf6" text-anchor="middle">Tool:</text>
+    <text x="100" y="150" font-family="system-ui, sans-serif" font-size="9" font-weight="500" fill="#6d28d9" text-anchor="middle">analyze_batch()</text>
+  </g>
+
+  <!-- Batch Analyzer Sub-Agent - PURPLE -->
+  <g transform="translate(260, 280)">
+    <rect width="200" height="100" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="200" height="6" rx="3" fill="url(#purpleGrad)" y="0"/>
+    <text x="100" y="28" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1e293b" text-anchor="middle">Batch Analyzer</text>
+    <text x="100" y="45" font-family="system-ui, sans-serif" font-size="9" fill="#8b5cf6" text-anchor="middle">SUB-AGENT</text>
+    <text x="100" y="65" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Identifies failure patterns</text>
+    <text x="100" y="81" font-family="system-ui, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Extracts evidence quotes</text>
+  </g>
+
+  <!-- Bidirectional arrow between Orchestrator and Batch Analyzer -->
+  <path d="M 340 235 L 340 270" stroke="#7c3aed" stroke-width="2" fill="none" marker-end="url(#arrowheadPurple)"/>
+  <path d="M 380 270 L 380 235" stroke="#7c3aed" stroke-width="2" fill="none" marker-end="url(#arrowheadPurple)"/>
+
+  <!-- Loop label -->
+  <rect x="395" y="240" width="70" height="20" rx="4" fill="#f3e8ff"/>
+  <text x="430" y="254" font-family="system-ui, sans-serif" font-size="8" fill="#7c3aed" text-anchor="middle">Per batch</text>
+
+  <!-- Arrow: Orchestrator → Output -->
+  <path d="M 460 145 L 510 145" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Output Section - GRAY/BLACK -->
+  <g transform="translate(520, 55)">
+    <rect width="150" height="325" rx="10" fill="white" filter="url(#shadow)"/>
+    <rect width="150" height="6" rx="3" fill="url(#grayGrad)" y="0"/>
+    <text x="75" y="28" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#1e293b" text-anchor="middle">Output Report</text>
+
+    <g transform="translate(12, 45)">
+      <circle cx="5" cy="5" r="3" fill="#475569"/>
+      <text x="14" y="8" font-family="system-ui, sans-serif" font-size="9" fill="#374151">Summary</text>
+    </g>
+    <g transform="translate(12, 68)">
+      <circle cx="5" cy="5" r="3" fill="#475569"/>
+      <text x="14" y="8" font-family="system-ui, sans-serif" font-size="9" fill="#374151">Top 3 Problems</text>
+    </g>
+    <g transform="translate(12, 91)">
+      <circle cx="5" cy="5" r="3" fill="#475569"/>
+      <text x="14" y="8" font-family="system-ui, sans-serif" font-size="9" fill="#374151">Evidence Quotes</text>
+    </g>
+    <g transform="translate(12, 114)">
+      <circle cx="5" cy="5" r="3" fill="#475569"/>
+      <text x="14" y="8" font-family="system-ui, sans-serif" font-size="9" fill="#374151">Changes Table</text>
+    </g>
+    <g transform="translate(12, 137)">
+      <circle cx="5" cy="5" r="3" fill="#475569"/>
+      <text x="14" y="8" font-family="system-ui, sans-serif" font-size="9" fill="#374151">Updated Prompt</text>
+    </g>
+
+    <!-- Markdown file icon -->
+    <g transform="translate(35, 170)">
+      <rect width="80" height="90" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+      <polygon points="55,0 80,25 80,90 0,90 0,0" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+      <polygon points="55,0 55,25 80,25" fill="#e2e8f0"/>
+      <text x="40" y="55" font-family="monospace" font-size="10" fill="#64748b" text-anchor="middle">.md</text>
+      <text x="40" y="75" font-family="system-ui, sans-serif" font-size="8" fill="#94a3b8" text-anchor="middle">report file</text>
+    </g>
+  </g>
+
+  <!-- Vertical column labels -->
+  <text x="105" y="400" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#94a3b8" text-anchor="middle">INPUTS</text>
+  <text x="360" y="400" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#94a3b8" text-anchor="middle">PROCESSING</text>
+  <text x="595" y="400" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#94a3b8" text-anchor="middle">OUTPUT</text>
+
+</svg>

@@ -77,9 +77,7 @@ class ApiConstruct(Construct):
             method_responses=[
                 apigateway.MethodResponse(
                     status_code="200",
-                    response_parameters={
-                        "method.response.header.Access-Control-Allow-Origin": True
-                    },
+                    response_parameters={"method.response.header.Access-Control-Allow-Origin": True},
                     response_models={"application/json": apigateway.Model.EMPTY_MODEL},
                 )
             ],
@@ -106,9 +104,7 @@ class ApiConstruct(Construct):
         )
         add_cors_options(resource, ["POST", "OPTIONS"])
 
-    def _setup_agent_endpoint(
-        self, get_lambda: lambda_.Function, delete_lambda: lambda_.Function
-    ) -> None:
+    def _setup_agent_endpoint(self, get_lambda: lambda_.Function, delete_lambda: lambda_.Function) -> None:
         """Setup /agent endpoint (GET and DELETE)."""
         resource = self.api.root.add_resource("agent")
         resource.add_method(

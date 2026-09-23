@@ -1,0 +1,42 @@
+global_settings:
+  severity_threshold: HIGH
+  suppressions:
+    # HIGH - Lambda VPC: Lambda only calls AgentCore endpoints, VPC not needed
+    - rule_id: 'CKV_AWS_117'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Lambda function uses AgentCore endpoints only; VPC deployment not needed'
+
+    # HIGH - Lambda DLQ: Not needed for this use case (notification-only Lambda)
+    - rule_id: 'CKV_AWS_116'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Not needed as per the use case'
+
+    # HIGH - Lambda concurrent execution limit: Not needed for this use case
+    - rule_id: 'CKV_AWS_115'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Not needed as per the use case'
+
+    # HIGH - DynamoDB PITR backup: Not needed for this use case
+    - rule_id: 'CKV_AWS_28'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Not needed as per the use case'
+
+    # HIGH - IAM managed policies: Acceptable for this use case
+    - rule_id: 'AwsSolutions-IAM4'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Acceptable use of AWSLambdaBasicExecutionRole managed policy'
+
+    # HIGH - IAM wildcard permissions: CreateRegistry and ListRegistries are collection-level actions requiring wildcard resource
+    - rule_id: 'AwsSolutions-IAM5'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'CreateRegistry and ListRegistries are collection-level actions that require wildcard resource ARN as no specific registry ARN exists prior to creation'
+
+    # HIGH - KMS key policy wildcard resource: Resource '*' in KMS key policies always refers to the key itself, not all AWS resources
+    - rule_id: 'CKV_AWS_111'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Resource * in KMS key policy is required and refers only to the key itself, not all AWS resources'
+
+    # HIGH - KMS key policy wildcard resource (v2 check)
+    - rule_id: 'CKV2_AWS_64'
+      path: 'cfn_eventbridge.yaml'
+      reason: 'Resource * in KMS key policy is required and refers only to the key itself, not all AWS resources'

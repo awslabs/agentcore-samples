@@ -35,9 +35,7 @@ private_cert_secret_name = "visa/mle-private-cert"  # pragma: allowlist secret
 api_key_secret_name = "visa/api-key"  # pragma: allowlist secret
 shared_secret_secret_name = "visa/shared-secret"  # pragma: allowlist secret
 encryption_api_key_secret_name = "visa/encryption-api-key"  # pragma: allowlist secret
-encryption_shared_secret_secret_name = (
-    "visa/encryption-shared-secret"  # pragma: allowlist secret
-)
+encryption_shared_secret_secret_name = "visa/encryption-shared-secret"  # pragma: allowlist secret
 vic_api_key_secret_name = "visa/api-key"  # pragma: allowlist secret
 
 # Lazy-load secrets - only load when needed
@@ -112,9 +110,7 @@ def enroll_pan(
     resource_path = "vts/panEnrollments"
 
     # Encrypt payment instrument
-    enc_payment_instrument = encrypt_card_data(
-        pan_data, encryption_api_key, encryption_shared_secret
-    )
+    enc_payment_instrument = encrypt_card_data(pan_data, encryption_api_key, encryption_shared_secret)
 
     # Build query string and URL
     query_string_for_token = f"apiKey={api_key}"
@@ -137,17 +133,13 @@ def enroll_pan(
     logger.info(f"Request payload prepared (length: {len(payload)} bytes)")
 
     # Generate X-PAY-TOKEN
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     # Generate X-SERVICE-CONTEXT header
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
     service_context = {"serviceId": "vts", "serviceVersion": "1.0"}
     service_context_json = json.dumps(service_context, separators=(",", ":"))
-    x_service_context = base64.b64encode(service_context_json.encode("utf-8")).decode(
-        "utf-8"
-    )
+    x_service_context = base64.b64encode(service_context_json.encode("utf-8")).decode("utf-8")
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
     logger.info(f"X-SERVICE-CONTEXT generated: {x_service_context}")
 
@@ -247,9 +239,7 @@ def provision_token(
     logger.info("=" * 80)
 
     if not x_request_id:
-        logger.warning(
-            "No x-request-id provided - VPP session continuity may be broken!"
-        )
+        logger.warning("No x-request-id provided - VPP session continuity may be broken!")
         x_request_id = str(uuid.uuid4())
 
     resource_path = f"vts/panEnrollments/{vpan_enrollment_id}/provisionedTokens"
@@ -306,9 +296,7 @@ def provision_token(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     headers = {
         "Accept": "application/json",
@@ -333,10 +321,7 @@ def provision_token(
         logger.info("[Response data redacted for security]")
 
         # Validate response contains required fields
-        if (
-            "tokenInfo" not in response_json
-            or "encTokenInfo" not in response_json["tokenInfo"]
-        ):
+        if "tokenInfo" not in response_json or "encTokenInfo" not in response_json["tokenInfo"]:
             raise KeyError("Response missing 'tokenInfo' or 'encTokenInfo' field")
 
         logger.info("\n" + "=" * 80)
@@ -383,9 +368,7 @@ def decrypt_and_store_token(enc_token_info):
     logger.info("=" * 80)
 
     try:
-        decrypted_token_data = decrypt_token_info(
-            enc_token_info, encryption_shared_secret
-        )
+        decrypted_token_data = decrypt_token_info(enc_token_info, encryption_shared_secret)
 
         logger.info("\n" + "=" * 80)
         logger.info("Token Decryption completed successfully")
@@ -468,9 +451,7 @@ def device_attestation_authenticate(
 
     # FIXED: Encrypt consumer email info, NOT pan_data
     to_be_encrypted = {"consumerInfo": {"emailAddress": email}}
-    encAuthenticationData = encrypt_card_data(
-        to_be_encrypted, encryption_api_key, encryption_shared_secret
-    )
+    encAuthenticationData = encrypt_card_data(to_be_encrypted, encryption_api_key, encryption_shared_secret)
 
     payload_dict = {
         "authenticationPreferencesRequested": {"selectedPopupForRegister": False},
@@ -499,16 +480,12 @@ def device_attestation_authenticate(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     # FIXED: Add X-SERVICE-CONTEXT header
     service_context = {"serviceId": "vts", "serviceVersion": "1.0"}
     service_context_json = json.dumps(service_context, separators=(",", ":"))
-    x_service_context = base64.b64encode(service_context_json.encode("utf-8")).decode(
-        "utf-8"
-    )
+    x_service_context = base64.b64encode(service_context_json.encode("utf-8")).decode("utf-8")
 
     headers = {
         "Accept": "application/json",
@@ -540,9 +517,7 @@ def device_attestation_authenticate(
         logger.error("DEVICE ATTESTATION AUTHENTICATE- JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
         logger.error(
             # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
             f"Response text: {response.text if 'response' in locals() else 'No response'}"
@@ -614,9 +589,7 @@ def device_binding(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     headers = {
         "Accept": "application/json",
@@ -645,9 +618,7 @@ def device_binding(
         logger.error("DEVICE BINDING  - JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
         logger.error(
             # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
             f"Response text: {response.text if 'response' in locals() else 'No response'}"
@@ -680,9 +651,7 @@ def device_binding(
         raise
 
 
-def step_up(
-    provisioned_token_id, identifier, client_app_id, client_reference_id, x_request_id
-):
+def step_up(provisioned_token_id, identifier, client_app_id, client_reference_id, x_request_id):
     _ensure_vts_secrets()
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
 
@@ -690,7 +659,9 @@ def step_up(
     logger.info("Select Step-Up Options")
 
     resource_path = f"vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/method"
-    url = f"https://cert.api.visa.com/vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/method?apiKey={api_key}"
+    url = (
+        f"https://cert.api.visa.com/vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/method?apiKey={api_key}"
+    )
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
     logger.info(f"Target URL: {url.split('?')[0]}...")  # API key redacted
 
@@ -708,9 +679,7 @@ def step_up(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     headers = {
         "Accept": "application/json",
@@ -739,9 +708,7 @@ def step_up(
         logger.error("DEVICE SET UP - JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
         logger.error(
             # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
             f"Response text: {response.text if 'response' in locals() else 'No response'}"
@@ -769,17 +736,13 @@ def step_up(
         raise
 
 
-def validate_otp(
-    provisioned_token_id, otp_value, client_app_id, client_reference_id, x_request_id
-):
+def validate_otp(provisioned_token_id, otp_value, client_app_id, client_reference_id, x_request_id):
     _ensure_vts_secrets()
 
     logger.info("=" * 80)
     logger.info("Validate OTP")
 
-    resource_path = (
-        f"vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/validateOTP"
-    )
+    resource_path = f"vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/validateOTP"
     url = f"https://cert.api.visa.com/vts/provisionedTokens/{provisioned_token_id}/stepUpOptions/validateOTP?apiKey={api_key}"
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
     logger.info(f"Target URL: {url.split('?')[0]}...")  # API key redacted
@@ -798,9 +761,7 @@ def validate_otp(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     headers = {
         "Accept": "application/json",
@@ -829,9 +790,7 @@ def validate_otp(
         logger.error("VALIDATE OTP  - JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
         logger.error(
             # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
             f"Response text: {response.text if 'response' in locals() else 'No response'}"
@@ -897,20 +856,14 @@ def device_attestation_register(
 
     to_be_encrypted = {"consumerInfo": {"emailAddress": email}}
     logger.info(f"uncrypte data:{to_be_encrypted}")
-    encAuthenticationData = encrypt_card_data(
-        to_be_encrypted, encryption_api_key, encryption_shared_secret
-    )
+    encAuthenticationData = encrypt_card_data(to_be_encrypted, encryption_api_key, encryption_shared_secret)
 
     payload_dict["encAuthenticationData"] = encAuthenticationData
 
     if secure_token and secure_token.startswith("ezAwMX06"):
-        logger.info(
-            "Including encAuthenticationData with consumer email for iframe flow"
-        )
+        logger.info("Including encAuthenticationData with consumer email for iframe flow")
     else:
-        logger.info(
-            "Including encAuthenticationData with consumer email for OAuth flow"
-        )
+        logger.info("Including encAuthenticationData with consumer email for OAuth flow")
 
     if secure_token:
         payload_dict["sessionContext"] = {"secureToken": secure_token}
@@ -927,9 +880,7 @@ def device_attestation_register(
 
     # Generate X-PAY-TOKEN
     query_string_for_token = f"apiKey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string_for_token, payload
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string_for_token, payload)
 
     headers = {
         "Accept": "application/json",
@@ -961,9 +912,7 @@ def device_attestation_register(
         logger.error("DEVICE ATTESTATION REGISTER - JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
         logger.error(
             # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
             f"Response text: {response.text if 'response' in locals() else 'No response'}"
@@ -990,9 +939,7 @@ def device_attestation_register(
         raise
 
 
-def passkey_creation(
-    request_id, endpoint, identifier, payload, client_app_id, client_reference_id
-):
+def passkey_creation(request_id, endpoint, identifier, payload, client_app_id, client_reference_id):
     logger.info("=" * 80)
     logger.info("Passkey Creation Flow")
 
@@ -1039,9 +986,7 @@ def passkey_creation(
         logger.error("PASSKEY CREATION FLOW - JSON DECODE ERROR")
         logger.error("=" * 80)
         logger.error(f"Could not parse response as JSON: {e}")
-        logger.error(
-            f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}"
-        )
+        logger.error(f"Response status code: {response.status_code if 'response' in locals() else 'N/A'}")
 
         raise
     # codeql[py/clear-text-logging-sensitive-data] Debug logging for API integration - logs metadata only, sensitive data is redacted
@@ -1349,9 +1294,7 @@ def vic_initiate_purchase_instructions(
     # Generate X-PAY-TOKEN
     resource_path = "v1/instructions"
     query_string = f"apikey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string, enc_data_str
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string, enc_data_str)
 
     # Get keyId from secrets
     vic_key_id = get_secret("visa/vic_key_id", region)
@@ -1483,9 +1426,7 @@ def vic_get_payment_credentials(
     # Generate X-PAY-TOKEN
     resource_path = f"v1/instructions/{instruction_id}/credentials"
     query_string = f"apikey={api_key}"
-    x_pay_token = generate_x_pay_token(
-        shared_secret, resource_path, query_string, enc_data_str
-    )
+    x_pay_token = generate_x_pay_token(shared_secret, resource_path, query_string, enc_data_str)
 
     # Get keyId from secrets
     vic_key_id = get_secret("visa/vic_key_id", region)
@@ -1540,15 +1481,10 @@ def vic_get_payment_credentials(
                     logger.info(json.dumps(payload_json, indent=2))
 
                     # Extract cryptogram value
-                    if (
-                        "dynamicData" in payload_json
-                        and len(payload_json["dynamicData"]) > 0
-                    ):
+                    if "dynamicData" in payload_json and len(payload_json["dynamicData"]) > 0:
                         cryptogram_data = payload_json["dynamicData"][0]
                         logger.info("\n" + "=" * 80)
-                        logger.info(
-                            f"🔑 CRYPTOGRAM: {cryptogram_data.get('dynamicDataValue')}"
-                        )
+                        logger.info(f"🔑 CRYPTOGRAM: {cryptogram_data.get('dynamicDataValue')}")
                         logger.info("=" * 80)
 
             logger.info("\n" + "=" * 80)

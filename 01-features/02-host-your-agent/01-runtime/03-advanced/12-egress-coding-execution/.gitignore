@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Generated at runtime by deploy.py / consumed by invoke.py + cleanup.py
+runtime_config.json
+
+# OS
+.DS_Store

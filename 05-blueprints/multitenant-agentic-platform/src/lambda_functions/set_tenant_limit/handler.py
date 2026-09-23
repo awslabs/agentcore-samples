@@ -99,9 +99,7 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "headers": CORS_HEADERS,
-            "body": json.dumps(
-                {"success": True, "tenantId": tenant_id, "tokenLimit": token_limit_int}
-            ),
+            "body": json.dumps({"success": True, "tenantId": tenant_id, "tokenLimit": token_limit_int}),
         }
 
     except Exception as e:

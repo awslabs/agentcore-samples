@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Insurance Claims Demo — Cognito User Pool with demo policyholders
+
+Parameters:
+  StackPrefix:
+    Type: String
+    Default: insurance-claims-demo
+    Description: Prefix for resource names
+
+Resources:
+  # ----- User Pool -----
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${StackPrefix}-pool'
+      # Demo-only: passwords are hardcoded in setup scripts for reproducibility.
+      # For non-demo deployments, generate credentials at setup time.
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AutoVerifiedAttributes: []
+      Schema:
+        - Name: actor_id
+          AttributeDataType: String
+          Mutable: true
+          StringAttributeConstraints:
+            MinLength: '1'
+            MaxLength: '64'
+
+  # ----- App Client (public, no secret) -----
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${StackPrefix}-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+
+  # ----- Demo Users -----
+  UserBob:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: bob-policyholder
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: custom:actor_id
+          Value: PH-1001
+
+  UserAlice:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: alice-policyholder
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: custom:actor_id
+          Value: PH-1042
+
+  UserCharlie:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: charlie-policyholder
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: custom:actor_id
+          Value: PH-1087
+
+  # ----- User groups -----
+  PolicyholdersGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: policyholders
+      Description: Insurance policyholders (chat interface)
+      UserPoolId: !Ref UserPool
+
+  AdjusterGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: adjuster
+      Description: Claims adjusters (HITL review console)
+      UserPoolId: !Ref UserPool
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: System administrators (memory inspector)
+      UserPoolId: !Ref UserPool
+
+  # ----- Pre-created adjuster user (CF-managed) -----
+  UserDana:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: dana-adjuster
+      MessageAction: SUPPRESS
+
+  DanaAdjusterGroupAttachment:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      GroupName: !Ref AdjusterGroup
+      Username: !Ref UserDana
+      UserPoolId: !Ref UserPool
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${StackPrefix}-pool-id'
+
+  UserPoolClientId:
+    Description: Cognito App Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${StackPrefix}-client-id'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub '${StackPrefix}-pool-arn'

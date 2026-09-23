@@ -1,0 +1,16 @@
+[
+  {
+    "name": "get_process_info",
+    "description": "Look up an internal service/application/hardware process by name. Returns owner team, version, criticality, current status, and known issues.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "process_name": {
+          "type": "string",
+          "description": "Canonical process name, e.g. corp-vpn"
+        }
+      },
+      "required": ["process_name"]
+    }
+  }
+]

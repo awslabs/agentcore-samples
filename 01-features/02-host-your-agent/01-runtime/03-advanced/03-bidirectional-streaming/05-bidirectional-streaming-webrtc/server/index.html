@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal WebRTC Voice Agent</title>
+    <script type="importmap">
+    { "imports": { "@aws-sdk/client-bedrock-agentcore": "https://cdn.jsdelivr.net/npm/@aws-sdk/client-bedrock-agentcore@3/+esm" } }
+    </script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+        #status { font-size: 20px; margin: 20px; }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; }
+        .form-wrap { margin: 20px auto; width: 80%; text-align: left; }
+        .form-wrap input[type="text"],
+        .form-wrap input[type="password"] { width: 100%; padding: 5px; margin: 5px 0; box-sizing: border-box; }
+        #aws-creds-section { display: none; margin-top: 10px; padding: 10px; border: 1px solid #ccc; }
+        #log { margin: 20px auto; width: 80%; max-height: 300px; overflow-y: auto; text-align: left;
+               border: 1px solid #ccc; padding: 10px; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Minimal WebRTC Voice Agent (KVS)</h1>
+
+    <form class="form-wrap">
+        <label>Agent Runtime ARN (optional):</label><br>
+        <input type="text" id="agent-arn" placeholder="arn:aws:bedrock-agent:region:account:agent-runtime/runtime-id">
+        <div id="aws-creds-section">
+            <label>AWS Access Key ID:</label><br>
+            <input type="text" id="aws-access-key">
+            <label>AWS Secret Access Key:</label><br>
+            <input type="password" id="aws-secret-key">
+            <label>AWS Session Token (optional):</label><br>
+            <input type="password" id="aws-session-token">
+            <label>Runtime Session ID (optional):</label><br>
+            <input type="text" id="runtime-session-id" placeholder="Auto-generated if empty">
+        </div>
+        <label><input type="checkbox" id="turn-only"> Force TURN only</label>
+    </form>
+
+    <p id="status">Disconnected</p>
+    <button id="connect-btn">Connect</button>
+    <audio id="audio-el" autoplay></audio>
+    <div id="log"></div>
+
+    <script>
+        // Toggle AWS credentials section (outside module so it works even if SDK import fails)
+        document.getElementById("agent-arn").addEventListener('input', function() {
+            document.getElementById("aws-creds-section").style.display = this.value.trim() ? 'block' : 'none'
+        })
+    </script>
+
+    <script type="module">
+        import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
+
+        const $ = id => document.getElementById(id)
+        const AGENT_URL = "http://localhost:8080"
+        const AWS_REGION = "us-west-2"
+        let connected = false, peerConnection = null, sessionId = null
+
+        function log(msg) {
+            const line = document.createElement("div")
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+            $("log").appendChild(line)
+            $("log").scrollTop = $("log").scrollHeight
+        }
+
+        function setStatus(text, color = "black") {
+            $("status").textContent = text
+            $("status").style.color = color
+            $("connect-btn").textContent = text === "Disconnected" ? "Connect" : "Disconnect"
+            connected = text !== "Disconnected"
+        }
+
+        // --- Agent communication (local or via AgentCore Runtime) ---
+
+        async function invokeAction(action, data = {}) {
+            const agentArn = $("agent-arn").value.trim()
+            const payload = { action, data: { ...data, turnOnly: $("turn-only").checked } }
+
+            if (agentArn) {
+                const region = agentArn.split(':')[3] || AWS_REGION
+                log(`Using Bedrock Agent Runtime: https://bedrock-agent-runtime.${region}.amazonaws.com`)
+                const client = new BedrockAgentCoreClient({ region, credentials: {
+                    accessKeyId: $("aws-access-key").value.trim(),
+                    secretAccessKey: $("aws-secret-key").value.trim(),
+                    sessionToken: $("aws-session-token").value.trim() || undefined,
+                }})
+                const resp = await client.send(new InvokeAgentRuntimeCommand({
+                    agentRuntimeArn: agentArn,
+                    runtimeSessionId: $("runtime-session-id").value.trim() || sessionId || (sessionId = crypto.randomUUID()),
+                    contentType: 'application/json', accept: 'application/json',
+                    payload: new TextEncoder().encode(JSON.stringify(payload)),
+                }))
+                const result = JSON.parse(new TextDecoder().decode(await resp.response.transformToByteArray()))
+                log(`✓ Agent Runtime response received`)
+                return result
+            }
+
+            const resp = await fetch(`${AGENT_URL}/invocations`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            return resp.json()
+        }
+
+        // --- WebRTC connection lifecycle ---
+
+        async function connect() {
+            try {
+                setStatus("Connecting...")
+                log("Fetching ICE config from KVS...")
+
+                // Get TURN/STUN servers and create peer connection
+                const { iceServers } = await invokeAction('ice_config')
+                log(`Received ${iceServers.length} ICE servers`)
+                const config = { iceServers }
+                if ($("turn-only").checked) { config.iceTransportPolicy = 'relay'; log("🔒 Forcing TURN relay only (iceTransportPolicy: relay)") }
+                const pc = new RTCPeerConnection(config)
+
+                // Queue ICE candidates until we have a pc_id from the server
+                const pendingCandidates = []
+                let canSend = false
+
+                // Event handlers
+                pc.ontrack = e => { log("Received remote audio track"); $("audio-el").srcObject = e.streams[0] }
+                pc.oniceconnectionstatechange = () => log(`ICE connection state: ${pc.iceConnectionState}`)
+                pc.onicegatheringstatechange = () => log(`ICE gathering state: ${pc.iceGatheringState}`)
+                pc.onicecandidateerror = e => log(`ICE candidate error: ${e.errorCode} - ${e.errorText}`)
+                pc.onconnectionstatechange = async () => {
+                    log(`Connection state: ${pc.connectionState}`)
+                    if (pc.connectionState === 'connected') {
+                        setStatus("Connected ✓", "green")
+                        log("WebRTC connection established!")
+                        const stats = await pc.getStats()
+                        stats.forEach(s => {
+                            if (s.type === 'candidate-pair' && s.selected) {
+                                log(`✓ Selected candidate pair: ${s.id}`)
+                                const local = stats.get(s.localCandidateId)
+                                const remote = stats.get(s.remoteCandidateId)
+                                if (local) log(`Local: ${local.candidateType} - ${local.address}:${local.port}`)
+                                if (local?.candidateType === 'relay') log("🔒 Using TURN relay (KVS)")
+                                if (remote) log(`Remote: ${remote.candidateType} - ${remote.address}:${remote.port}`)
+                            }
+                        })
+                    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                        setStatus("Disconnected")
+                    }
+                }
+                pc.onicecandidate = async e => {
+                    if (!e.candidate) { log("All ICE candidates have been sent"); return }
+                    log(`New ICE candidate: ${e.candidate.candidate.substring(0, 60)}...`)
+                    const c = { candidate: e.candidate.candidate, sdp_mid: e.candidate.sdpMid, sdp_mline_index: e.candidate.sdpMLineIndex }
+                    if (canSend) await invokeAction('ice_candidate', { pc_id: pc.pc_id, candidates: [c] })
+                    else pendingCandidates.push(c)
+                }
+
+                // Capture microphone and create offer
+                log("Requesting microphone access...")
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+                log("Microphone access granted")
+                pc.addTransceiver(stream.getAudioTracks()[0], { direction: 'sendrecv' })
+                log("Creating WebRTC offer...")
+                const offer = await pc.createOffer({ offerToReceiveAudio: 1 })
+                await pc.setLocalDescription(offer)
+                log("Local description set")
+
+                // Exchange SDP with server
+                log("Sending offer to agent...")
+                const answer = await invokeAction('offer', { sdp: offer.sdp, type: offer.type })
+                log(`Received answer from agent (pc_id: ${answer.pc_id})`)
+                pc.pc_id = answer.pc_id
+                await pc.setRemoteDescription(answer)
+                log("Remote description set")
+
+                // Flush queued ICE candidates
+                canSend = true
+                for (const c of pendingCandidates)
+                    await invokeAction('ice_candidate', { pc_id: pc.pc_id, candidates: [c] })
+
+                peerConnection = pc
+            } catch (err) {
+                log(`Error: ${err.message}`)
+                setStatus("Disconnected")
+            }
+        }
+
+        function disconnect() {
+            if (peerConnection) { peerConnection.close(); peerConnection = null }
+            sessionId = null
+            $("runtime-session-id").value = ""
+            setStatus("Disconnected")
+        }
+
+        $("connect-btn").addEventListener("click", () => connected ? disconnect() : connect())
+    </script>
+</body>
+</html>

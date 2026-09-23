@@ -37,5 +37,9 @@ ENV NODE_ENV=production
 
 EXPOSE 8080
 
+# Create non-root user and transfer ownership
+RUN addgroup -S appgroup && adduser -S -u 1001 appuser -G appgroup && chown -R appuser:appgroup /app
+USER appuser
+
 # Run the application
 CMD ["node", "dist/index.js"]

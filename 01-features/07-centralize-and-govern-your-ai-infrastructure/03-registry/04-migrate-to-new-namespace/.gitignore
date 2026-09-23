@@ -1,0 +1,57 @@
+# --- dependencies & build output -------------------------------------------
+node_modules/
+dist/
+build/
+cdk.out/
+*.js
+# `*.js` above means "compiled TypeScript". Everything under tools/ is hand-written source, so it
+# has to be tracked -- verify_cli_modes.js is part of the gate.
+!tools/*.js
+*.d.ts
+*.egg-info/
+*.whl
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- local configuration ---------------------------------------------------
+# The configuration names real accounts, regions and registry ids, so it stays local.
+# `agent-registry-migration init` writes migration.config.json; the older location is
+# config/migration.json. Both are ignored.
+migration.config.json
+config/migration.json
+config/migration.local.json
+config/*.local.json
+
+# --- migration output ------------------------------------------------------
+# Staged records and reports from a local run: customer record content and the old -> new id
+# crosswalks. Keep them, but never commit them.
+migration-runs/
+# Target CreateRegistry payloads derived by `init` from a customer's preview registry.
+new-registry-payloads/
+# npm pack output
+*.tgz
+.env
+.env.*
+
+# --- temp work (not for commit) --------------------------------------------
+temp/
+
+# --- agent / editor / OS ---------------------------------------------------
+# Agent workspace steering: local working notes, not part of the sample.
+.kiro/
+semantic-review/
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# --- host repo compatibility -----------------------------------------------
+# The awslabs/agentcore-samples root .gitignore ignores lib/ as build output. Here lib/ is CDK
+# source, so re-include it.
+!lib/

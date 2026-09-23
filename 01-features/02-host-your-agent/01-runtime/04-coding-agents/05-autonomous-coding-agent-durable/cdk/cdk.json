@@ -1,0 +1,11 @@
+{
+  "app": "python3 app.py",
+  "context": {
+    "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "project": "cagent",
+    "region": "us-east-1"
+  }
+}

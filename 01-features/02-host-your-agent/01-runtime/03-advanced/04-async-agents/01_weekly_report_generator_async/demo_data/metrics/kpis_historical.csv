@@ -1,0 +1,1249 @@
+week,metric_name,value
+1,Daily Active Users,4490.87
+2,Daily Active Users,4550.17
+3,Daily Active Users,4740.57
+4,Daily Active Users,4745.8
+5,Daily Active Users,4543.48
+6,Daily Active Users,4819.61
+7,Daily Active Users,4670.68
+8,Daily Active Users,4292.55
+9,Daily Active Users,4244.13
+10,Daily Active Users,4720.17
+11,Daily Active Users,4503.92
+12,Daily Active Users,4809.54
+13,Daily Active Users,4781.4
+14,Daily Active Users,5107.67
+15,Daily Active Users,4849.38
+16,Daily Active Users,5156.38
+17,Daily Active Users,5386.93
+18,Daily Active Users,5080.08
+19,Daily Active Users,4974.27
+20,Daily Active Users,4907.84
+21,Daily Active Users,4791.55
+22,Daily Active Users,4743.78
+23,Daily Active Users,4867.44
+24,Daily Active Users,5020.52
+25,Daily Active Users,4850.3
+26,Daily Active Users,5156.94
+27,Daily Active Users,5183.53
+28,Daily Active Users,5622.84
+29,Daily Active Users,5245.08
+30,Daily Active Users,5740.51
+31,Daily Active Users,5667.12
+32,Daily Active Users,5569.65
+33,Daily Active Users,5358.95
+34,Daily Active Users,5429.25
+35,Daily Active Users,5301.04
+36,Daily Active Users,5047.02
+37,Daily Active Users,5398.08
+38,Daily Active Users,5500.88
+39,Daily Active Users,5756.1
+40,Daily Active Users,5667.28
+41,Daily Active Users,5456.29
+42,Daily Active Users,5821.18
+43,Daily Active Users,6163.23
+44,Daily Active Users,5558.3
+45,Daily Active Users,5965.35
+46,Daily Active Users,5402.56
+47,Daily Active Users,5559.34
+48,Daily Active Users,5667.24
+49,Daily Active Users,5556.81
+50,Daily Active Users,5615.76
+51,Daily Active Users,5732.98
+52,Daily Active Users,5886.03
+53,Daily Active Users,5936.26
+54,Daily Active Users,6141.32
+55,Daily Active Users,6457.07
+56,Daily Active Users,6468.9
+57,Daily Active Users,5903.22
+58,Daily Active Users,6134.6
+59,Daily Active Users,5956.31
+60,Daily Active Users,5575.71
+61,Daily Active Users,5551.48
+62,Daily Active Users,5942.92
+63,Daily Active Users,5771.26
+64,Daily Active Users,6278.5
+65,Daily Active Users,6190.25
+66,Daily Active Users,6124.55
+67,Daily Active Users,6422.27
+68,Daily Active Users,6546.43
+69,Daily Active Users,6898.53
+70,Daily Active Users,6833.0
+71,Daily Active Users,6137.12
+72,Daily Active Users,5973.49
+73,Daily Active Users,6195.83
+74,Daily Active Users,5759.41
+75,Daily Active Users,5735.12
+76,Daily Active Users,6228.15
+77,Daily Active Users,5988.38
+78,Daily Active Users,6698.19
+79,Daily Active Users,6539.05
+80,Daily Active Users,6848.82
+81,Daily Active Users,6601.75
+82,Daily Active Users,7158.36
+83,Daily Active Users,6455.25
+84,Daily Active Users,6640.39
+85,Daily Active Users,6938.79
+86,Daily Active Users,6493.03
+87,Daily Active Users,6341.45
+88,Daily Active Users,6265.71
+89,Daily Active Users,6672.36
+90,Daily Active Users,6861.07
+91,Daily Active Users,6729.0
+92,Daily Active Users,7282.14
+93,Daily Active Users,6969.59
+94,Daily Active Users,7088.86
+95,Daily Active Users,7175.59
+96,Daily Active Users,7155.88
+97,Daily Active Users,6646.39
+98,Daily Active Users,6768.61
+99,Daily Active Users,7191.46
+100,Daily Active Users,6366.36
+101,Daily Active Users,6450.88
+102,Daily Active Users,7189.07
+103,Daily Active Users,7034.9
+104,Daily Active Users,7533.26
+105,Daily Active Users,6944.7
+106,Daily Active Users,7181.35
+107,Daily Active Users,7572.52
+108,Daily Active Users,7178.23
+109,Daily Active Users,7126.03
+110,Daily Active Users,7542.17
+111,Daily Active Users,7188.99
+112,Daily Active Users,6879.57
+113,Daily Active Users,6653.04
+114,Daily Active Users,7294.51
+115,Daily Active Users,6955.76
+116,Daily Active Users,7572.86
+117,Daily Active Users,7476.82
+118,Daily Active Users,7241.77
+119,Daily Active Users,8141.68
+120,Daily Active Users,8273.11
+121,Daily Active Users,7751.23
+122,Daily Active Users,7509.02
+123,Daily Active Users,7773.1
+124,Daily Active Users,7218.81
+125,Daily Active Users,7590.57
+126,Daily Active Users,7470.51
+127,Daily Active Users,7270.35
+128,Daily Active Users,7707.96
+129,Daily Active Users,7296.73
+130,Daily Active Users,8111.84
+131,Daily Active Users,7630.23
+132,Daily Active Users,8059.46
+133,Daily Active Users,7863.51
+134,Daily Active Users,8184.72
+135,Daily Active Users,8605.58
+136,Daily Active Users,8038.87
+137,Daily Active Users,7647.65
+138,Daily Active Users,7753.84
+139,Daily Active Users,7499.45
+140,Daily Active Users,7921.15
+141,Daily Active Users,7360.67
+142,Daily Active Users,7925.54
+143,Daily Active Users,7648.19
+144,Daily Active Users,8723.32
+145,Daily Active Users,8928.65
+146,Daily Active Users,8125.23
+147,Daily Active Users,8205.66
+148,Daily Active Users,8400.88
+149,Daily Active Users,7930.28
+150,Daily Active Users,8179.8
+151,Daily Active Users,7754.13
+152,Daily Active Users,7521.6
+153,Daily Active Users,7656.52
+154,Daily Active Users,7790.25
+155,Daily Active Users,7988.54
+156,Daily Active Users,8005.4
+1,API Response Time (avg),634.43
+2,API Response Time (avg),663.21
+3,API Response Time (avg),625.56
+4,API Response Time (avg),601.11
+5,API Response Time (avg),604.94
+6,API Response Time (avg),622.32
+7,API Response Time (avg),594.35
+8,API Response Time (avg),640.38
+9,API Response Time (avg),605.2
+10,API Response Time (avg),617.37
+11,API Response Time (avg),589.85
+12,API Response Time (avg),568.36
+13,API Response Time (avg),581.69
+14,API Response Time (avg),643.43
+15,API Response Time (avg),587.44
+16,API Response Time (avg),624.41
+17,API Response Time (avg),568.45
+18,API Response Time (avg),627.72
+19,API Response Time (avg),632.96
+20,API Response Time (avg),544.95
+21,API Response Time (avg),609.26
+22,API Response Time (avg),524.05
+23,API Response Time (avg),619.71
+24,API Response Time (avg),528.21
+25,API Response Time (avg),542.66
+26,API Response Time (avg),609.27
+27,API Response Time (avg),516.32
+28,API Response Time (avg),532.57
+29,API Response Time (avg),519.52
+30,API Response Time (avg),574.76
+31,API Response Time (avg),579.16
+32,API Response Time (avg),575.26
+33,API Response Time (avg),519.92
+34,API Response Time (avg),511.06
+35,API Response Time (avg),493.06
+36,API Response Time (avg),584.33
+37,API Response Time (avg),543.91
+38,API Response Time (avg),488.52
+39,API Response Time (avg),554.58
+40,API Response Time (avg),488.03
+41,API Response Time (avg),475.58
+42,API Response Time (avg),471.74
+43,API Response Time (avg),517.41
+44,API Response Time (avg),486.82
+45,API Response Time (avg),516.99
+46,API Response Time (avg),539.49
+47,API Response Time (avg),494.28
+48,API Response Time (avg),457.21
+49,API Response Time (avg),451.22
+50,API Response Time (avg),455.94
+51,API Response Time (avg),525.4
+52,API Response Time (avg),506.68
+53,API Response Time (avg),491.01
+54,API Response Time (avg),477.26
+55,API Response Time (avg),442.56
+56,API Response Time (avg),436.45
+57,API Response Time (avg),492.78
+58,API Response Time (avg),488.24
+59,API Response Time (avg),467.04
+60,API Response Time (avg),467.96
+61,API Response Time (avg),452.2
+62,API Response Time (avg),426.51
+63,API Response Time (avg),421.63
+64,API Response Time (avg),439.98
+65,API Response Time (avg),417.85
+66,API Response Time (avg),439.79
+67,API Response Time (avg),396.69
+68,API Response Time (avg),444.22
+69,API Response Time (avg),442.21
+70,API Response Time (avg),448.47
+71,API Response Time (avg),400.34
+72,API Response Time (avg),417.79
+73,API Response Time (avg),374.62
+74,API Response Time (avg),420.88
+75,API Response Time (avg),422.34
+76,API Response Time (avg),439.88
+77,API Response Time (avg),422.78
+78,API Response Time (avg),410.8
+79,API Response Time (avg),362.74
+80,API Response Time (avg),420.56
+81,API Response Time (avg),398.83
+82,API Response Time (avg),380.17
+83,API Response Time (avg),346.17
+84,API Response Time (avg),365.63
+85,API Response Time (avg),357.58
+86,API Response Time (avg),334.59
+87,API Response Time (avg),375.18
+88,API Response Time (avg),372.22
+89,API Response Time (avg),392.65
+90,API Response Time (avg),354.14
+91,API Response Time (avg),357.13
+92,API Response Time (avg),318.74
+93,API Response Time (avg),350.51
+94,API Response Time (avg),360.42
+95,API Response Time (avg),324.18
+96,API Response Time (avg),358.73
+97,API Response Time (avg),360.49
+98,API Response Time (avg),355.05
+99,API Response Time (avg),310.88
+100,API Response Time (avg),321.79
+101,API Response Time (avg),340.38
+102,API Response Time (avg),328.5
+103,API Response Time (avg),293.87
+104,API Response Time (avg),342.62
+105,API Response Time (avg),297.16
+106,API Response Time (avg),294.76
+107,API Response Time (avg),320.72
+108,API Response Time (avg),325.8
+109,API Response Time (avg),279.88
+110,API Response Time (avg),292.72
+111,API Response Time (avg),298.79
+112,API Response Time (avg),284.13
+113,API Response Time (avg),263.4
+114,API Response Time (avg),295.67
+115,API Response Time (avg),279.93
+116,API Response Time (avg),273.97
+117,API Response Time (avg),276.08
+118,API Response Time (avg),257.82
+119,API Response Time (avg),248.8
+120,API Response Time (avg),269.99
+121,API Response Time (avg),265.62
+122,API Response Time (avg),280.47
+123,API Response Time (avg),268.85
+124,API Response Time (avg),240.28
+125,API Response Time (avg),253.3
+126,API Response Time (avg),264.67
+127,API Response Time (avg),256.35
+128,API Response Time (avg),220.17
+129,API Response Time (avg),252.57
+130,API Response Time (avg),234.59
+131,API Response Time (avg),245.37
+132,API Response Time (avg),235.62
+133,API Response Time (avg),238.64
+134,API Response Time (avg),201.46
+135,API Response Time (avg),223.83
+136,API Response Time (avg),214.13
+137,API Response Time (avg),213.2
+138,API Response Time (avg),218.96
+139,API Response Time (avg),198.63
+140,API Response Time (avg),201.38
+141,API Response Time (avg),209.16
+142,API Response Time (avg),190.24
+143,API Response Time (avg),199.79
+144,API Response Time (avg),192.82
+145,API Response Time (avg),178.91
+146,API Response Time (avg),189.3
+147,API Response Time (avg),165.3
+148,API Response Time (avg),182.78
+149,API Response Time (avg),182.3
+150,API Response Time (avg),149.7
+151,API Response Time (avg),161.78
+152,API Response Time (avg),167.02
+153,API Response Time (avg),144.01
+154,API Response Time (avg),161.16
+155,API Response Time (avg),138.11
+156,API Response Time (avg),144.3
+1,Customer Support Tickets,290.84
+2,Customer Support Tickets,354.01
+3,Customer Support Tickets,311.0
+4,Customer Support Tickets,363.6
+5,Customer Support Tickets,319.4
+6,Customer Support Tickets,315.38
+7,Customer Support Tickets,333.75
+8,Customer Support Tickets,274.33
+9,Customer Support Tickets,323.7
+10,Customer Support Tickets,304.88
+11,Customer Support Tickets,267.17
+12,Customer Support Tickets,318.4
+13,Customer Support Tickets,330.86
+14,Customer Support Tickets,335.68
+15,Customer Support Tickets,324.59
+16,Customer Support Tickets,309.28
+17,Customer Support Tickets,288.85
+18,Customer Support Tickets,327.95
+19,Customer Support Tickets,265.04
+20,Customer Support Tickets,323.09
+21,Customer Support Tickets,249.03
+22,Customer Support Tickets,264.91
+23,Customer Support Tickets,283.06
+24,Customer Support Tickets,269.9
+25,Customer Support Tickets,293.69
+26,Customer Support Tickets,287.0
+27,Customer Support Tickets,280.94
+28,Customer Support Tickets,299.79
+29,Customer Support Tickets,300.0
+30,Customer Support Tickets,264.98
+31,Customer Support Tickets,319.25
+32,Customer Support Tickets,281.93
+33,Customer Support Tickets,300.45
+34,Customer Support Tickets,249.67
+35,Customer Support Tickets,254.38
+36,Customer Support Tickets,292.09
+37,Customer Support Tickets,294.12
+38,Customer Support Tickets,235.85
+39,Customer Support Tickets,286.64
+40,Customer Support Tickets,249.83
+41,Customer Support Tickets,303.39
+42,Customer Support Tickets,278.88
+43,Customer Support Tickets,292.88
+44,Customer Support Tickets,298.97
+45,Customer Support Tickets,287.04
+46,Customer Support Tickets,267.96
+47,Customer Support Tickets,279.14
+48,Customer Support Tickets,277.66
+49,Customer Support Tickets,262.21
+50,Customer Support Tickets,245.7
+51,Customer Support Tickets,264.28
+52,Customer Support Tickets,258.38
+53,Customer Support Tickets,247.73
+54,Customer Support Tickets,240.47
+55,Customer Support Tickets,270.91
+56,Customer Support Tickets,240.26
+57,Customer Support Tickets,287.48
+58,Customer Support Tickets,256.26
+59,Customer Support Tickets,256.39
+60,Customer Support Tickets,253.66
+61,Customer Support Tickets,253.64
+62,Customer Support Tickets,243.57
+63,Customer Support Tickets,232.29
+64,Customer Support Tickets,250.61
+65,Customer Support Tickets,250.35
+66,Customer Support Tickets,250.31
+67,Customer Support Tickets,237.59
+68,Customer Support Tickets,241.13
+69,Customer Support Tickets,219.29
+70,Customer Support Tickets,257.95
+71,Customer Support Tickets,258.28
+72,Customer Support Tickets,249.43
+73,Customer Support Tickets,227.81
+74,Customer Support Tickets,203.93
+75,Customer Support Tickets,191.22
+76,Customer Support Tickets,239.5
+77,Customer Support Tickets,212.87
+78,Customer Support Tickets,218.51
+79,Customer Support Tickets,249.26
+80,Customer Support Tickets,255.53
+81,Customer Support Tickets,256.51
+82,Customer Support Tickets,219.76
+83,Customer Support Tickets,205.44
+84,Customer Support Tickets,231.78
+85,Customer Support Tickets,234.88
+86,Customer Support Tickets,225.32
+87,Customer Support Tickets,207.56
+88,Customer Support Tickets,185.31
+89,Customer Support Tickets,192.19
+90,Customer Support Tickets,200.12
+91,Customer Support Tickets,227.48
+92,Customer Support Tickets,210.79
+93,Customer Support Tickets,216.96
+94,Customer Support Tickets,208.47
+95,Customer Support Tickets,196.04
+96,Customer Support Tickets,221.25
+97,Customer Support Tickets,180.97
+98,Customer Support Tickets,184.16
+99,Customer Support Tickets,210.81
+100,Customer Support Tickets,200.83
+101,Customer Support Tickets,192.14
+102,Customer Support Tickets,198.42
+103,Customer Support Tickets,174.82
+104,Customer Support Tickets,207.23
+105,Customer Support Tickets,197.81
+106,Customer Support Tickets,214.03
+107,Customer Support Tickets,209.64
+108,Customer Support Tickets,214.67
+109,Customer Support Tickets,195.65
+110,Customer Support Tickets,164.22
+111,Customer Support Tickets,159.81
+112,Customer Support Tickets,187.47
+113,Customer Support Tickets,182.57
+114,Customer Support Tickets,167.08
+115,Customer Support Tickets,152.91
+116,Customer Support Tickets,176.65
+117,Customer Support Tickets,167.93
+118,Customer Support Tickets,178.42
+119,Customer Support Tickets,190.71
+120,Customer Support Tickets,166.77
+121,Customer Support Tickets,169.83
+122,Customer Support Tickets,159.45
+123,Customer Support Tickets,171.02
+124,Customer Support Tickets,149.66
+125,Customer Support Tickets,166.78
+126,Customer Support Tickets,139.72
+127,Customer Support Tickets,139.82
+128,Customer Support Tickets,143.62
+129,Customer Support Tickets,142.52
+130,Customer Support Tickets,170.91
+131,Customer Support Tickets,159.48
+132,Customer Support Tickets,161.76
+133,Customer Support Tickets,147.64
+134,Customer Support Tickets,172.65
+135,Customer Support Tickets,150.54
+136,Customer Support Tickets,158.06
+137,Customer Support Tickets,161.22
+138,Customer Support Tickets,147.19
+139,Customer Support Tickets,154.19
+140,Customer Support Tickets,156.24
+141,Customer Support Tickets,142.43
+142,Customer Support Tickets,150.75
+143,Customer Support Tickets,143.01
+144,Customer Support Tickets,153.13
+145,Customer Support Tickets,156.25
+146,Customer Support Tickets,162.3
+147,Customer Support Tickets,131.99
+148,Customer Support Tickets,154.09
+149,Customer Support Tickets,134.43
+150,Customer Support Tickets,147.62
+151,Customer Support Tickets,137.83
+152,Customer Support Tickets,110.8
+153,Customer Support Tickets,130.72
+154,Customer Support Tickets,114.87
+155,Customer Support Tickets,129.63
+156,Customer Support Tickets,134.89
+1,System Uptime,99.29
+2,System Uptime,99.47
+3,System Uptime,99.6
+4,System Uptime,99.56
+5,System Uptime,99.59
+6,System Uptime,99.47
+7,System Uptime,99.34
+8,System Uptime,99.43
+9,System Uptime,99.59
+10,System Uptime,99.67
+11,System Uptime,99.36
+12,System Uptime,99.62
+13,System Uptime,99.41
+14,System Uptime,99.41
+15,System Uptime,99.57
+16,System Uptime,99.42
+17,System Uptime,99.62
+18,System Uptime,99.46
+19,System Uptime,99.4
+20,System Uptime,99.68
+21,System Uptime,99.55
+22,System Uptime,99.48
+23,System Uptime,99.54
+24,System Uptime,99.36
+25,System Uptime,99.43
+26,System Uptime,99.39
+27,System Uptime,99.39
+28,System Uptime,99.49
+29,System Uptime,99.42
+30,System Uptime,99.65
+31,System Uptime,99.65
+32,System Uptime,99.72
+33,System Uptime,99.65
+34,System Uptime,99.59
+35,System Uptime,99.75
+36,System Uptime,99.39
+37,System Uptime,99.68
+38,System Uptime,99.44
+39,System Uptime,99.52
+40,System Uptime,99.66
+41,System Uptime,99.53
+42,System Uptime,99.48
+43,System Uptime,99.42
+44,System Uptime,99.59
+45,System Uptime,99.64
+46,System Uptime,99.62
+47,System Uptime,99.66
+48,System Uptime,99.7
+49,System Uptime,99.79
+50,System Uptime,99.81
+51,System Uptime,99.6
+52,System Uptime,99.76
+53,System Uptime,99.46
+54,System Uptime,99.7
+55,System Uptime,99.6
+56,System Uptime,99.6
+57,System Uptime,99.73
+58,System Uptime,99.53
+59,System Uptime,99.49
+60,System Uptime,99.6
+61,System Uptime,99.78
+62,System Uptime,99.62
+63,System Uptime,99.81
+64,System Uptime,99.62
+65,System Uptime,99.71
+66,System Uptime,99.67
+67,System Uptime,99.68
+68,System Uptime,99.73
+69,System Uptime,99.72
+70,System Uptime,99.66
+71,System Uptime,99.72
+72,System Uptime,99.79
+73,System Uptime,99.64
+74,System Uptime,99.52
+75,System Uptime,99.82
+76,System Uptime,99.72
+77,System Uptime,99.78
+78,System Uptime,99.84
+79,System Uptime,99.69
+80,System Uptime,99.64
+81,System Uptime,99.73
+82,System Uptime,99.57
+83,System Uptime,99.79
+84,System Uptime,99.9
+85,System Uptime,99.84
+86,System Uptime,99.9
+87,System Uptime,99.63
+88,System Uptime,99.87
+89,System Uptime,99.88
+90,System Uptime,99.82
+91,System Uptime,99.77
+92,System Uptime,99.58
+93,System Uptime,99.91
+94,System Uptime,99.69
+95,System Uptime,99.68
+96,System Uptime,99.84
+97,System Uptime,99.84
+98,System Uptime,99.84
+99,System Uptime,99.77
+100,System Uptime,99.93
+101,System Uptime,99.64
+102,System Uptime,99.89
+103,System Uptime,99.66
+104,System Uptime,99.93
+105,System Uptime,99.9
+106,System Uptime,99.68
+107,System Uptime,99.67
+108,System Uptime,99.91
+109,System Uptime,99.89
+110,System Uptime,99.98
+111,System Uptime,99.65
+112,System Uptime,99.8
+113,System Uptime,99.84
+114,System Uptime,99.88
+115,System Uptime,99.67
+116,System Uptime,99.79
+117,System Uptime,99.76
+118,System Uptime,99.8
+119,System Uptime,100.01
+120,System Uptime,99.95
+121,System Uptime,99.92
+122,System Uptime,100.01
+123,System Uptime,99.86
+124,System Uptime,99.95
+125,System Uptime,99.9
+126,System Uptime,99.85
+127,System Uptime,100.01
+128,System Uptime,99.68
+129,System Uptime,99.99
+130,System Uptime,99.94
+131,System Uptime,99.81
+132,System Uptime,100.03
+133,System Uptime,99.97
+134,System Uptime,99.85
+135,System Uptime,99.73
+136,System Uptime,100.08
+137,System Uptime,99.73
+138,System Uptime,99.89
+139,System Uptime,100.0
+140,System Uptime,99.98
+141,System Uptime,99.81
+142,System Uptime,99.83
+143,System Uptime,99.86
+144,System Uptime,99.77
+145,System Uptime,99.91
+146,System Uptime,100.08
+147,System Uptime,99.96
+148,System Uptime,100.02
+149,System Uptime,99.76
+150,System Uptime,99.86
+151,System Uptime,99.88
+152,System Uptime,100.15
+153,System Uptime,99.94
+154,System Uptime,99.78
+155,System Uptime,99.85
+156,System Uptime,100.09
+1,New User Signups,116.99
+2,New User Signups,113.33
+3,New User Signups,120.33
+4,New User Signups,114.98
+5,New User Signups,144.64
+6,New User Signups,132.35
+7,New User Signups,135.68
+8,New User Signups,123.17
+9,New User Signups,121.59
+10,New User Signups,108.11
+11,New User Signups,137.8
+12,New User Signups,121.25
+13,New User Signups,122.32
+14,New User Signups,142.77
+15,New User Signups,142.28
+16,New User Signups,170.78
+17,New User Signups,157.61
+18,New User Signups,139.48
+19,New User Signups,155.91
+20,New User Signups,144.98
+21,New User Signups,141.9
+22,New User Signups,154.36
+23,New User Signups,127.1
+24,New User Signups,147.08
+25,New User Signups,129.7
+26,New User Signups,154.18
+27,New User Signups,173.71
+28,New User Signups,170.61
+29,New User Signups,184.96
+30,New User Signups,193.87
+31,New User Signups,154.56
+32,New User Signups,142.91
+33,New User Signups,174.02
+34,New User Signups,156.31
+35,New User Signups,137.16
+36,New User Signups,159.5
+37,New User Signups,175.52
+38,New User Signups,155.38
+39,New User Signups,176.96
+40,New User Signups,167.77
+41,New User Signups,185.31
+42,New User Signups,186.75
+43,New User Signups,166.53
+44,New User Signups,203.31
+45,New User Signups,173.27
+46,New User Signups,186.82
+47,New User Signups,180.49
+48,New User Signups,182.77
+49,New User Signups,157.87
+50,New User Signups,176.7
+51,New User Signups,160.17
+52,New User Signups,183.93
+53,New User Signups,226.4
+54,New User Signups,211.96
+55,New User Signups,204.14
+56,New User Signups,223.27
+57,New User Signups,202.99
+58,New User Signups,205.96
+59,New User Signups,207.26
+60,New User Signups,213.92
+61,New User Signups,213.6
+62,New User Signups,214.91
+63,New User Signups,211.59
+64,New User Signups,188.05
+65,New User Signups,226.93
+66,New User Signups,218.41
+67,New User Signups,247.9
+68,New User Signups,247.46
+69,New User Signups,248.81
+70,New User Signups,197.8
+71,New User Signups,227.78
+72,New User Signups,218.59
+73,New User Signups,189.62
+74,New User Signups,188.05
+75,New User Signups,240.94
+76,New User Signups,190.66
+77,New User Signups,250.85
+78,New User Signups,217.77
+79,New User Signups,246.18
+80,New User Signups,255.5
+81,New User Signups,251.51
+82,New User Signups,218.45
+83,New User Signups,219.48
+84,New User Signups,275.83
+85,New User Signups,254.0
+86,New User Signups,249.46
+87,New User Signups,252.14
+88,New User Signups,253.04
+89,New User Signups,252.19
+90,New User Signups,225.34
+91,New User Signups,221.68
+92,New User Signups,230.01
+93,New User Signups,291.61
+94,New User Signups,237.69
+95,New User Signups,295.25
+96,New User Signups,265.84
+97,New User Signups,277.14
+98,New User Signups,265.2
+99,New User Signups,254.48
+100,New User Signups,214.64
+101,New User Signups,281.11
+102,New User Signups,236.5
+103,New User Signups,239.41
+104,New User Signups,252.67
+105,New User Signups,263.76
+106,New User Signups,258.46
+107,New User Signups,323.15
+108,New User Signups,287.79
+109,New User Signups,284.12
+110,New User Signups,292.79
+111,New User Signups,283.32
+112,New User Signups,292.4
+113,New User Signups,244.67
+114,New User Signups,280.47
+115,New User Signups,241.51
+116,New User Signups,320.69
+117,New User Signups,303.36
+118,New User Signups,322.29
+119,New User Signups,269.58
+120,New User Signups,301.4
+121,New User Signups,262.43
+122,New User Signups,331.28
+123,New User Signups,265.21
+124,New User Signups,283.35
+125,New User Signups,312.7
+126,New User Signups,241.43
+127,New User Signups,300.75
+128,New User Signups,253.41
+129,New User Signups,317.64
+130,New User Signups,320.11
+131,New User Signups,323.41
+132,New User Signups,351.81
+133,New User Signups,365.58
+134,New User Signups,319.14
+135,New User Signups,327.37
+136,New User Signups,363.9
+137,New User Signups,351.74
+138,New User Signups,329.07
+139,New User Signups,335.55
+140,New User Signups,270.15
+141,New User Signups,312.86
+142,New User Signups,342.49
+143,New User Signups,279.27
+144,New User Signups,306.59
+145,New User Signups,358.56
+146,New User Signups,388.64
+147,New User Signups,352.06
+148,New User Signups,355.5
+149,New User Signups,304.07
+150,New User Signups,311.78
+151,New User Signups,309.44
+152,New User Signups,358.41
+153,New User Signups,292.15
+154,New User Signups,299.39
+155,New User Signups,378.44
+156,New User Signups,359.7
+1,Revenue (Weekly),19878.84
+2,Revenue (Weekly),19731.92
+3,Revenue (Weekly),19182.99
+4,Revenue (Weekly),20645.19
+5,Revenue (Weekly),19962.24
+6,Revenue (Weekly),19472.93
+7,Revenue (Weekly),19107.84
+8,Revenue (Weekly),20873.43
+9,Revenue (Weekly),19616.36
+10,Revenue (Weekly),18041.35
+11,Revenue (Weekly),18328.95
+12,Revenue (Weekly),19405.43
+13,Revenue (Weekly),21720.06
+14,Revenue (Weekly),20648.44
+15,Revenue (Weekly),21997.91
+16,Revenue (Weekly),22977.15
+17,Revenue (Weekly),23081.25
+18,Revenue (Weekly),22518.95
+19,Revenue (Weekly),23407.08
+20,Revenue (Weekly),21482.37
+21,Revenue (Weekly),21056.56
+22,Revenue (Weekly),20975.75
+23,Revenue (Weekly),20956.68
+24,Revenue (Weekly),21063.8
+25,Revenue (Weekly),21697.89
+26,Revenue (Weekly),24529.61
+27,Revenue (Weekly),22537.24
+28,Revenue (Weekly),25672.12
+29,Revenue (Weekly),23928.03
+30,Revenue (Weekly),26351.29
+31,Revenue (Weekly),26606.43
+32,Revenue (Weekly),22786.76
+33,Revenue (Weekly),22874.75
+34,Revenue (Weekly),24506.83
+35,Revenue (Weekly),22188.78
+36,Revenue (Weekly),24295.48
+37,Revenue (Weekly),22871.82
+38,Revenue (Weekly),24033.04
+39,Revenue (Weekly),24071.47
+40,Revenue (Weekly),27986.55
+41,Revenue (Weekly),28977.5
+42,Revenue (Weekly),28639.81
+43,Revenue (Weekly),29612.8
+44,Revenue (Weekly),25838.72
+45,Revenue (Weekly),27038.43
+46,Revenue (Weekly),27365.54
+47,Revenue (Weekly),28018.12
+48,Revenue (Weekly),25169.3
+49,Revenue (Weekly),26415.54
+50,Revenue (Weekly),26263.69
+51,Revenue (Weekly),26941.04
+52,Revenue (Weekly),27043.42
+53,Revenue (Weekly),28839.54
+54,Revenue (Weekly),28319.98
+55,Revenue (Weekly),31619.74
+56,Revenue (Weekly),28891.58
+57,Revenue (Weekly),32208.05
+58,Revenue (Weekly),31719.71
+59,Revenue (Weekly),28956.61
+60,Revenue (Weekly),28990.25
+61,Revenue (Weekly),26987.76
+62,Revenue (Weekly),26400.43
+63,Revenue (Weekly),29942.32
+64,Revenue (Weekly),31905.23
+65,Revenue (Weekly),29877.41
+66,Revenue (Weekly),30136.19
+67,Revenue (Weekly),31617.01
+68,Revenue (Weekly),30243.82
+69,Revenue (Weekly),30158.78
+70,Revenue (Weekly),33546.62
+71,Revenue (Weekly),29535.5
+72,Revenue (Weekly),30341.9
+73,Revenue (Weekly),29267.12
+74,Revenue (Weekly),31172.98
+75,Revenue (Weekly),30648.64
+76,Revenue (Weekly),30254.96
+77,Revenue (Weekly),33231.81
+78,Revenue (Weekly),30719.92
+79,Revenue (Weekly),32060.14
+80,Revenue (Weekly),35071.93
+81,Revenue (Weekly),33484.37
+82,Revenue (Weekly),35612.47
+83,Revenue (Weekly),35076.65
+84,Revenue (Weekly),34344.6
+85,Revenue (Weekly),32630.77
+86,Revenue (Weekly),33365.83
+87,Revenue (Weekly),30441.87
+88,Revenue (Weekly),35141.64
+89,Revenue (Weekly),34541.25
+90,Revenue (Weekly),33186.47
+91,Revenue (Weekly),34007.63
+92,Revenue (Weekly),38692.14
+93,Revenue (Weekly),39739.62
+94,Revenue (Weekly),35368.64
+95,Revenue (Weekly),40376.45
+96,Revenue (Weekly),37026.31
+97,Revenue (Weekly),38937.11
+98,Revenue (Weekly),36761.62
+99,Revenue (Weekly),37285.27
+100,Revenue (Weekly),32790.92
+101,Revenue (Weekly),37062.55
+102,Revenue (Weekly),33351.07
+103,Revenue (Weekly),38782.87
+104,Revenue (Weekly),36636.26
+105,Revenue (Weekly),38049.05
+106,Revenue (Weekly),36922.51
+107,Revenue (Weekly),39822.02
+108,Revenue (Weekly),43151.75
+109,Revenue (Weekly),38653.21
+110,Revenue (Weekly),42094.42
+111,Revenue (Weekly),41276.85
+112,Revenue (Weekly),35234.86
+113,Revenue (Weekly),37837.98
+114,Revenue (Weekly),37141.02
+115,Revenue (Weekly),39021.12
+116,Revenue (Weekly),36827.65
+117,Revenue (Weekly),42115.99
+118,Revenue (Weekly),40067.89
+119,Revenue (Weekly),39568.3
+120,Revenue (Weekly),44111.65
+121,Revenue (Weekly),42806.94
+122,Revenue (Weekly),44019.61
+123,Revenue (Weekly),43124.94
+124,Revenue (Weekly),43304.76
+125,Revenue (Weekly),37195.53
+126,Revenue (Weekly),40368.56
+127,Revenue (Weekly),42672.37
+128,Revenue (Weekly),38478.77
+129,Revenue (Weekly),41964.35
+130,Revenue (Weekly),39464.2
+131,Revenue (Weekly),41932.59
+132,Revenue (Weekly),41686.61
+133,Revenue (Weekly),46352.35
+134,Revenue (Weekly),42912.64
+135,Revenue (Weekly),46809.15
+136,Revenue (Weekly),46681.7
+137,Revenue (Weekly),46193.71
+138,Revenue (Weekly),42510.24
+139,Revenue (Weekly),44317.14
+140,Revenue (Weekly),39976.63
+141,Revenue (Weekly),40514.05
+142,Revenue (Weekly),41571.24
+143,Revenue (Weekly),42604.79
+144,Revenue (Weekly),44682.96
+145,Revenue (Weekly),48036.01
+146,Revenue (Weekly),49833.98
+147,Revenue (Weekly),48839.44
+148,Revenue (Weekly),48344.61
+149,Revenue (Weekly),47968.53
+150,Revenue (Weekly),43774.93
+151,Revenue (Weekly),47325.4
+152,Revenue (Weekly),40708.12
+153,Revenue (Weekly),42494.1
+154,Revenue (Weekly),44469.44
+155,Revenue (Weekly),45113.54
+156,Revenue (Weekly),44482.23
+1,Deployment Frequency,2.7
+2,Deployment Frequency,3.61
+3,Deployment Frequency,3.27
+4,Deployment Frequency,3.19
+5,Deployment Frequency,3.92
+6,Deployment Frequency,3.76
+7,Deployment Frequency,2.85
+8,Deployment Frequency,2.85
+9,Deployment Frequency,3.45
+10,Deployment Frequency,3.18
+11,Deployment Frequency,4.35
+12,Deployment Frequency,4.24
+13,Deployment Frequency,4.25
+14,Deployment Frequency,3.67
+15,Deployment Frequency,3.33
+16,Deployment Frequency,3.76
+17,Deployment Frequency,4.25
+18,Deployment Frequency,3.79
+19,Deployment Frequency,3.57
+20,Deployment Frequency,3.97
+21,Deployment Frequency,4.66
+22,Deployment Frequency,5.02
+23,Deployment Frequency,4.4
+24,Deployment Frequency,3.58
+25,Deployment Frequency,4.31
+26,Deployment Frequency,5.4
+27,Deployment Frequency,4.88
+28,Deployment Frequency,4.05
+29,Deployment Frequency,3.89
+30,Deployment Frequency,3.98
+31,Deployment Frequency,4.37
+32,Deployment Frequency,4.78
+33,Deployment Frequency,4.06
+34,Deployment Frequency,4.95
+35,Deployment Frequency,4.25
+36,Deployment Frequency,4.28
+37,Deployment Frequency,5.31
+38,Deployment Frequency,5.76
+39,Deployment Frequency,4.41
+40,Deployment Frequency,5.01
+41,Deployment Frequency,4.94
+42,Deployment Frequency,5.82
+43,Deployment Frequency,4.53
+44,Deployment Frequency,5.41
+45,Deployment Frequency,5.82
+46,Deployment Frequency,5.25
+47,Deployment Frequency,6.12
+48,Deployment Frequency,5.03
+49,Deployment Frequency,4.95
+50,Deployment Frequency,6.89
+51,Deployment Frequency,6.26
+52,Deployment Frequency,7.02
+53,Deployment Frequency,6.92
+54,Deployment Frequency,5.89
+55,Deployment Frequency,5.0
+56,Deployment Frequency,5.32
+57,Deployment Frequency,5.09
+58,Deployment Frequency,5.44
+59,Deployment Frequency,5.89
+60,Deployment Frequency,6.36
+61,Deployment Frequency,7.69
+62,Deployment Frequency,5.79
+63,Deployment Frequency,6.25
+64,Deployment Frequency,5.46
+65,Deployment Frequency,7.92
+66,Deployment Frequency,5.51
+67,Deployment Frequency,7.11
+68,Deployment Frequency,6.42
+69,Deployment Frequency,6.12
+70,Deployment Frequency,7.48
+71,Deployment Frequency,6.49
+72,Deployment Frequency,8.41
+73,Deployment Frequency,7.07
+74,Deployment Frequency,8.0
+75,Deployment Frequency,6.72
+76,Deployment Frequency,8.3
+77,Deployment Frequency,6.45
+78,Deployment Frequency,6.4
+79,Deployment Frequency,6.53
+80,Deployment Frequency,8.53
+81,Deployment Frequency,7.21
+82,Deployment Frequency,7.9
+83,Deployment Frequency,7.77
+84,Deployment Frequency,8.63
+85,Deployment Frequency,6.72
+86,Deployment Frequency,8.3
+87,Deployment Frequency,7.53
+88,Deployment Frequency,9.43
+89,Deployment Frequency,8.53
+90,Deployment Frequency,8.28
+91,Deployment Frequency,9.53
+92,Deployment Frequency,8.47
+93,Deployment Frequency,9.83
+94,Deployment Frequency,6.9
+95,Deployment Frequency,8.59
+96,Deployment Frequency,9.75
+97,Deployment Frequency,7.57
+98,Deployment Frequency,7.41
+99,Deployment Frequency,7.98
+100,Deployment Frequency,7.17
+101,Deployment Frequency,8.05
+102,Deployment Frequency,9.14
+103,Deployment Frequency,8.92
+104,Deployment Frequency,7.75
+105,Deployment Frequency,7.69
+106,Deployment Frequency,9.37
+107,Deployment Frequency,7.85
+108,Deployment Frequency,7.4
+109,Deployment Frequency,10.85
+110,Deployment Frequency,8.78
+111,Deployment Frequency,10.74
+112,Deployment Frequency,7.96
+113,Deployment Frequency,8.41
+114,Deployment Frequency,8.39
+115,Deployment Frequency,9.82
+116,Deployment Frequency,9.23
+117,Deployment Frequency,8.04
+118,Deployment Frequency,11.59
+119,Deployment Frequency,9.95
+120,Deployment Frequency,9.58
+121,Deployment Frequency,9.41
+122,Deployment Frequency,10.87
+123,Deployment Frequency,9.35
+124,Deployment Frequency,11.4
+125,Deployment Frequency,10.84
+126,Deployment Frequency,11.64
+127,Deployment Frequency,11.76
+128,Deployment Frequency,11.46
+129,Deployment Frequency,12.29
+130,Deployment Frequency,10.91
+131,Deployment Frequency,11.26
+132,Deployment Frequency,9.03
+133,Deployment Frequency,10.96
+134,Deployment Frequency,11.64
+135,Deployment Frequency,12.14
+136,Deployment Frequency,9.22
+137,Deployment Frequency,10.73
+138,Deployment Frequency,12.44
+139,Deployment Frequency,11.05
+140,Deployment Frequency,12.22
+141,Deployment Frequency,13.23
+142,Deployment Frequency,11.85
+143,Deployment Frequency,12.97
+144,Deployment Frequency,10.1
+145,Deployment Frequency,9.7
+146,Deployment Frequency,9.2
+147,Deployment Frequency,13.66
+148,Deployment Frequency,10.31
+149,Deployment Frequency,13.09
+150,Deployment Frequency,10.34
+151,Deployment Frequency,10.86
+152,Deployment Frequency,11.81
+153,Deployment Frequency,9.51
+154,Deployment Frequency,12.34
+155,Deployment Frequency,10.92
+156,Deployment Frequency,11.53
+1,Bug Resolution Time (avg),9.57
+2,Bug Resolution Time (avg),9.09
+3,Bug Resolution Time (avg),7.27
+4,Bug Resolution Time (avg),8.42
+5,Bug Resolution Time (avg),7.38
+6,Bug Resolution Time (avg),8.0
+7,Bug Resolution Time (avg),8.78
+8,Bug Resolution Time (avg),8.68
+9,Bug Resolution Time (avg),7.3
+10,Bug Resolution Time (avg),6.95
+11,Bug Resolution Time (avg),8.01
+12,Bug Resolution Time (avg),8.09
+13,Bug Resolution Time (avg),7.83
+14,Bug Resolution Time (avg),8.51
+15,Bug Resolution Time (avg),7.23
+16,Bug Resolution Time (avg),6.98
+17,Bug Resolution Time (avg),8.29
+18,Bug Resolution Time (avg),7.87
+19,Bug Resolution Time (avg),8.48
+20,Bug Resolution Time (avg),8.69
+21,Bug Resolution Time (avg),8.45
+22,Bug Resolution Time (avg),6.91
+23,Bug Resolution Time (avg),7.89
+24,Bug Resolution Time (avg),6.55
+25,Bug Resolution Time (avg),7.67
+26,Bug Resolution Time (avg),7.6
+27,Bug Resolution Time (avg),6.84
+28,Bug Resolution Time (avg),6.7
+29,Bug Resolution Time (avg),7.66
+30,Bug Resolution Time (avg),7.65
+31,Bug Resolution Time (avg),7.97
+32,Bug Resolution Time (avg),7.58
+33,Bug Resolution Time (avg),6.82
+34,Bug Resolution Time (avg),7.89
+35,Bug Resolution Time (avg),7.0
+36,Bug Resolution Time (avg),7.4
+37,Bug Resolution Time (avg),7.58
+38,Bug Resolution Time (avg),7.42
+39,Bug Resolution Time (avg),7.82
+40,Bug Resolution Time (avg),6.12
+41,Bug Resolution Time (avg),7.17
+42,Bug Resolution Time (avg),6.52
+43,Bug Resolution Time (avg),6.35
+44,Bug Resolution Time (avg),6.74
+45,Bug Resolution Time (avg),6.19
+46,Bug Resolution Time (avg),5.85
+47,Bug Resolution Time (avg),7.26
+48,Bug Resolution Time (avg),7.13
+49,Bug Resolution Time (avg),7.35
+50,Bug Resolution Time (avg),6.76
+51,Bug Resolution Time (avg),5.86
+52,Bug Resolution Time (avg),7.15
+53,Bug Resolution Time (avg),6.42
+54,Bug Resolution Time (avg),6.64
+55,Bug Resolution Time (avg),6.05
+56,Bug Resolution Time (avg),5.58
+57,Bug Resolution Time (avg),6.38
+58,Bug Resolution Time (avg),6.97
+59,Bug Resolution Time (avg),5.83
+60,Bug Resolution Time (avg),6.08
+61,Bug Resolution Time (avg),5.27
+62,Bug Resolution Time (avg),5.98
+63,Bug Resolution Time (avg),5.21
+64,Bug Resolution Time (avg),5.53
+65,Bug Resolution Time (avg),5.32
+66,Bug Resolution Time (avg),5.71
+67,Bug Resolution Time (avg),5.47
+68,Bug Resolution Time (avg),4.94
+69,Bug Resolution Time (avg),6.48
+70,Bug Resolution Time (avg),5.04
+71,Bug Resolution Time (avg),6.14
+72,Bug Resolution Time (avg),5.83
+73,Bug Resolution Time (avg),5.11
+74,Bug Resolution Time (avg),5.95
+75,Bug Resolution Time (avg),5.22
+76,Bug Resolution Time (avg),5.37
+77,Bug Resolution Time (avg),5.73
+78,Bug Resolution Time (avg),6.02
+79,Bug Resolution Time (avg),4.83
+80,Bug Resolution Time (avg),5.8
+81,Bug Resolution Time (avg),5.03
+82,Bug Resolution Time (avg),5.6
+83,Bug Resolution Time (avg),4.63
+84,Bug Resolution Time (avg),4.75
+85,Bug Resolution Time (avg),5.58
+86,Bug Resolution Time (avg),5.3
+87,Bug Resolution Time (avg),4.66
+88,Bug Resolution Time (avg),4.91
+89,Bug Resolution Time (avg),4.76
+90,Bug Resolution Time (avg),5.38
+91,Bug Resolution Time (avg),5.18
+92,Bug Resolution Time (avg),4.19
+93,Bug Resolution Time (avg),4.73
+94,Bug Resolution Time (avg),4.57
+95,Bug Resolution Time (avg),4.1
+96,Bug Resolution Time (avg),5.0
+97,Bug Resolution Time (avg),4.15
+98,Bug Resolution Time (avg),4.9
+99,Bug Resolution Time (avg),4.41
+100,Bug Resolution Time (avg),5.12
+101,Bug Resolution Time (avg),3.92
+102,Bug Resolution Time (avg),4.87
+103,Bug Resolution Time (avg),4.43
+104,Bug Resolution Time (avg),4.53
+105,Bug Resolution Time (avg),3.99
+106,Bug Resolution Time (avg),4.11
+107,Bug Resolution Time (avg),4.38
+108,Bug Resolution Time (avg),3.63
+109,Bug Resolution Time (avg),4.67
+110,Bug Resolution Time (avg),4.1
+111,Bug Resolution Time (avg),3.98
+112,Bug Resolution Time (avg),4.11
+113,Bug Resolution Time (avg),3.74
+114,Bug Resolution Time (avg),4.21
+115,Bug Resolution Time (avg),4.52
+116,Bug Resolution Time (avg),3.75
+117,Bug Resolution Time (avg),3.46
+118,Bug Resolution Time (avg),3.44
+119,Bug Resolution Time (avg),4.27
+120,Bug Resolution Time (avg),3.66
+121,Bug Resolution Time (avg),3.54
+122,Bug Resolution Time (avg),4.17
+123,Bug Resolution Time (avg),3.72
+124,Bug Resolution Time (avg),3.87
+125,Bug Resolution Time (avg),3.49
+126,Bug Resolution Time (avg),3.88
+127,Bug Resolution Time (avg),3.7
+128,Bug Resolution Time (avg),3.37
+129,Bug Resolution Time (avg),3.11
+130,Bug Resolution Time (avg),3.41
+131,Bug Resolution Time (avg),3.0
+132,Bug Resolution Time (avg),2.82
+133,Bug Resolution Time (avg),3.32
+134,Bug Resolution Time (avg),3.09
+135,Bug Resolution Time (avg),3.05
+136,Bug Resolution Time (avg),2.82
+137,Bug Resolution Time (avg),2.85
+138,Bug Resolution Time (avg),2.95
+139,Bug Resolution Time (avg),3.08
+140,Bug Resolution Time (avg),3.05
+141,Bug Resolution Time (avg),2.69
+142,Bug Resolution Time (avg),3.02
+143,Bug Resolution Time (avg),2.63
+144,Bug Resolution Time (avg),2.48
+145,Bug Resolution Time (avg),3.02
+146,Bug Resolution Time (avg),2.46
+147,Bug Resolution Time (avg),2.81
+148,Bug Resolution Time (avg),2.97
+149,Bug Resolution Time (avg),2.33
+150,Bug Resolution Time (avg),2.65
+151,Bug Resolution Time (avg),2.61
+152,Bug Resolution Time (avg),2.79
+153,Bug Resolution Time (avg),2.23
+154,Bug Resolution Time (avg),2.44
+155,Bug Resolution Time (avg),2.41
+156,Bug Resolution Time (avg),2.48

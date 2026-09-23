@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Zip artifacts
+*.zip
+
+# OS
+.DS_Store
+
+# Config
+agent.config
+runtime_config.json
+infra.config

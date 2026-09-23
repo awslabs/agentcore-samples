@@ -1,5 +1,5 @@
-# Use ARM64 Python 3.11 base image with uv pre-installed
-FROM --platform=linux/arm64 ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.11-slim-trixie
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set working directory
 WORKDIR /app

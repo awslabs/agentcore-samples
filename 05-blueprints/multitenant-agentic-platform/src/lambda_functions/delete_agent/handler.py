@@ -6,9 +6,7 @@ import traceback
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(os.environ["AGENT_DETAILS_TABLE_NAME"])
 # Use bedrock-agentcore-control for control plane operations (create/delete)
-bedrock_control_client = boto3.client(
-    "bedrock-agentcore-control", region_name=os.environ["AWS_REGION"]
-)
+bedrock_control_client = boto3.client("bedrock-agentcore-control", region_name=os.environ["AWS_REGION"])
 
 CORS_HEADERS = {
     "Content-Type": "application/json",
@@ -31,20 +29,12 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 400,
                 "headers": CORS_HEADERS,
-                "body": json.dumps(
-                    {
-                        "error": "Both tenantId and agentRuntimeId query parameters are required"
-                    }
-                ),
+                "body": json.dumps({"error": "Both tenantId and agentRuntimeId query parameters are required"}),
             }
 
         # Get agent details from DynamoDB using composite key
-        print(
-            f"Looking for agent with tenantId: {tenant_id}, agentRuntimeId: {agent_runtime_id}"
-        )
-        response = table.get_item(
-            Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id}
-        )
+        print(f"Looking for agent with tenantId: {tenant_id}, agentRuntimeId: {agent_runtime_id}")
+        response = table.get_item(Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id})
 
         if "Item" not in response:
             return {
@@ -57,12 +47,8 @@ def lambda_handler(event, context):
         print(f"Step 1: Deleting agent runtime from Bedrock: {agent_runtime_id}")
         try:
             # Use the control plane client to delete the agent runtime
-            response = bedrock_control_client.delete_agent_runtime(
-                agentRuntimeId=agent_runtime_id
-            )
-            print(
-                f"Successfully deleted agent runtime from Bedrock: {agent_runtime_id}"
-            )
+            response = bedrock_control_client.delete_agent_runtime(agentRuntimeId=agent_runtime_id)
+            print(f"Successfully deleted agent runtime from Bedrock: {agent_runtime_id}")
             print(f"Delete response: {response}")
         except Exception as bedrock_error:
             error_msg = str(bedrock_error)
@@ -71,14 +57,8 @@ def lambda_handler(event, context):
             print(f"Traceback: {traceback.format_exc()}")
 
             # Check if it's just a "not found" error (agent already deleted)
-            if (
-                "ResourceNotFoundException" in error_type
-                or "NotFound" in error_msg
-                or "404" in error_msg
-            ):
-                print(
-                    "Agent runtime not found in Bedrock (may have been already deleted)"
-                )
+            if "ResourceNotFoundException" in error_type or "NotFound" in error_msg or "404" in error_msg:
+                print("Agent runtime not found in Bedrock (may have been already deleted)")
                 # Continue to delete from DB
             else:
                 # Real error - don't delete from DB
@@ -101,9 +81,7 @@ def lambda_handler(event, context):
             f"Step 2: Deleting agent details from DynamoDB for tenantId: {tenant_id}, agentRuntimeId: {agent_runtime_id}"
         )
         try:
-            table.delete_item(
-                Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id}
-            )
+            table.delete_item(Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id})
             print("Successfully deleted agent details from DynamoDB")
         except Exception as db_error:
             error_msg = str(db_error)

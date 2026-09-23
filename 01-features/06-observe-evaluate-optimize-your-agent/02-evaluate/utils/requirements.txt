@@ -1,0 +1,6 @@
+# Runtime requirements — bundled into the deployment zip by deploy.py
+# Do NOT pip install this directly; deploy.py handles ARM64 cross-compilation.
+strands-agents[otel]
+strands-agents-tools
+bedrock-agentcore
+aws-opentelemetry-distro

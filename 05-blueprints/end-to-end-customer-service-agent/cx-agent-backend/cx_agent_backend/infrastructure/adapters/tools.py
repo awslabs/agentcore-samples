@@ -13,7 +13,9 @@ from cx_agent_backend.infrastructure.aws.parameter_store_reader import (
 )
 
 # Configure logging for local development
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -238,7 +240,6 @@ def get_support_tickets(
         logger.debug("Retrieved Zendesk credentials for domain")
     except Exception:
         logger.error("Failed to retrieve Zendesk credentials")
-
 
     # If credentials not configured, return mock response
     if not all([subdomain, email, api_token]):

@@ -62,16 +62,8 @@ def lambda_handler(event, context):
 
             # Calculate cost increments
             # Pricing: $0.003 per 1000 input tokens, $0.015 per 1000 output tokens
-            input_cost_increment = (
-                Decimal(aggregation["input_tokens"])
-                * Decimal("0.003")
-                / Decimal("1000")
-            )
-            output_cost_increment = (
-                Decimal(aggregation["output_tokens"])
-                * Decimal("0.015")
-                / Decimal("1000")
-            )
+            input_cost_increment = Decimal(aggregation["input_tokens"]) * Decimal("0.003") / Decimal("1000")
+            output_cost_increment = Decimal(aggregation["output_tokens"]) * Decimal("0.015") / Decimal("1000")
             total_cost_increment = input_cost_increment + output_cost_increment
 
             # Use atomic counter to increment the totals for this tenant
@@ -97,12 +89,8 @@ def lambda_handler(event, context):
             print(f"  Total Output Tokens: {updated_item['output_tokens']}")
             print(f"  Total Tokens: {updated_item['total_tokens']}")
             print(f"  Total Requests: {updated_item['request_count']}")
-            print(
-                f"  Total Input Cost: ${float(updated_item.get('input_cost', 0)):.6f}"
-            )
-            print(
-                f"  Total Output Cost: ${float(updated_item.get('output_cost', 0)):.6f}"
-            )
+            print(f"  Total Input Cost: ${float(updated_item.get('input_cost', 0)):.6f}")
+            print(f"  Total Output Cost: ${float(updated_item.get('output_cost', 0)):.6f}")
             print(f"  Total Cost: ${float(updated_item.get('total_cost', 0)):.6f}")
 
         except Exception as e:
@@ -114,7 +102,5 @@ def lambda_handler(event, context):
 
     return {
         "statusCode": 200,
-        "body": json.dumps(
-            f"Processed {total_records} records for {total_tenants} tenant(s)"
-        ),
+        "body": json.dumps(f"Processed {total_records} records for {total_tenants} tenant(s)"),
     }

@@ -1,0 +1,79 @@
+# ─── Secrets ────────────────────────────────────────────────────────────────
+# Every example has a config.example.env that you copy to .env and fill in
+# with IdP client secrets, tokens, etc. Never commit .env.
+.env
+.env.local
+.env.*.local
+
+# Per-example helpers cache short-lived user JWTs. Not secrets per se, but
+# the tokens inside grant real access and shouldn't land in git.
+.user-jwt-cache.json
+
+# ─── References folder ─────────────────────────────────────────────────────
+# Internal testing notes, source-material copies, and other research artifacts
+# that aren't part of the shareable training content.
+references/
+
+# ─── Python ────────────────────────────────────────────────────────────────
+.venv/
+.test-venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+
+# ─── AgentCore CLI (Node.js) ───────────────────────────────────────────────
+# The CLI scaffolds a project into a subdirectory named after
+# AGENT_RUNTIME_NAME (e.g. oboUc1EntraAgent, oboUc2OktaAgent). Regenerated
+# on every `agentcore create` — never commit.
+#
+# Path-independent patterns so folder renames (e.g. examples/ ->
+# 3-examples/) don't silently disable ignoring.
+**/real-world/oboUc*Agent/
+**/real-world/*Agent/agentcore/
+**/real-world/*Agent/app/
+
+# CLI caches/state that may live alongside user code
+agentcore/.env.local
+agentcore/.cli/
+app/*/.venv/
+app/*/__pycache__/
+
+# ─── AWS CDK (used by AgentCore CLI under the hood) ────────────────────────
+cdk.out/
+.cdk.staging/
+
+# ─── Node.js ───────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Editors / OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Coverage / test reports ───────────────────────────────────────────────
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+
+# Note: the top-of-file `.env` rule and the AgentCore CLI patterns above
+# already cover every real-world/ example. The old UC2-specific block that
+# used to live here referenced `examples/**/02-agent-via-gateway/...` which
+# stopped matching after the folder was renamed to `3-examples/`. The
+# universal patterns above (**/real-world/oboUc*Agent/) are path-independent.

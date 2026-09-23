@@ -1,0 +1,9 @@
+# Core SDK
+bedrock-agentcore[strands-agents]>=1.9.0
+
+# Strands
+strands-agents>=1.0.0
+strands-agents-tools>=0.2.0
+
+# Shared
+python-dotenv>=1.0.0

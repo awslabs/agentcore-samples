@@ -1,9 +1,0 @@
-boto3>=1.40.50
-bedrock-agentcore>=0.1.7
-strands-agents[a2a]
-strands-agents-tools
-requests
-requests-aws4auth
-pyyaml
-fastapi
-uvicorn

@@ -24,7 +24,7 @@
     <a href="https://docs.aws.amazon.com/bedrock-agentcore/">Documentation</a>
     ◆ <a href="https://github.com/aws/bedrock-agentcore-sdk-python">Python SDK</a>
     ◆ <a href="https://github.com/aws/agentcore-cli">AgentCore CLI</a>
-    ◆ <a href="https://discord.gg/bedrockagentcore-preview">Discord</a>
+    ◆ <a href="https://discord.gg/strands">Discord</a>
   </p>
 </div>
 
@@ -65,7 +65,7 @@ Focused examples for individual AgentCore capabilities:
 - **[Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)** — Convert APIs, Lambda functions, and services into MCP-compatible tools
 - **[Identity](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity.html)** — Agent identity and access management across AWS and third-party apps
 - **[Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html)** — Managed memory infrastructure for personalized agent experiences
-- **[Tools](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html)** — Built-in Code Interpreter and Browser Tool
+- **[Tools](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html)** — Built-in Code Interpreter, Browser Tool, Web Search Tool
 - **[Observability](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability.html)** — Trace, debug, and monitor agent performance with OpenTelemetry
 - **[Evaluation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations.html)** — Built-in and custom evaluators for on-demand and online evaluation
 - **[Policy](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html)** — Fine-grained access control with Cedar policies
@@ -97,11 +97,23 @@ Production-ready templates for provisioning AgentCore resources with CloudFormat
 
 Complete, deployment-ready agentic applications with integrated services, authentication, and business logic you can customize for your use case.
 
-### 📦 [`legacy/`](./legacy/)
+### 📦 [`workshops/`](./06-workshops/) - Deprecated legacy code
 
-**Starter Toolkit Samples (Pending Migration)**
+⚠️ Recommendation: The Starter Toolkit CLI is no longer supported. Please use the AgentCore CLI.
 
-Samples that still depend on the [Bedrock AgentCore Starter Toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit) CLI. These will be migrated to the AgentCore CLI as SDK support rolls out. See [`MIGRATION.md`](./MIGRATION.md) for status.
+The AgentCore CLI (@aws/agentcore) is now the recommended way to create, develop, and deploy AI agents on Amazon Bedrock AgentCore. It supports a broader set of frameworks (Strands, LangGraph, LangChain, Google ADK, OpenAI Agents, and BYO), provides local development with hot reload, built-in evaluations, gateway management, and more.
+
+For new projects, install the AgentCore CLI:
+
+npm install -g @aws/agentcore
+Already installed this toolkit? Once you've migrated, uninstall it:
+
+pip uninstall bedrock-agentcore-starter-toolkit
+
+
+**Starter Toolkit Samples (Migration complete)**
+
+Please refer to this folder for [`Diving Deep  with AgentCore Workshop/`](./01-features/)
 
 ## Quick Start with the AgentCore CLI
 
@@ -159,7 +171,7 @@ agentcore add online-eval      # Enable continuous evaluation
 agentcore deploy               # Sync changes to AWS
 ```
 
-Congratulations! Your agent is now running on Amazon Bedrock AgentCore Runtime.
+Congratulations! Your agent is now running on Amazon Bedrock AgentCore runtime.
 
 For the full CLI reference, see the [AgentCore CLI documentation](https://github.com/aws/agentcore-cli).
 
@@ -206,7 +218,7 @@ jupyter notebook path/to/your/notebook.ipynb
 
 - [AgentCore CLI](https://github.com/aws/agentcore-cli)
 - [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
-- [Getting started with Amazon Bedrock AgentCore - Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/850fcd5c-fd1f-48d7-932c-ad9babede979/en-US)
+- [Getting started with Amazon Bedrock AgentCore - Workshop](https://catalog.workshops.aws/agentcore-getting-started/en-US)
 - [Diving Deep into Bedrock AgentCore - Workshop](https://catalog.workshops.aws/agentcore-deep-dive/en-US)
 - [Amazon Bedrock AgentCore pricing](https://aws.amazon.com/bedrock/agentcore/pricing/)
 - [Amazon Bedrock AgentCore FAQs](https://aws.amazon.com/bedrock/agentcore/faqs/)

@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "migration-common"
+version = "0.1.0"
+description = "Shared runtime for the AWS Agent Registry migration Glue jobs"
+requires-python = ">=3.9"
+
+[tool.setuptools]
+packages = ["migration_common"]

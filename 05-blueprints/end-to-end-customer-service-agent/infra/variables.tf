@@ -88,10 +88,44 @@ variable "gateway_api_key" {
   sensitive   = true
 }
 
-# Tavily Variables
-variable "tavily_api_key" {
-  description = "Tavily API key"
-  default     = ""
-  type        = string
-  sensitive   = true
+# Tavily Variables — REMOVED: replaced by AgentCore Web Search Tool (managed connector)
+# No API key or external service needed.
+
+# ---------------------------------------------------------------------------
+# Interceptor Variables
+# ---------------------------------------------------------------------------
+variable "interceptor_rate_limit_max" {
+  description = "Maximum number of tool calls allowed per caller per rate limit window"
+  type        = number
+  default     = 100
+}
+
+variable "interceptor_rate_limit_window" {
+  description = "Rate limit window in seconds (default 3600 = 1 hour)"
+  type        = number
+  default     = 3600
+}
+
+variable "interceptor_enable_rate_limit" {
+  description = "Set to false to disable rate limiting (useful for development)"
+  type        = bool
+  default     = true
+}
+
+variable "interceptor_enable_guardrail_checks" {
+  description = "Enable InvokeGuardrailChecks API integration in the interceptor"
+  type        = bool
+  default     = true
+}
+
+variable "interceptor_guardrail_block_threshold" {
+  description = "Severity score threshold (0-1) at which to block requests"
+  type        = number
+  default     = 0.8
+}
+
+variable "interceptor_guardrail_escalate_threshold" {
+  description = "Severity/confidence score threshold (0-1) at which to log/escalate"
+  type        = number
+  default     = 0.4
 }

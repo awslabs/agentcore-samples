@@ -1,0 +1,16 @@
+[project]
+name = "gatewaylabproject"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3",
+    "botocore",
+    "requests",
+    "mcp>=1.10.0",
+    "strands-agents",
+    "fastapi",
+    "uvicorn",
+    "openai",
+    "anthropic",
+    "litellm>=1.89.0",
+]

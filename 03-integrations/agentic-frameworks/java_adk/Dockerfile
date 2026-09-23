@@ -27,5 +27,9 @@ COPY --from=build /app/target/*.jar app.jar
 # - Platform: ARM64
 EXPOSE 8080
 
+# Create non-root user and transfer ownership
+RUN useradd -r -m -u 1001 appuser && chown -R appuser /app
+USER appuser
+
 # Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]

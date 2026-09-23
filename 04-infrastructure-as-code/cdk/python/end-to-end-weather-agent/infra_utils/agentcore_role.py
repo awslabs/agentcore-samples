@@ -3,9 +3,7 @@ from constructs import Construct
 
 
 class AgentCoreRole(iam.Role):
-    def __init__(
-        self, scope: Construct, construct_id: str, s3_bucket_arn: str = None, **kwargs
-    ):
+    def __init__(self, scope: Construct, construct_id: str, s3_bucket_arn: str = None, **kwargs):
         region = Stack.of(scope).region
         account_id = Stack.of(scope).account
 
@@ -35,9 +33,7 @@ class AgentCoreRole(iam.Role):
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
                 ],
-                resources=[
-                    f"arn:aws:logs:{region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*"
-                ],
+                resources=[f"arn:aws:logs:{region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*"],
             ),
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
@@ -53,9 +49,7 @@ class AgentCoreRole(iam.Role):
                 effect=iam.Effect.ALLOW,
                 actions=["cloudwatch:PutMetricData"],
                 resources=["*"],
-                conditions={
-                    "StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}
-                },
+                conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
             ),
             iam.PolicyStatement(
                 sid="GetAgentAccessToken",
@@ -93,9 +87,7 @@ class AgentCoreRole(iam.Role):
                     "bedrock-agentcore:ListBrowserSessions",
                     "bedrock-agentcore:TerminateBrowserSession",
                 ],
-                resources=[
-                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:browser/*"
-                ],
+                resources=[f"arn:aws:bedrock-agentcore:{region}:{account_id}:browser/*"],
             ),
             # Code Interpreter permissions
             iam.PolicyStatement(
@@ -107,9 +99,7 @@ class AgentCoreRole(iam.Role):
                     "bedrock-agentcore:InvokeCodeInterpreter",
                     "bedrock-agentcore:ListCodeInterpreterSessions",
                 ],
-                resources=[
-                    f"arn:aws:bedrock-agentcore:{region}:{account_id}:code-interpreter/*"
-                ],
+                resources=[f"arn:aws:bedrock-agentcore:{region}:{account_id}:code-interpreter/*"],
             ),
             # Memory permissions
             iam.PolicyStatement(
@@ -151,8 +141,6 @@ class AgentCoreRole(iam.Role):
             scope,
             construct_id,
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            inline_policies={
-                "AgentCorePolicy": iam.PolicyDocument(statements=statements)
-            },
+            inline_policies={"AgentCorePolicy": iam.PolicyDocument(statements=statements)},
             **kwargs,
         )

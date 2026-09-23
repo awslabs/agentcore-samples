@@ -134,17 +134,13 @@ def search_products(user_id: str, question: str) -> Dict[str, Any]:
         # Build response
         answer = f"Found {len(products)} products matching '{question}':\n\n"
         for i, product in enumerate(products, 1):
-            price_str = (
-                f"${product['price']}"
-                if isinstance(product["price"], (int, float))
-                else product["price"]
-            )
+            price_str = f"${product['price']}" if isinstance(product["price"], (int, float)) else product["price"]
             answer += f"{i}. {product['title']}\n"
             answer += f"   Price: {price_str}\n"
             if product.get("rating"):
                 answer += f"   Rating: {product['rating']}/5 ({product.get('reviews', 0)} reviews)\n"
             answer += f"   Product ID: {product['asin']}\n"
-            if product.get('source'):
+            if product.get("source"):
                 answer += f"   Source: {product['source']}\n"
             answer += f"   Link: {product['link']}\n\n"
 

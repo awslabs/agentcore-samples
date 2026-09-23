@@ -2,7 +2,7 @@
 name: Tutorial request
 about: Suggest a new tutorial you want to see
 title: Amazon Bedrock AgentCore Samples - [Example Request]
-labels: 01-tutorials, Tutorial Request
+labels: 06-workshops, Tutorial Request
 assignees: akshseh
 
 ---

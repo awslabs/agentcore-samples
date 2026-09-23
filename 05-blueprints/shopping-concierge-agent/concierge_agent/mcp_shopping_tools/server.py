@@ -20,9 +20,7 @@ if not REGION:
     raise ValueError("AWS_REGION environment variable is required")
 
 # Create MCP server
-mcp = FastMCP(
-    "Shopping Tools", host="0.0.0.0", stateless_http=True
-)  # nosec B104:standard pattern for containerized MCP servers
+mcp = FastMCP("Shopping Tools", host="0.0.0.0", stateless_http=True)  # nosec B104:standard pattern for containerized MCP servers
 
 
 # =============================================================================

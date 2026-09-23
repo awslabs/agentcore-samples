@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AgentCore Memory cross-region replication — per-region stack
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [primary, secondary]
+  RemoteRegion:
+    Type: String
+  RemoteMemoryId:
+    Type: String
+    Default: "PLACEHOLDER"
+  KinesisStreamName:
+    Type: String
+    Default: agentcore-memory-stream
+  LambdaS3Bucket:
+    Type: String
+  LambdaS3Key:
+    Type: String
+    Default: lambda/handler.zip
+
+Resources:
+  MemoryStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Ref KinesisStreamName
+      ShardCount: 1
+      RetentionPeriodHours: 24
+
+  ReplicationDLQ:
+    Type: AWS::SQS::Queue
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W48
+            reason: >-
+              Sample SQS queue uses default encryption
+    Properties:
+      QueueName: agentcore-replication-dlq
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 300
+
+  MemoryStreamingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "agentcore-memory-streaming-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: KinesisStreamWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecords
+                  - kinesis:DescribeStream
+                Resource: !GetAtt MemoryStream.Arn
+
+  ReplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "agentcore-replication-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ReplicationPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: KinesisRead
+                Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:DescribeStreamSummary
+                  - kinesis:ListShards
+                  - kinesis:ListStreams
+                Resource: !GetAtt MemoryStream.Arn
+              - Sid: DLQWrite
+                Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt ReplicationDLQ.Arn
+              - Sid: RemoteAgentCoreMemory
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:BatchCreateMemoryRecords
+                Resource: !Sub "arn:aws:bedrock-agentcore:${RemoteRegion}:${AWS::AccountId}:memory/*"
+
+  ReplicationConsumer:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-replication-consumer
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt ReplicationRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          REMOTE_REGION: !Ref RemoteRegion
+          REMOTE_MEMORY_ID: !Ref RemoteMemoryId
+          LOCAL_REGION: !Ref "AWS::Region"
+          DLQ_URL: !Ref ReplicationDLQ
+
+  KinesisEventMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt MemoryStream.Arn
+      FunctionName: !Ref ReplicationConsumer
+      StartingPosition: TRIM_HORIZON
+      BatchSize: 10
+      BisectBatchOnFunctionError: true
+      MaximumRetryAttempts: 3
+      MaximumRecordAgeInSeconds: 3600
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt ReplicationDLQ.Arn
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "agentcore-replication-lambda-errors-${Environment}"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ReplicationConsumer
+
+  DLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "agentcore-replication-dlq-depth-${Environment}"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ReplicationDLQ.QueueName
+
+  ReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "agentcore-replication-lag-${Environment}"
+      MetricName: IteratorAge
+      Namespace: AWS/Kinesis
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 900000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: StreamName
+          Value: !Ref KinesisStreamName
+
+Outputs:
+  StreamArn:
+    Value: !GetAtt MemoryStream.Arn
+  StreamName:
+    Value: !Ref KinesisStreamName
+  MemoryStreamingRoleArn:
+    Value: !GetAtt MemoryStreamingRole.Arn
+  StreamDeliveryConfig:
+    Description: Ready-to-use JSON for update-memory --stream-delivery-resources
+    Value: !Sub '{"resources":[{"kinesis":{"dataStreamArn":"${MemoryStream.Arn}","contentConfigurations":[{"type":"MEMORY_RECORDS","level":"FULL_CONTENT"}]}}]}'
+  LambdaArn:
+    Value: !GetAtt ReplicationConsumer.Arn
+  DLQUrl:
+    Value: !Ref ReplicationDLQ
+  DLQArn:
+    Value: !GetAtt ReplicationDLQ.Arn

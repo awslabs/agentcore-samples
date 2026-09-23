@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 def generate_proof_challenge():
     """Generate PKCE challenge for OAuth2"""
     # Generate verifier (43-128 characters)
-    verifier = (
-        base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
-    )
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
 
     # Generate challenge (SHA256 of verifier)
     challenge_bytes = hashlib.sha256(
@@ -59,12 +57,8 @@ def create_jwt_assertion(device_id: str):
     }
 
     # Create unsigned JWT (Visa accepts this)
-    header_b64 = (
-        base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
-    )
-    payload_b64 = (
-        base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-    )
+    header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
 
     return f"{header_b64}.{payload_b64}."
 
@@ -133,9 +127,7 @@ def get_secure_token_direct(api_key: str, client_app_id: str):
     }
 
     try:
-        response = requests.post(
-            url, headers=headers, data=urlencode(params), timeout=10
-        )
+        response = requests.post(url, headers=headers, data=urlencode(params), timeout=10)
 
         logger.info(f"Response received: {response.status_code}")
 
@@ -143,10 +135,7 @@ def get_secure_token_direct(api_key: str, client_app_id: str):
             response_data = response.json()
 
             # Extract the secureToken
-            if (
-                "issued_tokens" in response_data
-                and len(response_data["issued_tokens"]) > 0
-            ):
+            if "issued_tokens" in response_data and len(response_data["issued_tokens"]) > 0:
                 secure_token = response_data["issued_tokens"][0]["token"]
 
                 logger.info("=" * 70)

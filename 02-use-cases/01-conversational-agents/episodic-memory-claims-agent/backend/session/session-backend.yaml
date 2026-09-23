@@ -1,0 +1,481 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Insurance Claims Demo — Session Management API (API Gateway + Lambda + DynamoDB)'
+
+Parameters:
+  StackName:
+    Type: String
+    Description: Name for the stack (passed from deploy script)
+
+  CognitoStackName:
+    Type: String
+    Description: Name of the Cognito stack (for User Pool ARN reference)
+    Default: insurance-claims-demo
+
+  MemoryId:
+    Type: String
+    Default: ''
+    Description: (Fallback only) AgentCore Memory ID. Primary source is SSM (MemoryIdSsmParam).
+
+  MemoryIdSsmParam:
+    Type: String
+    Default: /insurance-claims-demo/memory_id
+    Description: SSM parameter name holding the current AgentCore Memory ID (source of truth).
+
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: Allowed CORS origin
+
+Resources:
+  # DynamoDB Table for Session Metadata
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${StackName}-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: actor_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: session_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: actor_id-index
+          KeySchema:
+            - AttributeName: actor_id
+              KeyType: HASH
+            - AttributeName: session_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt SessionsTable.Arn
+        - PolicyName: AgentCoreMemoryAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:ListEvents
+                  - bedrock-agentcore:GetMemory
+                Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/{{resolve:ssm:${MemoryIdSsmParam}}}'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${MemoryIdSsmParam}'
+
+  # Lambda Functions
+  CreateSessionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-create-session'
+      Runtime: python3.11
+      Handler: create_session.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/create_session/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  ListSessionsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-list-sessions'
+      Runtime: python3.11
+      Handler: list_sessions.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/list_sessions/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  GetSessionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-get-session'
+      Runtime: python3.11
+      Handler: get_session.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/get_session/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  UpdateSessionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-update-session'
+      Runtime: python3.11
+      Handler: update_session.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/update_session/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  DeleteSessionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-delete-session'
+      Runtime: python3.11
+      Handler: delete_session.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/delete_session/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  GetSessionMessagesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-get-session-messages'
+      Runtime: python3.11
+      Handler: get_session_messages.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/get_session_messages/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SessionsTable
+          MEMORY_ID_SSM_PARAM: !Ref MemoryIdSsmParam
+          MEMORY_ID: !Ref MemoryId
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  # API Gateway
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${StackName}-api'
+      Description: Session Management API for Insurance Claims Demo
+
+  # Cognito Authorizer (references existing Cognito stack)
+  ApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref RestApi
+      ProviderARNs:
+        - Fn::ImportValue: !Sub '${CognitoStackName}-pool-arn'
+
+  # API Resources
+  SessionsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: sessions
+
+  SessionIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref SessionsResource
+      PathPart: '{session_id}'
+
+  SessionMessagesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref SessionIdResource
+      PathPart: messages
+
+  # POST /sessions
+  CreateSessionMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionsResource
+      HttpMethod: POST
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateSessionFunction.Arn}/invocations'
+
+  # GET /sessions
+  ListSessionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionsResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListSessionsFunction.Arn}/invocations'
+
+  # GET /sessions/{session_id}
+  GetSessionMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionIdResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetSessionFunction.Arn}/invocations'
+
+  # PATCH /sessions/{session_id}
+  UpdateSessionMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionIdResource
+      HttpMethod: PATCH
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdateSessionFunction.Arn}/invocations'
+
+  # DELETE /sessions/{session_id}
+  DeleteSessionMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionIdResource
+      HttpMethod: DELETE
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteSessionFunction.Arn}/invocations'
+
+  # GET /sessions/{session_id}/messages
+  GetSessionMessagesMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionMessagesResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetSessionMessagesFunction.Arn}/invocations'
+
+  # CORS OPTIONS methods
+  SessionsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  SessionIdOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionIdResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  SessionMessagesOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SessionMessagesResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda Permissions (allow API Gateway to invoke)
+  CreateSessionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateSessionFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  ListSessionsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListSessionsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  GetSessionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetSessionFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  UpdateSessionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateSessionFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  DeleteSessionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteSessionFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  GetSessionMessagesPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetSessionMessagesFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  # API Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - CreateSessionMethod
+      - ListSessionsMethod
+      - GetSessionMethod
+      - UpdateSessionMethod
+      - DeleteSessionMethod
+      - GetSessionMessagesMethod
+      - SessionsOptionsMethod
+      - SessionIdOptionsMethod
+      - SessionMessagesOptionsMethod
+    Properties:
+      RestApiId: !Ref RestApi
+      Description: !Sub 'Deployment ${AWS::StackName}'
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub '${StackName}-ApiUrl'
+
+  TableName:
+    Description: DynamoDB Table Name
+    Value: !Ref SessionsTable
+    Export:
+      Name: !Sub '${StackName}-TableName'

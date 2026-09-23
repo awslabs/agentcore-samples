@@ -232,9 +232,7 @@ def onboard_card_endpoint():
         x_request_id = str(uuid.uuid4())
 
         # Step 1: Enroll the card
-        enrollment_result = flow.enroll_pan(
-            email, pan_data, CLIENT_APP_ID, x_request_id=x_request_id
-        )
+        enrollment_result = flow.enroll_pan(email, pan_data, CLIENT_APP_ID, x_request_id=x_request_id)
         vpan_enrollment_id = enrollment_result["vPanEnrollmentID"]
 
         # Step 2: Provision the token
@@ -271,9 +269,7 @@ def onboard_card_endpoint():
                 "vProvisionedTokenId": result.get("vProvisionedTokenId"),
                 "lastFourDigits": result.get("lastFourDigits"),
                 "secureToken": secure_token,  # Return secure token for device attestation
-                "xRequestId": result.get(
-                    "xRequestId"
-                ),  # Return x_request_id for VPP session continuity
+                "xRequestId": result.get("xRequestId"),  # Return x_request_id for VPP session continuity
                 "clientReferenceId": client_reference_id,  # Return client_reference_id for transaction tracking
             }
         )
@@ -324,14 +320,10 @@ def device_attestation_endpoint():
         v_provisioned_token_id = data.get("vProvisionedTokenId")
         secure_token = data.get("secureToken")
         browser_data = data.get("browserData")
-        step = data.get(
-            "step", "AUTHENTICATE"
-        )  # Default to AUTHENTICATE for backward compatibility
+        step = data.get("step", "AUTHENTICATE")  # Default to AUTHENTICATE for backward compatibility
         # Note: panData is no longer needed - we use email for encAuthenticationData
         x_request_id = data.get("xRequestId")  # VPP session x-request-id
-        client_reference_id = data.get(
-            "clientReferenceId"
-        )  # Transaction client_reference_id (reuse from onboard-card)
+        client_reference_id = data.get("clientReferenceId")  # Transaction client_reference_id (reuse from onboard-card)
 
         print(f"Email: {email}")
         print(f"TokenId: {v_provisioned_token_id}")
@@ -340,13 +332,9 @@ def device_attestation_endpoint():
 
         # Validate required fields
         if not client_reference_id:
-            raise ValueError(
-                "clientReferenceId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("clientReferenceId is required - must be passed from onboard-card response")
         if not x_request_id:
-            raise ValueError(
-                "xRequestId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("xRequestId is required - must be passed from onboard-card response")
 
         if step == "AUTHENTICATE":
             # Step 4: Device Attestation Authenticate (reasonCode=PAYMENT, type=AUTHENTICATE)
@@ -407,9 +395,7 @@ def device_attestation_endpoint():
             )
 
         else:
-            raise ValueError(
-                f"Invalid step: {step}. Must be 'AUTHENTICATE' or 'REGISTER'"
-            )
+            raise ValueError(f"Invalid step: {step}. Must be 'AUTHENTICATE' or 'REGISTER'")
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
@@ -444,9 +430,7 @@ def complete_passkey_endpoint():
         fido_blob = data.get("fidoBlob")
 
         print(f"TokenId: {v_provisioned_token_id}")
-        print(
-            f"FidoBlob: {'present' if fido_blob else 'None'} (length: {len(fido_blob) if fido_blob else 0})"
-        )
+        print(f"FidoBlob: {'present' if fido_blob else 'None'} (length: {len(fido_blob) if fido_blob else 0})")
 
         if not fido_blob or (isinstance(fido_blob, str) and fido_blob.strip() == ""):
             raise ValueError("fidoBlob is empty")
@@ -511,9 +495,7 @@ def device_binding_endpoint():
         email = data.get("email")
         browser_data = data.get("browserData")
         x_request_id = data.get("xRequestId")  # VPP session x-request-id
-        client_reference_id = data.get(
-            "clientReferenceId"
-        )  # Transaction client_reference_id (reuse from onboard-card)
+        client_reference_id = data.get("clientReferenceId")  # Transaction client_reference_id (reuse from onboard-card)
 
         print(f"TokenId: {v_provisioned_token_id}")
         print(f"Email: {email}")
@@ -521,13 +503,9 @@ def device_binding_endpoint():
 
         # Validate required fields
         if not client_reference_id:
-            raise ValueError(
-                "clientReferenceId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("clientReferenceId is required - must be passed from onboard-card response")
         if not x_request_id:
-            raise ValueError(
-                "xRequestId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("xRequestId is required - must be passed from onboard-card response")
 
         # Call device_binding from flow.py
         result = flow.device_binding(
@@ -589,22 +567,16 @@ def step_up_endpoint():
         identifier = data.get("identifier")
         method = data.get("method")
         x_request_id = data.get("xRequestId")  # VPP session x-request-id
-        client_reference_id = data.get(
-            "clientReferenceId"
-        )  # Transaction client_reference_id (reuse from onboard-card)
+        client_reference_id = data.get("clientReferenceId")  # Transaction client_reference_id (reuse from onboard-card)
 
         print(f"TokenId: {v_provisioned_token_id}")
         print(f"Method: {method}")
 
         # Validate required fields
         if not client_reference_id:
-            raise ValueError(
-                "clientReferenceId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("clientReferenceId is required - must be passed from onboard-card response")
         if not x_request_id:
-            raise ValueError(
-                "xRequestId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("xRequestId is required - must be passed from onboard-card response")
 
         # Call step_up from flow.py
         result = flow.step_up(
@@ -654,22 +626,16 @@ def validate_otp_endpoint():
         v_provisioned_token_id = data.get("vProvisionedTokenId")
         otp_value = data.get("otpValue")
         x_request_id = data.get("xRequestId")  # VPP session x-request-id
-        client_reference_id = data.get(
-            "clientReferenceId"
-        )  # Transaction client_reference_id (reuse from onboard-card)
+        client_reference_id = data.get("clientReferenceId")  # Transaction client_reference_id (reuse from onboard-card)
 
         print(f"TokenId: {v_provisioned_token_id}")
         print(f"OTP: {'*' * len(otp_value) if otp_value else 'None'}")
 
         # Validate required fields
         if not client_reference_id:
-            raise ValueError(
-                "clientReferenceId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("clientReferenceId is required - must be passed from onboard-card response")
         if not x_request_id:
-            raise ValueError(
-                "xRequestId is required - must be passed from onboard-card response"
-            )
+            raise ValueError("xRequestId is required - must be passed from onboard-card response")
 
         # Call validate_otp from flow.py
         result = flow.validate_otp(
@@ -683,9 +649,7 @@ def validate_otp_endpoint():
         print("✅ OTP validated")
         print(f"Status: {result.get('status')}")
 
-        return jsonify(
-            {"success": True, "status": result.get("status"), "result": result}
-        )
+        return jsonify({"success": True, "status": result.get("status"), "result": result})
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
@@ -811,12 +775,8 @@ def vic_initiate_purchase_endpoint():
         # Truncate consumer_request to avoid Visa API 400 error (max 150 chars)
         MAX_CONSUMER_REQUEST_LENGTH = 150
         if len(consumer_request_raw) > MAX_CONSUMER_REQUEST_LENGTH:
-            consumer_request = (
-                consumer_request_raw[: MAX_CONSUMER_REQUEST_LENGTH - 3] + "..."
-            )
-            print(
-                f"⚠️  Consumer request truncated from {len(consumer_request_raw)} to {len(consumer_request)} chars"
-            )
+            consumer_request = consumer_request_raw[: MAX_CONSUMER_REQUEST_LENGTH - 3] + "..."
+            print(f"⚠️  Consumer request truncated from {len(consumer_request_raw)} to {len(consumer_request)} chars")
         else:
             consumer_request = consumer_request_raw
 
@@ -959,9 +919,7 @@ if __name__ == "__main__":
     print(f"  POST {protocol}://localhost:5001/api/visa/complete-passkey")
     print()
     if use_ssl:
-        print(
-            "⚠️  You may see SSL warnings - this is normal for self-signed certificates"
-        )
+        print("⚠️  You may see SSL warnings - this is normal for self-signed certificates")
         print("   Click 'Advanced' -> 'Proceed to localhost' in your browser")
         print()
         print("💡 TIP: Run with --http flag to use HTTP instead (no SSL warnings)")

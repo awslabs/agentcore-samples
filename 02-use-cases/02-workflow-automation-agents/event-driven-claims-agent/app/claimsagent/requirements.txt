@@ -1,0 +1,7 @@
+# Bounds mirror pyproject.toml. The Dockerfile installs from THIS file, so the
+# upper bounds must live here to keep the deployed container reproducible.
+aws-opentelemetry-distro>=0.18.0,<1.0
+bedrock-agentcore>=1.15.0,<2.0
+botocore[crt]>=1.43.36,<2.0
+mcp>=1.28.0,<2.0
+strands-agents>=1.44.0,<2.0

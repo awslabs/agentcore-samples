@@ -41,11 +41,7 @@ def fetch_agent_runtimes(region: str = "us-east-1") -> List[Dict]:
         response = client.list_agent_runtimes(maxResults=100)
 
         # Filter only READY agents and sort by name
-        ready_agents = [
-            agent
-            for agent in response.get("agentRuntimes", [])
-            if agent.get("status") == "READY"
-        ]
+        ready_agents = [agent for agent in response.get("agentRuntimes", []) if agent.get("status") == "READY"]
 
         # Sort by most recent update time (newest first)
         ready_agents.sort(key=lambda x: x.get("lastUpdatedAt", ""), reverse=True)
@@ -56,20 +52,14 @@ def fetch_agent_runtimes(region: str = "us-east-1") -> List[Dict]:
         return []
 
 
-def fetch_agent_runtime_versions(
-    agent_runtime_id: str, region: str = "us-east-1"
-) -> List[Dict]:
+def fetch_agent_runtime_versions(agent_runtime_id: str, region: str = "us-east-1") -> List[Dict]:
     """Fetch versions for a specific agent runtime"""
     try:
         client = boto3.client("bedrock-agentcore-control", region_name=region)
         response = client.list_agent_runtime_versions(agentRuntimeId=agent_runtime_id)
 
         # Filter only READY versions
-        ready_versions = [
-            version
-            for version in response.get("agentRuntimes", [])
-            if version.get("status") == "READY"
-        ]
+        ready_versions = [version for version in response.get("agentRuntimes", []) if version.get("status") == "READY"]
 
         # Sort by most recent update time (newest first)
         ready_versions.sort(key=lambda x: x.get("lastUpdatedAt", ""), reverse=True)
@@ -181,9 +171,7 @@ def parse_streaming_chunk(chunk: str) -> str:
                     first_item = content[0]
                     if isinstance(first_item, dict) and "text" in first_item:
                         extracted_text = first_item["text"]
-                        logger.debug(
-                            f"parse_streaming_chunk: Extracted text: {extracted_text}"
-                        )
+                        logger.debug(f"parse_streaming_chunk: Extracted text: {extracted_text}")
                         return extracted_text
                     else:
                         return str(first_item)
@@ -201,17 +189,13 @@ def parse_streaming_chunk(chunk: str) -> str:
 
         # Try to handle Python dict string representation (with single quotes)
         if chunk.strip().startswith("{") and "'" in chunk:
-            logger.debug(
-                "parse_streaming_chunk: Attempting to handle Python dict string"
-            )
+            logger.debug("parse_streaming_chunk: Attempting to handle Python dict string")
             try:
                 # Try to convert single quotes to double quotes for JSON parsing
                 # This is a simple approach - might need refinement for complex cases
                 json_chunk = chunk.replace("'", '"')
                 data = json.loads(json_chunk)
-                logger.debug(
-                    f"parse_streaming_chunk: Successfully converted and parsed: {data}"
-                )
+                logger.debug(f"parse_streaming_chunk: Successfully converted and parsed: {data}")
 
                 # Handle the specific format
                 if isinstance(data, dict) and "role" in data and "content" in data:
@@ -220,9 +204,7 @@ def parse_streaming_chunk(chunk: str) -> str:
                         first_item = content[0]
                         if isinstance(first_item, dict) and "text" in first_item:
                             extracted_text = first_item["text"]
-                            logger.debug(
-                                f"parse_streaming_chunk: Extracted text from converted dict: {extracted_text}"
-                            )
+                            logger.debug(f"parse_streaming_chunk: Extracted text from converted dict: {extracted_text}")
                             return extracted_text
                         else:
                             return str(first_item)
@@ -231,9 +213,7 @@ def parse_streaming_chunk(chunk: str) -> str:
                 else:
                     return extract_text_from_response(data)
             except json.JSONDecodeError:
-                logger.debug(
-                    "parse_streaming_chunk: Failed to convert Python dict string"
-                )
+                logger.debug("parse_streaming_chunk: Failed to convert Python dict string")
                 pass
 
         # If all parsing fails, return the chunk as-is
@@ -279,9 +259,7 @@ def invoke_agent_streaming(
                             else:
                                 yield parsed_chunk
                     else:
-                        logger.debug(
-                            f"Line doesn't start with 'data: ', skipping: {line}"
-                        )
+                        logger.debug(f"Line doesn't start with 'data: ', skipping: {line}")
         else:
             logger.debug("Using non-streaming response path")
             # Handle non-streaming JSON response
@@ -313,19 +291,11 @@ def invoke_agent_streaming(
                             # Extract text from the nested structure
                             if "role" in actual_data and "content" in actual_data:
                                 content_list = actual_data["content"]
-                                if (
-                                    isinstance(content_list, list)
-                                    and len(content_list) > 0
-                                ):
+                                if isinstance(content_list, list) and len(content_list) > 0:
                                     first_item = content_list[0]
-                                    if (
-                                        isinstance(first_item, dict)
-                                        and "text" in first_item
-                                    ):
+                                    if isinstance(first_item, dict) and "text" in first_item:
                                         extracted_text = first_item["text"]
-                                        logger.debug(
-                                            f"Extracted text: {extracted_text}"
-                                        )
+                                        logger.debug(f"Extracted text: {extracted_text}")
                                         yield extracted_text
                                     else:
                                         yield str(first_item)
@@ -407,9 +377,7 @@ def main():
                 agent_runtime_id = unique_agents[selected_agent_name]
 
                 with st.spinner("Loading versions..."):
-                    agent_versions = fetch_agent_runtime_versions(
-                        agent_runtime_id, region
-                    )
+                    agent_versions = fetch_agent_runtime_versions(agent_runtime_id, region)
 
                 if agent_versions:
                     version_options = []
@@ -428,7 +396,7 @@ def main():
                                 if hasattr(updated, "strftime"):
                                     updated_str = updated.strftime("%m/%d %H:%M")
                                     version_display += f" ({updated_str})"
-                            except:
+                            except Exception:
                                 pass
 
                         version_options.append(version_display)
@@ -467,9 +435,7 @@ def main():
 
             # Fallback manual input
             st.subheader("Manual ARN Input")
-            agent_arn = st.text_input(
-                "Agent ARN", value="", help="Enter your Bedrock AgentCore ARN manually"
-            )
+            agent_arn = st.text_input("Agent ARN", value="", help="Enter your Bedrock AgentCore ARN manually")
         if st.button("Refresh", key="refresh_agents", help="Refresh agent list"):
             st.rerun()
 
@@ -547,9 +513,7 @@ def main():
             return
 
         # Add user message to chat history
-        st.session_state.messages.append(
-            {"role": "user", "content": prompt, "avatar": HUMAN_AVATAR}
-        )
+        st.session_state.messages.append({"role": "user", "content": prompt, "avatar": HUMAN_AVATAR})
         with st.chat_message("user", avatar=HUMAN_AVATAR):
             st.markdown(prompt)
 
@@ -573,25 +537,17 @@ def main():
 
                     # Ensure chunk is a string before concatenating
                     if not isinstance(chunk, str):
-                        logger.debug(
-                            f"MAIN LOOP: Converting non-string chunk to string"
-                        )
+                        logger.debug("MAIN LOOP: Converting non-string chunk to string")
                         chunk = str(chunk)
 
                     # Add chunk to buffer
                     chunk_buffer += chunk
 
                     # Only update display every few chunks or when we hit certain characters
-                    if (
-                        len(chunk_buffer) % 3 == 0
-                        or chunk.endswith(" ")
-                        or chunk.endswith("\n")
-                    ):
+                    if len(chunk_buffer) % 3 == 0 or chunk.endswith(" ") or chunk.endswith("\n"):
                         if auto_format:
                             # Clean the accumulated response
-                            cleaned_response = clean_response_text(
-                                chunk_buffer, show_thinking
-                            )
+                            cleaned_response = clean_response_text(chunk_buffer, show_thinking)
                             message_placeholder.markdown(cleaned_response + " ▌")
                         else:
                             # Show raw response
@@ -618,9 +574,7 @@ def main():
                 full_response = error_msg
 
         # Add assistant response to chat history
-        st.session_state.messages.append(
-            {"role": "assistant", "content": full_response, "avatar": AI_AVATAR}
-        )
+        st.session_state.messages.append({"role": "assistant", "content": full_response, "avatar": AI_AVATAR})
 
 
 if __name__ == "__main__":

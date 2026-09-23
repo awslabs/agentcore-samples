@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared VPC + S3 Files infrastructure for AgentCore coding agents
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+  BucketName:
+    Type: String
+    Description: S3 bucket name (agentcore-<account-id>)
+  S3FilesPrefix:
+    Type: String
+    Default: "agents/"
+
+Mappings:
+  AgentCoreAZs:
+    us-east-1:
+      AZ1: use1-az1
+      AZ2: use1-az2
+    us-east-2:
+      AZ1: use2-az1
+      AZ2: use2-az2
+    us-west-2:
+      AZ1: usw2-az1
+      AZ2: usw2-az2
+    eu-west-1:
+      AZ1: euw1-az1
+      AZ2: euw1-az2
+    eu-central-1:
+      AZ1: euc1-az1
+      AZ2: euc1-az2
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: coding-agents-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: coding-agents-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: coding-agents-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: coding-agents-public-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.11.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
+      Tags:
+        - Key: Name
+          Value: coding-agents-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.12.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
+      Tags:
+        - Key: Name
+          Value: coding-agents-private-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: coding-agents-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: coding-agents-nat
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: coding-agents-private-rt
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for coding agent runtimes
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: "10.0.0.0/16"
+          Description: NFS for S3 Files mount
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+          Description: All outbound
+      Tags:
+        - Key: Name
+          Value: coding-agents-sg
+
+  S3FilesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "s3files-${BucketName}-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticfilesystem.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: s3files-bucket-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:AbortMultipartUpload
+                  - s3:DeleteObject*
+                  - s3:GetObject*
+                  - s3:List*
+                  - s3:PutObject*
+                  - s3:ListBucketVersions
+                Resource:
+                  - !Sub "arn:aws:s3:::${BucketName}"
+                  - !Sub "arn:aws:s3:::${BucketName}/*"
+              - Sid: UseKmsKeyWithS3Files
+                Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncryptFrom
+                  - kms:ReEncryptTo
+                Condition:
+                  StringLike:
+                    kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+                    kms:EncryptionContext:aws:s3:arn:
+                      - !Sub "arn:aws:s3:::${BucketName}"
+                      - !Sub "arn:aws:s3:::${BucketName}/*"
+                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: EventBridgeManage
+                Effect: Allow
+                Action:
+                  - events:DeleteRule
+                  - events:DisableRule
+                  - events:EnableRule
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                Condition:
+                  StringEquals:
+                    events:ManagedBy: elasticfilesystem.amazonaws.com
+                Resource:
+                  - "arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"
+              - Sid: EventBridgeRead
+                Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListRuleNamesByTarget
+                  - events:ListRules
+                  - events:ListTargetsByRule
+                Resource:
+                  - "arn:aws:events:*:*:rule/*"
+
+  S3FilesFileSystem:
+    Type: AWS::S3Files::FileSystem
+    DependsOn: S3FilesRole
+    Properties:
+      Bucket: !Sub "arn:aws:s3:::${BucketName}"
+      Prefix: !Ref S3FilesPrefix
+      RoleArn: !GetAtt S3FilesRole.Arn
+
+  S3FilesAccessPoint:
+    Type: AWS::S3Files::AccessPoint
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      PosixUser:
+        Uid: 1000
+        Gid: 1000
+      RootDirectory:
+        Path: /mnt/s3files
+        CreationPermissions:
+          OwnerUid: 1000
+          OwnerGid: 1000
+          Permissions: "755"
+
+  S3FilesMountTarget1:
+    Type: AWS::S3Files::MountTarget
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref SecurityGroup
+
+  S3FilesMountTarget2:
+    Type: AWS::S3Files::MountTarget
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref SecurityGroup
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+  PrivateSubnet1Id:
+    Value: !Ref PrivateSubnet1
+  PrivateSubnet2Id:
+    Value: !Ref PrivateSubnet2
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+  S3FilesFileSystemId:
+    Value: !Ref S3FilesFileSystem
+  S3FilesAccessPointId:
+    Value: !Ref S3FilesAccessPoint
+  S3FilesAccessPointArn:
+    Value: !GetAtt S3FilesAccessPoint.AccessPointArn
+  S3FilesRoleArn:
+    Value: !GetAtt S3FilesRole.Arn

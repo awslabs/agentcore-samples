@@ -13,21 +13,21 @@ def lambda_handler(event, context):
         # Use FilterExpression to filter at DynamoDB level, not in memory
         tenant_items = []
         last_evaluated_key = None
-        
+
         while True:
             scan_kwargs = {
                 "FilterExpression": Attr("aggregation_key").begins_with("tenant:"),
                 # Only retrieve fields needed by the frontend
                 "ProjectionExpression": "aggregation_key, tenant_id, total_tokens, token_limit, #ts",
-                "ExpressionAttributeNames": {"#ts": "timestamp"}  # 'timestamp' is a reserved word
+                "ExpressionAttributeNames": {"#ts": "timestamp"},  # 'timestamp' is a reserved word
             }
-            
+
             if last_evaluated_key:
                 scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
-            
+
             response = aggregation_table.scan(**scan_kwargs)
             tenant_items.extend(response.get("Items", []))
-            
+
             last_evaluated_key = response.get("LastEvaluatedKey")
             if not last_evaluated_key:
                 break

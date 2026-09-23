@@ -1,0 +1,10 @@
+bedrock-agentcore
+boto3
+strands-agents>=0.1.8
+strands-agents-tools>=0.1.6
+nova-act
+browser-use
+playwright>=1.40.0
+rich>=13.0.0
+fastapi>=0.109.0
+uvicorn>=0.27.0

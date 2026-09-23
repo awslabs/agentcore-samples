@@ -22,9 +22,7 @@ class AgentCoreRole(iam.Role):
                                 "ecr:GetDownloadUrlForLayer",
                                 "ecr:BatchCheckLayerAvailability",
                             ],
-                            resources=[
-                                f"arn:aws:ecr:{region}:{account_id}:repository/*"
-                            ],
+                            resources=[f"arn:aws:ecr:{region}:{account_id}:repository/*"],
                         ),
                         iam.PolicyStatement(
                             sid="ECRTokenAccess",
@@ -59,11 +57,7 @@ class AgentCoreRole(iam.Role):
                             effect=iam.Effect.ALLOW,
                             actions=["cloudwatch:PutMetricData"],
                             resources=["*"],
-                            conditions={
-                                "StringEquals": {
-                                    "cloudwatch:namespace": "bedrock-agentcore"
-                                }
-                            },
+                            conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
                         ),
                         iam.PolicyStatement(
                             sid="GetAgentAccessToken",

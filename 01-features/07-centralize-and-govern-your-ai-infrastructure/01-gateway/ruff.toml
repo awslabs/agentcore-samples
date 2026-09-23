@@ -1,0 +1,11 @@
+# Exclude the agentcore-cli scaffold templates from Ruff's project-discovery
+# walk. The files under `agentcore-cli/src/assets/python/.../pyproject.toml`
+# are Handlebars templates (e.g. `{{#if (eq modelProvider "Bedrock")}}`),
+# not valid TOML — Ruff errors out trying to parse them as real project
+# manifests.
+
+extend-exclude = [
+    "agentcore-cli/",
+    "**/agentcore/.cache/**",
+    "**/.venv/**",
+]

@@ -69,9 +69,7 @@ def get_gateway_access_token() -> str:
     try:
         # Get client secret from Cognito
         cognito = boto3.client("cognito-idp", region_name=region)
-        response = cognito.describe_user_pool_client(
-            UserPoolId=user_pool_id, ClientId=client_id
-        )
+        response = cognito.describe_user_pool_client(UserPoolId=user_pool_id, ClientId=client_id)
         client_secret = response["UserPoolClient"]["ClientSecret"]
 
         # Get Cognito domain
@@ -132,21 +130,15 @@ def get_gateway_client(tool_filter_pattern: str, prefix: str = "gateway") -> MCP
     region = os.environ.get("AWS_REGION", "us-east-1")
     deployment_id = os.getenv("DEPLOYMENT_ID", "default")
 
-    gateway_url = get_ssm_parameter(
-        f"/concierge-agent/{deployment_id}/gateway-url", region
-    )
+    gateway_url = get_ssm_parameter(f"/concierge-agent/{deployment_id}/gateway-url", region)
     access_token = get_gateway_access_token()
 
-    logger.info(
-        f"Creating Gateway MCP client with filter: {tool_filter_pattern}, prefix: {prefix}"
-    )
+    logger.info(f"Creating Gateway MCP client with filter: {tool_filter_pattern}, prefix: {prefix}")
 
     tool_filters = {"allowed": [re.compile(tool_filter_pattern)]}
 
     client = MCPClient(
-        lambda: streamablehttp_client(
-            url=gateway_url, headers={"Authorization": f"Bearer {access_token}"}
-        ),
+        lambda: streamablehttp_client(url=gateway_url, headers={"Authorization": f"Bearer {access_token}"}),
         prefix=prefix,
         tool_filters=tool_filters,
     )

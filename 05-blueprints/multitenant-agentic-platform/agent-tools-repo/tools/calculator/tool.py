@@ -3,20 +3,21 @@ import math
 import ast
 import operator
 
+
 @tool
 def calculator(expression: str) -> str:
     """
     Perform mathematical calculations.
-    
+
     This tool evaluates mathematical expressions safely, supporting
     basic arithmetic and common mathematical functions.
-    
+
     Args:
         expression: Mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)", "sin(pi/2)")
-        
+
     Returns:
         Calculation result as string
-        
+
     Example:
         result = calculator("2 * (3 + 4)")
         result = calculator("sqrt(144)")
@@ -32,19 +33,26 @@ def calculator(expression: str) -> str:
             ast.USub: operator.neg,
             ast.UAdd: operator.pos,
         }
-        
+
         allowed_functions = {
-            'abs': abs, 'round': round, 'min': min, 'max': max,
-            'pow': pow,
-            'sqrt': math.sqrt, 'sin': math.sin, 'cos': math.cos,
-            'tan': math.tan, 'log': math.log, 'log10': math.log10,
-            'exp': math.exp, 'floor': math.floor, 'ceil': math.ceil,
+            "abs": abs,
+            "round": round,
+            "min": min,
+            "max": max,
+            "pow": pow,
+            "sqrt": math.sqrt,
+            "sin": math.sin,
+            "cos": math.cos,
+            "tan": math.tan,
+            "log": math.log,
+            "log10": math.log10,
+            "exp": math.exp,
+            "floor": math.floor,
+            "ceil": math.ceil,
         }
-        
-        allowed_constants = {
-            'pi': math.pi, 'e': math.e
-        }
-        
+
+        allowed_constants = {"pi": math.pi, "e": math.e}
+
         def safe_eval(node):
             if isinstance(node, ast.Constant):  # Numbers
                 return node.value
@@ -75,11 +83,11 @@ def calculator(expression: str) -> str:
                 return allowed_constants[node.id]
             else:
                 raise ValueError(f"Unsupported expression type: {type(node).__name__}")
-        
+
         # Parse the expression
-        tree = ast.parse(expression, mode='eval')
+        tree = ast.parse(expression, mode="eval")
         result = safe_eval(tree.body)
-        
+
         # Format result
         if isinstance(result, float):
             # Round to reasonable precision
@@ -89,7 +97,7 @@ def calculator(expression: str) -> str:
                 return f"Result: {round(result, 10)}"
         else:
             return f"Result: {result}"
-            
+
     except ZeroDivisionError:
         return "Error: Division by zero"
     except SyntaxError:

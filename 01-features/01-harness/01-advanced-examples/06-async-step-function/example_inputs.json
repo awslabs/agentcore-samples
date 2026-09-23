@@ -1,0 +1,57 @@
+{
+  "examples": [
+    {
+      "description": "Simple weather query for today",
+      "input": {
+        "city": "New York",
+        "date": "today"
+      }
+    },
+    {
+      "description": "Future forecast",
+      "input": {
+        "city": "Tokyo",
+        "date": "2024-12-25"
+      }
+    },
+    {
+      "description": "Historical weather (if available)",
+      "input": {
+        "city": "London",
+        "date": "2024-01-01"
+      }
+    },
+    {
+      "description": "Multiple word city name",
+      "input": {
+        "city": "San Francisco",
+        "date": "tomorrow"
+      }
+    },
+    {
+      "description": "International city",
+      "input": {
+        "city": "São Paulo",
+        "date": "2024-06-20"
+      }
+    },
+    {
+      "description": "City with state/country",
+      "input": {
+        "city": "Paris, France",
+        "date": "2024-07-14"
+      }
+    }
+  ],
+  "multi_city_batch": {
+    "description": "Run multiple cities in one batch using Step Functions Map state",
+    "cities": [
+      "New York",
+      "London",
+      "Tokyo",
+      "Sydney",
+      "Mumbai"
+    ],
+    "date": "2024-12-31"
+  }
+}

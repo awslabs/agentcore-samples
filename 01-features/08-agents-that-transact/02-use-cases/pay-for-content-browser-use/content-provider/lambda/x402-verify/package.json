@@ -1,0 +1,7 @@
+{
+  "name": "agentcore-x402-verify",
+  "version": "1.0.0",
+  "description": "Lambda@Edge function — x402 v2 paywall handler for AgentCore Payments demo",
+  "main": "index.js",
+  "dependencies": {}
+}

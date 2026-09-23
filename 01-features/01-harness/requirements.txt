@@ -1,0 +1,9 @@
+# boto3 1.43.32 is the first release whose bedrock-agentcore model knows the
+# `awsSkills` skill source. On anything older, 13-aws-skills and
+# 02-use-cases/03-aws-builder-agent die before they create anything with:
+#   ParamValidationError: Unknown parameter in skills[0]: "awsSkills",
+#   must be one of: path
+# (`git`/`s3` skill sources landed in 1.43.17 — 04-weather-agent needs those —
+# and `awsSkills` in 1.43.32, so 1.43.32 is the floor that covers every sample.)
+boto3>=1.43.32
+requests

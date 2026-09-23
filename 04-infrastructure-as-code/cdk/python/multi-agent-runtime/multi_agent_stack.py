@@ -91,11 +91,7 @@ class MultiAgentStack(Stack):
             "Agent1ExecutionRole",
             role_name=f"{self.stack_name}-agent1-execution-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "BedrockAgentCoreFullAccess"
-                )
-            ],
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("BedrockAgentCoreFullAccess")],
             inline_policies={
                 "Agent1ExecutionPolicy": iam.PolicyDocument(
                     statements=[
@@ -143,11 +139,7 @@ class MultiAgentStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["cloudwatch:PutMetricData"],
                             resources=["*"],
-                            conditions={
-                                "StringEquals": {
-                                    "cloudwatch:namespace": "bedrock-agentcore"
-                                }
-                            },
+                            conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
                         ),
                         iam.PolicyStatement(
                             sid="GetAgentAccessToken",
@@ -175,9 +167,7 @@ class MultiAgentStack(Stack):
                             sid="InvokeAgent2Runtime",
                             effect=iam.Effect.ALLOW,
                             actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                            resources=[
-                                f"arn:aws:bedrock-agentcore:{self.region}:{self.account}:runtime/*"
-                            ],
+                            resources=[f"arn:aws:bedrock-agentcore:{self.region}:{self.account}:runtime/*"],
                         ),
                     ]
                 )
@@ -189,11 +179,7 @@ class MultiAgentStack(Stack):
             "Agent2ExecutionRole",
             role_name=f"{self.stack_name}-agent2-execution-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "BedrockAgentCoreFullAccess"
-                )
-            ],
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("BedrockAgentCoreFullAccess")],
             inline_policies={
                 "Agent2ExecutionPolicy": iam.PolicyDocument(
                     statements=[
@@ -241,11 +227,7 @@ class MultiAgentStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["cloudwatch:PutMetricData"],
                             resources=["*"],
-                            conditions={
-                                "StringEquals": {
-                                    "cloudwatch:namespace": "bedrock-agentcore"
-                                }
-                            },
+                            conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
                         ),
                         iam.PolicyStatement(
                             sid="GetAgentAccessToken",
@@ -290,9 +272,7 @@ class MultiAgentStack(Stack):
                                 "logs:CreateLogStream",
                                 "logs:PutLogEvents",
                             ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"
-                            ],
+                            resources=[f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"],
                         ),
                         iam.PolicyStatement(
                             sid="ECRAccess",
@@ -325,9 +305,7 @@ class MultiAgentStack(Stack):
             role_name=f"{self.stack_name}-custom-resource-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"
-                )
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole")
             ],
             inline_policies={
                 "CustomResourcePolicy": iam.PolicyDocument(
@@ -340,9 +318,7 @@ class MultiAgentStack(Stack):
                                 "codebuild:BatchGetBuilds",
                                 "codebuild:BatchGetProjects",
                             ],
-                            resources=[
-                                "*"
-                            ],  # Will be updated after CodeBuild projects are created
+                            resources=["*"],  # Will be updated after CodeBuild projects are created
                         )
                     ]
                 )
@@ -355,9 +331,7 @@ class MultiAgentStack(Stack):
             function_name=f"{self.stack_name}-codebuild-trigger",
             runtime=lambda_.Runtime.PYTHON_3_9,
             handler="build_trigger_lambda.handler",
-            code=lambda_.Code.from_asset(
-                os.path.join(os.path.dirname(__file__), "infra_utils")
-            ),
+            code=lambda_.Code.from_asset(os.path.join(os.path.dirname(__file__), "infra_utils")),
             timeout=Duration.minutes(15),
             role=custom_resource_role,
             description="Triggers CodeBuild projects as CloudFormation custom resource",
@@ -375,18 +349,10 @@ class MultiAgentStack(Stack):
                 privileged=True,
             ),
             environment_variables={
-                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(
-                    value=self.region
-                ),
-                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(
-                    value=self.account
-                ),
-                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(
-                    value=ecr_repository_agent2.repository_name
-                ),
-                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(
-                    value=image_tag.value_as_string
-                ),
+                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(value=self.region),
+                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(value=self.account),
+                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(value=ecr_repository_agent2.repository_name),
+                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(value=image_tag.value_as_string),
                 "STACK_NAME": codebuild.BuildEnvironmentVariable(value=self.stack_name),
             },
             build_spec=codebuild.BuildSpec.from_object(
@@ -507,18 +473,10 @@ EOF""",
                 privileged=True,
             ),
             environment_variables={
-                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(
-                    value=self.region
-                ),
-                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(
-                    value=self.account
-                ),
-                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(
-                    value=ecr_repository_agent1.repository_name
-                ),
-                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(
-                    value=image_tag.value_as_string
-                ),
+                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(value=self.region),
+                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(value=self.account),
+                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(value=ecr_repository_agent1.repository_name),
+                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(value=image_tag.value_as_string),
                 "STACK_NAME": codebuild.BuildEnvironmentVariable(value=self.stack_name),
             },
             build_spec=codebuild.BuildSpec.from_object(

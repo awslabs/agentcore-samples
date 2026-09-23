@@ -1,0 +1,26 @@
+version: 1
+applications:
+  - appRoot: 02-use-cases/data-analyst-conversational-assistant/amplify-data-analyst-conversational-assistant-agentcore-strands
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - nvm install 22
+            - nvm use 22
+            - corepack enable
+            - corepack prepare pnpm@latest --activate
+            - pnpm install
+            - 'printf ''{"auth":{"user_pool_id":"%s","aws_region":"%s","user_pool_client_id":"%s","identity_pool_id":"%s","mfa_methods":[],"standard_required_attributes":["email"],"username_attributes":["email"],"user_verification_types":["email"],"groups":[],"mfa_configuration":"NONE","password_policy":{"min_length":8,"require_lowercase":true,"require_numbers":true,"require_symbols":true,"require_uppercase":true},"unauthenticated_identities_enabled":true},"version":"1.4"}\n'' "$AMPLIFY_USERPOOL_ID" "$REGION" "$AMPLIFY_WEBCLIENT_ID" "$AMPLIFY_IDENTITYPOOL_ID" > amplify_outputs.json'
+        build:
+          commands:
+            - export NEXT_TELEMETRY_DISABLED=1
+            - export NODE_OPTIONS="--max-old-space-size=4096"
+            - pnpm build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .next/cache/**/*
+          - .pnpm-store/**/*

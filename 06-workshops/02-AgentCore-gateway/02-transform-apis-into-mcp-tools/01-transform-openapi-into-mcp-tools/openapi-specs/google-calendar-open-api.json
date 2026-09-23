@@ -1,0 +1,791 @@
+{
+  "openapi": "3.0.0",
+  "servers": [
+    {
+      "url": "https://www.googleapis.com/calendar/v3"
+    }
+  ],
+  "info": {
+    "description": "{\"connectorId\":\"googlecalendar\",\"description\":\"Manipulates events and calendar data.\"}",
+    "title": "Google Calendar",
+    "version": "1.1.0"
+  },
+  "paths": {
+    "/users/me/calendarList": {
+      "get": {
+        "summary": "List Calendar",
+        "description": "View my calendars",
+        "operationId": "listCalendars",
+        "x-amzn-operation-action-name": "List Calendars",
+        "responses": {
+          "200": {
+            "description": "A list of calendars",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/calendars/{calendarId}/events": {
+      "get": {
+        "description": "Search calendar events",
+        "operationId": "listEvents",
+        "x-amzn-operation-action-name": "List Events",
+        "parameters": [
+          {
+            "description": "Calendar identifier. If not specified, default to the user's primary calendar. To use a specific calendar, provide its ID (obtainable via the listCalendars method). Use 'primary' to explicitly target the main calendar.",
+            "in": "path",
+            "name": "calendarId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Calendar ID"
+          },
+          {
+            "description": "Whether to expand recurring events into instances and only return single one-off events and instances of recurring events.",
+            "in": "query",
+            "name": "singleEvents",
+            "x-amzn-form-display-name": "Single Events",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The order of the events returned in the result.",
+            "in": "query",
+            "name": "orderBy",
+            "schema": {
+              "enum": ["startTime", "updated"],
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Order By"
+          },
+          {
+            "description": "Maximum number of events returned on one result page.",
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "type": "integer"
+            },
+            "x-amzn-form-display-name": "Max Results"
+          },
+          {
+            "description": "Token specifying which result page to return. Optional.",
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Page Token"
+          },
+          {
+            "description": "Free text search terms to find events that match these terms in the following fields: summary, description, location, attendee's displayName, attendee's email. Optional.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Query"
+          },
+          {
+            "description": "Upper bound (exclusive) for an event's start time to filter by. Optional. The default is not to filter by start time. Must be an RFC3339 timestamp with mandatory time zone offset, for example, 2011-06-03T10:00:00-07:00, 2011-06-03T10:00:00Z. Milliseconds may be provided but are ignored. If timeMin is set, timeMax must be greater than timeMin.",
+            "in": "query",
+            "name": "timeMax",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "x-amzn-form-display-name": "Time Max"
+          },
+          {
+            "description": "Lower bound (exclusive) for an event's end time to filter by. Optional. The default is not to filter by end time. Must be an RFC3339 timestamp with mandatory time zone offset, for example, 2011-06-03T10:00:00-07:00, 2011-06-03T10:00:00Z. Milliseconds may be provided but are ignored. If timeMax is set, timeMin must be smaller than timeMax.",
+            "in": "query",
+            "name": "timeMin",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "x-amzn-form-display-name": "Time Min"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Events"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["events"]
+      }
+    },
+    "/calendars/{calendarId}/events/{eventId}": {
+      "get": {
+        "description": "Get calendar event details",
+        "operationId": "getEvent",
+        "x-amzn-operation-action-name": "Get Event",
+        "parameters": [
+          {
+            "description": "Calendar identifier. If not specified, default to the user's primary calendar. To use a specific calendar, provide its ID (obtainable via the listCalendars method). Use 'primary' to explicitly target the main calendar.",
+            "in": "path",
+            "name": "calendarId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Calendar ID"
+          },
+          {
+            "description": "Event identifier.",
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-amzn-form-display-name": "Event ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["events"]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CalendarList": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Calendar"
+            }
+          }
+        }
+      },
+      "Calendar": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "timeZone": {
+            "type": "string"
+          }
+        }
+      },
+      "ConferenceData": {
+        "properties": {
+          "conferenceId": {
+            "description": "The ID of the conference.\nCan be used by developers to keep track of conferences, should not be displayed to users.\nThe ID value is formed differently for each conference solution type:  \n- eventHangout: ID is not set. (This conference type is deprecated.)\n- eventNamedHangout: ID is the name of the Hangout. (This conference type is deprecated.)\n- hangoutsMeet: ID is the 10-letter meeting code, for example aaa-bbbb-ccc.\n- addOn: ID is defined by the third-party provider.  Optional.",
+            "type": "string"
+          },
+          "conferenceSolution": {
+            "$ref": "#/components/schemas/ConferenceSolution",
+            "description": "The conference solution, such as Google Meet.\nUnset for a conference with a failed create request.\nEither conferenceSolution and at least one entryPoint, or createRequest is required."
+          },
+          "createRequest": {
+            "$ref": "#/components/schemas/CreateConferenceRequest",
+            "description": "A request to generate a new conference and attach it to the event. The data is generated asynchronously. To see whether the data is present check the status field.\nEither conferenceSolution and at least one entryPoint, or createRequest is required."
+          },
+          "entryPoints": {
+            "description": "Information about individual conference entry points, such as URLs or phone numbers.\nAll of them must belong to the same conference.\nEither conferenceSolution and at least one entryPoint, or createRequest is required.",
+            "items": {
+              "$ref": "#/components/schemas/EntryPoint"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "description": "Additional notes (such as instructions from the domain administrator, legal notices) to display to the user. Can contain HTML. The maximum length is 2048 characters. Optional.",
+            "type": "string"
+          },
+          "signature": {
+            "description": "The signature of the conference data.\nGenerated on server side.\nUnset for a conference with a failed create request.\nOptional for a conference with a pending create request.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConferenceProperties": {
+        "properties": {
+          "allowedConferenceSolutionTypes": {
+            "description": "The types of conference solutions that are supported for this calendar.\nThe possible values are:  \n- \"eventHangout\" \n- \"eventNamedHangout\" \n- \"hangoutsMeet\"  Optional.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ConferenceRequestStatus": {
+        "properties": {
+          "statusCode": {
+            "description": "The current status of the conference create request. Read-only.\nThe possible values are:  \n- \"pending\": the conference create request is still being processed.\n- \"success\": the conference create request succeeded, the entry points are populated.\n- \"failure\": the conference create request failed, there are no entry points.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConferenceSolution": {
+        "properties": {
+          "iconUri": {
+            "description": "The user-visible icon for this solution.",
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/ConferenceSolutionKey",
+            "description": "The key which can uniquely identify the conference solution for this event."
+          },
+          "name": {
+            "description": "The user-visible name of this solution. Not localized.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConferenceSolutionKey": {
+        "properties": {
+          "type": {
+            "description": "The conference solution type.\nIf a client encounters an unfamiliar or empty type, it should still be able to display the entry points. However, it should disallow modifications.\nThe possible values are:  \n- \"eventHangout\" for Hangouts for consumers (deprecated; existing events may show this conference solution type but new conferences cannot be created)\n- \"eventNamedHangout\" for classic Hangouts for Google Workspace users (deprecated; existing events may show this conference solution type but new conferences cannot be created)\n- \"hangoutsMeet\" for Google Meet (http://meet.google.com)\n- \"addOn\" for 3P conference providers",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateConferenceRequest": {
+        "properties": {
+          "conferenceSolutionKey": {
+            "$ref": "#/components/schemas/ConferenceSolutionKey",
+            "description": "The conference solution, such as Hangouts or Google Meet."
+          },
+          "requestId": {
+            "description": "The client-generated unique ID for this request.\nClients should regenerate this ID for every new request. If an ID provided is the same as for the previous request, the request is ignored.",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConferenceRequestStatus",
+            "description": "The status of the conference create request."
+          }
+        },
+        "type": "object"
+      },
+      "EntryPoint": {
+        "properties": {
+          "accessCode": {
+            "description": "The access code to access the conference. The maximum length is 128 characters.\nWhen creating new conference data, populate only the subset of {meetingCode, accessCode, passcode, password, pin} fields that match the terminology that the conference provider uses. Only the populated fields should be displayed.\nOptional.",
+            "type": "string"
+          },
+          "entryPointFeatures": {
+            "description": "Features of the entry point, such as being toll or toll-free. One entry point can have multiple features. However, toll and toll-free cannot be both set on the same entry point.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entryPointType": {
+            "description": "The type of the conference entry point.\nPossible values are:  \n- \"video\" - joining a conference over HTTP. A conference can have zero or one video entry point.\n- \"phone\" - joining a conference by dialing a phone number. A conference can have zero or more phone entry points.\n- \"sip\" - joining a conference over SIP. A conference can have zero or one sip entry point.\n- \"more\" - further conference joining instructions, for example additional phone numbers. A conference can have zero or one more entry point. A conference with only a more entry point is not a valid conference.",
+            "type": "string"
+          },
+          "label": {
+            "description": "The label for the URI. Visible to end users. Not localized. The maximum length is 512 characters.\nExamples:  \n- for video: meet.google.com/aaa-bbbb-ccc\n- for phone: +1 123 268 2601\n- for sip: 12345678@altostrat.com\n- for more: should not be filled  \nOptional.",
+            "type": "string"
+          },
+          "meetingCode": {
+            "description": "The meeting code to access the conference. The maximum length is 128 characters.\nWhen creating new conference data, populate only the subset of {meetingCode, accessCode, passcode, password, pin} fields that match the terminology that the conference provider uses. Only the populated fields should be displayed.\nOptional.",
+            "type": "string"
+          },
+          "passcode": {
+            "description": "The passcode to access the conference. The maximum length is 128 characters.\nWhen creating new conference data, populate only the subset of {meetingCode, accessCode, passcode, password, pin} fields that match the terminology that the conference provider uses. Only the populated fields should be displayed.",
+            "type": "string"
+          },
+          "password": {
+            "description": "The password to access the conference. The maximum length is 128 characters.\nWhen creating new conference data, populate only the subset of {meetingCode, accessCode, passcode, password, pin} fields that match the terminology that the conference provider uses. Only the populated fields should be displayed.\nOptional.",
+            "type": "string"
+          },
+          "pin": {
+            "description": "The PIN to access the conference. The maximum length is 128 characters.\nWhen creating new conference data, populate only the subset of {meetingCode, accessCode, passcode, password, pin} fields that match the terminology that the conference provider uses. Only the populated fields should be displayed.\nOptional.",
+            "type": "string"
+          },
+          "regionCode": {
+            "description": "The CLDR/ISO 3166 region code for the country associated with this phone access. Example: \"SE\" for Sweden.\nCalendar backend will populate this field only for EntryPointType.PHONE.",
+            "type": "string"
+          },
+          "uri": {
+            "description": "The URI of the entry point. The maximum length is 1300 characters.\nFormat:  \n- for video, http: or https: schema is required.\n- for phone, tel: schema is required. The URI should include the entire dial sequence (e.g., tel:+12345678900,,,123456789;1234).\n- for sip, sip: schema is required, e.g., sip:12345678@myprovider.com.\n- for more, http: or https: schema is required.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "domain": {
+            "description": "Domain, or broad category, of the error.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Specific reason for the error. Some of the possible values are:  \n- \"groupTooBig\" - The group of users requested is too large for a single query. \n- \"tooManyCalendarsRequested\" - The number of calendars requested is too large for a single query. \n- \"notFound\" - The requested resource was not found. \n- \"internalError\" - The API service has encountered an internal error.  Additional error types may be added in the future, so clients should gracefully handle additional error statuses not included in this list.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "attendees": {
+            "description": "The attendees of the event. See the Events with attendees guide for more information on scheduling events with other calendar users. Service accounts need to use domain-wide delegation of authority to populate the attendee list.",
+            "items": {
+              "$ref": "#/components/schemas/EventAttendee"
+            },
+            "type": "array",
+            "x-amzn-form-display-name": "Attendees"
+          },
+          "created": {
+            "description": "Creation time of the event (as a RFC3339 timestamp). Read-only.",
+            "format": "date-time",
+            "type": "string",
+            "x-amzn-form-display-name": "Created"
+          },
+          "creator": {
+            "description": "The creator of the event. Read-only.",
+            "properties": {
+              "displayName": {
+                "description": "The creator's name, if available.",
+                "type": "string"
+              },
+              "email": {
+                "description": "The creator's email address, if available.",
+                "type": "string"
+              },
+              "id": {
+                "description": "The creator's Profile ID, if available.",
+                "type": "string"
+              },
+              "self": {
+                "default": false,
+                "description": "Whether the creator corresponds to the calendar on which this copy of the event appears. Read-only. The default is False.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "description": {
+            "description": "Description of the event. Can contain HTML. Optional.",
+            "type": "string",
+            "x-amzn-form-display-name": "Description"
+          },
+          "end": {
+            "$ref": "#/components/schemas/EventDateTime",
+            "description": "The (exclusive) end time of the event. For a recurring event, this is the end time of the first instance.",
+            "x-amzn-form-display-name": "End"
+          },
+          "endTimeUnspecified": {
+            "default": false,
+            "description": "Whether the end time is actually unspecified. An end time is still provided for compatibility reasons, even if this attribute is set to True. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "End Time Unspecified"
+          },
+          "eventType": {
+            "default": "default",
+            "description": "Specific type of the event. Read-only. Possible values are:  \n- \"default\" - A regular event or not further specified. \n- \"outOfOffice\" - An out-of-office event. \n- \"focusTime\" - A focus-time event. \n- \"workingLocation\" - A working location event. Developer Preview.",
+            "type": "string",
+            "x-amzn-form-display-name": "Event Type"
+          },
+          "hangoutLink": {
+            "description": "An absolute link to the Google Hangout associated with this event. Read-only.",
+            "type": "string",
+            "x-amzn-form-display-name": "Hangout Link"
+          },
+          "htmlLink": {
+            "description": "An absolute link to this event in the Google Calendar Web UI. Read-only.",
+            "type": "string",
+            "x-amzn-form-display-name": "HTML Link"
+          },
+          "iCalUID": {
+            "description": "Event unique identifier as defined in RFC5545. It is used to uniquely identify events accross calendaring systems and must be supplied when importing events via the import method.\nNote that the iCalUID and the id are not identical and only one of them should be supplied at event creation time. One difference in their semantics is that in recurring events, all occurrences of one event have different ids while they all share the same iCalUIDs. To retrieve an event using its iCalUID, call the events.list method using the iCalUID parameter. To retrieve an event using its id, call the events.get method.",
+            "type": "string",
+            "x-amzn-form-display-name": "iCal UID"
+          },
+          "id": {
+            "description": "Opaque identifier of the event. When creating new single or recurring events, you can specify their IDs. Provided IDs must follow these rules:  \n- characters allowed in the ID are those used in base32hex encoding, i.e. lowercase letters a-v and digits 0-9, see section 3.1.2 in RFC2938 \n- the length of the ID must be between 5 and 1024 characters \n- the ID must be unique per calendar  Due to the globally distributed nature of the system, we cannot guarantee that ID collisions will be detected at event creation time. To minimize the risk of collisions we recommend using an established UUID algorithm such as one described in RFC4122.\nIf you do not specify an ID, it will be automatically generated by the server.\nNote that the icalUID and the id are not identical and only one of them should be supplied at event creation time. One difference in their semantics is that in recurring events, all occurrences of one event have different ids while they all share the same icalUIDs.",
+            "type": "string",
+            "x-amzn-form-display-name": "Event Id"
+          },
+          "kind": {
+            "default": "calendar#event",
+            "description": "Type of the resource (\"calendar#event\").",
+            "type": "string",
+            "x-amzn-form-display-name": "Kind"
+          },
+          "location": {
+            "description": "Geographic location of the event as free-form text. Optional.",
+            "type": "string",
+            "x-amzn-form-display-name": "Location"
+          },
+          "locked": {
+            "default": false,
+            "description": "Whether this is a locked event copy where no changes can be made to the main event fields \"summary\", \"description\", \"location\", \"start\", \"end\" or \"recurrence\". The default is False. Read-Only.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Locked"
+          },
+          "organizer": {
+            "description": "The organizer of the event. If the organizer is also an attendee, this is indicated with a separate entry in attendees with the organizer field set to True. To change the organizer, use the move operation. Read-only, except when importing an event.",
+            "properties": {
+              "displayName": {
+                "description": "The organizer's name, if available.",
+                "type": "string"
+              },
+              "email": {
+                "description": "The organizer's email address, if available. It must be a valid email address as per RFC5322.",
+                "type": "string"
+              },
+              "id": {
+                "description": "The organizer's Profile ID, if available.",
+                "type": "string"
+              },
+              "self": {
+                "default": false,
+                "description": "Whether the organizer corresponds to the calendar on which this copy of the event appears. Read-only. The default is False.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "originalStartTime": {
+            "$ref": "#/components/schemas/EventDateTime",
+            "description": "For an instance of a recurring event, this is the time at which this event would start according to the recurrence data in the recurring event identified by recurringEventId. It uniquely identifies the instance within the recurring event series even if the instance was moved to a different time. Immutable.",
+            "x-amzn-form-display-name": "Original Start Time"
+          },
+          "privateCopy": {
+            "default": false,
+            "description": "If set to True, Event propagation is disabled. Note that it is not the same thing as Private event properties. Optional. Immutable. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Private Copy"
+          },
+          "recurrence": {
+            "description": "List of RRULE, EXRULE, RDATE and EXDATE lines for a recurring event, as specified in RFC5545. Note that DTSTART and DTEND lines are not allowed in this field; event start and end times are specified in the start and end fields. This field is omitted for single events or instances of recurring events.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-amzn-form-display-name": "Recurrence"
+          },
+          "recurringEventId": {
+            "description": "For an instance of a recurring event, this is the id of the recurring event to which this instance belongs. Immutable.",
+            "type": "string",
+            "x-amzn-form-display-name": "Recurring Event ID"
+          },
+          "reminders": {
+            "description": "Information about the event's reminders for the authenticated user.",
+            "properties": {
+              "overrides": {
+                "description": "If the event doesn't use the default reminders, this lists the reminders specific to the event, or, if not set, indicates that no reminders are set for this event. The maximum number of override reminders is 5.",
+                "items": {
+                  "$ref": "#/components/schemas/EventReminder"
+                },
+                "type": "array"
+              },
+              "useDefault": {
+                "description": "Whether the default reminders of the calendar apply to the event.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "sequence": {
+            "description": "Sequence number as per iCalendar.",
+            "format": "int32",
+            "type": "integer",
+            "x-amzn-form-display-name": "Sequence"
+          },
+          "source": {
+            "description": "Source from which the event was created. For example, a web page, an email message or any document identifiable by an URL with HTTP or HTTPS scheme. Can only be seen or modified by the creator of the event.",
+            "properties": {
+              "title": {
+                "description": "Title of the source; for example a title of a web page or an email subject.",
+                "type": "string"
+              },
+              "url": {
+                "description": "URL of the source pointing to a resource. The URL scheme must be HTTP or HTTPS.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "start": {
+            "$ref": "#/components/schemas/EventDateTime",
+            "description": "The (inclusive) start time of the event. For a recurring event, this is the start time of the first instance.",
+            "x-amzn-form-display-name": "Start"
+          },
+          "status": {
+            "description": "Status of the event. Optional. Possible values are:  \n- \"confirmed\" - The event is confirmed. This is the default status. \n- \"tentative\" - The event is tentatively confirmed. \n- \"cancelled\" - The event is cancelled (deleted). The list method returns cancelled events only on incremental sync (when syncToken or updatedMin are specified) or if the showDeleted flag is set to true. The get method always returns them.\nA cancelled status represents two different states depending on the event type:  \n- Cancelled exceptions of an uncancelled recurring event indicate that this instance should no longer be presented to the user. Clients should store these events for the lifetime of the parent recurring event.\nCancelled exceptions are only guaranteed to have values for the id, recurringEventId and originalStartTime fields populated. The other fields might be empty.  \n- All other cancelled events represent deleted events. Clients should remove their locally synced copies. Such cancelled events will eventually disappear, so do not rely on them being available indefinitely.\nDeleted events are only guaranteed to have the id field populated.   On the organizer's calendar, cancelled events continue to expose event details (summary, location, etc.) so that they can be restored (undeleted). Similarly, the events to which the user was invited and that they manually removed continue to provide details. However, incremental sync requests with showDeleted set to false will not return these details.\nIf an event changes its organizer (for example via the move operation) and the original organizer is not on the attendee list, it will leave behind a cancelled event where only the id field is guaranteed to be populated.",
+            "type": "string",
+            "x-amzn-form-display-name": "Status"
+          },
+          "summary": {
+            "description": "Title of the event.",
+            "type": "string",
+            "x-amzn-form-display-name": "Summary"
+          },
+          "transparency": {
+            "default": "opaque",
+            "description": "Whether the event blocks time on the calendar. Optional. Possible values are:  \n- \"opaque\" - Default value. The event does block time on the calendar. This is equivalent to setting Show me as to Busy in the Calendar UI. \n- \"transparent\" - The event does not block time on the calendar. This is equivalent to setting Show me as to Available in the Calendar UI.",
+            "type": "string",
+            "x-amzn-form-display-name": "Transparency"
+          },
+          "updated": {
+            "description": "Last modification time of the event (as a RFC3339 timestamp). Read-only.",
+            "format": "date-time",
+            "type": "string",
+            "x-amzn-form-display-name": "Updated"
+          },
+          "visibility": {
+            "default": "default",
+            "description": "Visibility of the event. Optional. Possible values are:  \n- \"default\" - Uses the default visibility for events on the calendar. This is the default value. \n- \"public\" - The event is public and event details are visible to all readers of the calendar. \n- \"private\" - The event is private and only event attendees may view event details. \n- \"confidential\" - The event is private. This value is provided for compatibility reasons.",
+            "type": "string",
+            "x-amzn-form-display-name": "Visibility"
+          }
+        },
+        "type": "object"
+      },
+      "EventAttendee": {
+        "properties": {
+          "displayName": {
+            "description": "The attendee's name, if available. Optional.",
+            "type": "string",
+            "x-amzn-form-display-name": "Display Name"
+          },
+          "email": {
+            "description": "The attendee's email address, if available. This field must be present when adding an attendee. It must be a valid email address as per RFC5322.\nRequired when adding an attendee.",
+            "type": "string",
+            "x-amzn-form-display-name": "Email"
+          },
+          "id": {
+            "description": "The attendee's Profile ID, if available.",
+            "type": "string",
+            "x-amzn-form-display-name": "Profile Id"
+          },
+          "optional": {
+            "default": false,
+            "description": "Whether this is an optional attendee. Optional. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Optional"
+          },
+          "organizer": {
+            "description": "Whether the attendee is the organizer of the event. Read-only. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Organizer"
+          },
+          "resource": {
+            "default": false,
+            "description": "Whether the attendee is a resource. Can only be set when the attendee is added to the event for the first time. Subsequent modifications are ignored. Optional. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Resource"
+          },
+          "responseStatus": {
+            "description": "The attendee's response status. Possible values are:  \n- \"needsAction\" - The attendee has not responded to the invitation (recommended for new events). \n- \"declined\" - The attendee has declined the invitation. \n- \"tentative\" - The attendee has tentatively accepted the invitation. \n- \"accepted\" - The attendee has accepted the invitation.  Warning: If you add an event using the values declined, tentative, or accepted, attendees with the \"Add invitations to my calendar\" setting set to \"When I respond to invitation in email\" won't see an event on their calendar unless they choose to change their invitation response in the event invitation email.",
+            "type": "string",
+            "x-amzn-form-display-name": "Response Status"
+          },
+          "self": {
+            "default": false,
+            "description": "Whether this entry represents the calendar on which this copy of the event appears. Read-only. The default is False.",
+            "type": "boolean",
+            "x-amzn-form-display-name": "Self"
+          }
+        },
+        "type": "object"
+      },
+      "EventDateTime": {
+        "properties": {
+          "date": {
+            "description": "The date, in the format \"yyyy-mm-dd\", if this is an all-day event.",
+            "format": "date",
+            "type": "string",
+            "x-amzn-form-display-name": "Date"
+          },
+          "dateTime": {
+            "description": "The time, as a combined date-time value (formatted according to RFC3339). A time zone offset is required unless a time zone is explicitly specified in timeZone.",
+            "format": "date-time",
+            "type": "string",
+            "x-amzn-form-display-name": "Date Time"
+          },
+          "timeZone": {
+            "description": "The time zone in which the time is specified. (Formatted as an IANA Time Zone Database name, e.g. \"Europe/Zurich\".) For recurring events this field is required and specifies the time zone in which the recurrence is expanded. For single events this field is optional and indicates a custom time zone for the event start/end.",
+            "type": "string",
+            "x-amzn-form-display-name": "Time Zone"
+          }
+        },
+        "type": "object"
+      },
+      "EventReminder": {
+        "properties": {
+          "method": {
+            "description": "The method used by this reminder. Possible values are:  \n- \"email\" - Reminders are sent via email. \n- \"popup\" - Reminders are sent via a UI popup.  \nRequired when adding a reminder.",
+            "type": "string",
+            "x-amzn-form-display-name": "Method"
+          },
+          "minutes": {
+            "description": "Number of minutes before the start of the event when the reminder should trigger. Valid values are between 0 and 40320 (4 weeks in minutes).\nRequired when adding a reminder.",
+            "format": "int32",
+            "type": "integer",
+            "x-amzn-form-display-name": "Minutes"
+          }
+        },
+        "type": "object"
+      },
+      "Events": {
+        "properties": {
+          "accessRole": {
+            "description": "The user's access role for this calendar. Read-only. Possible values are:  \n- \"none\" - The user has no access. \n- \"freeBusyReader\" - The user has read access to free/busy information. \n- \"reader\" - The user has read access to the calendar. Private events will appear to users with reader access, but event details will be hidden. \n- \"writer\" - The user has read and write access to the calendar. Private events will appear to users with writer access, and event details will be visible. \n- \"owner\" - The user has ownership of the calendar. This role has all of the permissions of the writer role with the additional ability to see and manipulate ACLs.",
+            "type": "string",
+            "x-amzn-form-display-name": "Access Role"
+          },
+          "defaultReminders": {
+            "description": "The default reminders on the calendar for the authenticated user. These reminders apply to all events on this calendar that do not explicitly override them (i.e. do not have reminders.useDefault set to True).",
+            "items": {
+              "$ref": "#/components/schemas/EventReminder"
+            },
+            "type": "array",
+            "x-amzn-form-display-name": "Default Reminders"
+          },
+          "description": {
+            "description": "Description of the calendar. Read-only.",
+            "type": "string",
+            "x-amzn-form-display-name": "Description"
+          },
+          "etag": {
+            "description": "ETag of the collection.",
+            "type": "string",
+            "x-amzn-form-display-name": "ETag"
+          },
+          "items": {
+            "description": "List of events on the calendar.",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array",
+            "x-amzn-form-display-name": "Events"
+          },
+          "kind": {
+            "default": "calendar#events",
+            "description": "Type of the collection (\"calendar#events\").",
+            "type": "string",
+            "x-amzn-form-display-name": "Kind"
+          },
+          "nextPageToken": {
+            "description": "Token used to access the next page of this result. Omitted if no further results are available, in which case nextSyncToken is provided.",
+            "type": "string",
+            "x-amzn-form-display-name": "Next Page Token"
+          },
+          "nextSyncToken": {
+            "description": "Token used at a later point in time to retrieve only the entries that have changed since this result was returned. Omitted if further results are available, in which case nextPageToken is provided.",
+            "type": "string",
+            "x-amzn-form-display-name": "Next Sync Token"
+          },
+          "summary": {
+            "description": "Title of the calendar. Read-only.",
+            "type": "string",
+            "x-amzn-form-display-name": "Summary"
+          },
+          "timeZone": {
+            "description": "The time zone of the calendar. Read-only.",
+            "type": "string",
+            "x-amzn-form-display-name": "Time Zone"
+          },
+          "updated": {
+            "description": "Last modification time of the calendar (as a RFC3339 timestamp). Read-only.",
+            "format": "date-time",
+            "type": "string",
+            "x-amzn-form-display-name": "Updated"
+          }
+        },
+        "type": "object"
+      },
+      "EventInput": {
+        "type": "object",
+        "required": [
+          "summary",
+          "start",
+          "end"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Summary or title of the event"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of the event"
+          },
+          "start": {
+            "$ref": "#/components/schemas/EventDateTime"
+          },
+          "end": {
+            "$ref": "#/components/schemas/EventDateTime"
+          },
+          "recurrence": {
+            "description": "List of RRULE, EXRULE, RDATE and EXDATE lines for a recurring event, as specified in RFC5545. Note that DTSTART and DTEND lines are not allowed in this field; event start and end times are specified in the start and end fields. This field is omitted for single events or instances of recurring events.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+            "tokenUrl": "https://oauth2.googleapis.com/token",
+            "scopes": {
+              "https://www.googleapis.com/auth/calendar.readonly": "Read access to calendar events",
+              "https://www.googleapis.com/auth/calendar.events": "Manage calendar events"
+            }
+          }
+        }
+      }
+    }
+  }
+}

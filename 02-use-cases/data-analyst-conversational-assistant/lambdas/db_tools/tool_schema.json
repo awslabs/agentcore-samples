@@ -1,0 +1,29 @@
+[
+  {
+    "name": "get_tables_information",
+    "description": "Get database schema metadata including table structures, columns, data types, and relationships for the PostgreSQL database. Call this tool first to understand what data is available before writing SQL queries.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "execute_sql_query",
+    "description": "Execute a read-only SQL query against the PostgreSQL database. Call get_tables_information first to understand the available schema.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sql_query": {
+          "type": "string",
+          "description": "The SQL query to execute. Must be read-only (SELECT only). Use the schema from get_tables_information to write correct queries."
+        },
+        "description": {
+          "type": "string",
+          "description": "A clear description of what this query analyzes or retrieves."
+        }
+      },
+      "required": ["sql_query", "description"]
+    }
+  }
+]

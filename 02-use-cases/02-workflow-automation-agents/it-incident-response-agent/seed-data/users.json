@@ -1,0 +1,31 @@
+[
+  {
+    "user_id": "U-1001",
+    "name": "Alice Johnson",
+    "email": "alice.johnson@acme.corp",
+    "department": "Engineering",
+    "location": "Seattle",
+    "quotas": { "vpn_sessions": 3, "shared_drive_gb": 50, "email_retention_days": 365 },
+    "incident_count": 2,
+    "last_incident_at": "2026-05-15T10:30:00Z"
+  },
+  {
+    "user_id": "U-1002",
+    "name": "Bob Smith",
+    "email": "bob.smith@acme.corp",
+    "department": "Marketing",
+    "location": "New York",
+    "quotas": { "vpn_sessions": 2, "shared_drive_gb": 25, "email_retention_days": 180 },
+    "incident_count": 0
+  },
+  {
+    "user_id": "U-1003",
+    "name": "Carol Davis",
+    "email": "carol.davis@acme.corp",
+    "department": "Finance",
+    "location": "Chicago",
+    "quotas": { "vpn_sessions": 2, "shared_drive_gb": 25, "email_retention_days": 365 },
+    "incident_count": 5,
+    "last_incident_at": "2026-05-28T14:00:00Z"
+  }
+]

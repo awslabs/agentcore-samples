@@ -28,9 +28,7 @@ class DynamoDBManager:
         self.wishlist_table = self.dynamodb.Table(self.wishlist_table_name)
 
         logger.info(f"DynamoDB Manager initialized with region: {self.region_name}")
-        logger.info(
-            f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}"
-        )
+        logger.info(f"UserProfile table: {self.user_profile_table_name}, Wishlist table: {self.wishlist_table_name}")
 
     def get_wishlist_items(self, user_id: str):
         """Get all individual wishlist items for a user using GSI."""
@@ -92,9 +90,7 @@ class DynamoDBManager:
                 )
 
             self.wishlist_table.put_item(Item=wishlist_item)
-            logger.info(
-                f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}"
-            )
+            logger.info(f"Added {wishlist_item['item_type']} item to wishlist for user {user_id}")
 
         except ClientError as e:
             logger.error(f"Error adding wishlist item: {e}")
@@ -117,9 +113,7 @@ class DynamoDBManager:
             for item in items_to_delete:
                 self.wishlist_table.delete_item(Key={"id": item["id"]})
 
-            logger.info(
-                f"Removed {len(items_to_delete)} items with ASIN {asin} for user {user_id}"
-            )
+            logger.info(f"Removed {len(items_to_delete)} items with ASIN {asin} for user {user_id}")
             return len(items_to_delete)
 
         except ClientError as e:
@@ -171,17 +165,13 @@ class DynamoDBManager:
             item = None
             if scan_response.get("Items") and len(scan_response["Items"]) > 0:
                 item = scan_response["Items"][0]
-                logger.info(
-                    f"Retrieved enrolled card for userId={user_id} (profile id={item.get('id')})"
-                )
+                logger.info(f"Retrieved enrolled card for userId={user_id} (profile id={item.get('id')})")
             else:
                 # Fallback: try querying with id=userId (for profiles created by our code)
                 response = self.user_profile_table.get_item(Key={"id": user_id})
                 if "Item" in response:
                     item = response["Item"]
-                    logger.info(
-                        f"Retrieved enrolled card for user {user_id} (fallback)"
-                    )
+                    logger.info(f"Retrieved enrolled card for user {user_id} (fallback)")
 
             if item:
                 # Check if card is stored in preferences.payment.primaryCard
@@ -202,16 +192,11 @@ class DynamoDBManager:
                         # Return flattened structure for easier access
                         # VIC IDs are now INSIDE primaryCard (matching frontend structure)
                         return {
-                            "vProvisionedTokenID": primary_card.get(
-                                "vProvisionedTokenId"
-                            ),
+                            "vProvisionedTokenID": primary_card.get("vProvisionedTokenId"),
                             "consumer_id": primary_card.get("consumerId"),
                             "client_device_id": primary_card.get("clientDeviceId"),
-                            "client_reference_id": primary_card.get(
-                                "clientReferenceId"
-                            ),
-                            "last_four": primary_card.get("lastFour")
-                            or primary_card.get("cardNumber", "****"),
+                            "client_reference_id": primary_card.get("clientReferenceId"),
+                            "last_four": primary_card.get("lastFour") or primary_card.get("cardNumber", "****"),
                             "card_brand": primary_card.get("type", "Visa"),
                             "email": item.get("email", ""),
                             "full_item": item,  # Keep full item for reference

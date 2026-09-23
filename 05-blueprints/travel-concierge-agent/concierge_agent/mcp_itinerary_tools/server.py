@@ -20,9 +20,7 @@ if not REGION:
     raise ValueError("AWS_REGION environment variable is required")
 
 # Create MCP server
-mcp = FastMCP(
-    "Itinerary Tools", host="0.0.0.0", stateless_http=True
-)  # nosec B104:standard pattern for containerized MCP serverss
+mcp = FastMCP("Itinerary Tools", host="0.0.0.0", stateless_http=True)  # nosec B104:standard pattern for containerized MCP serverss
 
 # Initialize DynamoDB manager
 dynamodb_manager = None

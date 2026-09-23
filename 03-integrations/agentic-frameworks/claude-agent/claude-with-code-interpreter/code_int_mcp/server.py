@@ -34,9 +34,7 @@ async def execute_code(args: dict[str, Any]) -> dict[str, Any]:
     {"command": str, "code_int_session_id": str},
 )
 async def execute_command(args: dict[str, Any]) -> dict[str, Any]:
-    result = client.execute_command(
-        args.get("command"), args.get("code_int_session_id", "")
-    )
+    result = client.execute_command(args.get("command"), args.get("code_int_session_id", ""))
     response_text = result.model_dump_json(indent=2)
 
     return {"content": [{"type": "text", "text": response_text}]}

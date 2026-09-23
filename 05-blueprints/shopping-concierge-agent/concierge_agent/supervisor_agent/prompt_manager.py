@@ -6,11 +6,7 @@ Just a dictionary of prompts with a get function.
 import datetime
 import pytz
 
-date = (
-    datetime.datetime.now(tz=pytz.utc)
-    .astimezone(pytz.timezone("US/Pacific"))
-    .strftime("%m%d%Y")
-)
+date = datetime.datetime.now(tz=pytz.utc).astimezone(pytz.timezone("US/Pacific")).strftime("%m%d%Y")
 
 
 # Dictionary of all prompts

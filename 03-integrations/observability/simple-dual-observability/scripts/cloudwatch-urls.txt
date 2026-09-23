@@ -1,8 +1,0 @@
-CloudWatch Dashboard URL:
-https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=AgentCore-Observability-Demo
-
-X-Ray Traces URL:
-https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#xray:traces
-
-CloudWatch Logs URL:
-https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/%252Faws%252Fagentcore%252Ftraces

@@ -114,11 +114,7 @@ class MCPServerStack(Stack):
             "AgentExecutionRole",
             role_name=f"{self.stack_name}-agent-execution-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "BedrockAgentCoreFullAccess"
-                )
-            ],
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("BedrockAgentCoreFullAccess")],
             inline_policies={
                 "AgentCoreExecutionPolicy": iam.PolicyDocument(
                     statements=[
@@ -166,11 +162,7 @@ class MCPServerStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["cloudwatch:PutMetricData"],
                             resources=["*"],
-                            conditions={
-                                "StringEquals": {
-                                    "cloudwatch:namespace": "bedrock-agentcore"
-                                }
-                            },
+                            conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
                         ),
                     ]
                 )
@@ -194,9 +186,7 @@ class MCPServerStack(Stack):
                                 "logs:CreateLogStream",
                                 "logs:PutLogEvents",
                             ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"
-                            ],
+                            resources=[f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"],
                         ),
                         iam.PolicyStatement(
                             sid="ECRAccess",
@@ -225,9 +215,7 @@ class MCPServerStack(Stack):
             role_name=f"{self.stack_name}-custom-resource-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"
-                )
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole")
             ],
             inline_policies={
                 "CustomResourcePolicy": iam.PolicyDocument(
@@ -240,9 +228,7 @@ class MCPServerStack(Stack):
                                 "codebuild:BatchGetBuilds",
                                 "codebuild:BatchGetProjects",
                             ],
-                            resources=[
-                                "*"
-                            ],  # Will be updated after CodeBuild project is created
+                            resources=["*"],  # Will be updated after CodeBuild project is created
                         ),
                         iam.PolicyStatement(
                             sid="CognitoAccess",
@@ -262,9 +248,7 @@ class MCPServerStack(Stack):
             function_name=f"{self.stack_name}-codebuild-trigger",
             runtime=lambda_.Runtime.PYTHON_3_9,
             handler="build_trigger_lambda.handler",
-            code=lambda_.Code.from_asset(
-                os.path.join(os.path.dirname(__file__), "infra_utils")
-            ),
+            code=lambda_.Code.from_asset(os.path.join(os.path.dirname(__file__), "infra_utils")),
             timeout=Duration.minutes(15),
             role=custom_resource_role,
             description="Triggers CodeBuild projects as CloudFormation custom resource",
@@ -337,18 +321,10 @@ def handler(event, context):
                 privileged=True,
             ),
             environment_variables={
-                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(
-                    value=self.region
-                ),
-                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(
-                    value=self.account
-                ),
-                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(
-                    value=ecr_repository.repository_name
-                ),
-                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(
-                    value=image_tag.value_as_string
-                ),
+                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(value=self.region),
+                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(value=self.account),
+                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(value=ecr_repository.repository_name),
+                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(value=image_tag.value_as_string),
                 "STACK_NAME": codebuild.BuildEnvironmentVariable(value=self.stack_name),
             },
             build_spec=codebuild.BuildSpec.from_object(

@@ -1,0 +1,9 @@
+# Core AWS dependencies
+boto3>=1.42.0
+# Utility dependencies
+python-dateutil>=2.8.0
+# Notebook support
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+strands-agents
+strands-agents-tools

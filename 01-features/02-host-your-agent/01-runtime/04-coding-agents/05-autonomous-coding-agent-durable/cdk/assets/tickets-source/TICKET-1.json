@@ -1,0 +1,1 @@
+{"id": "TICKET-1", "title": "Add a greeting module", "description": "Create greet.py exposing greet(name) returning \"Hello, <name>!\" and a pytest test. Install pytest in the sandbox and make the test pass."}

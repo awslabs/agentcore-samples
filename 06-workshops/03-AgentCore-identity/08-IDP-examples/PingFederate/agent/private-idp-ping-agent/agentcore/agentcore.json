@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "PrivateIdpPingAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "PrivateIdpPingAgent"
+  },
+  "runtimes": [
+    {
+      "name": "PrivateIdpPingAgent",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/private-idp-ping-agent/",
+      "runtimeVersion": "PYTHON_3_12",
+      "envVars": [],
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP"
+    }
+  ],
+  "memories": [],
+  "credentials": [
+    {
+      "authorizerType": "OAuthCredentialProvider",
+      "name": "ping-private-idp",
+      "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+      "scopes": [
+        "openid"
+      ],
+      "vendor": "CustomOauth2",
+      "usage": "outbound"
+    }
+  ],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": []
+}

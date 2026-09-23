@@ -1,0 +1,279 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Fine-Grained Access Control tutorial — deploys REQUEST + RESPONSE interceptor
+  Lambdas that enforce per-tool permissions using JWT scopes.
+
+Parameters:
+  GatewayTargetName:
+    Type: String
+    Default: fgac-mcp-target
+    Description: The gateway target name used in scope patterns (e.g., fgac-mcp-target:getOrder)
+
+Resources:
+  InterceptorRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: agentcore-fgac-interceptor-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RequestInterceptorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-fgac-request-interceptor
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt InterceptorRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Description: REQUEST interceptor — enforces per-tool permissions using JWT scopes
+      Environment:
+        Variables:
+          GATEWAY_TARGET_NAME: !Ref GatewayTargetName
+      Code:
+        ZipFile: |
+          import json
+          import base64
+          import os
+
+          GATEWAY_TARGET_NAME = os.environ.get("GATEWAY_TARGET_NAME", "")
+          SYSTEM_TOOLS = {"x_amz_bedrock_agentcore_search"}
+
+          def decode_jwt_payload(token):
+              parts = token.split(".")
+              if len(parts) != 3:
+                  raise ValueError("Invalid JWT format")
+              payload = parts[1]
+              padding = 4 - len(payload) % 4
+              payload += "=" * padding
+              return json.loads(base64.urlsafe_b64decode(payload))
+
+          def check_tool_authorization(scopes, tool_name):
+              if not scopes:
+                  return False
+              user_scopes = scopes.split()
+              actual_scopes = [s.split("/", 1)[-1] for s in user_scopes]
+              if GATEWAY_TARGET_NAME in actual_scopes:
+                  return True
+              required_scope = f"{GATEWAY_TARGET_NAME}:{tool_name}"
+              return required_scope in actual_scopes
+
+          def extract_tool_name(body):
+              try:
+                  params = body.get("params", {})
+                  tool_name = params.get("name", "")
+                  if "___" in tool_name:
+                      return tool_name.split("___")[-1]
+                  return tool_name
+              except Exception:
+                  return None
+
+          def lambda_handler(event, context):
+              mcp_data = event.get("mcp", {})
+              gateway_request = mcp_data.get("gatewayRequest", {})
+              raw_headers = gateway_request.get("headers", {})
+              headers = {k.lower(): v for k, v in raw_headers.items()}
+              body = gateway_request.get("body", {})
+
+              auth_header = headers.get("authorization", "")
+              method = body.get("method", "")
+
+              forwarded_headers = {k: v for k, v in raw_headers.items() if k.lower() != "authorization"}
+              pass_through = {
+                  "interceptorOutputVersion": "1.0",
+                  "mcp": {"transformedGatewayRequest": {"headers": forwarded_headers, "body": body}}
+              }
+
+              if method != "tools/call":
+                  return pass_through
+
+              if not auth_header.startswith("Bearer "):
+                  return {"interceptorOutputVersion": "1.0", "mcp": {"transformedGatewayResponse": {"statusCode": 403, "body": {"jsonrpc": "2.0", "id": body.get("id", "unknown"), "error": {"code": -32600, "message": "No authorization token provided"}}}}}
+
+              try:
+                  token = auth_header.replace("Bearer ", "")
+                  claims = decode_jwt_payload(token)
+                  scopes = claims.get("scope", "")
+                  tool_name = extract_tool_name(body)
+
+                  if tool_name in SYSTEM_TOOLS:
+                      return pass_through
+
+                  if not tool_name:
+                      return {"interceptorOutputVersion": "1.0", "mcp": {"transformedGatewayResponse": {"statusCode": 403, "body": {"jsonrpc": "2.0", "id": body.get("id", "unknown"), "error": {"code": -32600, "message": "No tool name in request"}}}}}
+
+                  if not check_tool_authorization(scopes, tool_name):
+                      print(f"[FGAC] DENIED: tool={tool_name} scopes={scopes}")
+                      return {"interceptorOutputVersion": "1.0", "mcp": {"transformedGatewayResponse": {"statusCode": 403, "body": {"jsonrpc": "2.0", "id": body.get("id", "unknown"), "error": {"code": -32600, "message": f"Insufficient permission for tool: {tool_name}"}}}}}
+
+                  print(f"[FGAC] ALLOWED: tool={tool_name}")
+                  return pass_through
+
+              except Exception as e:
+                  print(f"[FGAC] Error: {e}")
+                  return {"interceptorOutputVersion": "1.0", "mcp": {"transformedGatewayResponse": {"statusCode": 403, "body": {"jsonrpc": "2.0", "id": body.get("id", "unknown"), "error": {"code": -32600, "message": f"Token error: {e}"}}}}}
+
+  RequestInterceptorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RequestInterceptorFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+  ResponseInterceptorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-fgac-response-interceptor
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt InterceptorRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Description: RESPONSE interceptor — filters tools/list and semantic search by JWT scopes
+      Environment:
+        Variables:
+          GATEWAY_TARGET_NAME: !Ref GatewayTargetName
+      Code:
+        ZipFile: |
+          import json
+          import base64
+          import os
+
+          GATEWAY_TARGET_NAME = os.environ.get("GATEWAY_TARGET_NAME", "")
+
+          def decode_jwt_payload(token):
+              parts = token.split(".")
+              if len(parts) != 3:
+                  raise ValueError("Invalid JWT format")
+              payload = parts[1]
+              padding = 4 - len(payload) % 4
+              payload += "=" * padding
+              return json.loads(base64.urlsafe_b64decode(payload))
+
+          def filter_tools_by_scope(tools, scopes):
+              if not scopes:
+                  return []
+              user_scopes = scopes.split()
+              actual_scopes = [s.split("/", 1)[-1] for s in user_scopes]
+
+              filtered = []
+              for tool in tools:
+                  tool_name = tool.get("name", "")
+                  if "___" not in tool_name:
+                      continue
+                  mcp_target = tool_name.split("___")[0]
+                  tool_action = tool_name.split("___")[-1]
+                  if mcp_target in actual_scopes:
+                      filtered.append(tool)
+                  elif f"{mcp_target}:{tool_action}" in actual_scopes:
+                      filtered.append(tool)
+              return filtered
+
+          def lambda_handler(event, context):
+              mcp_data = event.get("mcp", {})
+              gateway_response = mcp_data.get("gatewayResponse", {})
+              body = gateway_response.get("body", {})
+
+              raw_request_headers = mcp_data.get("gatewayRequest", {}).get("headers", {})
+              request_headers = {k.lower(): v for k, v in raw_request_headers.items()}
+              auth_header = request_headers.get("authorization", "")
+              token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
+
+              try:
+                  claims = decode_jwt_payload(token)
+                  scopes = claims.get("scope", "")
+
+                  result = body.get("result", {})
+
+                  # tools/list responses expose the tools directly on the result
+                  # (or under structuredContent). Semantic search
+                  # (x_amz_bedrock_agentcore_search) returns its matches the same
+                  # way, but some gateway versions also embed the tool list as a
+                  # JSON string in result.content[0].text. Filter every shape we
+                  # find so users only ever see tools their scopes allow —
+                  # whether they discovered them via tools/list or search.
+                  filtered_body = body.copy()
+
+                  # Shape 1: result.tools (plain tools/list)
+                  tools = result.get("tools", [])
+                  if tools:
+                      filtered = filter_tools_by_scope(tools, scopes)
+                      print(f"[FGAC] Filtered result.tools {len(tools)} -> {len(filtered)}")
+                      filtered_body["result"]["tools"] = filtered
+
+                  # Shape 2: result.structuredContent.tools (tools/list + search)
+                  sc_tools = result.get("structuredContent", {}).get("tools", [])
+                  if sc_tools:
+                      filtered = filter_tools_by_scope(sc_tools, scopes)
+                      print(f"[FGAC] Filtered structuredContent.tools {len(sc_tools)} -> {len(filtered)}")
+                      filtered_body["result"]["structuredContent"]["tools"] = filtered
+
+                  # Shape 3: result.content[*].text is a JSON string carrying
+                  # {"tools": [...]} — the semantic-search payload shape. Parse,
+                  # filter, and re-serialize; leave non-JSON text untouched.
+                  content = result.get("content", [])
+                  if isinstance(content, list):
+                      for item in content:
+                          if not isinstance(item, dict) or item.get("type") != "text":
+                              continue
+                          text = item.get("text", "")
+                          try:
+                              payload = json.loads(text)
+                          except (ValueError, TypeError):
+                              continue
+                          if isinstance(payload, dict) and isinstance(payload.get("tools"), list):
+                              before = len(payload["tools"])
+                              payload["tools"] = filter_tools_by_scope(payload["tools"], scopes)
+                              print(f"[FGAC] Filtered search content.tools {before} -> {len(payload['tools'])}")
+                              item["text"] = json.dumps(payload)
+
+                  body = filtered_body
+
+              except Exception as e:
+                  print(f"[FGAC] Response filter error: {e}")
+
+              response_headers = gateway_response.get("headers", {})
+              return {
+                  "interceptorOutputVersion": "1.0",
+                  "mcp": {"transformedGatewayResponse": {"statusCode": 200, "headers": response_headers, "body": body}}
+              }
+
+  ResponseInterceptorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResponseInterceptorFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+Outputs:
+  RequestInterceptorArn:
+    Description: ARN of the REQUEST interceptor Lambda
+    Value: !GetAtt RequestInterceptorFunction.Arn
+  ResponseInterceptorArn:
+    Description: ARN of the RESPONSE interceptor Lambda
+    Value: !GetAtt ResponseInterceptorFunction.Arn

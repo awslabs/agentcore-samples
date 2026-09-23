@@ -1,0 +1,8 @@
+# Notebook host dependencies. The notebook deploys two AgentCore Runtimes
+# from subdirectories (mcp/ and agent/); each of those has its own
+# requirements.txt for the container build.
+boto3>=1.35.0
+bedrock-agentcore-starter-toolkit
+msal>=1.28.0
+requests>=2.31.0
+ipykernel

@@ -1,0 +1,23 @@
+# Ruff configuration for the migration tool.
+#
+# Scoped to this directory so it applies wherever the tool is checked out, including as a folder
+# inside a larger samples repository (Ruff resolves the nearest configuration for each file).
+#
+# The code is written to 120 columns, so that is what `line-length` records: the default 88 would
+# rewrap several hundred lines -- including comment blocks written to this width -- for no gain.
+line-length = 120
+
+[lint]
+# Everything Ruff reports is fixed except the rules below, where complying would change behaviour
+# rather than style. Each is listed with the reason it does not apply here.
+ignore = [
+    # TRY004 asks for TypeError when a guard rejects a value of the wrong type. These guards raise
+    # ValueError (or a domain error deriving from it) on purpose: the staged-record and
+    # configuration readers treat a malformed document as bad *data*, not as a caller passing the
+    # wrong type, and both the CLI's exit-code mapping and the tests assert that.
+    "TRY004",
+    # SIM115 asks for a context manager around open(). The staged-record reader hands back an
+    # iterator that is consumed by its caller, so the handle has to outlive the function that
+    # opened it; closing at block exit would break the stream it returns.
+    "SIM115",
+]

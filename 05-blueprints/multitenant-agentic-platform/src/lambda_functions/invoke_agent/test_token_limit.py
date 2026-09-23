@@ -47,14 +47,10 @@ class TestTokenLimitEnforcement:
         expected_blocked = total_tokens >= token_limit
 
         if expected_blocked:
-            assert allowed is False, (
-                f"Expected blocked: usage={total_tokens}, limit={token_limit}"
-            )
+            assert allowed is False, f"Expected blocked: usage={total_tokens}, limit={token_limit}"
             assert reason == "limit_exceeded"
         else:
-            assert allowed is True, (
-                f"Expected allowed: usage={total_tokens}, limit={token_limit}"
-            )
+            assert allowed is True, f"Expected allowed: usage={total_tokens}, limit={token_limit}"
             assert reason == "within_limit"
 
     @given(total_tokens=st.integers(min_value=0, max_value=10**12))
@@ -94,9 +90,7 @@ class TestTokenLimitEnforcement:
         total_tokens = token_limit - 1
         allowed, reason = check_limit_enforcement(total_tokens, token_limit)
 
-        assert allowed is True, (
-            f"Expected allowed one below limit: usage={total_tokens}, limit={token_limit}"
-        )
+        assert allowed is True, f"Expected allowed one below limit: usage={total_tokens}, limit={token_limit}"
         assert reason == "within_limit"
 
     @given(
@@ -113,9 +107,7 @@ class TestTokenLimitEnforcement:
         total_tokens = token_limit + excess
         allowed, reason = check_limit_enforcement(total_tokens, token_limit)
 
-        assert allowed is False, (
-            f"Expected blocked over limit: usage={total_tokens}, limit={token_limit}"
-        )
+        assert allowed is False, f"Expected blocked over limit: usage={total_tokens}, limit={token_limit}"
         assert reason == "limit_exceeded"
 
 

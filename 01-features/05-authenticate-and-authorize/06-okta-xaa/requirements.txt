@@ -1,0 +1,21 @@
+# Aggregate dependencies for running the whole sample end to end from one venv.
+# (Per-component requirements also live in resource-app/, agent/, and scripts/
+# for containerized / independent deployment.)
+
+# Resource app
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# XAA client / test script / deploy helper
+httpx>=0.27.0
+boto3>=1.40.0
+
+# Agent (Strands + AgentCore)
+strands-agents>=1.30.0
+bedrock-agentcore>=1.4.0
+
+# Shared
+PyJWT[crypto]>=2.9.0
+python-dotenv>=1.0.0

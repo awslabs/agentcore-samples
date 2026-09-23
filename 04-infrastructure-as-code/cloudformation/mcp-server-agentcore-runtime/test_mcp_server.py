@@ -48,23 +48,17 @@ async def test_mcp_server(agent_arn, bearer_token, region):
 
                 # Test add_numbers
                 print("\n➕ Testing add_numbers(5, 3)...")
-                add_result = await session.call_tool(
-                    name="add_numbers", arguments={"a": 5, "b": 3}
-                )
+                add_result = await session.call_tool(name="add_numbers", arguments={"a": 5, "b": 3})
                 print(f"   Result: {add_result.content[0].text}")
 
                 # Test multiply_numbers
                 print("\n✖️  Testing multiply_numbers(4, 7)...")
-                multiply_result = await session.call_tool(
-                    name="multiply_numbers", arguments={"a": 4, "b": 7}
-                )
+                multiply_result = await session.call_tool(name="multiply_numbers", arguments={"a": 4, "b": 7})
                 print(f"   Result: {multiply_result.content[0].text}")
 
                 # Test greet_user
                 print("\n👋 Testing greet_user('Alice')...")
-                greet_result = await session.call_tool(
-                    name="greet_user", arguments={"name": "Alice"}
-                )
+                greet_result = await session.call_tool(name="greet_user", arguments={"name": "Alice"})
                 print(f"   Result: {greet_result.content[0].text}")
 
                 print("\n✅ MCP tool testing completed!")
@@ -78,9 +72,7 @@ def main():
     if len(sys.argv) != 4:
         print("Usage: python test_mcp_server.py <agent_arn> <bearer_token> <region>")
         print("\nExample:")
-        print(
-            "  python test_mcp_server.py arn:aws:bedrock-agentcore:... eyJraWQiOiJ... us-west-2"
-        )
+        print("  python test_mcp_server.py arn:aws:bedrock-agentcore:... eyJraWQiOiJ... us-west-2")
         sys.exit(1)
 
     agent_arn = sys.argv[1]

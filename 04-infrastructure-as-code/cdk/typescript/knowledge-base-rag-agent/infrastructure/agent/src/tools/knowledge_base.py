@@ -53,9 +53,7 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
     knowledge_base_id = os.environ.get("KNOWLEDGE_BASE_ID")
 
     if not knowledge_base_id:
-        logger.warning(
-            "KNOWLEDGE_BASE_ID not configured - knowledge base search disabled"
-        )
+        logger.warning("KNOWLEDGE_BASE_ID not configured - knowledge base search disabled")
         return "Knowledge base search is not available. The KNOWLEDGE_BASE_ID environment variable is not set."
 
     client = get_bedrock_agent_client()
@@ -65,9 +63,7 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
         response = client.retrieve(
             knowledgeBaseId=knowledge_base_id,
             retrievalQuery={"text": query},
-            retrievalConfiguration={
-                "vectorSearchConfiguration": {"numberOfResults": max_results}
-            },
+            retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": max_results}},
         )
 
         results = response.get("retrievalResults", [])

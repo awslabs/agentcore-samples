@@ -1,0 +1,92 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ECRImageAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ],
+      "Resource": "arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/*"
+    },
+    {
+      "Sid": "ECRTokenAccess",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "RuntimeLogGroup",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/runtimes/*"
+    },
+    {
+      "Sid": "RuntimeLogStream",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+    },
+    {
+      "Sid": "XRay",
+      "Effect": "Allow",
+      "Action": [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AgentCoreCloudWatchMetrics",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": "bedrock-agentcore"
+        }
+      }
+    },
+    {
+      "Sid": "GetAgentAccessToken",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:GetWorkloadAccessToken",
+        "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+        "bedrock-agentcore:GetWorkloadAccessTokenForUserId"
+      ],
+      "Resource": [
+        "arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT_ID}:workload-identity-directory/default",
+        "arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT_ID}:workload-identity-directory/default/workload-identity/${AGENT_NAME}-*"
+      ]
+    },
+    {
+      "Sid": "BedrockModelInvocation",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:${REGION}:${ACCOUNT_ID}:inference-profile/*"
+      ]
+    },
+    {
+      "Sid": "InvokeAgentCoreGateway",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeGateway",
+      "Resource": "arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT_ID}:gateway/${GATEWAY_ID}"
+    }
+  ]
+}

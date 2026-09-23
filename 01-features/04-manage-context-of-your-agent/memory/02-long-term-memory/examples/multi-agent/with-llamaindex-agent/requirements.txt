@@ -1,0 +1,7 @@
+# Multi-agent coordination routes I/O through the AgentCore MemoryClient directly, so only
+# the LlamaIndex agent + Bedrock LLM packages are needed (no Memory/BaseMemoryBlock here —
+# that's the single-agent pattern). ChatMemoryBuffer is deprecated and unused.
+llama-index-core>=0.12.0
+llama-index-llms-bedrock-converse>=0.3.0
+bedrock-agentcore>=0.1.6
+boto3>=1.34.0

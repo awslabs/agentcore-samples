@@ -1,0 +1,5 @@
+# MCP server container dependencies. Installed into the image that runs
+# mcp_server_obo.py (written by the notebook via %%writefile).
+bedrock-agentcore
+mcp>=1.0.0
+httpx>=0.27.0

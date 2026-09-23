@@ -77,13 +77,9 @@ def main():
         print("✅ Memory initialized successfully!")
         print(f"📊 Event ID: {response.get('eventId', 'N/A')}")
         print(f"📦 Preferences stored: {len(activity_preferences)} categories")
-        print(
-            f"   - Good weather: {len(activity_preferences['good_weather'])} activities"
-        )
+        print(f"   - Good weather: {len(activity_preferences['good_weather'])} activities")
         print(f"   - OK weather: {len(activity_preferences['ok_weather'])} activities")
-        print(
-            f"   - Poor weather: {len(activity_preferences['poor_weather'])} activities"
-        )
+        print(f"   - Poor weather: {len(activity_preferences['poor_weather'])} activities")
 
         return 0
 

@@ -63,23 +63,15 @@ async def invoke(payload, context):
                 actor_id=actor_id,
                 retrieval_config={
                     "/facts/{actorId}/": RetrievalConfig(top_k=10, relevance_score=0.4),
-                    "/preferences/{actorId}/": RetrievalConfig(
-                        top_k=5, relevance_score=0.5
-                    ),
-                    "/summaries/{actorId}/{sessionId}/": RetrievalConfig(
-                        top_k=5, relevance_score=0.4
-                    ),
-                    "/episodes/{actorId}/{sessionId}/": RetrievalConfig(
-                        top_k=5, relevance_score=0.4
-                    ),
+                    "/preferences/{actorId}/": RetrievalConfig(top_k=5, relevance_score=0.5),
+                    "/summaries/{actorId}/{sessionId}/": RetrievalConfig(top_k=5, relevance_score=0.4),
+                    "/episodes/{actorId}/{sessionId}/": RetrievalConfig(top_k=5, relevance_score=0.4),
                 },
             ),
             REGION,
         )
     else:
-        log.warning(
-            "MEMORY_ID is not set. Skipping memory session manager initialization."
-        )
+        log.warning("MEMORY_ID is not set. Skipping memory session manager initialization.")
 
     # High-agency tools from strands_tools
     high_agency_tools = [shell, file_read, file_write, editor]
@@ -140,9 +132,7 @@ def format_response(result) -> str:
         if tool_metrics and hasattr(tool_metrics, "tool"):
             action = tool_metrics.tool["input"]["code_interpreter_input"]["action"]
             if "code" in action:
-                parts.append(
-                    f"## Executed Code:\n```{action.get('language', 'python')}\n{action['code']}\n```\n---\n"
-                )
+                parts.append(f"## Executed Code:\n```{action.get('language', 'python')}\n{action['code']}\n```\n---\n")
     except (AttributeError, KeyError):
         pass  # No code to extract
 

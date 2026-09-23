@@ -31,28 +31,28 @@ def get_current_tenant_ids():
     try:
         # Scan with pagination and server-side filtering
         from boto3.dynamodb.conditions import Attr
-        
+
         tenant_ids = set()
         last_evaluated_key = None
-        
+
         while True:
             scan_kwargs = {
                 "FilterExpression": Attr("aggregation_key").begins_with("tenant:"),
                 # Only retrieve the fields we need
-                "ProjectionExpression": "tenant_id"
+                "ProjectionExpression": "tenant_id",
             }
-            
+
             if last_evaluated_key:
                 scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
-            
+
             response = aggregation_table.scan(**scan_kwargs)
-            
+
             # Extract tenant IDs from the filtered results
             for item in response.get("Items", []):
                 tenant_id = item.get("tenant_id")
                 if tenant_id:
                     tenant_ids.add(tenant_id)
-            
+
             last_evaluated_key = response.get("LastEvaluatedKey")
             if not last_evaluated_key:
                 break
@@ -128,11 +128,7 @@ def query_infrastructure_costs(tenant_ids):
                 if keys:
                     # Key format is "tenantId$value" or just the value
                     key = keys[0]
-                    tenant_id = (
-                        key.replace("tenantId$", "")
-                        if key.startswith("tenantId$")
-                        else key
-                    )
+                    tenant_id = key.replace("tenantId$", "") if key.startswith("tenantId$") else key
 
                     # Get cost amount
                     metrics = group.get("Metrics", {})

@@ -41,23 +41,20 @@ def extract_region_from_arn(arn):
         parts = arn.split(":")
         if len(parts) < 4:
             raise ValueError(
-                f"Invalid ARN format: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         region = parts[3]
         if not region:
             raise ValueError(
-                f"Region not found in ARN: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Region not found in ARN: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         return region
 
     except IndexError:
         raise ValueError(
-            f"Invalid ARN format: {arn}\n"
-            f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+            f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
         )
 
 
@@ -119,9 +116,7 @@ def main():
         print("\nUsage:")
         print(f"  {sys.argv[0]} <agent_arn>")
         print("\nExample:")
-        print(
-            f"  {sys.argv[0]} arn:aws:bedrock-agentcore:<region>:123456789012:runtime/agent-id"
-        )
+        print(f"  {sys.argv[0]} arn:aws:bedrock-agentcore:<region>:123456789012:runtime/agent-id")
         print("\nOr from Terraform:")
         print(f"  {sys.argv[0]} $(terraform output -raw agent_runtime_arn)")
         sys.exit(1)

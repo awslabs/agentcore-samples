@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Custom Header Query Propagation tutorial — REQUEST interceptor that demonstrates
+  header precedence, plus an echo tool Lambda that reports received headers.
+
+Resources:
+  InterceptorRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: agentcore-header-query-interceptor-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ToolRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agentcore-header-query-tool-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  InterceptorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-header-query-interceptor
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt InterceptorRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Description: REQUEST interceptor — overrides x-tenant-id, adds x-custom-tenant-id (non-allowlisted)
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              mcp_data = event.get("mcp", {})
+              gateway_request = mcp_data.get("gatewayRequest", {})
+              headers = gateway_request.get("headers", {})
+              body = gateway_request.get("body", {})
+
+              method = body.get("method", "")
+              if method != "tools/call":
+                  return {
+                      "interceptorOutputVersion": "1.0",
+                      "mcp": {"transformedGatewayRequest": {"headers": headers, "body": body}}
+                  }
+
+              new_headers = dict(headers)
+              new_headers["x-tenant-id"] = "tenant-from-interceptor"
+              new_headers["x-custom-tenant-id"] = "custom-value-from-interceptor"
+
+              print(f"[INTERCEPTOR] Overriding x-tenant-id, adding x-custom-tenant-id")
+              print(f"[INTERCEPTOR] Output headers: {json.dumps(new_headers)}")
+
+              return {
+                  "interceptorOutputVersion": "1.0",
+                  "mcp": {"transformedGatewayRequest": {"headers": new_headers, "body": body}}
+              }
+
+  InterceptorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InterceptorFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+  ToolFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-header-query-echo-tool
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt ToolRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Description: Echo tool — reports received propagated headers and query params
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              propagated_headers = {}
+              propagated_query_params = {}
+
+              if hasattr(context, 'client_context') and context.client_context:
+                  custom = context.client_context.custom or {}
+                  propagated_headers = custom.get('bedrockAgentCorePropagatedHeaders', {})
+                  propagated_query_params = custom.get('bedrockAgentCorePropagatedQueryParameters', {})
+
+              message = event.get('message', 'no message')
+
+              return {
+                  "statusCode": 200,
+                  "body": {
+                      "message": message,
+                      "propagated_headers": propagated_headers,
+                      "propagated_query_params": propagated_query_params
+                  },
+                  "headers": {
+                      "x-rate-limit-remaining": "95"
+                  }
+              }
+
+  ToolPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ToolFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock-agentcore.amazonaws.com
+
+Outputs:
+  InterceptorFunctionArn:
+    Description: ARN of the header-precedence interceptor Lambda
+    Value: !GetAtt InterceptorFunction.Arn
+  ToolFunctionArn:
+    Description: ARN of the echo tool Lambda
+    Value: !GetAtt ToolFunction.Arn

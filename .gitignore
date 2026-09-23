@@ -50,12 +50,15 @@ eggs/
 .eggs/
 
 lib/
-!01-tutorials/02-AgentCore-gateway/04-integration/04-enterprise-mcp-demo/cdk/lib
+!06-workshops/02-AgentCore-gateway/04-integration/04-enterprise-mcp-demo/cdk/lib
 !05-blueprints/**/lib/
 !02-use-cases/visa-b2b-account-payable-agent/infrastructure/lib/
 !04-infrastructure-as-code/cdk/typescript/knowledge-base-rag-agent/infrastructure/lib/
-!01-tutorials/01-AgentCore-runtime/01-hosting-agent/05-java-agents/01-springai-with-bedrock-model/infra/lib/
-!01-tutorials/01-AgentCore-runtime/01-hosting-agent/05-java-agents/02-embabel-with-bedrock-model/infra/lib/
+!01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/05-community/gateway-mcp-inspector/client/src/lib/
+!06-workshops/01-AgentCore-runtime/01-hosting-agent/05-java-agents/01-springai-with-bedrock-model/infra/lib/
+!06-workshops/01-AgentCore-runtime/01-hosting-agent/05-java-agents/02-embabel-with-bedrock-model/infra/lib/
+!02-use-cases/lakehouse-agent/deployment/advanced-agentcore-policy-gateway-interceptor/lib/
+!02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/cdk/lib/
 lib64/
 parts/
 sdist/
@@ -162,6 +165,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
 .venv
 env/
 venv/
@@ -254,8 +258,90 @@ node_modules
 Test-Downloads/
 
 ### Docker ###
-Dockerfile
 .dockerignore
-01-tutorials/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/runtime/requirements.txt
-01-tutorials/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/session_binding/requirements.txt
-01-tutorials/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/cdk.context.json
+06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/runtime/requirements.txt
+06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/session_binding/requirements.txt
+06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/cdk.context.json
+
+### Claude Code Assistant ###
+.claude/
+CLAUDE.md
+!**/03-code-agents-competition-e2e/coding_agents/claude-code/CLAUDE.md
+plan/
+
+### draw.io source files (keep rendered PNG only) ###
+*.drawio
+
+# Generated configuration and result files
+**/agents_config.json
+**/gateway_config.json
+**/setup_config.json
+**/config.json
+**/evals_results/
+**/results/
+**/*.zip
+
+# Docker files (generated)
+**/Dockerfile
+!02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/app/claimsagent/Dockerfile
+!01-features/02-host-your-agent/01-runtime/04-coding-agents/06-codex-with-efs/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/agent/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
+
+# Agent state and runtime files
+**/.agent_arn*
+**/agent_state_*.json
+**/optimize_state_*.json
+**/runtime_config.json
+**/aws-targets.json
+!01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/**/aws-targets.json
+!06-workshops/02-AgentCore-gateway/**/aws-targets.json
+**/.cli/deployed-state.json
+
+# Evaluation and session results
+**/batch_eval_*_result.json
+**/recommendation_*_result.json
+**/session_results_*.json
+
+# Test and demo state files
+**/demo_state.json
+**/dp_demo_state.json
+**/test-results/
+**/TEST_REPORT_CARD.md
+
+# Policy test results
+01-features/07-centralize-and-govern-your-ai-infrastructure/02-policy/test-results/
+
+# Browser test report cards
+01-features/03-connect-your-agent-to-anything/02-browser/TEST_REPORT_CARD.md
+02-use-cases/use-case-assessment.md
+**/lambda_config.json
+
+# Architecture diagram generator (local tool, not needed in repo)
+02-use-cases/video-games-sales-assistant/generate_architecture.py
+02-use-cases/video-games-sales-assistant/images/icons/
+02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline_results.json
+02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline_results.md
+02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline.py
+02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/docs/DESIGN_SYSTEM.md
+02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/agentcore.json.deployed.bak
+
+# Blog post drafts
+02-use-cases/data-analyst-conversational-assistant/blog-*
+
+# Consent Portal pen-test working document (internal; upstream source for
+# 01-features/.../authorization-code-flow/consent-portal/)
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/pen-test-details.md
+
+# Locally-staged SDK wheels for the Consent Portal walkthrough (~15 MB each).
+# portal.md floors boto3/botocore at 1.43.88 in pyproject.toml instead; these are
+# only a convenience for offline installs and must not be committed.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/*.whl
+
+# In-progress target guidance folders — only atlassian/ and github/ ship for now.
+# The rest are boilerplate pending per-server platform setup + tool schema.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/aws/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/box/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/datadog/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/glean/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/snowflake/

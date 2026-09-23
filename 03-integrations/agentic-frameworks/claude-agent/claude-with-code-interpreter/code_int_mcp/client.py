@@ -74,22 +74,14 @@ class CodeInterpreterClient:
         args = {"code": code, "language": language, "clearContext": False}
         return self._invoke_code_interpreter("executeCode", args, code_int_session_id)
 
-    def execute_command(
-        self, command: str, code_int_session_id: str = ""
-    ) -> CodeIntExecutionResult:
+    def execute_command(self, command: str, code_int_session_id: str = "") -> CodeIntExecutionResult:
         args = {"command": command}
-        return self._invoke_code_interpreter(
-            "executeCommand", args, code_int_session_id
-        )
+        return self._invoke_code_interpreter("executeCommand", args, code_int_session_id)
 
-    def write_files(
-        self, files: list, code_int_session_id: str = ""
-    ) -> CodeIntExecutionResult:
+    def write_files(self, files: list, code_int_session_id: str = "") -> CodeIntExecutionResult:
         args = {"content": files}
         return self._invoke_code_interpreter("writeFiles", args, code_int_session_id)
 
-    def read_files(
-        self, paths: list, code_int_session_id: str = ""
-    ) -> CodeIntExecutionResult:
+    def read_files(self, paths: list, code_int_session_id: str = "") -> CodeIntExecutionResult:
         args = {"paths": paths}
         return self._invoke_code_interpreter("readFiles", args, code_int_session_id)

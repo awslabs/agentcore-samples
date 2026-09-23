@@ -1,8 +1,8 @@
 ---
-name: Documentation improvement [01-tutorials]
-about: Suggest a documentation improvement in 01-tutorials
-title: 01-tutorials - [Content Improvement]
-labels: 01-tutorials, documentation
+name: Documentation improvement [06-workshops]
+about: Suggest a documentation improvement in 06-workshops
+title: 06-workshops - [Content Improvement]
+labels: 06-workshops, documentation
 assignees: akshseh
 
 ---

@@ -1,0 +1,15 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kinesisvideo:DescribeSignalingChannel",
+                "kinesisvideo:CreateSignalingChannel",
+                "kinesisvideo:GetSignalingChannelEndpoint",
+                "kinesisvideo:GetIceServerConfig"
+            ],
+            "Resource": "arn:aws:kinesisvideo:AWS_REGION:ACCOUNT_ID:channel/KVS_CHANNEL_NAME/*"
+        }
+    ]
+}

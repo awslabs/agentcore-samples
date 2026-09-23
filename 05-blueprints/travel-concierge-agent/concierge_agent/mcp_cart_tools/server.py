@@ -24,9 +24,7 @@ if not REGION:
     raise ValueError("AWS_REGION environment variable is required")
 
 # Create MCP server
-mcp = FastMCP(
-    "Cart Tools", host="0.0.0.0", stateless_http=True
-)  # nosec B104:standard pattern for containerized MCP serverss
+mcp = FastMCP("Cart Tools", host="0.0.0.0", stateless_http=True)  # nosec B104:standard pattern for containerized MCP serverss
 
 # Initialize DynamoDB manager
 dynamodb_manager = None
@@ -153,9 +151,7 @@ def add_to_cart(user_id: str, items: List[Dict[str, Any]]) -> None:
 
             missing_fields = [field for field in required_fields if field not in item]
             if missing_fields:
-                raise ValueError(
-                    f"Item at index {i} is missing required fields: {missing_fields}"
-                )
+                raise ValueError(f"Item at index {i} is missing required fields: {missing_fields}")
 
         manager = get_dynamodb_manager()
 
@@ -206,11 +202,7 @@ def add_hotel_to_cart(user_id: str, hotels: List[Dict[str, Any]]) -> None:
             if not isinstance(hotel, dict):
                 raise TypeError(f"Hotel at index {i} must be a dictionary")
 
-            missing_fields = [
-                field
-                for field in required_fields
-                if field not in hotel or not hotel[field]
-            ]
+            missing_fields = [field for field in required_fields if field not in hotel or not hotel[field]]
             if missing_fields:
                 raise ValueError(
                     f"Hotel at index {i} ('{hotel.get('title', 'unknown')}') is missing REQUIRED fields: {missing_fields}. "
@@ -289,11 +281,7 @@ def add_flight_to_cart(user_id: str, flights: List[Dict[str, Any]]) -> None:
             if not isinstance(flight, dict):
                 raise TypeError(f"Flight at index {i} must be a dictionary")
 
-            missing_fields = [
-                field
-                for field in required_fields
-                if field not in flight or not flight[field]
-            ]
+            missing_fields = [field for field in required_fields if field not in flight or not flight[field]]
             if missing_fields:
                 raise ValueError(
                     f"Flight at index {i} ('{flight.get('title', 'unknown')}') is missing REQUIRED fields: {missing_fields}. "
@@ -323,9 +311,7 @@ def add_flight_to_cart(user_id: str, flights: List[Dict[str, Any]]) -> None:
 
 
 @mcp.tool()
-def remove_from_cart(
-    user_id: str, identifiers: List[str], item_type: str = "product"
-) -> None:
+def remove_from_cart(user_id: str, identifiers: List[str], item_type: str = "product") -> None:
     """
     Removes specific items from the user's shopping cart by identifier.
 
@@ -355,21 +341,11 @@ def remove_from_cart(
             items_to_remove = []
 
             if item_type == "product":
-                items_to_remove = [
-                    item for item in all_items if item.get("asin") == identifier.strip()
-                ]
+                items_to_remove = [item for item in all_items if item.get("asin") == identifier.strip()]
             elif item_type == "hotel":
-                items_to_remove = [
-                    item
-                    for item in all_items
-                    if item.get("hotel_id") == identifier.strip()
-                ]
+                items_to_remove = [item for item in all_items if item.get("hotel_id") == identifier.strip()]
             elif item_type == "flight":
-                items_to_remove = [
-                    item
-                    for item in all_items
-                    if item.get("flight_id") == identifier.strip()
-                ]
+                items_to_remove = [item for item in all_items if item.get("flight_id") == identifier.strip()]
 
             for item in items_to_remove:
                 manager.wishlist_table.delete_item(Key={"id": item["id"]})
@@ -619,12 +595,8 @@ def onboard_card(
             "vProvisionedTokenId": token_id,
             "type": card_type,
             "cardNumber": last_four,
-            "expiryMonth": (
-                expiration_date.split("/")[0] if "/" in expiration_date else ""
-            ),
-            "expiryYear": (
-                expiration_date.split("/")[1] if "/" in expiration_date else ""
-            ),
+            "expiryMonth": (expiration_date.split("/")[0] if "/" in expiration_date else ""),
+            "expiryYear": (expiration_date.split("/")[1] if "/" in expiration_date else ""),
             "cvv": "***",
         }
 
@@ -697,24 +669,20 @@ def check_user_has_payment_card(user_id: str) -> Dict[str, Any]:
         primary_card = payment.get("primaryCard")
         backup_card = payment.get("backupCard")
 
-        has_primary = primary_card is not None and primary_card.get(
-            "vProvisionedTokenId"
-        )
+        has_primary = primary_card is not None and primary_card.get("vProvisionedTokenId")
         has_backup = backup_card is not None and backup_card.get("vProvisionedTokenId")
 
         card_info = None
         if has_primary:
             card_info = {
                 "type": primary_card.get("type", "Card"),
-                "last_four": primary_card.get("lastFour")
-                or primary_card.get("cardNumber", "****"),
+                "last_four": primary_card.get("lastFour") or primary_card.get("cardNumber", "****"),
                 "is_primary": True,
             }
         elif has_backup:
             card_info = {
                 "type": backup_card.get("type", "Card"),
-                "last_four": backup_card.get("lastFour")
-                or backup_card.get("cardNumber", "****"),
+                "last_four": backup_card.get("lastFour") or backup_card.get("cardNumber", "****"),
                 "is_primary": False,
             }
 

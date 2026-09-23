@@ -38,9 +38,7 @@ def send_response(
 
     try:
         http = urllib3.PoolManager()
-        response = http.request(
-            "PUT", event["ResponseURL"], body=json_response_body, headers=headers
-        )
+        response = http.request("PUT", event["ResponseURL"], body=json_response_body, headers=headers)
         logger.info(f"CloudFormation response sent: {response.status}")
     except Exception as e:
         logger.error(f"Failed to send CloudFormation response: {e}")

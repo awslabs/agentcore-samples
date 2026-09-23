@@ -31,7 +31,7 @@ def fetch_access_token(client_id, client_secret, token_url):
         token_url,
         data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10
+        timeout=10,
     )
     print(f"Token response status: {response.status_code}")
     print(f"Token response: {response.text}")
@@ -70,7 +70,7 @@ def fetch_access_token(client_id, client_secret, token_url):
             token_url,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10
+            timeout=10,
         )
         print(
             f"With scopes - Status: {response2.status_code}, Response: {response2.text}"
@@ -88,7 +88,9 @@ async def test_mcp_gateway():
 
     try:
         # Get gateway URL from parameter store
-        gateway_url = parameter_store_reader.get_parameter("/amazon/gateway_url", decrypt=True)
+        gateway_url = parameter_store_reader.get_parameter(
+            "/amazon/gateway_url", decrypt=True
+        )
         if not gateway_url:
             print("Error: Gateway URL not found in parameter store")
             return
@@ -96,11 +98,13 @@ async def test_mcp_gateway():
         print(f"Gateway URL: {gateway_url}")
 
         # Get client credentials from parameter store
-        CLIENT_ID = parameter_store_reader.get_parameter("/cognito/client_id", decrypt=True)
+        CLIENT_ID = parameter_store_reader.get_parameter(
+            "/cognito/client_id", decrypt=True
+        )
         client_secret = secret_reader.read_secret("cognito_client_secret")
         TOKEN_URL = parameter_store_reader.get_parameter(
-                    "/cognito/oauth_token_url", decrypt=True
-                )
+            "/cognito/oauth_token_url", decrypt=True
+        )
         if not all([CLIENT_ID, client_secret, TOKEN_URL]):
             print("Error: Missing Cognito credentials in parameter store")
             print(f"CLIENT_ID: {'✓' if CLIENT_ID else '✗'}")
@@ -119,8 +123,7 @@ async def test_mcp_gateway():
 
         # Test the gateway URL directly first
         test_response = requests.get(
-            gateway_url, headers={"Authorization": f"Bearer {access_token}"},
-            timeout=10
+            gateway_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10
         )
         print(f"Direct gateway test - Status: {test_response.status_code}")
         print(f"Direct gateway test - Response: {test_response.text[:200]}...")

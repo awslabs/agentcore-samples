@@ -1,0 +1,29 @@
+{
+  "name": "vpcegress",
+  "version": "0.1.0",
+  "bin": {
+    "vpcegress": "bin/vpcegress.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/jest": "^30",
+    "@types/node": "^24.10.1",
+    "aws-cdk": "2.1114.1",
+    "jest": "^30",
+    "ts-jest": "^29",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.245.0-alpha.0",
+    "@aws-cdk/lambda-layer-kubectl-v31": "^2.1.0",
+    "aws-cdk-lib": "^2.244.0",
+    "cdk-nag": "^2.37.55",
+    "constructs": "^10.5.0"
+  }
+}

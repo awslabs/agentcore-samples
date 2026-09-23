@@ -70,20 +70,14 @@ def get_city_database() -> tuple[list[dict], list[str]]:
 CITIES, CITY_NAMES = get_city_database()
 
 
-def match_city(
-    user_input: str, top_n: int = 3, score_cutoff: int = 80
-) -> list[tuple[str, dict]]:
+def match_city(user_input: str, top_n: int = 3, score_cutoff: int = 80) -> list[tuple[str, dict]]:
     """Match user input to city using fuzzy matching."""
     if not CITY_NAMES:
         return []
 
-    matches = process.extract(
-        user_input.lower(), CITY_NAMES, scorer=fuzz.WRatio, limit=top_n
-    )
+    matches = process.extract(user_input.lower(), CITY_NAMES, scorer=fuzz.WRatio, limit=top_n)
 
-    return [
-        (match, CITIES[idx]) for match, score, idx in matches if score >= score_cutoff
-    ]
+    return [(match, CITIES[idx]) for match, score, idx in matches if score >= score_cutoff]
 
 
 # =============================================================================
@@ -282,9 +276,7 @@ def get_flight_offers(
         return {"error": f"Flight search error: {str(e)}"}
 
 
-def get_hotel_data(
-    city_code: str, ratings: str = "4,5", amenities: str = "AIR_CONDITIONING"
-) -> dict:
+def get_hotel_data(city_code: str, ratings: str = "4,5", amenities: str = "AIR_CONDITIONING") -> dict:
     """Search for hotels in a city."""
     token = get_amadeus_token()
     if not token:
@@ -490,9 +482,7 @@ def serp_hotel_search(query: str, check_in_date: str, check_out_date: str) -> st
             formatted.append(result_text)
 
         header = f"Hotel Search Results for '{query}' ({check_in_date} to {check_out_date}):\n\n"
-        return (
-            header + "\n\n".join(formatted) if formatted else "No hotel results found."
-        )
+        return header + "\n\n".join(formatted) if formatted else "No hotel results found."
 
     except Exception as e:
         return f"Hotel search error: {str(e)}"
@@ -579,9 +569,7 @@ def serp_flight_search(
                         duration = layover.get("duration", 0)
                         hours = duration // 60
                         minutes = duration % 60
-                        layover_details.append(
-                            f"{layover.get('id', 'Unknown')} ({hours}h {minutes}m)"
-                        )
+                        layover_details.append(f"{layover.get('id', 'Unknown')} ({hours}h {minutes}m)")
                     result_text += f"\n   Layovers: {', '.join(layover_details)}"
 
                 # Carbon emissions
@@ -589,9 +577,7 @@ def serp_flight_search(
                 if carbon:
                     diff = carbon.get("difference_percent", 0)
                     this_flight = carbon.get("this_flight", 0) / 1000  # Convert to kg
-                    result_text += (
-                        f"\n   Carbon: {this_flight:.0f} kg ({diff:+d}% vs typical)"
-                    )
+                    result_text += f"\n   Carbon: {this_flight:.0f} kg ({diff:+d}% vs typical)"
 
                 formatted.append(result_text)
 
@@ -635,9 +621,7 @@ def serp_flight_search(
                         duration = layover.get("duration", 0)
                         hours = duration // 60
                         minutes = duration % 60
-                        layover_details.append(
-                            f"{layover.get('id', 'Unknown')} ({hours}h {minutes}m)"
-                        )
+                        layover_details.append(f"{layover.get('id', 'Unknown')} ({hours}h {minutes}m)")
                     result_text += f"\n   Layovers: {', '.join(layover_details)}"
 
                 # Carbon emissions
@@ -645,9 +629,7 @@ def serp_flight_search(
                 if carbon:
                     diff = carbon.get("difference_percent", 0)
                     this_flight = carbon.get("this_flight", 0) / 1000  # Convert to kg
-                    result_text += (
-                        f"\n   Carbon: {this_flight:.0f} kg ({diff:+d}% vs typical)"
-                    )
+                    result_text += f"\n   Carbon: {this_flight:.0f} kg ({diff:+d}% vs typical)"
 
                 formatted.append(result_text)
 

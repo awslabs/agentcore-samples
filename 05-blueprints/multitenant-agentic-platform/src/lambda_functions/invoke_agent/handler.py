@@ -4,9 +4,7 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 import traceback
 
-bedrock_runtime = boto3.client(
-    "bedrock-agentcore", region_name=os.environ["AWS_REGION"]
-)
+bedrock_runtime = boto3.client("bedrock-agentcore", region_name=os.environ["AWS_REGION"])
 
 # Lazy initialization for DynamoDB (only needed if AGGREGATION_TABLE_NAME is set)
 _dynamodb = None
@@ -32,7 +30,7 @@ def check_token_limit(tenant_id: str) -> tuple:
         tuple: (allowed: bool, usage_info: dict)
         - allowed: True if request can proceed, False if limit exceeded
         - usage_info: Contains current usage and limit for error message
-    
+
     Note: This function fails open by default (allows requests on errors).
     Set FAIL_CLOSED=true environment variable to fail closed instead.
     """
@@ -73,21 +71,21 @@ def check_token_limit(tenant_id: str) -> tuple:
     except Exception as e:
         error_msg = f"Error checking token limit for tenant {tenant_id}: {str(e)}"
         print(error_msg)
-        
+
         # Check if we should fail closed (deny on error) or fail open (allow on error)
         fail_closed = os.environ.get("FAIL_CLOSED", "false").lower() == "true"
-        
+
         if fail_closed:
             # Fail closed: deny request on error
-            print(f"FAIL_CLOSED mode: Denying request due to error checking token limit")
+            print("FAIL_CLOSED mode: Denying request due to error checking token limit")
             return False, {
                 "error": "Unable to verify token limit",
                 "tenant_id": tenant_id,
-                "message": "Service temporarily unavailable. Please try again later."
+                "message": "Service temporarily unavailable. Please try again later.",
             }
         else:
             # Fail open: allow request on error (default behavior)
-            print(f"FAIL_OPEN mode: Allowing request despite error checking token limit")
+            print("FAIL_OPEN mode: Allowing request despite error checking token limit")
             return True, {}
 
 
@@ -95,10 +93,10 @@ def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
     """
     Look up the tenant ID associated with an agent from the agent details table.
     This prevents clients from bypassing token limits by omitting or spoofing tenantId.
-    
+
     Args:
         agent_runtime_arn: The agent runtime ARN
-        
+
     Returns:
         str: The tenant ID associated with the agent, or None if not found
     """
@@ -107,18 +105,18 @@ def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
     if not agent_details_table_name:
         print("WARNING: AGENT_DETAILS_TABLE_NAME not configured, cannot look up tenant ID")
         return None
-    
+
     try:
         dynamodb = boto3.resource("dynamodb")
         agent_details_table = dynamodb.Table(agent_details_table_name)
-        
+
         # Scan for the agent with this ARN
         # Note: This could be optimized with a GSI on agentRuntimeArn
         response = agent_details_table.scan(
             FilterExpression=Attr("agentRuntimeArn").eq(agent_runtime_arn),
-            ProjectionExpression="tenantId"
+            ProjectionExpression="tenantId",
         )
-        
+
         items = response.get("Items", [])
         if items:
             tenant_id = items[0].get("tenantId")
@@ -127,20 +125,20 @@ def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
         else:
             print(f"WARNING: No tenant found for agent {agent_runtime_arn}")
             return None
-            
+
     except Exception as e:
         print(f"ERROR: Failed to look up tenant ID for agent {agent_runtime_arn}: {str(e)}")
         return None
 
 
-def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
+def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:  # noqa: F811
     """
     Look up the tenant ID associated with an agent from the agent details table.
     This prevents clients from bypassing token limits by omitting or spoofing tenant IDs.
-    
+
     Args:
         agent_runtime_arn: The agent runtime ARN
-        
+
     Returns:
         The tenant ID associated with the agent, or None if not found
     """
@@ -150,21 +148,22 @@ def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
         if not agent_details_table_name:
             print("WARNING: AGENT_DETAILS_TABLE_NAME not configured, cannot look up tenant ID")
             return None
-        
+
         dynamodb = boto3.resource("dynamodb")
         agent_details_table = dynamodb.Table(agent_details_table_name)
-        
+
         # Extract agent runtime ID from ARN
         # ARN format: arn:aws:bedrock-agentcore:region:account:agent/agent-runtime-id
         agent_runtime_id = agent_runtime_arn.split("/")[-1] if "/" in agent_runtime_arn else agent_runtime_arn
-        
+
         # Scan for the agent (we need to find by agentRuntimeId which is the sort key)
         # In production, consider adding a GSI on agentRuntimeId for better performance
         response = agent_details_table.scan(
-            FilterExpression=Attr("agentRuntimeId").eq(agent_runtime_id) | Attr("agentRuntimeArn").eq(agent_runtime_arn),
-            ProjectionExpression="tenantId"
+            FilterExpression=Attr("agentRuntimeId").eq(agent_runtime_id)
+            | Attr("agentRuntimeArn").eq(agent_runtime_arn),
+            ProjectionExpression="tenantId",
         )
-        
+
         items = response.get("Items", [])
         if items:
             tenant_id = items[0].get("tenantId")
@@ -173,7 +172,7 @@ def get_tenant_id_from_agent(agent_runtime_arn: str) -> str:
         else:
             print(f"WARNING: No tenant found for agent {agent_runtime_id}")
             return None
-            
+
     except Exception as e:
         print(f"Error looking up tenant ID for agent {agent_runtime_arn}: {str(e)}")
         return None
@@ -272,7 +271,7 @@ def lambda_handler(event, context):
         # Look up tenant ID from agent details (server-side, not client-supplied)
         # This prevents clients from bypassing token limits
         tenant_id = get_tenant_id_from_agent(agent_id)
-        
+
         if tenant_id:
             print(f"Tenant ID (server-side lookup): {tenant_id}")
             allowed, usage_info = check_token_limit(tenant_id)

@@ -1,0 +1,26 @@
+# Deploy scripts + the frontend BFF. The agent's runtime container has its own
+# requirements at agent/requirements.txt.
+
+# AWS. 1.43.88 is the first release whose bedrock-agentcore-control model
+# carries the consent-portal operations. On anything older the calls fail with
+#   'BedrockAgentCoreControlPlaneFrontingLayer' object has no attribute
+#   'create_consent_portal'
+# which reads like a missing feature rather than a stale SDK.
+boto3>=1.43.88
+botocore>=1.43.88
+
+# Frontend (BFF)
+fastapi>=0.115
+uvicorn[standard]>=0.32
+itsdangerous>=2.2
+jinja2>=3.1
+python-multipart>=0.0.18
+httpx>=0.27
+# Entra sign-in
+msal>=1.31
+# Okta sign-in
+authlib>=1.3
+
+# Config + Okta Admin API calls
+python-dotenv>=1.0
+requests>=2.32

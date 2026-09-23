@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+agentcore-cli/
+**/old/
+*.ipynb
+package-lock.json
+uv.lock

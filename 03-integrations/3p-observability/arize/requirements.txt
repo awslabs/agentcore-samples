@@ -1,0 +1,10 @@
+bedrock-agentcore>=1.5.0
+boto3
+strands-agents[otel]
+strands-agents-tools
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+openinference-instrumentation-strands-agents
+ddgs
+python-dotenv

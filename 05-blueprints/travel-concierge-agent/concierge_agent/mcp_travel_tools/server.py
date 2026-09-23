@@ -24,9 +24,7 @@ if not REGION:
 ssm_client = boto3.client("ssm", region_name=REGION)
 
 # Create MCP server
-mcp = FastMCP(
-    "Travel Tools", host="0.0.0.0", stateless_http=True
-)  # nosec B104:standard pattern for containerized MCP serverss
+mcp = FastMCP("Travel Tools", host="0.0.0.0", stateless_http=True)  # nosec B104:standard pattern for containerized MCP serverss
 
 
 def get_ssm_parameter(parameter_name: str) -> str | None:

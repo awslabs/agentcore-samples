@@ -1,0 +1,24 @@
+# Local secrets and venv — populated by Steps 1-2 in README.md.
+.env
+.venv/
+
+# Python caches.
+__pycache__/
+*.pyc
+
+# CDK build output.
+seller/cdk/cdk.out/
+seller/cdk/outputs.json
+agent/cdk/cdk.out/
+agent/cdk/outputs.json
+
+# Seller Lambda npm modules (~16k files of x402 facilitator deps,
+# installed by deploy-seller.sh and removed by §10 cleanup).
+seller/lambda/node_modules/
+seller/lambda/package-lock.json
+
+# Privy Wallet Hub frontend. The script clones
+# https://github.com/privy-io/aws-agentcore-sdk into `privy-delegation/`
+# in §6b. The folder is a vendored upstream tree, not part of this
+# sample, so it is never committed.
+privy-delegation/

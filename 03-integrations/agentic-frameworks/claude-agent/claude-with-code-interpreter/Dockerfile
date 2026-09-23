@@ -1,5 +1,5 @@
-# Use uv's ARM64 Python base image
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+FROM public.ecr.aws/docker/library/python:3.11-slim-trixie
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ENV UV_SYSTEM_PYTHON=1 \
     UV_PROJECT_ENVIRONMENT="/usr/local/" \

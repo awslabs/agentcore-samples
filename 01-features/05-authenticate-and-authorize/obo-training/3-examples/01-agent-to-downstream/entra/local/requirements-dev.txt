@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0.0
+pytest-mock>=3.12.0
+freezegun>=1.4.0

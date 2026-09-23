@@ -1,0 +1,160 @@
+# Checkov configuration for amazon-bedrock-agentcore-samples
+# This repository contains tutorial and sample code. Certain security best
+# practices are intentionally simplified to keep samples focused and accessible.
+# Production deployments should implement all security best practices.
+
+skip-check:
+  # Lambda - VPC configuration
+  # Sample Lambda functions use public internet access by design (Bedrock API calls).
+  # Production code should evaluate VPC placement based on network requirements.
+  - CKV_AWS_117
+
+  # Lambda - Dead Letter Queue
+  # Tutorial samples do not require DLQ for demonstration purposes.
+  # Production workloads should configure DLQ for error handling.
+  - CKV_AWS_116
+
+  # Lambda - Concurrent execution limit
+  # Samples use unreserved concurrency; production deployments should set limits.
+  - CKV_AWS_115
+
+  # Lambda - Code signing configuration
+  # Code signing adds operational overhead beyond the scope of these tutorials.
+  - CKV_AWS_173
+
+  # ECR - KMS encryption (default AWS-managed encryption is used)
+  # Samples use default ECR encryption. Production should use KMS CMK.
+  - CKV_AWS_136
+
+  # DynamoDB - KMS CMK encryption
+  # Samples use default DynamoDB encryption. Production should use KMS CMK.
+  - CKV_AWS_119
+
+  # DynamoDB - Point-in-time recovery (PITR)
+  # Not required for tutorial sample data.
+  - CKV_AWS_28
+
+  # S3 - Access logging
+  # Access logging requires an additional logging bucket; omitted for sample simplicity.
+  - CKV_AWS_18
+
+  # S3 - Versioning
+  # Not required for tutorial samples.
+  - CKV_AWS_21
+
+  # CloudWatch Logs - KMS encryption
+  # Sample log groups use default encryption. Production should use KMS CMK.
+  - CKV_AWS_158
+
+  # SecretsManager - KMS CMK
+  # Samples use default Secrets Manager encryption. Production should use KMS CMK.
+  - CKV_AWS_149
+
+  # IAM - Write access without constraints / data exfiltration
+  # Sample IAM roles are intentionally scoped broadly for tutorial clarity.
+  # Production deployments must apply least-privilege policies.
+  - CKV_AWS_111
+  - CKV_AWS_108
+  - CKV_AWS_109
+
+  # Lambda permission - source account / source ARN
+  # Tutorial sample Lambda permissions use simplified resource-based policies.
+  - CKV_AWS_364
+  - CKV_AWS_363
+
+  # API Gateway - caching, access logging, metrics
+  # Sample API Gateway stages omit optional monitoring/caching configuration.
+  - CKV_AWS_120
+  - CKV_AWS_73
+  - CKV_AWS_76
+
+  # Kinesis - stream encryption
+  # Sample streams use default encryption.
+  - CKV_AWS_43
+
+  # SQS - encryption at rest
+  # Sample queues use default encryption.
+  - CKV_AWS_27
+
+  # EC2 Security Group - description / open ports
+  # Sample security groups are intentionally permissive for connectivity demos.
+  - CKV_AWS_24
+  - CKV_AWS_23
+
+  # CloudFront - various configuration checks
+  - CKV_AWS_86
+  - CKV_AWS_68
+  - CKV_AWS_174
+  - CKV_AWS_2
+  - CKV_AWS_103
+
+  # RDS/Aurora - various checks
+  - CKV_AWS_162
+  - CKV_AWS_165
+
+  # API Gateway - open method access
+  # Bearer-token-injection workshop intentionally uses open API methods for demo purposes.
+  - CKV_AWS_59
+
+  # Lambda - X-Ray tracing
+  # Sample Lambda functions do not enable X-Ray for tutorial simplicity.
+  - CKV_AWS_50
+
+  # Lambda - Code signing (v2 check)
+  # Workshop sample Lambdas do not use code signing.
+  - CKV_AWS_272
+
+  # Lambda - Resource-based policy with broad invoke permissions
+  # AgentCore gateway role intentionally allows invoking target Lambdas.
+  - CKV_AWS_290
+  - CKV_AWS_355
+
+  # API Gateway - WAF association
+  # Workshop sample API Gateway stages do not require WAF for tutorial demos.
+  - CKV_AWS_237
+  - CKV2_AWS_4
+
+  # API Gateway - access logging and client certificates
+  # Omitted for workshop sample simplicity.
+  - CKV2_AWS_29
+  - CKV2_AWS_51
+
+  # Docker - HEALTHCHECK instruction
+  # Sample Dockerfiles omit HEALTHCHECK for tutorial simplicity.
+  - CKV_DOCKER_2
+
+  # Docker - USER instruction (non-root)
+  # Sample Dockerfiles run as root for simplicity; production should use a non-root user.
+  - CKV_DOCKER_3
+
+  # Kubernetes - various security checks
+  # Sample K8s manifests are simplified for demonstration purposes.
+  - CKV_K8S_21
+  - CKV_K8S_37
+  - CKV_K8S_31
+  - CKV_K8S_8
+  - CKV_K8S_20
+  - CKV_K8S_15
+  - CKV_K8S_13
+  - CKV_K8S_40
+  - CKV_K8S_22
+  - CKV_K8S_9
+  - CKV_K8S_28
+  - CKV_K8S_14
+  - CKV_K8S_38
+  - CKV_K8S_23
+  - CKV_K8S_43
+  - CKV_K8S_11
+  - CKV2_K8S_6
+
+  # OpenAPI - security definitions
+  # Sample OpenAPI specs use simplified security for tutorial clarity.
+  - CKV_OPENAPI_4
+  - CKV_OPENAPI_5
+  - CKV_OPENAPI_21
+
+  # Secret scanning - false positives in API spec examples and placeholder values
+  # These files contain example tokens in OpenAPI/Smithy documentation and
+  # explicit placeholder values, not real credentials.
+  - CKV_SECRET_6
+  - CKV_SECRET_2

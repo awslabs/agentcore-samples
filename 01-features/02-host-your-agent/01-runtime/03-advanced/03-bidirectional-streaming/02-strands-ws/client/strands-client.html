@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BidiAgent WebSocket</title>
+    <!-- AWS SDK v3 for SigV4 signing -->
+    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-bedrock-agent-runtime@3/dist-browser/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/credential-providers@3/dist-browser/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 10px;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            height: calc(100vh - 20px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .header-text {
+            text-align: left;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 2px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            opacity: 0.95;
+            font-size: 12px;
+        }
+        
+        .content {
+            padding: 15px 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        #status { 
+            padding: 8px 16px;
+            border-radius: 16px;
+            font-weight: 600;
+            font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            min-width: 140px;
+            text-align: center;
+        }
+        
+        .connected { 
+            background: rgba(129, 199, 132, 0.95);
+            color: white;
+        }
+        
+        .disconnected { 
+            background: rgba(229, 115, 115, 0.95);
+            color: white;
+        }
+        
+        #controls { 
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            max-width: 500px;
+        }
+        
+        #textInputSection {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        
+        #textInput {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+        
+        #textInput:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        #textInput:disabled {
+            opacity: 0.5;
+        }
+        
+        #sendTextBtn {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        
+        button { 
+            flex: 1;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
+        
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #toggleBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        #toggleBtn.connected {
+            background: linear-gradient(135deg, #e57373 0%, #ef5350 100%);
+        }
+        
+        .config-section {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .form-group {
+            margin-bottom: 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+            color: #333;
+            font-size: 11px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 12px;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+
+        
+        .panels-container { 
+            display: flex;
+            gap: 15px;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+        
+        .panel { 
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        
+        .panel h2 { 
+            margin: 0;
+            padding: 10px 15px;
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-bottom: none;
+            flex-shrink: 0;
+        }
+        
+        .panel-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            flex-shrink: 0;
+        }
+        
+        .event-filter {
+            padding: 6px 15px 10px 15px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .event-filter input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 12px;
+            font-family: inherit;
+        }
+        
+        .event-filter input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .event-filter input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .event.hidden {
+            display: none;
+        }
+        
+        #messages { 
+            height: 0;
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 15px;
+            background: #fafafa;
+        }
+        
+        #messages::-webkit-scrollbar,
+        #events::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #messages::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        #messages::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+        
+        .message { 
+            margin: 8px 0;
+            padding: 10px 14px;
+            border-radius: 14px;
+            max-width: 80%;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 13px;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .user { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        
+        .assistant { 
+            background: white;
+            border: 2px solid #e0e0e0;
+            color: #333;
+        }
+        
+        .system { 
+            background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%);
+            color: #f57f17;
+            font-style: italic;
+            text-align: center;
+            margin: 10px auto;
+            max-width: 60%;
+            font-size: 12px;
+        }
+        
+        .tool { 
+            background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
+            color: #2e7d32;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        #events { 
+            height: 0;
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 15px;
+            background: #1e1e1e;
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+            font-size: 11px;
+        }
+        
+        #events::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+        
+        #events::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+        
+        .event { 
+            margin: 6px 0;
+            padding: 8px 10px;
+            border-left: 3px solid #667eea;
+            background: #2d2d2d;
+            color: #d4d4d4;
+            border-radius: 4px;
+            animation: slideIn 0.2s ease;
+        }
+        
+        .event.sent { 
+            border-left-color: #4caf50;
+            background: #1a2e1a;
+        }
+        
+        .event.received { 
+            border-left-color: #2196f3;
+            background: #1a2533;
+        }
+        
+        .event-type { 
+            color: #ffa726;
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        
+        .event-time { 
+            color: #9e9e9e;
+            font-size: 9px;
+            margin-bottom: 4px;
+        }
+        
+        .event-data { 
+            color: #81c784;
+            margin-top: 4px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.4;
+            font-size: 10px;
+        }
+        
+        .event-data.audio-event {
+            max-height: 100px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        
+        .event-data.audio-event::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .event-data.audio-event::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        
+        .event-data.audio-event::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 2px;
+        }
+        
+        /* Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        .modal h2 {
+            margin: 0 0 20px 0;
+            color: #667eea;
+            font-size: 24px;
+        }
+        
+        .modal-form-group {
+            margin-bottom: 16px;
+        }
+        
+        .modal-form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #333;
+            font-size: 13px;
+        }
+        
+        .modal-form-group input,
+        .modal-form-group select,
+        .modal-form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .modal-form-group input:focus,
+        .modal-form-group select:focus,
+        .modal-form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .modal-form-group small {
+            display: block;
+            margin-top: 4px;
+            color: #666;
+            font-size: 11px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 24px;
+        }
+        
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px 24px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        
+        .config-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 4px;
+            font-size: 11px;
+            color: #667eea;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-text">
+                <h1>🎙️ AgentCore & Strands BidiAgent</h1>
+            </div>
+            <div id="status" class="disconnected">Disconnected</div>
+        </div>
+        
+        <div class="content">
+            <div class="config-section">
+                <div class="form-group">
+                    <label for="presignedUrl">🔐 Pre-signed WebSocket URL (SigV4 Query String)</label>
+                    <input type="text" id="presignedUrl" placeholder="wss://endpoint/runtimes/arn/ws?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Signature=...">
+                    <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                        Paste the complete pre-signed URL with SigV4 authentication parameters in the query string
+                    </small>
+                </div>
+            </div>
+            
+            <div id="controls">
+                <button id="toggleBtn" onclick="toggleConnection()">🚀 Start Conversation</button>
+                <button id="configBtn" onclick="openConfigModal()" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white;">⚙️ Configure</button>
+            </div>
+            
+            <div id="textInputSection">
+                <input type="text" id="textInput" placeholder="Type a message and press Enter..." disabled>
+                <button id="sendTextBtn" onclick="sendTextMessage()" disabled>📤 Send</button>
+            </div>
+            
+            <div class="panels-container">
+                <div class="panel">
+                    <h2>💬 Conversation</h2>
+                    <div id="messages"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📡 Raw Events</h2>
+                        <div class="event-filter">
+                            <input type="text" id="eventFilter" placeholder="🔍 Filter events by keyword..." oninput="filterEvents()" />
+                        </div>
+                    </div>
+                    <div id="events"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal-overlay">
+        <div class="modal">
+            <h2>⚙️ Agent Configuration</h2>
+            
+            <div class="modal-form-group">
+                <label for="modalRegion">🌍 Region</label>
+                <select id="modalRegion">
+                    <option value="us-east-1" selected>US East (N. Virginia)</option>
+                    <option value="us-west-2">US West (Oregon)</option>
+                    <option value="eu-north-1">Europe (Stockholm)</option>
+                    <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+                </select>
+                <small>AWS region where Nova Sonic is available</small>
+            </div>
+            
+            <div class="modal-form-group">
+                <label for="modalProfile">📋 Profile</label>
+                <select id="modalProfile" onchange="applyProfile()">
+                </select>
+                <small>Load a pre-configured profile to populate the fields below</small>
+            </div>
+            
+            <div class="modal-form-group">
+                <label for="modalVoice">🎤 Voice</label>
+                <select id="modalVoice">
+                    <option value="tiffany">Tiffany (Female)</option>
+                    <option value="matthew" selected>Matthew (Male)</option>
+                    <option value="ruth">Ruth (Female)</option>
+                    <option value="gregory">Gregory (Male)</option>
+                    <option value="joanna">Joanna (Female)</option>
+                </select>
+                <small>Select the voice for text-to-speech output</small>
+            </div>
+            
+            <div class="modal-form-group">
+                <label for="modalModelId">🤖 Model</label>
+                <select id="modalModelId" onchange="updateModelConfig()">
+                    <option value="amazon.nova-2-sonic-v1:0" selected>Amazon Nova 2 Sonic (16kHz)</option>
+                    <option value="gemini-2.5-flash-native-audio-preview-12-2025">Google Gemini 2.5 Flash Native Audio (24kHz)</option>
+                    <option value="gpt-realtime">OpenAI GPT Realtime (24kHz)</option>
+                </select>
+                <small>Select the AI model - sample rates are automatically configured</small>
+            </div>
+            
+            <div class="modal-form-group" id="apiKeyGroup" style="display: none;">
+                <label for="modalApiKey">🔑 API Key</label>
+                <input type="password" id="modalApiKey" placeholder="Enter your API key...">
+                <small id="apiKeyHint">Required for the selected model</small>
+            </div>
+            
+            <div class="modal-form-group">
+                <label for="modalSystemPrompt">� System Prompt</label>a
+                <textarea id="modalSystemPrompt" placeholder="You are a helpful assistant...">You are a helpful customer service assistant.</textarea>
+                <small>Instructions that define the agent's behavior and personality</small>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeConfigModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        let audioContext = null;
+        let isRecording = false;
+        let audioPlaybackContext = null;
+        let nextPlayTime = 0;
+        
+        // Configuration storage
+        let agentConfig = {
+            voice: 'matthew',
+            modelId: 'amazon.nova-2-sonic-v1:0',
+            region: 'us-east-1',
+            systemPrompt: 'You are a helpful customer service assistant.',
+            inputSampleRate: 24000,
+            outputSampleRate: 24000,
+            apiKey: ''
+        };
+        
+        // Model-specific configurations
+        const MODEL_CONFIGS = {
+            'amazon.nova-2-sonic-v1:0': {
+                inputSampleRate: 16000,
+                outputSampleRate: 16000,
+                displayName: 'Amazon Nova 2 Sonic',
+                supportsVoice: true
+            },
+            'gemini-2.5-flash-native-audio-preview-12-2025': {
+                inputSampleRate: 24000,
+                outputSampleRate: 24000,
+                displayName: 'Google Gemini 2.5 Flash Native Audio',
+                supportsVoice: false
+            },
+            'gpt-realtime': {
+                inputSampleRate: 24000,
+                outputSampleRate: 24000,
+                displayName: 'OpenAI GPT Realtime',
+                supportsVoice: false
+            }
+        };
+        
+        // Transcript buffering for better display
+        let transcriptBuffer = {
+            user: { text: '', timer: null, element: null },
+            assistant: { text: '', timer: null, element: null }
+        };
+        const TRANSCRIPT_BUFFER_DELAY = 1000; // 1 second delay before finalizing
+        
+        // Profiles loaded from server
+        let profiles = [];
+        
+        // Load profiles from server
+        async function loadProfiles() {
+            try {
+                const response = await fetch('/api/profiles');
+                profiles = await response.json();
+                
+                const select = document.getElementById('modalProfile');
+                select.innerHTML = '';
+                
+                profiles.forEach((profile, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = profile.name;
+                    select.appendChild(option);
+                });
+                
+                // Always default to first profile and apply its values
+                if (profiles.length > 0) {
+                    select.value = '0';
+                    applyProfileToConfig(profiles[0]);
+                }
+            } catch (e) {
+                console.error('Error loading profiles:', e);
+            }
+        }
+        
+        // Apply selected profile to form fields
+        function applyProfile() {
+            const select = document.getElementById('modalProfile');
+            const index = select.value;
+            
+            const profile = profiles[index];
+            if (!profile) return;
+            
+            document.getElementById('modalVoice').value = profile.voice || 'matthew';
+            document.getElementById('modalModelId').value = profile.model_id || 'amazon.nova-2-sonic-v1:0';
+            document.getElementById('modalRegion').value = profile.region || 'us-east-1';
+            document.getElementById('modalSystemPrompt').value = profile.system_prompt || '';
+            // Update voice and API key field visibility based on selected model
+            updateModelConfig();
+        }
+        
+        // Apply a profile object directly to agentConfig (used on page load)
+        function applyProfileToConfig(profile) {
+            const modelId = profile.model_id || 'amazon.nova-2-sonic-v1:0';
+            const modelConfig = MODEL_CONFIGS[modelId];
+            agentConfig = {
+                voice: profile.voice || 'matthew',
+                modelId: modelId,
+                region: profile.region || 'us-east-1',
+                systemPrompt: profile.system_prompt || '',
+                inputSampleRate: modelConfig ? modelConfig.inputSampleRate : 24000,
+                outputSampleRate: modelConfig ? modelConfig.outputSampleRate : 24000,
+                apiKey: ''
+            };
+            
+            // Also populate the modal form fields so they're ready when opened
+            document.getElementById('modalVoice').value = agentConfig.voice;
+            document.getElementById('modalModelId').value = agentConfig.modelId;
+            document.getElementById('modalRegion').value = agentConfig.region;
+            document.getElementById('modalApiKey').value = '';
+            document.getElementById('modalSystemPrompt').value = agentConfig.systemPrompt;
+            
+            localStorage.setItem('agentConfig', JSON.stringify({
+                voice: agentConfig.voice,
+                modelId: agentConfig.modelId,
+                region: agentConfig.region,
+                systemPrompt: agentConfig.systemPrompt,
+                inputSampleRate: agentConfig.inputSampleRate,
+                outputSampleRate: agentConfig.outputSampleRate
+            }));
+        }
+        function updateModelConfig() {
+            const modelId = document.getElementById('modalModelId').value;
+            const config = MODEL_CONFIGS[modelId];
+            const apiKeyGroup = document.getElementById('apiKeyGroup');
+            const apiKeyHint = document.getElementById('apiKeyHint');
+            
+            if (config) {
+                // Update voice field visibility based on model support
+                const voiceGroup = document.getElementById('modalVoice').closest('.modal-form-group');
+                voiceGroup.style.display = config.supportsVoice ? 'block' : 'none';
+                
+                // Show API key field for non-Nova models
+                if (modelId.startsWith('amazon.nova')) {
+                    apiKeyGroup.style.display = 'none';
+                } else if (modelId.startsWith('gpt-')) {
+                    apiKeyGroup.style.display = 'block';
+                    apiKeyHint.textContent = 'OpenAI API key (OPENAI_API_KEY)';
+                } else if (modelId.startsWith('gemini')) {
+                    apiKeyGroup.style.display = 'block';
+                    apiKeyHint.textContent = 'Google API key (GOOGLE_API_KEY)';
+                }
+            }
+        }
+        
+        // Modal functions
+        function openConfigModal() {
+            // Populate modal with current config
+            document.getElementById('modalVoice').value = agentConfig.voice;
+            document.getElementById('modalModelId').value = agentConfig.modelId;
+            document.getElementById('modalRegion').value = agentConfig.region;
+            document.getElementById('modalApiKey').value = agentConfig.apiKey || '';
+            document.getElementById('modalSystemPrompt').value = agentConfig.systemPrompt;
+            
+            // Match profile dropdown to current config (find matching profile or default to first)
+            const select = document.getElementById('modalProfile');
+            select.value = '0';
+            for (let i = 0; i < profiles.length; i++) {
+                const p = profiles[i];
+                if (p.voice === agentConfig.voice &&
+                    p.model_id === agentConfig.modelId &&
+                    p.system_prompt === agentConfig.systemPrompt) {
+                    select.value = String(i);
+                    break;
+                }
+            }
+            
+            // Update voice and API key field visibility
+            updateModelConfig();
+            document.getElementById('configModal').classList.add('active');
+        }
+        
+        function closeConfigModal() {
+            document.getElementById('configModal').classList.remove('active');
+        }
+        
+        function saveConfig() {
+            try {
+                // Validate and save configuration
+                const voice = document.getElementById('modalVoice').value;
+                const modelId = document.getElementById('modalModelId').value;
+                const region = document.getElementById('modalRegion').value;
+                const apiKey = document.getElementById('modalApiKey').value.trim();
+                const systemPrompt = document.getElementById('modalSystemPrompt').value.trim();
+                
+                // Get model-specific sample rates
+                const modelConfig = MODEL_CONFIGS[modelId];
+                if (!modelConfig) {
+                    alert('Invalid model selected');
+                    return;
+                }
+                
+                // Validate API key for non-Nova models
+                if (!modelId.startsWith('amazon.nova') && !apiKey) {
+                    const provider = modelId.startsWith('gpt-') ? 'OpenAI' : 'Google';
+                    alert(`${provider} API key is required for the selected model.`);
+                    return;
+                }
+                
+                // Validate system prompt
+                if (!systemPrompt) {
+                    alert('System prompt cannot be empty');
+                    return;
+                }
+                
+                // Save configuration with model-specific sample rates
+                agentConfig = {
+                    voice: voice,
+                    modelId: modelId,
+                    region: region,
+                    systemPrompt: systemPrompt,
+                    inputSampleRate: modelConfig.inputSampleRate,
+                    outputSampleRate: modelConfig.outputSampleRate,
+                    apiKey: apiKey
+                };
+                
+                // Store in localStorage for persistence (exclude apiKey — never persist secrets)
+                const configForStorage = {
+                    voice: voice,
+                    modelId: modelId,
+                    region: region,
+                    systemPrompt: systemPrompt,
+                    inputSampleRate: modelConfig.inputSampleRate,
+                    outputSampleRate: modelConfig.outputSampleRate
+                };
+                localStorage.setItem('agentConfig', JSON.stringify(configForStorage));
+                
+                closeConfigModal();
+                
+                // Show success message
+                alert(`✅ Configuration saved successfully!\n\nModel: ${modelConfig.displayName}\nInput: ${modelConfig.inputSampleRate}Hz, Output: ${modelConfig.outputSampleRate}Hz\n\nThe new settings will be applied when you start the next conversation.`);
+                
+            } catch (e) {
+                alert('Error saving configuration: ' + e.message);
+            }
+        }
+        
+        // Load configuration from localStorage on page load
+        function loadConfig() {
+            try {
+                const saved = localStorage.getItem('agentConfig');
+                if (saved) {
+                    const savedConfig = JSON.parse(saved);
+                    // Merge with defaults to ensure all fields exist
+                    agentConfig = {
+                        ...agentConfig,
+                        ...savedConfig
+                    };
+                    // Ensure sample rates match the model
+                    const modelConfig = MODEL_CONFIGS[agentConfig.modelId];
+                    if (modelConfig) {
+                        agentConfig.inputSampleRate = modelConfig.inputSampleRate;
+                        agentConfig.outputSampleRate = modelConfig.outputSampleRate;
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading config:', e);
+            }
+        }
+    
+        function addMessage(content, type) {
+            const messages = document.getElementById('messages');
+            const message = document.createElement('div');
+            message.className = 'message ' + type;
+            message.textContent = content;
+            messages.appendChild(message);
+            messages.scrollTop = messages.scrollHeight;
+            return message;
+        }
+        
+        function handleBufferedTranscript(role, text) {
+            // Validate role to prevent issues
+            const allowedRoles = ['user', 'assistant'];
+            if (!allowedRoles.includes(role)) {
+                console.warn(`Invalid role: ${role}`);
+                return;
+            }
+            
+            const buffer = transcriptBuffer[role];
+            
+            // Clear existing timer
+            if (buffer.timer) {
+                clearTimeout(buffer.timer);
+            }
+            
+            // Append new text
+            buffer.text += (buffer.text ? ' ' : '') + text;
+            
+            // Update or create message element
+            if (buffer.element && buffer.element.parentNode) {
+                // Update existing message
+                const prefix = role === 'user' ? '🎤 User' : '🔊 Assistant';
+                buffer.element.textContent = `${prefix}: ${buffer.text}`;
+            } else {
+                // Create new message
+                const prefix = role === 'user' ? '🎤 User' : '🔊 Assistant';
+                buffer.element = addMessage(`${prefix}: ${buffer.text}`, role);
+            }
+            
+            // Set timer to finalize the message
+            buffer.timer = setTimeout(() => {
+                buffer.text = '';
+                buffer.element = null;
+                buffer.timer = null;
+            }, TRANSCRIPT_BUFFER_DELAY);
+        }
+        
+        function clearTranscriptBuffers() {
+            // Clear all buffers and timers
+            for (let role in transcriptBuffer) {
+                if (transcriptBuffer[role].timer) {
+                    clearTimeout(transcriptBuffer[role].timer);
+                }
+                transcriptBuffer[role] = { text: '', timer: null, element: null };
+            }
+        }
+        
+        function filterEvents() {
+            const filterInput = document.getElementById('eventFilter');
+            const filterText = filterInput.value.toLowerCase();
+            const events = document.querySelectorAll('#events .event');
+            
+            events.forEach(event => {
+                const eventText = event.textContent.toLowerCase();
+                if (eventText.includes(filterText)) {
+                    event.classList.remove('hidden');
+                } else {
+                    event.classList.add('hidden');
+                }
+            });
+        }
+        
+        function addEvent(direction, type, data) {
+            const events = document.getElementById('events');
+            const event = document.createElement('div');
+            event.className = 'event ' + direction;
+            
+            const time = new Date().toLocaleTimeString();
+            const arrow = direction === 'sent' ? '⬆️' : '⬇️';
+            
+            let displayData = data;
+            if (typeof data === 'object') {
+                displayData = JSON.parse(JSON.stringify(data));
+                
+                // Truncate audio field for bidi_audio_input events
+                if (type === 'bidi_audio_input' && displayData.audio && typeof displayData.audio === 'string') {
+                    if (displayData.audio.length > 20) {
+                        displayData.audio = displayData.audio.substring(0, 20) + '... [truncated]';
+                    }
+                }
+                
+                // Truncate audio field for bidi_audio_stream events
+                if (type === 'bidi_audio_stream' && displayData.audio && typeof displayData.audio === 'string') {
+                    if (displayData.audio.length > 20) {
+                        displayData.audio = displayData.audio.substring(0, 20) + '... [truncated]';
+                    }
+                }
+            }
+            
+            const dataStr = typeof displayData === 'object' ? JSON.stringify(displayData, null, 2) : displayData;
+            
+            // Create elements safely without innerHTML
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'event-time';
+            timeDiv.textContent = `${time} ${arrow}`;
+            
+            const typeDiv = document.createElement('div');
+            typeDiv.className = 'event-type';
+            typeDiv.textContent = type;
+            
+            const dataDiv = document.createElement('div');
+            dataDiv.className = 'event-data';
+            dataDiv.textContent = dataStr;
+            
+            event.appendChild(timeDiv);
+            event.appendChild(typeDiv);
+            event.appendChild(dataDiv);
+            
+            events.appendChild(event);
+            events.scrollTop = events.scrollHeight;
+        }
+    
+        function updateStatus(connected, recording = false) {
+            const status = document.getElementById('status');
+            const toggleBtn = document.getElementById('toggleBtn');
+            const textInput = document.getElementById('textInput');
+            const sendTextBtn = document.getElementById('sendTextBtn');
+            
+            if (connected) {
+                status.textContent = recording ? '🔴 Recording' : '🟢 Connected';
+                status.className = 'connected';
+                toggleBtn.textContent = '🛑 End Conversation';
+                toggleBtn.className = 'connected';
+                textInput.disabled = false;
+                sendTextBtn.disabled = false;
+            } else {
+                status.textContent = '⚫ Disconnected';
+                status.className = 'disconnected';
+                toggleBtn.textContent = '🚀 Start Conversation';
+                toggleBtn.className = '';
+                textInput.disabled = true;
+                sendTextBtn.disabled = true;
+            }
+        }
+        
+        function toggleConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+    
+        async function playAudioOutput(base64Audio, sampleRate) {
+            if (!audioPlaybackContext) {
+                audioPlaybackContext = new AudioContext({ sampleRate: sampleRate });
+                nextPlayTime = audioPlaybackContext.currentTime;
+            }
+            
+            if (audioPlaybackContext.state === 'suspended') {
+                await audioPlaybackContext.resume();
+            }
+    
+            // Decode base64 to bytes
+            const binaryString = atob(base64Audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+    
+            // Convert to Int16 then Float32
+            const int16Data = new Int16Array(bytes.buffer);
+            const float32Data = new Float32Array(int16Data.length);
+            for (let i = 0; i < int16Data.length; i++) {
+                float32Data[i] = int16Data[i] / 32768.0;
+            }
+    
+            // Create and play buffer
+            const buffer = audioPlaybackContext.createBuffer(1, float32Data.length, sampleRate);
+            buffer.getChannelData(0).set(float32Data);
+            
+            const currentTime = audioPlaybackContext.currentTime;
+            if (nextPlayTime < currentTime) {
+                nextPlayTime = currentTime;
+            }
+            
+            const source = audioPlaybackContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioPlaybackContext.destination);
+            source.start(nextPlayTime);
+            nextPlayTime += buffer.duration;
+        }
+    
+        function generateSessionId() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            return Array.from({ length: 50 }, () => 
+                chars.charAt(Math.floor(Math.random() * chars.length))
+            ).join('');
+        }
+        
+        async function connect() {
+            // Clear previous messages and events
+            document.getElementById('messages').textContent = '';
+            document.getElementById('events').textContent = '';
+            clearTranscriptBuffers();
+            
+            // Get pre-signed URL
+            const presignedUrl = document.getElementById('presignedUrl').value.trim();
+            
+            if (!presignedUrl) {
+                addMessage('❌ Error: Pre-signed URL is required', 'system');
+                return;
+            }
+            
+            if (!presignedUrl.startsWith('ws://') && !presignedUrl.startsWith('wss://')) {
+                addMessage('❌ Error: URL must start with ws:// or wss://', 'system');
+                return;
+            }
+            
+            addMessage('🔐 Using SigV4 pre-signed URL', 'system');
+            addMessage(`🔗 Connecting...`, 'system');
+            
+            // Validate API key for non-Nova models
+            if (!agentConfig.modelId.startsWith('amazon.nova') && !agentConfig.apiKey) {
+                const provider = agentConfig.modelId.startsWith('gpt-') ? 'OpenAI' : 'Google';
+                addMessage(`❌ Error: ${provider} API key is required. Click Configure to set it.`, 'system');
+                return;
+            }
+            
+            try {
+                ws = new WebSocket(presignedUrl);
+                
+                ws.onerror = (error) => {
+                    addMessage(`❌ WebSocket error: ${error.message || 'Connection failed'}`, 'system');
+                    console.error('WebSocket error:', error);
+                    updateStatus(false);
+                };
+            
+                ws.onopen = async () => {
+                addMessage('Connected to BidiAgent', 'system');
+                updateStatus(true);
+                
+                // Send config event with full configuration
+                const configPayload = {
+                    type: "config",
+                    voice: agentConfig.voice,
+                    model_id: agentConfig.modelId,
+                    region: agentConfig.region,
+                    system_prompt: agentConfig.systemPrompt,
+                    input_sample_rate: agentConfig.inputSampleRate,
+                    output_sample_rate: agentConfig.outputSampleRate,
+                    api_key: agentConfig.apiKey || undefined
+                };
+                
+                ws.send(JSON.stringify(configPayload));
+                addEvent('sent', 'config', configPayload);
+                
+                const modelConfig = MODEL_CONFIGS[agentConfig.modelId];
+                addMessage(`🤖 Model: ${modelConfig.displayName}`, 'system');
+                addMessage(`🌍 Region: ${agentConfig.region}`, 'system');
+                addMessage(`🎤 Voice: ${agentConfig.voice}`, 'system');
+                addMessage(`📊 Audio: ${agentConfig.inputSampleRate}Hz input, ${agentConfig.outputSampleRate}Hz output`, 'system');
+                
+                // Automatically start recording
+                await startRecording();
+            };
+            
+            ws.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                
+                // Log all received events
+                addEvent('received', data.type, data);
+                
+                switch (data.type) {
+                    case 'bidi_audio_stream':
+                        // Audio output: use model-specific output sample rate from config
+                        const outputSampleRate = MODEL_CONFIGS[agentConfig.modelId] ? MODEL_CONFIGS[agentConfig.modelId].outputSampleRate : 16000;
+                        await playAudioOutput(data.audio, outputSampleRate);
+                        break;
+                    case 'bidi_transcript_stream':
+                        // Nova Sonic: display immediately (works well)
+                        // Gemini & OpenAI: buffer and group transcripts for smoother display
+                        if (agentConfig.modelId.startsWith('amazon.nova')) {
+                            const prefix = data.role === 'user' ? '🎤 User' : '🔊 Assistant';
+                            addMessage(`${prefix}: ${data.text}`, data.role);
+                        } else {
+                            handleBufferedTranscript(data.role, data.text);
+                        }
+                        break;
+                    case 'bidi_interruption':
+                        // User interrupted the agent - stop audio playback and clear buffers
+                        addMessage('🚫 [Interrupted - Barge-in detected]', 'system');
+                        clearTranscriptBuffers();
+                        if (audioPlaybackContext) {
+                            audioPlaybackContext.close();
+                            audioPlaybackContext = null;
+                            nextPlayTime = 0;
+                        }
+                        break;
+                    case 'bidi_response_complete':
+                        // Response complete event - silently logged in raw events panel
+                        break;
+                    case 'bidi_usage':
+                        // Token usage: silently logged in raw events panel
+                        // {"type": "bidi_usage", "inputTokens": 22, "outputTokens": 0, "totalTokens": 22}
+                        break;
+                    case 'tool_use_stream':
+                        addMessage(`🔧 Tool: ${data.current_tool_use.name}`, 'tool');
+                        break;
+                    case 'tool_result':
+                        const content = data.tool_result.content[0]?.text || JSON.stringify(data.tool_result.content);
+                        addMessage(`✅ Result: ${content}`, 'tool');
+                        break;
+                    case 'system':
+                        // System message from server (e.g., restart notification)
+                        addMessage(`ℹ️ ${data.message}`, 'system');
+                        break;
+                }
+            };
+            
+                ws.onclose = () => {
+                    addMessage('Disconnected', 'system');
+                    updateStatus(false);
+                    clearTranscriptBuffers();
+                    if (isRecording) stopRecording();
+                    if (audioPlaybackContext) {
+                        audioPlaybackContext.close();
+                        audioPlaybackContext = null;
+                    }
+                };
+            } catch (error) {
+                addMessage(`❌ Failed to connect: ${error.message}`, 'system');
+                console.error('Connection error:', error);
+                updateStatus(false);
+            }
+        }
+    
+        function disconnect() {
+            if (isRecording) stopRecording();
+            if (ws) ws.close();
+        }
+    
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } 
+                });
+                
+                // Use configured input sample rate
+                const inputSampleRate = agentConfig.inputSampleRate;
+                
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                let audioChunkCount = 0;
+                processor.onaudioprocess = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        
+                        // Downsample to configured input sample rate
+                        const downsampleRatio = audioContext.sampleRate / inputSampleRate;
+                        const outputLength = Math.floor(inputData.length / downsampleRatio);
+                        const int16Data = new Int16Array(outputLength);
+                        
+                        for (let i = 0; i < outputLength; i++) {
+                            const sourceIndex = Math.floor(i * downsampleRatio);
+                            int16Data[i] = Math.max(-32768, Math.min(32767, inputData[sourceIndex] * 32768));
+                        }
+                        
+                        // Convert to base64
+                        const bytes = new Uint8Array(int16Data.buffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) {
+                            binary += String.fromCharCode(bytes[i]);
+                        }
+                        const base64Audio = btoa(binary);
+                        
+                        const payload = {
+                            type: "bidi_audio_input",
+                            audio: base64Audio,
+                            format: "pcm",
+                            sample_rate: inputSampleRate,
+                            channels: 1
+                        };
+                        ws.send(JSON.stringify(payload));
+                        
+                        // Log every audio chunk with original format
+                        audioChunkCount++;
+                        addEvent('sent', 'bidi_audio_input', payload);
+                    }
+                };
+                
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                isRecording = true;
+                updateStatus(true, true);
+                addMessage('🎤 Recording started - speak now', 'system');
+            } catch (err) {
+                addMessage('❌ Microphone access denied: ' + err.message, 'system');
+            }
+        }
+        
+        function stopRecording() {
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            isRecording = false;
+            addMessage('Recording stopped', 'system');
+        }
+        
+        function sendTextMessage() {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            const payload = { type: "text_input", text: text };
+            ws.send(JSON.stringify(payload));
+            addEvent('sent', 'text_input', payload);
+            addMessage(`✍️ User: ${text}`, 'user');
+            input.value = '';
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load saved configuration
+            loadConfig();
+            
+            // Load profiles from server
+            loadProfiles();
+            
+            // Enter key sends text message
+            document.getElementById('textInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') sendTextMessage();
+            });
+        });
+    </script>
+</body>
+</html>

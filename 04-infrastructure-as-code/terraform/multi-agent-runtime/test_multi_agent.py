@@ -44,23 +44,20 @@ def extract_region_from_arn(arn):
         parts = arn.split(":")
         if len(parts) < 4:
             raise ValueError(
-                f"Invalid ARN format: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         region = parts[3]
         if not region:
             raise ValueError(
-                f"Region not found in ARN: {arn}\n"
-                f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+                f"Region not found in ARN: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
             )
 
         return region
 
     except IndexError:
         raise ValueError(
-            f"Invalid ARN format: {arn}\n"
-            f"Expected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
+            f"Invalid ARN format: {arn}\nExpected format: arn:aws:bedrock-agentcore:REGION:account:runtime/id"
         )
 
 
@@ -200,9 +197,7 @@ def main():
         print("\n❌ ERROR: Agent runtime ARN is required")
         print("\nTo get your agent ARN:")
         print("  - Terraform: terraform output orchestrator_runtime_arn")
-        print(
-            "  - CloudFormation: aws cloudformation describe-stacks --stack-name <stack> --query 'Stacks[0].Outputs'"
-        )
+        print("  - CloudFormation: aws cloudformation describe-stacks --stack-name <stack> --query 'Stacks[0].Outputs'")
         print("  - CDK: cdk deploy --outputs-file outputs.json")
         print("  - Console: Check Bedrock Agent Core console")
         sys.exit(1)
@@ -213,16 +208,12 @@ def main():
     # Validate ARN format
     if not orchestrator_arn.startswith("arn:aws:bedrock-agentcore:"):
         print(f"\n❌ ERROR: Invalid ARN format for orchestrator: {orchestrator_arn}")
-        print(
-            "Expected format: arn:aws:bedrock-agentcore:region:account:runtime/runtime-id"
-        )
+        print("Expected format: arn:aws:bedrock-agentcore:region:account:runtime/runtime-id")
         sys.exit(1)
 
     if specialist_arn and not specialist_arn.startswith("arn:aws:bedrock-agentcore:"):
         print(f"\n❌ ERROR: Invalid ARN format for specialist: {specialist_arn}")
-        print(
-            "Expected format: arn:aws:bedrock-agentcore:region:account:runtime/runtime-id"
-        )
+        print("Expected format: arn:aws:bedrock-agentcore:region:account:runtime/runtime-id")
         sys.exit(1)
 
     # Run tests

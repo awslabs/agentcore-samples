@@ -55,12 +55,8 @@ def _invoke(prompt: str, session_id: str):
                         if chunk_data.get("type") == "text":
                             logger.info("\n TEXT : %s", chunk_data.get("text"))
                         elif chunk_data.get("type") == "tool_use":
-                            logger.info(
-                                "\n TOOL USED : %s", chunk_data.get("tool_name")
-                            )
-                            logger.info(
-                                "\n TOOL INPUT : %s", chunk_data.get("tool_input")
-                            )
+                            logger.info("\n TOOL USED : %s", chunk_data.get("tool_name"))
+                            logger.info("\n TOOL INPUT : %s", chunk_data.get("tool_input"))
                         elif chunk_data.get("type") == "final":
                             final_response = chunk_data.get("response", "")
                             final_session_id = chunk_data.get("session_id", "")

@@ -1,0 +1,31 @@
+[project]
+name = "agentcore-private-idp-ping-federate"
+version = "0.1.0"
+description = "Private IdP connectivity from AgentCore Identity to PingFederate via VPC Lattice"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.237.1",
+    "cdk-ecr-deployment>=3.0.0",
+    "constructs>=10.0.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+]
+
+[dependency-groups]
+dev = [
+    "cdk-nag>=2.30.0",
+    "pytest>=8.0.0",
+    "checkov>=3.2.459",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["test"]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120

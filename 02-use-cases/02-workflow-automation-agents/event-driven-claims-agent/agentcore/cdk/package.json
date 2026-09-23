@@ -1,0 +1,24 @@
+{
+  "name": "claims-agent-cdk",
+  "version": "0.1.0",
+  "bin": {
+    "cdk": "dist/bin/cdk.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "npm run build && cdk",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "aws-cdk": "^2.1128.0",
+    "cdk-nag": "^2.38.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "@aws/agentcore-cdk": "^0.1.0-alpha.39",
+    "aws-cdk-lib": "^2.260.0",
+    "constructs": "^10.0.0"
+  }
+}

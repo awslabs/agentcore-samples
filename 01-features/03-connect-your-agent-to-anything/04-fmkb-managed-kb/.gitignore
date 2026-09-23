@@ -1,0 +1,8 @@
+.env
+.env.fmkb-gateway
+.bedrock_agentcore.yaml
+.bedrock_agentcore/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

@@ -81,9 +81,7 @@ class BasicRuntimeStack(Stack):
                                 "logs:CreateLogStream",
                                 "logs:PutLogEvents",
                             ],
-                            resources=[
-                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"
-                            ],
+                            resources=[f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/codebuild/*"],
                         ),
                         iam.PolicyStatement(
                             sid="ECRAccess",
@@ -123,9 +121,7 @@ class BasicRuntimeStack(Stack):
                 compute_type=codebuild.ComputeType.LARGE,
                 privileged=True,
             ),
-            source=codebuild.Source.s3(
-                bucket=source_asset.bucket, path=source_asset.s3_object_key
-            ),
+            source=codebuild.Source.s3(bucket=source_asset.bucket, path=source_asset.s3_object_key),
             build_spec=codebuild.BuildSpec.from_object(
                 {
                     "version": "0.2",
@@ -156,18 +152,10 @@ class BasicRuntimeStack(Stack):
                 }
             ),
             environment_variables={
-                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(
-                    value=self.region
-                ),
-                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(
-                    value=self.account
-                ),
-                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(
-                    value=ecr_repository.repository_name
-                ),
-                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(
-                    value=image_tag.value_as_string
-                ),
+                "AWS_DEFAULT_REGION": codebuild.BuildEnvironmentVariable(value=self.region),
+                "AWS_ACCOUNT_ID": codebuild.BuildEnvironmentVariable(value=self.account),
+                "IMAGE_REPO_NAME": codebuild.BuildEnvironmentVariable(value=ecr_repository.repository_name),
+                "IMAGE_TAG": codebuild.BuildEnvironmentVariable(value=image_tag.value_as_string),
                 "STACK_NAME": codebuild.BuildEnvironmentVariable(value=self.stack_name),
             },
         )
@@ -179,9 +167,7 @@ class BasicRuntimeStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_9,
             handler="infra_utils.build_trigger_lambda.handler",
             timeout=Duration.minutes(15),
-            code=lambda_.Code.from_asset(
-                ".", exclude=["*.pyc", "__pycache__", "cdk.out"]
-            ),
+            code=lambda_.Code.from_asset(".", exclude=["*.pyc", "__pycache__", "cdk.out"]),
             initial_policy=[
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,

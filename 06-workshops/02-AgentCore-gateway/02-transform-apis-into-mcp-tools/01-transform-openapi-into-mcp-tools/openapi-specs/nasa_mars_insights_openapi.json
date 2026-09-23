@@ -1,0 +1,154 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "NASA InSight Mars Weather API",
+    "description": "Returns per‑Sol weather summaries from the InSight lander for the seven most recent Martian sols.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://api.nasa.gov" }
+  ],
+  "paths": {
+    "/insight_weather/": {
+      "get": {
+        "summary": "Retrieve latest InSight Mars weather data",
+        "operationId": "getInsightWeather",
+        "parameters": [
+          {
+            "name": "feedtype",
+            "in": "query",
+            "required": true,
+            "description": "Response format (only \"json\" is supported).",
+            "schema": {
+              "type": "string",
+              "enum": ["json"]
+            }
+          },
+          {
+            "name": "ver",
+            "in": "query",
+            "required": true,
+            "description": "API version string. (only \"1.0\" supported)",
+            "schema": {
+              "type": "string",
+              "enum": ["1.0"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response – weather data per Martian sol.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightWeatherResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request – missing or invalid parameters."
+          },
+          "429": {
+            "description": "Too many requests – hourly rate limit exceeded (2 000 hits/IP)."
+          },
+          "500": {
+            "description": "Internal server error."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "InsightWeatherResponse": {
+        "type": "object",
+        "required": ["sol_keys"],
+        "description": "Top‑level object keyed by sol numbers plus metadata.",
+        "properties": {
+          "sol_keys": {
+            "type": "array",
+            "description": "List of sols (as strings) included in this payload.",
+            "items": { "type": "string" }
+          },
+          "validity_checks": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ValidityCheckPerSol"
+            },
+            "description": "Data‑quality provenance per sol and sensor."
+          }
+        },
+        "additionalProperties": {
+          "oneOf": [
+            { "$ref": "#/components/schemas/SolWeather" }
+          ]
+        }
+      },
+      "SolWeather": {
+        "type": "object",
+        "properties": {
+          "AT": { "$ref": "#/components/schemas/SensorData" },
+          "HWS": { "$ref": "#/components/schemas/SensorData" },
+          "PRE": { "$ref": "#/components/schemas/SensorData" },
+          "WD": { "$ref": "#/components/schemas/WindDirection" },
+          "Season": {
+            "type": "string",
+            "enum": ["winter", "spring", "summer", "fall"]
+          },
+          "First_UTC": { "type": "string", "format": "date-time" },
+          "Last_UTC": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SensorData": {
+        "type": "object",
+        "properties": {
+          "av": { "type": "number" },
+          "ct": { "type": "number" },
+          "mn": { "type": "number" },
+          "mx": { "type": "number" }
+        }
+      },
+      "WindDirection": {
+        "type": "object",
+        "properties": {
+          "most_common": { "$ref": "#/components/schemas/WindCompassPoint" }
+        },
+        "additionalProperties": { "$ref": "#/components/schemas/WindCompassPoint" }
+      },
+      "WindCompassPoint": {
+        "type": "object",
+        "properties": {
+          "compass_degrees": { "type": "number" },
+          "compass_point": { "type": "string" },
+          "compass_right": { "type": "number" },
+          "compass_up": { "type": "number" },
+          "ct": { "type": "number" }
+        }
+      },
+      "ValidityCheckPerSol": {
+        "type": "object",
+        "properties": {
+          "AT": { "$ref": "#/components/schemas/SensorValidity" },
+          "HWS": { "$ref": "#/components/schemas/SensorValidity" },
+          "PRE": { "$ref": "#/components/schemas/SensorValidity" },
+          "WD": { "$ref": "#/components/schemas/SensorValidity" }
+        }
+      },
+      "SensorValidity": {
+        "type": "object",
+        "properties": {
+          "sol_hours_with_data": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 23
+            }
+          },
+          "valid": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

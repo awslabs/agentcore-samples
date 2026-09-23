@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Runtime/eval state files with sensitive AWS resource IDs
+agent_state_*.json
+optimize_state_*.json
+dp_demo_state.json
+results/
+utils/agent_config.json
+
+# Environment
+.env
+
+# IDE / editor
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+
+# Accidental pip artifacts
+=*

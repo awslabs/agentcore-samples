@@ -1,0 +1,3 @@
+boto3
+strands-agents
+bedrock-agentcore==0.1.7

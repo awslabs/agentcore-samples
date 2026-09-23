@@ -22,12 +22,8 @@ class DatabaseConstruct(Construct):
             self,
             "TokenUsageTable",
             table_name=f"token-usage-{account_id}-{region}",
-            partition_key=dynamodb.Attribute(
-                name="id", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="timestamp", type=dynamodb.AttributeType.STRING
-            ),
+            partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="timestamp", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,
             stream=dynamodb.StreamViewType.NEW_IMAGE,
@@ -39,9 +35,7 @@ class DatabaseConstruct(Construct):
             self,
             "TokenAggregationTable",
             table_name=f"token-aggregation-{account_id}-{region}",
-            partition_key=dynamodb.Attribute(
-                name="aggregation_key", type=dynamodb.AttributeType.STRING
-            ),
+            partition_key=dynamodb.Attribute(name="aggregation_key", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,
             point_in_time_recovery=True,
@@ -52,12 +46,8 @@ class DatabaseConstruct(Construct):
             self,
             "AgentConfigTable",
             table_name=f"agent-configurations-{account_id}-{region}",
-            partition_key=dynamodb.Attribute(
-                name="tenantId", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="agentRuntimeId", type=dynamodb.AttributeType.STRING
-            ),
+            partition_key=dynamodb.Attribute(name="tenantId", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="agentRuntimeId", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,
             point_in_time_recovery=True,
@@ -68,12 +58,8 @@ class DatabaseConstruct(Construct):
             self,
             "AgentDetailsTable",
             table_name=f"agent-details-{account_id}-{region}",
-            partition_key=dynamodb.Attribute(
-                name="tenantId", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="agentRuntimeId", type=dynamodb.AttributeType.STRING
-            ),
+            partition_key=dynamodb.Attribute(name="tenantId", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="agentRuntimeId", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,
             point_in_time_recovery=True,

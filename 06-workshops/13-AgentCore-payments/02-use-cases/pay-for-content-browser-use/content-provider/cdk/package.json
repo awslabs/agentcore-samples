@@ -1,0 +1,21 @@
+{
+  "name": "agentcore-content-provider-cdk",
+  "version": "1.0.0",
+  "description": "CDK stack for the AgentCore Payments x402 content-provider demo",
+  "main": "bin/app.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "aws-cdk": "^2.170.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "process_name": "corp-vpn",
+    "type": "network_service",
+    "version": "4.2.1",
+    "owner_team": "NetOps",
+    "criticality": "HIGH",
+    "current_status": "operational",
+    "known_issues": ["Split-tunnel DNS leak on macOS 14.5+", "Occasional reconnect loops after idle > 4h"]
+  },
+  {
+    "process_name": "shared-drive",
+    "type": "storage_service",
+    "version": "3.8.0",
+    "owner_team": "StorageOps",
+    "criticality": "HIGH",
+    "current_status": "degraded",
+    "known_issues": ["SMB gateway intermittent timeouts in us-east-1", "Quota enforcement delayed by up to 60s"]
+  },
+  {
+    "process_name": "outlook-exchange",
+    "type": "email_service",
+    "version": "2024.3",
+    "owner_team": "CommOps",
+    "criticality": "CRITICAL",
+    "current_status": "operational",
+    "known_issues": ["Calendar sync delay with mobile clients (< 5min)"]
+  }
+]

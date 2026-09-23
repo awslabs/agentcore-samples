@@ -1,0 +1,1 @@
+[{"name": "lookup_policy", "description": "Look up insurance policy details by policy number", "inputSchema": {"type": "object", "properties": {"policy_number": {"type": "string", "description": "The policy identifier (e.g., POL-2024-001)"}}, "required": ["policy_number"]}}]

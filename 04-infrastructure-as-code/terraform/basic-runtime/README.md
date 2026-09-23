@@ -391,7 +391,7 @@ For current pricing information, please refer to:
 
 - [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 - [AWS Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html)
-- [Strands Agents Documentation](https://strands-agents.readthedocs.io/)
+- [Strands Agents Documentation](https://strandsagents.com/)
 - [AgentCore Samples Repository](https://github.com/aws-samples/amazon-bedrock-agentcore-samples)
 
 ## 🤝 Contributing

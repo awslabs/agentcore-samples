@@ -1,0 +1,147 @@
+# ══════════════════════════════════════════════════════════════════════
+# AgentCore Payments — Pay for API (Fun Facts)
+#
+# Copy this file to `.env` and fill in values. The notebook's §2 seeds
+# `.env` from this template on first run and lists the keys you still
+# need to fill in.
+#
+# Or copy manually and edit by hand:
+#     cp env-sample.txt .env
+#
+# Every env var the notebook, seller deploy script, and agent container
+# read is here. Empty values are filled in as you go:
+#   * `setup-roles.sh` writes the four IAM role ARNs.
+#   * `deploy-seller.sh` writes `SELLER_API_URL`.
+#   * §4 of the notebook writes Manager, Connector, Credential Provider,
+#     and Payment Instrument IDs.
+#   * §5 writes the two Session IDs.
+#
+# ── Wallet provider secret handoff ──
+# Wallet provider secrets (Coinbase / Privy keys, Privy authorization
+# private key) are pasted into this file once. The notebook's §4 reads
+# them to call `CreatePaymentCredentialProvider`, which hands them to
+# AgentCore Identity. The service stores them in AWS Secrets Manager
+# under AWS KMS encryption and surfaces only the secret ARN to your
+# agent. The agent runtime calls `GetResourcePaymentToken` at signing
+# time and never receives the raw secret.
+#
+# After §4 runs, the secrets in this file are no longer used at runtime.
+# `.env` is `.gitignore`-d so it is never committed; you can blank the
+# secret values once setup is complete and re-running §4 from a fresh
+# .env will recreate the credential provider with whatever you paste.
+# See "Configure credential provider" in the AgentCore Payments docs.
+# ══════════════════════════════════════════════════════════════════════
+
+# ── AWS ──────────────────────────────────────────────────────────────
+# AgentCore Payments is available in preview in these regions:
+#   us-east-1      — US East (N. Virginia)
+#   us-west-2      — US West (Oregon)
+#   eu-central-1   — Europe (Frankfurt)
+#   ap-southeast-2 — Asia Pacific (Sydney)
+# boto3 derives the control-plane and data-plane endpoints from the
+# region, so no endpoint URLs are needed here.
+AWS_REGION=us-west-2
+# AWS_PROFILE=default            # Uncomment to use a named AWS CLI profile
+
+# ── IAM roles — created by test/integration/setup-roles.sh ───────────
+# setup-roles.sh creates four roles idempotently. The notebook assumes
+# into each one for the operation that role is allowed to perform.
+# Run it once before the notebook — it writes the four ARNs below
+# back into this .env automatically:
+#     bash test/integration/setup-roles.sh
+CONTROL_PLANE_ROLE_ARN=arn:aws:iam::<ACCOUNT_ID>:role/AgentCorePaymentsControlPlaneRole
+MANAGEMENT_ROLE_ARN=arn:aws:iam::<ACCOUNT_ID>:role/AgentCorePaymentsManagementRole
+PROCESS_PAYMENT_ROLE_ARN=arn:aws:iam::<ACCOUNT_ID>:role/AgentCorePaymentsProcessPaymentRole
+RESOURCE_RETRIEVAL_ROLE_ARN=arn:aws:iam::<ACCOUNT_ID>:role/AgentCorePaymentsResourceRetrievalRole
+
+# ── Wallet provider credentials — both providers ─────────────────────
+# The notebook wires up BOTH providers side-by-side under a single
+# Manager. Fill in both sets. §4.2 creates the Credential Providers,
+# §4.4 creates the Connectors, §4.5 creates two Instruments per
+# provider (EVM + Solana = four wallets total).
+
+# Coinbase CDP — coinbase.com/developer-platform → Project → API Keys
+# and Project → Wallet → Wallet Secret. Enable "Delegated signing"
+# under Project → Wallet → Embedded Wallets → Policies before first use.
+COINBASE_API_KEY_ID=
+COINBASE_API_KEY_SECRET=
+COINBASE_WALLET_SECRET=
+
+# Stripe-via-Privy — Privy dashboard → App → API Keys and
+# App → Authorization Keys. The private key is returned prefixed with
+# `wallet-auth:` — strip the prefix before pasting below.
+PRIVY_APP_ID=
+PRIVY_APP_SECRET=
+PRIVY_AUTHORIZATION_ID=
+PRIVY_AUTHORIZATION_PRIVATE_KEY=
+
+# ── AgentCore Payments state — populated by the notebook ────────────
+# Leave empty on first run. §4 creates one Manager, two Credential
+# Providers (CDP + Privy), two Connectors, and four Instruments.
+# §5 creates two Sessions (one per provider).
+MANAGER_ID=
+MANAGER_ARN=
+
+CRED_PROVIDER_NAME_CDP=
+CREDENTIAL_PROVIDER_ARN_CDP=
+CRED_PROVIDER_NAME_PRIVY=
+CREDENTIAL_PROVIDER_ARN_PRIVY=
+
+CONNECTOR_ID_CDP=
+CONNECTOR_ID_PRIVY=
+
+PAYMENT_INSTRUMENT_ID_CDP_EVM=
+WALLET_ADDRESS_CDP_EVM=
+PAYMENT_INSTRUMENT_ID_CDP_SOL=
+WALLET_ADDRESS_CDP_SOL=
+PAYMENT_INSTRUMENT_ID_PRIVY_EVM=
+WALLET_ADDRESS_PRIVY_EVM=
+PAYMENT_INSTRUMENT_ID_PRIVY_SOL=
+WALLET_ADDRESS_PRIVY_SOL=
+
+SESSION_ID_CDP=
+SESSION_ID_PRIVY=
+
+# ── Payment session tuning ───────────────────────────────────────────
+# Budget the operator authorises per session. USD amount.
+SESSION_MAX_SPEND=1.00
+# 15–480 minutes; enforced by the service.
+SESSION_EXPIRY_MINUTES=120
+# Informational — used as the `userId` header on CreatePaymentSession.
+# Note: for hub-provisioned Coinbase instruments the service assigns its
+# own CDP end-user UUID and ignores what we send; §6 reads the
+# authoritative id back from `paymentInstrument.userId`.
+USER_ID=
+
+# Email the embedded wallets are linked to. CreatePaymentInstrument
+# requires `linkedAccounts[{email:{emailAddress}}]` — the service uses
+# it to resolve or create the vendor-side end-user that owns the
+# wallet. Prefer a real inbox you control so Coinbase Wallet Hub and
+# Privy can send verification mail for signing-delegation grants.
+# Format: a real email address you can read. Example: alex@example.com
+INSTRUMENT_EMAIL=
+
+# ── Seller (Fun Facts API) ───────────────────────────────────────────
+# Populated by deploy-seller.sh after `cdk deploy` prints SellerApiUrl.
+SELLER_API_URL=
+
+# Seller payout wallets. Used by deploy-seller.sh at seller deploy time —
+# not by the notebook agent. Set at least the EVM wallet; Solana is
+# optional but required for the §7 SOL run.
+# EVM format: 0x-prefixed 40-character hex.
+#   Example: 0x1234567890abcdef1234567890abcdef12345678
+# Solana format: base58, 32-44 characters.
+#   Example: 5Yb8Zr9T3kQv2Xm4Np1Wq6Rs7Ht8Ju9Kv0Lp1Mq2Nr3
+SELLER_WALLET_ADDRESS=
+SELLER_SOLANA_WALLET_ADDRESS=
+
+# Seller tuning (optional). Leave commented for the defaults.
+# X402_FACILITATOR_URL=https://x402.org/facilitator
+# X402_PRICE=$0.01
+
+# ── Agent container (optional overrides) ─────────────────────────────
+# Only consumed inside the AgentCore Runtime container in §8. Ignored
+# elsewhere. The CDK stack already defaults these — override here only
+# if you want a different model or want to disable the plugin at runtime.
+# MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+# ENABLE_PAYMENTS_PLUGIN=1

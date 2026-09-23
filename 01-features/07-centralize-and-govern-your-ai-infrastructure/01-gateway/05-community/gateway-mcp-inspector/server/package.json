@@ -1,0 +1,39 @@
+{
+	"name": "agentcore-gateway-mcp-inspector-server",
+	"version": "0.21.1",
+	"description": "Server for AgentCore Gateway MCP Inspector",
+	"type": "module",
+	"bin": {
+		"mcp-inspector-server": "build/index.js"
+	},
+	"files": [
+		"build",
+		"static",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsc && shx cp -R static build",
+		"start": "node build/index.js",
+		"dev": "tsx watch --clear-screen=false src/index.ts",
+		"dev:windows": "tsx watch --clear-screen=false src/index.ts < NUL"
+	},
+	"devDependencies": {
+		"@types/cors": "^2.8.19",
+		"@types/express": "^5.0.0",
+		"tsx": "^4.19.0",
+		"typescript": "^5.6.2"
+	},
+	"dependencies": {
+		"@aws-sdk/client-bedrock-agentcore": "^3.1018.0",
+		"@aws-sdk/client-bedrock-agentcore-control": "^3.1045.0",
+		"@aws-sdk/credential-providers": "^3.1045.0",
+		"@smithy/signature-v4": "^4.0.0",
+		"@smithy/hash-node": "^3.0.0",
+		"@smithy/protocol-http": "^4.0.0",
+		"@modelcontextprotocol/sdk": "^1.25.2",
+		"cors": "^2.8.5",
+		"express": "^5.1.0",
+		"shx": "^0.3.4",
+		"zod": "^3.25.76"
+	}
+}

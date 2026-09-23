@@ -1,0 +1,21 @@
+{
+  "name": "00-getting-started",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.ts --bundle --platform=node --target=node22 --outfile=dist/app.js",
+    "start": "node dist/app.js",
+    "dev": "tsx app.ts"
+  },
+  "dependencies": {
+    "@strands-agents/sdk": "^1.0.0-rc.5",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

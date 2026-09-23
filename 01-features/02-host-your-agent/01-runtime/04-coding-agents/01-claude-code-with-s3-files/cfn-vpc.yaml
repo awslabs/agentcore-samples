@@ -1,0 +1,416 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC infrastructure for AgentCore Claude Code with S3 Files
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+  BucketName:
+    Type: String
+    Description: S3 bucket name (agentcore-<account-id>)
+  S3FilesPrefix:
+    Type: String
+    Default: "agents/"
+
+Mappings:
+  AgentCoreAZs:
+    us-east-1:
+      AZ1: use1-az1
+      AZ2: use1-az2
+    us-east-2:
+      AZ1: use2-az1
+      AZ2: use2-az2
+    us-west-2:
+      AZ1: usw2-az1
+      AZ2: usw2-az2
+    eu-west-1:
+      AZ1: euw1-az1
+      AZ2: euw1-az2
+    eu-central-1:
+      AZ1: euc1-az1
+      AZ2: euc1-az2
+    eu-north-1:
+      AZ1: eun1-az1
+      AZ2: eun1-az2
+    eu-west-2:
+      AZ1: euw2-az1
+      AZ2: euw2-az2
+    eu-west-3:
+      AZ1: euw3-az1
+      AZ2: euw3-az2
+    ap-southeast-1:
+      AZ1: apse1-az1
+      AZ2: apse1-az2
+    ap-southeast-2:
+      AZ1: apse2-az1
+      AZ2: apse2-az2
+    ap-northeast-1:
+      AZ1: apne1-az1
+      AZ2: apne1-az2
+    ap-northeast-2:
+      AZ1: apne2-az1
+      AZ2: apne2-az2
+    ap-south-1:
+      AZ1: aps1-az1
+      AZ2: aps1-az2
+    ca-central-1:
+      AZ1: cac1-az1
+      AZ2: cac1-az2
+
+Resources:
+
+  # ── VPC ──────────────────────────────────────────────────────────────────────
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W60
+            reason: >-
+              Demo/tutorial VPC does not require flow logs; enable VPC Flow Logs in production
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: agentcore-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: agentcore-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ── Public Subnets ──────────────────────────────────────────────────────────
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W33
+            reason: >-
+              Public subnet requires MapPublicIpOnLaunch for tutorial accessibility; disable in production
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: agentcore-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W33
+            reason: >-
+              Public subnet requires MapPublicIpOnLaunch for tutorial accessibility; disable in production
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: agentcore-public-2
+
+  # ── Private Subnets ─────────────────────────────────────────────────────────
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.11.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
+      Tags:
+        - Key: Name
+          Value: agentcore-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.12.0/24"
+      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
+      Tags:
+        - Key: Name
+          Value: agentcore-private-2
+
+  # ── Public Route Table ──────────────────────────────────────────────────────
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: agentcore-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ── NAT Gateway ─────────────────────────────────────────────────────────────
+
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: agentcore-nat
+
+  # ── Private Route Table ─────────────────────────────────────────────────────
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: agentcore-private-rt
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ── Security Group ──────────────────────────────────────────────────────────
+
+  AgentCoreSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W40
+            reason: >-
+              All outbound traffic required for AgentCore runtime to reach AWS services; restrict in production
+          - id: W5
+            reason: >-
+              Sample security group uses broad egress rules for tutorial simplicity; restrict in production
+    Properties:
+      GroupDescription: Security group for AgentCore runtimes
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: "10.0.0.0/16"
+          Description: Allow NFS (S3 Files mount) from VPC
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: agentcore-sg
+
+  # ── S3 Files IAM Role ──────────────────────────────────────────────────────
+
+  S3FilesRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: !Sub "s3files-${BucketName}-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticfilesystem.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: s3files-bucket-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:AbortMultipartUpload
+                  - s3:DeleteObject*
+                  - s3:GetObject*
+                  - s3:List*
+                  - s3:PutObject*
+                  - s3:ListBucketVersions
+                Resource:
+                  - !Sub "arn:aws:s3:::${BucketName}"
+                  - !Sub "arn:aws:s3:::${BucketName}/*"
+              - Sid: S3ObjectPermissions
+                Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:DeleteObject*
+                  - s3:GetObject*
+                  - s3:List*
+                  - s3:PutObject*
+                Resource: !Sub "arn:aws:s3:::${BucketName}/*"
+              - Sid: UseKmsKeyWithS3Files
+                Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncryptFrom
+                  - kms:ReEncryptTo
+                Condition:
+                  StringLike:
+                    kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+                    kms:EncryptionContext:aws:s3:arn:
+                      - !Sub "arn:aws:s3:::${BucketName}"
+                      - !Sub "arn:aws:s3:::${BucketName}/*"
+                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: EventBridgeManage
+                Effect: Allow
+                Action:
+                  - events:DeleteRule
+                  - events:DisableRule
+                  - events:EnableRule
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                Condition:
+                  StringEquals:
+                    events:ManagedBy: elasticfilesystem.amazonaws.com
+                Resource:
+                  - "arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"
+              - Sid: EventBridgeRead
+                Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListRuleNamesByTarget
+                  - events:ListRules
+                  - events:ListTargetsByRule
+                Resource:
+                  - "arn:aws:events:*:*:rule/*"
+
+  # ── S3 Files File System ───────────────────────────────────────────────────
+
+  S3FilesFileSystem:
+    Type: AWS::S3Files::FileSystem
+    DependsOn: S3FilesRole
+    Properties:
+      Bucket: !Sub "arn:aws:s3:::${BucketName}"
+      Prefix: !Ref S3FilesPrefix
+      RoleArn: !GetAtt S3FilesRole.Arn
+
+  # ── S3 Files Access Point ──────────────────────────────────────────────────
+
+  S3FilesAccessPoint:
+    Type: AWS::S3Files::AccessPoint
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      PosixUser:
+        Uid: 1000
+        Gid: 1000
+      RootDirectory:
+        Path: /mnt/s3files
+        CreationPermissions:
+          OwnerUid: 1000
+          OwnerGid: 1000
+          Permissions: "755"
+
+  # ── S3 Files Mount Target (one per private subnet) ────────────────────────
+
+  S3FilesMountTarget1:
+    Type: AWS::S3Files::MountTarget
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref AgentCoreSecurityGroup
+
+  S3FilesMountTarget2:
+    Type: AWS::S3Files::MountTarget
+    Properties:
+      FileSystemId: !Ref S3FilesFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref AgentCoreSecurityGroup
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+  PrivateSubnet1Id:
+    Value: !Ref PrivateSubnet1
+  PrivateSubnet2Id:
+    Value: !Ref PrivateSubnet2
+  SecurityGroupId:
+    Value: !Ref AgentCoreSecurityGroup
+  S3FilesFileSystemId:
+    Value: !Ref S3FilesFileSystem
+  S3FilesAccessPointId:
+    Value: !Ref S3FilesAccessPoint
+  S3FilesAccessPointArn:
+    Value: !GetAtt S3FilesAccessPoint.AccessPointArn
+  S3FilesRoleArn:
+    Value: !GetAtt S3FilesRole.Arn

@@ -1,0 +1,3 @@
+# Written by provision_s3_filesystem.py; records the resources it created so
+# --teardown knows what to delete. Account-specific, never committed.
+provision_state.json

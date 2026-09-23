@@ -1,0 +1,12 @@
+boto3
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+strands-agents
+strands-agents-tools
+tavily-python
+uv
+PyJWT
+msal # Microsoft Authentication Library
+uvicorn
+fastapi
+requests

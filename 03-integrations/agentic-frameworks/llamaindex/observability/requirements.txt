@@ -1,0 +1,10 @@
+llama-index
+llama-index-llms-bedrock-converse
+llama-index-observability-otel
+boto3
+botocore
+aws-opentelemetry-distro~=0.12.1
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp-proto-http
+python-dotenv

@@ -1,0 +1,14 @@
+{
+  "model": "us.anthropic.claude-opus-4-6-v1",
+  "permissionMode": "dontAsk",
+  "permissions": {
+    "deny": [
+      "mcp__gateway__GitHubMCP___set_labels",
+      "mcp__gateway__GitHubMCP___remove_label",
+      "mcp__gateway__GitHubMCP___assign_issue",
+      "mcp__gateway__GitHubMCP___update_comment"
+    ]
+  },
+  "hasCompletedOnboarding": true,
+  "theme": "dark"
+}

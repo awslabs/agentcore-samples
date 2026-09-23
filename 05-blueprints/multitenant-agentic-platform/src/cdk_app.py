@@ -57,17 +57,13 @@ class BedrockAgentStack(Stack):
         )
 
         # DynamoDB tables
-        database = DatabaseConstruct(
-            self, "Database", account_id=account_id, region=region
-        )
+        database = DatabaseConstruct(self, "Database", account_id=account_id, region=region)
 
         # ============================================================
         # Messaging Layer
         # ============================================================
 
-        messaging = MessagingConstruct(
-            self, "Messaging", account_id=account_id, region=region
-        )
+        messaging = MessagingConstruct(self, "Messaging", account_id=account_id, region=region)
 
         # ============================================================
         # Agent Runtime

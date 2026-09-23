@@ -1,0 +1,2 @@
+flask==3.1.1
+flask-cors==5.0.1

@@ -1,0 +1,1 @@
+[{"name": "list_pending_claims", "description": "List all insurance claims currently awaiting human review", "inputSchema": {"type": "object", "properties": {}, "required": []}}]

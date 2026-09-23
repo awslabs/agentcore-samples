@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" width="800" height="520">
+  <!-- Background -->
+  <rect width="800" height="520" fill="white"/>
+
+  <!-- Definitions -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#00000015"/>
+    </filter>
+    <linearGradient id="boxGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d2d2d"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="smeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5a4a3a"/>
+      <stop offset="100%" style="stop-color:#4a3728"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#4a3728" text-anchor="middle">ReferenceInputs Anatomy</text>
+  <text x="400" y="54" font-family="Arial, sans-serif" font-size="11" fill="#888888" text-anchor="middle">Which ground-truth fields feed which evaluators</text>
+
+  <!-- ===== Left: ReferenceInputs box ===== -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="90" width="260" height="360" rx="6" ry="6" fill="url(#smeGradient)" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="170" y="120" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">ReferenceInputs</text>
+  <text x="170" y="140" font-family="Arial, sans-serif" font-size="10" fill="#d0c0b0" text-anchor="middle">Ground truth provided by SME</text>
+
+  <!-- Field 1: expected_response -->
+  <rect x="60" y="165" width="220" height="50" rx="3" ry="3" fill="#2a1a0a"/>
+  <text x="170" y="186" font-family="Courier, monospace" font-size="11" fill="#cc9999" text-anchor="middle">expected_response</text>
+  <text x="170" y="204" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">"EMP-001 has 10 remaining PTO days"</text>
+
+  <!-- Field 2: expected_trajectory -->
+  <rect x="60" y="235" width="220" height="50" rx="3" ry="3" fill="#2a1a0a"/>
+  <text x="170" y="256" font-family="Courier, monospace" font-size="11" fill="#cc9999" text-anchor="middle">expected_trajectory</text>
+  <text x="170" y="274" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">["get_pto_balance", "submit_pto_request"]</text>
+
+  <!-- Field 3: assertions -->
+  <rect x="60" y="305" width="220" height="65" rx="3" ry="3" fill="#2a1a0a"/>
+  <text x="170" y="326" font-family="Courier, monospace" font-size="11" fill="#cc9999" text-anchor="middle">assertions</text>
+  <text x="170" y="344" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">"Agent reported 10 remaining days"</text>
+  <text x="170" y="360" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">"Agent confirmed request approved"</text>
+
+  <!-- ===== Right: Evaluators ===== -->
+
+  <!-- TRACE level label -->
+  <rect x="490" y="90" width="70" height="22" rx="3" ry="3" fill="#4a3728"/>
+  <text x="525" y="105" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="white" text-anchor="middle">TRACE</text>
+  <text x="600" y="105" font-family="Arial, sans-serif" font-size="9" fill="#888888">one score per turn</text>
+
+  <!-- TRACE evaluators -->
+  <g filter="url(#shadow)">
+    <rect x="460" y="125" width="290" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="605" y="148" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Builtin.Correctness</text>
+  <text x="605" y="163" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">Is the response factually accurate vs expected?</text>
+
+  <g filter="url(#shadow)">
+    <rect x="460" y="180" width="290" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="605" y="203" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Custom TRACE Evaluators</text>
+  <text x="605" y="218" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">e.g. HRResponseSimilarity (uses {expected_response})</text>
+
+  <!-- SESSION level label -->
+  <rect x="490" y="255" width="80" height="22" rx="3" ry="3" fill="#4a3728"/>
+  <text x="530" y="270" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="white" text-anchor="middle">SESSION</text>
+  <text x="610" y="270" font-family="Arial, sans-serif" font-size="9" fill="#888888">one score per conversation</text>
+
+  <!-- SESSION evaluators -->
+  <g filter="url(#shadow)">
+    <rect x="460" y="290" width="290" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="605" y="313" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">TrajectoryExactOrderMatch</text>
+  <text x="605" y="328" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">Did the agent call the right tools in order?</text>
+
+  <g filter="url(#shadow)">
+    <rect x="460" y="345" width="290" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="605" y="368" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Builtin.GoalSuccessRate</text>
+  <text x="605" y="383" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">Did the agent satisfy all assertions?</text>
+
+  <g filter="url(#shadow)">
+    <rect x="460" y="400" width="290" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="605" y="423" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Custom SESSION Evaluators</text>
+  <text x="605" y="438" font-family="Arial, sans-serif" font-size="9" fill="#999999" text-anchor="middle">e.g. HRAssertionChecker (uses {assertions})</text>
+
+  <!-- ===== Arrows ===== -->
+
+  <!-- expected_response -> Correctness -->
+  <line x1="280" y1="180" x2="455" y2="147" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- expected_response -> Custom TRACE -->
+  <line x1="280" y1="195" x2="455" y2="202" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- expected_trajectory -> TrajectoryMatch -->
+  <line x1="280" y1="260" x2="455" y2="312" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- assertions -> GoalSuccessRate -->
+  <line x1="280" y1="337" x2="455" y2="367" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- assertions -> Custom SESSION -->
+  <line x1="280" y1="350" x2="455" y2="422" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Footer -->
+  <text x="400" y="490" font-family="Arial, sans-serif" font-size="10" fill="#4a3728" text-anchor="middle">Arrows show which ground-truth field each evaluator consumes at scoring time</text>
+</svg>

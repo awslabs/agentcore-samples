@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Demo content provider for Amazon Bedrock AgentCore Payments x402 paywall use case. An AI agent pays for and unlocks premium content using USDC on Base Sepolia testnet." />
+  <title>AgentCore Payments — Demo Content Provider</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 48px auto; padding: 0 24px; color: #1a1a1a; }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 1rem; margin-bottom: 32px; }
+    .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; margin: 16px 0; }
+    .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+    .card p { color: #555; margin: 0 0 16px; }
+    .btn { display: inline-block; padding: 10px 20px; background: #0057b8; color: white; text-decoration: none; border-radius: 4px; font-size: 0.95rem; }
+    .badge { display: inline-block; background: #e8f0fe; color: #0057b8; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>AgentCore Payments Demo</h1>
+  <p class="subtitle">x402 paywall content provider — for the <strong>Pay for Content (Browser)</strong> use case</p>
+
+  <div class="card">
+    <h2>📄 Premium Article</h2>
+    <p>
+      This article is locked behind an x402 v2 paywall. A Strands agent using
+      AgentCore Payments can autonomously pay for and unlock this content without
+      any human involvement in the payment step.
+    </p>
+    <span class="badge">x402 v2</span>
+    <span class="badge">USDC</span>
+    <span class="badge">Base Sepolia</span>
+    <br /><br />
+    <a class="btn" href="/article/paywall-demo">View Demo Article</a>
+  </div>
+
+  <div class="card">
+    <h2>ℹ️ About this deployment</h2>
+    <p>
+      This is an operator-deployed demo content provider for the
+      <strong>Pay for Content (Browser Use)</strong> sample.
+      The paywall uses the x402 protocol — payment requirements are embedded in the page
+      DOM so an AI browser agent can read them without parsing HTTP headers.
+    </p>
+    <p style="font-size:0.85rem;color:#888;">
+      This content provider uses CloudFront + Lambda@Edge for x402 paywall verification.
+      It is intended as a test target for the sample notebook only.
+    </p>
+  </div>
+</body>
+</html>

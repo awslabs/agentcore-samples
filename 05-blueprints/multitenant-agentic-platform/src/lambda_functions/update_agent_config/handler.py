@@ -29,14 +29,10 @@ def lambda_handler(event, context):
                 return {
                     "statusCode": 400,
                     "headers": CORS_HEADERS,
-                    "body": json.dumps(
-                        {"error": "Both tenantId and agentRuntimeId are required"}
-                    ),
+                    "body": json.dumps({"error": "Both tenantId and agentRuntimeId are required"}),
                 }
 
-            response = config_table.get_item(
-                Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id}
-            )
+            response = config_table.get_item(Key={"tenantId": tenant_id, "agentRuntimeId": agent_runtime_id})
 
             if "Item" in response:
                 return {
@@ -63,9 +59,7 @@ def lambda_handler(event, context):
                 return {
                     "statusCode": 400,
                     "headers": CORS_HEADERS,
-                    "body": json.dumps(
-                        {"error": "Both tenantId and agentRuntimeId are required"}
-                    ),
+                    "body": json.dumps({"error": "Both tenantId and agentRuntimeId are required"}),
                 }
 
             # Build update expression

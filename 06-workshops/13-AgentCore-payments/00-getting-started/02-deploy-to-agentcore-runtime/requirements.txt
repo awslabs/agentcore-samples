@@ -1,0 +1,15 @@
+# Core SDK
+bedrock-agentcore[strands-agents]>=1.9.0
+boto3>=1.43.5
+botocore>=1.43.5
+
+# Agent framework
+strands-agents[otel]>=1.0.0
+strands-agents-tools>=0.2.0
+
+# Observability (required for Runtime traces)
+aws-opentelemetry-distro
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.28.0

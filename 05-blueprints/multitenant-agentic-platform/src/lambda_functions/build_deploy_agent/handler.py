@@ -81,17 +81,13 @@ def check_and_activate_cost_allocation_tags():
             for tag_key in tags_to_enable:
                 try:
                     ce_client.update_cost_allocation_tags_status(
-                        CostAllocationTagsStatus=[
-                            {"TagKey": tag_key, "Status": "Active"}
-                        ]
+                        CostAllocationTagsStatus=[{"TagKey": tag_key, "Status": "Active"}]
                     )
                     print(f"✓ Activated cost allocation tag: {tag_key}")
                 except Exception as e:
                     print(f"⚠ Warning: Could not activate tag '{tag_key}': {str(e)}")
 
-            print(
-                "✓ Cost allocation tags activated. They will appear in Cost Explorer within 24 hours."
-            )
+            print("✓ Cost allocation tags activated. They will appear in Cost Explorer within 24 hours.")
         else:
             print("✓ All required cost allocation tags are already active")
 
@@ -99,9 +95,7 @@ def check_and_activate_cost_allocation_tags():
         # Don't fail the deployment if cost allocation tag activation fails
         print(f"⚠ Warning: Could not check/activate cost allocation tags: {str(e)}")
         print("  This is not critical - deployment will continue")
-        print(
-            "  You can manually activate tags in AWS Billing Console > Cost Allocation Tags"
-        )
+        print("  You can manually activate tags in AWS Billing Console > Cost Allocation Tags")
 
 
 def fetch_from_github(repo, file_path, branch="main", token=None):
@@ -195,9 +189,7 @@ def fetch_tool_code(repo, tool_path, branch="main", token=None):
         return None
 
 
-def compose_agent_with_tools(
-    base_template, selected_tools, tools_repo, branch="main", token=None
-):
+def compose_agent_with_tools(base_template, selected_tools, tools_repo, branch="main", token=None):
     """
     Compose agent code by injecting selected tools into base template
 
@@ -253,9 +245,7 @@ def compose_agent_with_tools(
             config_path = tool_info.get("configPath")
             if config_path:
                 try:
-                    config_content = fetch_from_github(
-                        tools_repo, config_path, branch, token
-                    )
+                    config_content = fetch_from_github(tools_repo, config_path, branch, token)
                     tool_metadata = json.loads(config_content)
                     dependencies = tool_metadata.get("dependencies", [])
                     all_dependencies.update(dependencies)
@@ -304,18 +294,10 @@ def compose_agent_with_tools(
                     # Single line Agent initialization
                     close_paren = composed_code.find(")", agent_init_start)
                     tools_param = f", tools=[{', '.join(tool_function_names)}]"
-                    composed_code = (
-                        composed_code[:close_paren]
-                        + tools_param
-                        + composed_code[close_paren:]
-                    )
-                    print(
-                        f"Added tools parameter with functions: {tool_function_names}"
-                    )
+                    composed_code = composed_code[:close_paren] + tools_param + composed_code[close_paren:]
+                    print(f"Added tools parameter with functions: {tool_function_names}")
                 else:
-                    print(
-                        "Warning: Multi-line Agent initialization detected, tools may not be added correctly"
-                    )
+                    print("Warning: Multi-line Agent initialization detected, tools may not be added correctly")
     else:
         # No agent initialization found, append tools at the end
         composed_code = base_template + tools_section
@@ -482,18 +464,14 @@ def build_agent_project(
                 # Compose agent with tools if tools are selected
                 if tools_config and tools_config.get("selected"):
                     selected_tools = tools_config.get("selected", [])
-                    tools_repo = tools_config.get(
-                        "repo", repo
-                    )  # Use same repo or different one
+                    tools_repo = tools_config.get("repo", repo)  # Use same repo or different one
                     tools_branch = tools_config.get("branch", branch)
 
                     print(f"Composing agent with {len(selected_tools)} tools")
                     main_content, additional_dependencies = compose_agent_with_tools(
                         main_content, selected_tools, tools_repo, tools_branch, token
                     )
-                    print(
-                        f"Agent composition complete with tools: {[t.get('id') for t in selected_tools]}"
-                    )
+                    print(f"Agent composition complete with tools: {[t.get('id') for t in selected_tools]}")
             else:
                 print("No repository specified, using default template")
         except Exception as e:
@@ -511,9 +489,7 @@ def build_agent_project(
     main_content = main_content.replace("TENANT_ID_VALUE", tenant_id)
     main_content = main_content.replace("AGENT_RUNTIME_ID_VALUE", agent_runtime_id)
     main_content = main_content.replace("MODEL_ID_VALUE", model_id)
-    main_content = main_content.replace(
-        "SYSTEM_PROMPT_VALUE", system_prompt.replace("'", "\\'")
-    )
+    main_content = main_content.replace("SYSTEM_PROMPT_VALUE", system_prompt.replace("'", "\\'"))
     main_content = main_content.replace("AGENT_CONFIG_TABLE_NAME_VALUE", AGENT_CONFIG_TABLE_NAME)
 
     main_path = os.path.join(project_dir, "main.py")
@@ -529,7 +505,9 @@ def build_agent_project(
     # Initialize UV project
     print("Initializing UV project...")
     subprocess.run(
-        ["uv", "init", project_dir, "--python", "3.13"], check=True, cwd="/tmp"  # nosec B108
+        ["uv", "init", project_dir, "--python", "3.13"],
+        check=True,
+        cwd="/tmp",  # nosec B108
     )
 
     # Add dependencies (base + additional from tools)
@@ -638,9 +616,7 @@ def test_agent_endpoint(agent_runtime_id, agent_runtime_arn, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            print(
-                f"Testing agent endpoint (attempt {attempt + 1}/{max_retries}): {agent_runtime_id}"
-            )
+            print(f"Testing agent endpoint (attempt {attempt + 1}/{max_retries}): {agent_runtime_id}")
             print(f"Agent ARN: {agent_runtime_arn}")
 
             # Test payload - adjust based on your agent's expected input
@@ -689,9 +665,7 @@ def test_agent_endpoint(agent_runtime_id, agent_runtime_arn, max_retries=3):
             if "Runtime initialization time exceeded" in str(e):
                 if attempt < max_retries - 1:
                     wait_time = 30
-                    print(
-                        f"Runtime still initializing. Waiting {wait_time} seconds before retry..."
-                    )
+                    print(f"Runtime still initializing. Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                     continue
             elif attempt < max_retries - 1:
@@ -739,9 +713,7 @@ def lambda_handler(event, context):
 
         # Generate unique agent name based on tenant ID and timestamp
         # Format: agentcore_{tenantId}_{timestamp}
-        safe_tenant_id = tenant_id.replace("-", "_").replace(".", "_")[
-            :20
-        ]  # Sanitize and limit length
+        safe_tenant_id = tenant_id.replace("-", "_").replace(".", "_")[:20]  # Sanitize and limit length
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         agent_name = f"agentcore_{safe_tenant_id}_{timestamp}"
         print(f"Generated unique agent name: {agent_name}")
@@ -754,9 +726,7 @@ def lambda_handler(event, context):
         print("STEP 1: Building agent project")
         print("=" * 60)
         # Note: agent_runtime_id will be updated after creation
-        package_path = build_agent_project(
-            tenant_id, config, "pending", template_config, tools_config
-        )
+        package_path = build_agent_project(tenant_id, config, "pending", template_config, tools_config)
 
         # Step 2: Upload to S3
         print("=" * 60)
@@ -803,9 +773,7 @@ def lambda_handler(event, context):
         print(f"Agent ARN: {agent_runtime_arn}")
         print(f"Tagged with tenantId: {tenant_id}")
 
-        print(
-            f"Note: Agent built with placeholder runtime ID. Runtime config will use tenantId: {tenant_id}"
-        )
+        print(f"Note: Agent built with placeholder runtime ID. Runtime config will use tenantId: {tenant_id}")
 
         # Step 5: Wait for agent to be ready
         print("=" * 60)
@@ -820,7 +788,9 @@ def lambda_handler(event, context):
         test_result = test_agent_endpoint(agent_runtime_id, agent_runtime_arn)
 
         # Construct the agent endpoint URL
-        agent_endpoint_url = f"https://bedrock-agentcore-runtime.{REGION}.amazonaws.com/agents/{agent_runtime_id}/invoke"
+        agent_endpoint_url = (
+            f"https://bedrock-agentcore-runtime.{REGION}.amazonaws.com/agents/{agent_runtime_id}/invoke"
+        )
 
         # Store agent details in DynamoDB for later retrieval
         try:
@@ -854,15 +824,9 @@ def lambda_handler(event, context):
                     "deployedAt": datetime.now().isoformat(),
                     "s3_uri": f"s3://{BUCKET_NAME}/{s3_key}",
                     "deploymentConfig": deployment_config,  # Store deployment-time config
-                    "templateSource": template_config.get("source", "default")
-                    if template_config
-                    else "default",
-                    "templateRepo": template_config.get("repo", "")
-                    if template_config
-                    else "",
-                    "templatePath": template_config.get("path", "")
-                    if template_config
-                    else "",
+                    "templateSource": template_config.get("source", "default") if template_config else "default",
+                    "templateRepo": template_config.get("repo", "") if template_config else "",
+                    "templatePath": template_config.get("path", "") if template_config else "",
                     "tools": tools_config if tools_config else {},
                 }
             )
@@ -898,15 +862,9 @@ def lambda_handler(event, context):
                     "agentRuntimeArn": agent_runtime_arn,
                     "agentEndpointUrl": agent_endpoint_url,
                     "test_result": test_result,
-                    "templateSource": template_config.get("source", "default")
-                    if template_config
-                    else "default",
-                    "templateRepo": template_config.get("repo", "")
-                    if template_config
-                    else "",
-                    "tools": [t.get("id") for t in tools_config.get("selected", [])]
-                    if tools_config
-                    else [],
+                    "templateSource": template_config.get("source", "default") if template_config else "default",
+                    "templateRepo": template_config.get("repo", "") if template_config else "",
+                    "tools": [t.get("id") for t in tools_config.get("selected", [])] if tools_config else [],
                 }
             ),
         }

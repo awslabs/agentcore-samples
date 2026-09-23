@@ -1,0 +1,7 @@
+# Anthropic SDK with the Amazon Bedrock backend (provides the AnthropicBedrock client).
+# The [bedrock] extra pulls in boto3/botocore for AWS SigV4 request signing.
+anthropic[bedrock]>=0.40.0
+
+# Amazon Bedrock AgentCore SDK — provides the MemoryClient used for short-term memory
+# (create_event / get_last_k_turns / list_events).
+bedrock-agentcore

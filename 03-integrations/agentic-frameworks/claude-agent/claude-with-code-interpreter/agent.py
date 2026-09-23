@@ -69,9 +69,7 @@ async def main(payload):
                     if isinstance(block, ToolUseBlock):
                         logger.info("*" * 80 + "\n")
                         logger.info("TOOL USE: %s", block.name)
-                        logger.info(
-                            "Input Parameters:\n%s", json.dumps(block.input, indent=2)
-                        )
+                        logger.info("Input Parameters:\n%s", json.dumps(block.input, indent=2))
                         logger.info("*" * 80 + "\n")
                         # Yield tool use as a streaming chunk
                         yield {
@@ -101,9 +99,7 @@ async def main(payload):
                                 logger.info("Tool Result: %s", text_content)
                                 logger.info("*" * 80 + "\n")
                                 result_data = json.loads(text_content)
-                                extracted_session_id = result_data.get(
-                                    "code_int_session_id", ""
-                                )
+                                extracted_session_id = result_data.get("code_int_session_id", "")
                                 if extracted_session_id:
                                     code_int_session_id = extracted_session_id
                         logger.info("*" * 80 + "\n")
@@ -115,9 +111,7 @@ async def main(payload):
     # Yield final response with complete data
     yield {
         "type": "final",
-        "response": "\n".join(agent_responses)
-        if agent_responses
-        else "No response from agent",
+        "response": "\n".join(agent_responses) if agent_responses else "No response from agent",
         "session_id": code_int_session_id,
     }
 

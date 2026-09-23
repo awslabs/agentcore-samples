@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAgentCoreEvaluationsToAssume",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "bedrock-agentcore.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

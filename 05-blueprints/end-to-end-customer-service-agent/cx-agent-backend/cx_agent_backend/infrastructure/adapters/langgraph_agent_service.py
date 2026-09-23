@@ -67,7 +67,9 @@ class LangGraphAgentService(AgentService):
                 gateway_url = parameter_store_reader.get_parameter(
                     "/amazon/gateway_url", decrypt=True
                 )
-                client_id = parameter_store_reader.get_parameter("/cognito/client_id", decrypt=True)
+                client_id = parameter_store_reader.get_parameter(
+                    "/cognito/client_id", decrypt=True
+                )
                 client_secret = secret_reader.read_secret("cognito_client_secret")
                 token_url = parameter_store_reader.get_parameter(
                     "/cognito/oauth_token_url", decrypt=True
@@ -85,7 +87,7 @@ class LangGraphAgentService(AgentService):
                         "client_secret": client_secret,
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=20
+                    timeout=20,
                 )
 
                 if token_response.status_code != 200:
@@ -104,30 +106,37 @@ class LangGraphAgentService(AgentService):
 
                         # List available tools first
                         tools_list = await session.list_tools()
-                        logger.info(f"Available MCP tools: {[tool.name for tool in tools_list.tools]}")
-                        
+                        logger.info(
+                            f"Available MCP tools: {[tool.name for tool in tools_list.tools]}"
+                        )
+
                         # Find the correct tool name
                         tavily_tool = None
                         for tool in tools_list.tools:
                             if "tavily" in tool.name.lower():
                                 tavily_tool = tool
                                 break
-                        
+
                         if not tavily_tool:
                             return "Tavily search tool not found in gateway"
-                        
+
                         logger.info(f"Using tool: {tavily_tool.name}")
-                        
+
                         # Call the tool with proper name
                         result = await session.call_tool(
                             tavily_tool.name, {"query": query}
                         )
                         logger.info(f"MCP tool result: {result}")
-                        
+
                         # Handle different result types
-                        if hasattr(result, 'content'):
+                        if hasattr(result, "content"):
                             if isinstance(result.content, list):
-                                return '\n'.join(str(item.text) if hasattr(item, 'text') else str(item) for item in result.content)
+                                return "\n".join(
+                                    str(item.text)
+                                    if hasattr(item, "text")
+                                    else str(item)
+                                    for item in result.content
+                                )
                             else:
                                 return str(result.content)
                         else:
@@ -269,7 +278,9 @@ class LangGraphAgentService(AgentService):
                     )
 
         # Get memory parameters from environment or request
-        stm_memory_id = parameter_store_reader.get_parameter("/amazon/ac_stm_memory_id", decrypt=True)
+        stm_memory_id = parameter_store_reader.get_parameter(
+            "/amazon/ac_stm_memory_id", decrypt=True
+        )
         if not stm_memory_id:
             logger.error("STM Memory ID not configured in parameter store")
             raise ValueError("STM Memory ID not configured")

@@ -1,0 +1,9 @@
+crewai
+crewai-tools
+aws-opentelemetry-distro~=0.12.1
+opentelemetry-instrumentation-crewai
+opentelemetry-exporter-otlp-proto-http
+ddgs
+boto3
+botocore
+python-dotenv

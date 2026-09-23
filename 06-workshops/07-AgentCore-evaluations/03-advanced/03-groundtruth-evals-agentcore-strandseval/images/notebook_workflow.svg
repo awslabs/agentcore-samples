@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700" width="800" height="700">
+  <!-- Background -->
+  <rect width="800" height="700" fill="white"/>
+
+  <!-- Definitions for shadows and gradients -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#00000020"/>
+    </filter>
+    <linearGradient id="boxGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d2d2d"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="choiceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3d3d3d"/>
+      <stop offset="100%" style="stop-color:#2a2a2a"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="35" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#4a3728" text-anchor="middle">Notebook Workflow</text>
+
+  <!-- Box 0: AgentCore Observability (Source) -->
+  <g filter="url(#shadow)">
+    <rect x="250" y="60" width="300" height="50" rx="25" ry="25" fill="#4a3728" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="400" y="92" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">AgentCore Observability</text>
+
+  <!-- Arrow from Source to Session Discovery -->
+  <line x1="400" y1="110" x2="400" y2="140" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Box 1: Session Discovery -->
+  <g filter="url(#shadow)">
+    <rect x="250" y="150" width="300" height="80" rx="8" ry="8" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="2"/>
+  </g>
+  <text x="400" y="180" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="white" text-anchor="middle">01_session_discovery</text>
+  <text x="400" y="202" font-family="Arial, sans-serif" font-size="11" fill="#cccccc" text-anchor="middle">Find sessions by time range or eval score</text>
+  <text x="400" y="220" font-family="Arial, sans-serif" font-size="10" fill="#999999" text-anchor="middle">Output: discovered_sessions.json</text>
+
+  <!-- Arrow to Choice -->
+  <line x1="400" y1="230" x2="400" y2="270" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Choice Diamond/Box -->
+  <g filter="url(#shadow)">
+    <rect x="200" y="280" width="400" height="50" rx="25" ry="25" fill="url(#choiceGradient)" stroke="#1a1a1a" stroke-width="2"/>
+  </g>
+  <text x="400" y="312" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">Choose Your Evaluation Path</text>
+
+  <!-- Split arrows -->
+  <path d="M300 330 L300 365 L250 365 L250 400" stroke="#1a1a1a" stroke-width="2" fill="none"/>
+  <polygon points="250,410 245,400 255,400" fill="#1a1a1a"/>
+
+  <path d="M500 330 L500 365 L550 365 L550 400" stroke="#1a1a1a" stroke-width="2" fill="none"/>
+  <polygon points="550,410 545,400 555,400" fill="#1a1a1a"/>
+
+  <!-- Option Labels -->
+  <text x="200" y="385" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#4a3728" text-anchor="middle">Rubric-based</text>
+  <text x="600" y="385" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#4a3728" text-anchor="middle">Ground Truth</text>
+
+  <!-- Box 2: Multi-Session Analysis -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="420" width="300" height="110" rx="8" ry="8" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="2"/>
+  </g>
+  <text x="250" y="450" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="white" text-anchor="middle">02_multi_session_analysis</text>
+  <text x="250" y="472" font-family="Arial, sans-serif" font-size="11" fill="#cccccc" text-anchor="middle">Evaluate with custom rubrics</text>
+  <line x1="130" y1="488" x2="370" y2="488" stroke="#444444" stroke-width="1"/>
+  <text x="250" y="506" font-family="Arial, sans-serif" font-size="10" fill="#999999" text-anchor="middle">Define your own evaluation criteria</text>
+  <text x="250" y="520" font-family="Arial, sans-serif" font-size="10" fill="#999999" text-anchor="middle">Flexible rubric-based scoring</text>
+
+  <!-- Box 3: Ground Truth Evaluation -->
+  <g filter="url(#shadow)">
+    <rect x="400" y="420" width="300" height="110" rx="8" ry="8" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="2"/>
+  </g>
+  <text x="550" y="450" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="white" text-anchor="middle">03_ground_truth_evaluation</text>
+  <text x="550" y="472" font-family="Arial, sans-serif" font-size="11" fill="#cccccc" text-anchor="middle">Compare against expected outputs</text>
+  <line x1="430" y1="488" x2="670" y2="488" stroke="#444444" stroke-width="1"/>
+  <text x="550" y="506" font-family="Arial, sans-serif" font-size="10" fill="#999999" text-anchor="middle">Match actual vs expected by trace_id</text>
+  <text x="550" y="520" font-family="Arial, sans-serif" font-size="10" fill="#999999" text-anchor="middle">Demo mode available for testing</text>
+
+  <!-- Arrows from notebooks to Dashboard -->
+  <path d="M250 530 L250 570 L350 570 L350 610" stroke="#1a1a1a" stroke-width="2" fill="none"/>
+  <polygon points="350,620 345,610 355,610" fill="#1a1a1a"/>
+
+  <path d="M550 530 L550 570 L450 570 L450 610" stroke="#1a1a1a" stroke-width="2" fill="none"/>
+  <polygon points="450,620 445,610 455,610" fill="#1a1a1a"/>
+
+  <!-- Box 4: AgentCore Observability Dashboard (Destination) -->
+  <g filter="url(#shadow)">
+    <rect x="220" y="630" width="360" height="50" rx="25" ry="25" fill="#4a3728" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="400" y="662" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">AgentCore Observability Dashboard</text>
+</svg>

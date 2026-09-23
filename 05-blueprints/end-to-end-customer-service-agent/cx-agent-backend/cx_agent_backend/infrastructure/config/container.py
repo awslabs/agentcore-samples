@@ -38,7 +38,9 @@ class Container(containers.DeclarativeContainer):
     guardrail_service = (
         providers.Singleton(
             BedrockGuardrailService,
-            guardrail_id=parameter_store_reader.get_parameter("/amazon/guardrail_id", decrypt=True),
+            guardrail_id=parameter_store_reader.get_parameter(
+                "/amazon/guardrail_id", decrypt=True
+            ),
             region=settings.aws_region,
         )
         if settings.guardrails_enabled

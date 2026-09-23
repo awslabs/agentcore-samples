@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+cdk.out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# AWS
+.env
+.env.local
+.cognito-state.json
+cdk.context.json
+cdk-outputs.json
+agentcore/cdk/cdk.out/
+agentcore/cdk/dist/
+agentcore/aws-targets.json
+agentcore/.cli/
+
+# OS
+.DS_Store
+Thumbs.db

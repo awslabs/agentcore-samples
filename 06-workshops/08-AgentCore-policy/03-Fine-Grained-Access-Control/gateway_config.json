@@ -1,0 +1,16 @@
+{
+  "gateway_url": "https://<gateway-name>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp",
+  "gateway_id": "<gateway-id>",
+  "gateway_arn": "arn:aws:bedrock-agentcore:<region>:<account-id>:gateway/<gateway-id>",
+  "region": "us-east-1",
+  "client_info": {
+    "client_id": "<cognito-client-id>",
+    "client_secret": "<cognito-client-secret>",
+    "user_pool_id": "<region>_<user-pool-id>",
+    "token_endpoint": "https://<cognito-domain>.auth.<region>.amazoncognito.com/oauth2/token",
+    "scope": "<resource-server-id>/invoke",
+    "domain_prefix": "<cognito-domain>"
+  },
+  "lambda_arn": "arn:aws:lambda:<region>:<account-id>:function:<function-name>",
+  "policy_engine_id": "<policy-engine-id>"
+}

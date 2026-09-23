@@ -1,0 +1,8 @@
+.venv/
+build/
+__pycache__/
+*.pyc
+deployment_state.json
+*.zip
+.DS_Store
+runs/

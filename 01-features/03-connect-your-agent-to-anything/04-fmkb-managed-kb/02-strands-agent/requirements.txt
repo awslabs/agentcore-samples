@@ -1,0 +1,10 @@
+bedrock-agentcore>=1.15.0
+strands-agents>=1.44.0
+mcp>=1.28.0
+mcp-proxy-for-aws>=1.6.2
+# botocore 1.43.32 is the first release that models the bedrock-knowledge-bases
+# connector under bedrock-agentcore-control.CreateGatewayTarget. Earlier
+# releases reject the call client-side with ParamValidationError on the
+# unknown `connector` key.
+boto3>=1.43.32
+botocore>=1.43.32

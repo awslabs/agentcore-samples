@@ -15,9 +15,7 @@ from src.agent import create_agent
 from src.memory import MemoryManager
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Create the AgentCore app
@@ -86,9 +84,7 @@ def invoke(payload: dict) -> dict:
         )
 
         # Retrieve relevant long-term memories
-        relevant_memories = memory_manager.retrieve_memories(
-            actor_id=user_id, query=prompt
-        )
+        relevant_memories = memory_manager.retrieve_memories(actor_id=user_id, query=prompt)
 
         # Build context for the agent
         context = _build_context(conversation_history, relevant_memories)

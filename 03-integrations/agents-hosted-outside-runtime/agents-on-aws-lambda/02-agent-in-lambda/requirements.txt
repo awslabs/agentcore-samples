@@ -1,0 +1,2 @@
+strands-agents
+aws-opentelemetry-distro

@@ -1,0 +1,26 @@
+# Core SDK
+# 1.18.0 adds the LangGraph payments integration (AgentCorePaymentsMiddleware).
+bedrock-agentcore[strands-agents]>=1.18.0
+boto3>=1.43.5
+botocore>=1.43.5
+
+# Strands
+strands-agents>=1.0.0
+strands-agents-tools>=0.2.0
+
+# LangGraph
+# langchain 1.x required — create_agent(..., middleware=[...]) and
+# langchain.agents.middleware.AgentMiddleware do not exist in 0.3.x.
+langchain>=1.0.0
+langchain-aws>=1.0.0
+langgraph>=1.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+
+# OpenAI Agents SDK on Amazon Bedrock
+aws-bedrock-token-generator>=1.1.0
+httpx>=0.27.1
+openai-agents>=0.19.1
+
+# Shared
+python-dotenv>=1.0.0

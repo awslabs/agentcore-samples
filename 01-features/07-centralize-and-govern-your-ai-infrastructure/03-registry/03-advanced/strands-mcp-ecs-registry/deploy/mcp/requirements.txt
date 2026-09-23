@@ -1,0 +1,4 @@
+fastmcp>=3.2.0
+boto3>=1.42.87
+uvicorn[standard]
+starlette

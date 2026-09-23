@@ -1,0 +1,55 @@
+# Default values for strands-agents-travel
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: placeholder
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  path: /
+  pathType: Prefix
+  hosts: []
+  tls: []
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+topologySpreadConstraints: []
+
+podDisruptionBudget:
+  enabled: false
+
+env: []
+  # - name: ENV_VAR_NAME
+  #   value: "value"

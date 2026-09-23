@@ -1,0 +1,20 @@
+# Agent-side dependencies only. These are small on purpose.
+#
+# An AgentCore Runtime container image is capped at 2 GB and a CUDA build of
+# torch resolves to 3.13 GB of wheels before any model weight, so the generative
+# stack is NOT here. It is built onto the capacity provider's `models` volume at
+# run time by model_stack/prepare.py and invoked as a subprocess. See the README.
+#
+# Everything here is permissively licensed: Apache-2.0 for the AgentCore SDK and
+# Strands, BSD-3 for numpy, scipy and soundfile. Two audio libraries were
+# deliberately rejected -- pedalboard is GPL (it links JUCE) and pyloudnorm
+# publishes no license metadata -- so the DSP and the ITU-R BS.1770-4 loudness
+# measurement are implemented in audio_dsp.py instead.
+bedrock-agentcore==1.21.0
+strands-agents==1.52.0
+boto3>=1.43.72
+
+# Audio measurement and processing.
+numpy==2.5.2
+scipy==1.18.0
+soundfile==0.14.0

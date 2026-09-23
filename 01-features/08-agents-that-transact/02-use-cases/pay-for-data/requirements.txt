@@ -1,0 +1,5 @@
+boto3>=1.43.6
+botocore>=1.43.6
+python-dotenv>=1.0.0
+requests>=2.32.0
+bedrock-agentcore[strands-agents]>=1.9.0

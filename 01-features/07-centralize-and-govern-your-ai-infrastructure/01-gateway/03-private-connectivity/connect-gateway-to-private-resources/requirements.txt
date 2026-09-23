@@ -1,0 +1,3 @@
+botocore
+boto3
+requests

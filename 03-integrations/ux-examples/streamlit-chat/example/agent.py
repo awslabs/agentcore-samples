@@ -2,10 +2,6 @@
 # To test locally, run `uv run agent.py` and then
 # curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "Hello!"}'
 
-import argparse
-import asyncio
-import datetime
-import json
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent, tool
@@ -42,11 +38,7 @@ async def strands_agent_bedrock(payload):
     tool_name = None
     try:
         async for event in agent_stream:
-
-            if (
-                "current_tool_use" in event
-                and event["current_tool_use"].get("name") != tool_name
-            ):
+            if "current_tool_use" in event and event["current_tool_use"].get("name") != tool_name:
                 tool_name = event["current_tool_use"]["name"]
                 yield f"\n\n🔧 Using tool: {tool_name}\n\n"
 

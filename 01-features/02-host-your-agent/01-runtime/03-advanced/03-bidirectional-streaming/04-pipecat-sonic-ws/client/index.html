@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipecat Voice Agent - AnyBank</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>🎙️ Pipecat Voice Agent — AnyBank (Nova Sonic)</h1>
+
+    <div class="card">
+        <h2>Connection</h2>
+        <div class="form-group">
+            <label for="serverUrl">Server URL (/start endpoint)</label>
+            <input type="text" id="serverUrl" value="/start" />
+        </div>
+        <div class="btn-row">
+            <button class="btn-connect" id="btnConnect">Connect</button>
+            <button class="btn-disconnect" id="btnDisconnect" disabled>Disconnect</button>
+        </div>
+        <div class="status">
+            Status: <span id="statusText" class="disconnected">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Log</h2>
+        <div id="log"></div>
+    </div>
+</div>
+
+<script type="module" src="/src/app.js"></script>
+</body>
+</html>

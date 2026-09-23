@@ -7,17 +7,17 @@ import pytz
 def get_datetime(timezone: str = "UTC") -> str:
     """
     Get the current date, time, and timezone information.
-    
+
     This tool returns the current date and time in the specified timezone.
     Useful for time-aware responses and scheduling tasks.
-    
+
     Args:
         timezone: Timezone name (e.g., "UTC", "America/New_York", "Europe/London", "Asia/Tokyo")
                  Default is "UTC". Use standard IANA timezone names.
-        
+
     Returns:
         Formatted string with current date, time, day of week, and timezone information
-        
+
     Example:
         result = get_datetime()  # Returns UTC time
         result = get_datetime("America/New_York")  # Returns New York time
@@ -33,10 +33,10 @@ def get_datetime(timezone: str = "UTC") -> str:
             timezone_note = f" (Note: '{timezone}' is not a valid timezone, using UTC instead)"
         else:
             timezone_note = ""
-        
+
         # Get current time in specified timezone
         now = datetime.now(tz)
-        
+
         # Format the response
         result = []
         result.append(f"**Current Date & Time Information**{timezone_note}")
@@ -49,8 +49,8 @@ def get_datetime(timezone: str = "UTC") -> str:
         result.append(f"📊 **ISO Format**: {now.isoformat()}")
         result.append(f"🗓️  **Day of Year**: Day {now.strftime('%j')} of {now.year}")
         result.append(f"📆 **Week Number**: Week {now.strftime('%U')}")
-        
+
         return "\n".join(result)
-        
+
     except Exception as e:
         return f"Error getting datetime information: {str(e)}"

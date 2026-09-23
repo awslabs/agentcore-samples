@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangChain Voice Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+            min-height: 100vh; padding: 10px; margin: 0;
+        }
+        .container {
+            max-width: 1600px; margin: 0 auto;
+            background: rgba(255,255,255,0.98); border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden;
+            height: calc(100vh - 20px); display: flex; flex-direction: column;
+        }
+        .header {
+            background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+            color: white; padding: 12px 20px;
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+        .header h1 { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+        .header p { opacity: 0.95; font-size: 12px; }
+        .content { padding: 15px 20px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        #status {
+            padding: 8px 16px; border-radius: 16px; font-weight: 600; font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s ease;
+            min-width: 140px; text-align: center;
+        }
+        .connected { background: rgba(129,199,132,0.95); color: white; }
+        .disconnected { background: rgba(229,115,115,0.95); color: white; }
+        #controls { display: flex; gap: 10px; margin-bottom: 12px; max-width: 300px; }
+        #textInputSection { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+        #textInput {
+            flex: 1; padding: 10px 15px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 14px; font-family: inherit; transition: all 0.3s ease;
+        }
+        #textInput:focus { outline: none; border-color: #2d6a4f; box-shadow: 0 0 0 3px rgba(45,106,79,0.1); }
+        #sendTextBtn {
+            padding: 10px 24px; background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white; white-space: nowrap; flex: 0 0 auto; min-width: 100px;
+        }
+        button {
+            flex: 1; padding: 10px 20px; border: none; border-radius: 8px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.2); }
+        button:active:not(:disabled) { transform: translateY(0); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #toggleBtn { background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%); color: white; }
+        #toggleBtn.connected { background: linear-gradient(135deg, #e57373 0%, #ef5350 100%); }
+        .config-section { background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+        .form-group { margin-bottom: 0; }
+        .form-group label { display: block; margin-bottom: 4px; font-weight: 600; color: #333; font-size: 11px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 8px 12px; border: 2px solid #e0e0e0;
+            border-radius: 6px; font-size: 12px; transition: all 0.3s ease; font-family: inherit;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: #2d6a4f; box-shadow: 0 0 0 3px rgba(45,106,79,0.1);
+        }
+        .panels-container { display: flex; gap: 15px; flex: 1; min-height: 0; overflow: hidden; }
+        .panel {
+            flex: 1; background: white; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; flex-direction: column; min-height: 0;
+        }
+        .panel h2 {
+            margin: 0; padding: 10px 15px; font-size: 14px; font-weight: 700; color: white;
+            background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%); flex-shrink: 0;
+        }
+        .panel-header { background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%); flex-shrink: 0; }
+        .event-filter { padding: 6px 15px 10px 15px; background: rgba(0,0,0,0.2); }
+        .event-filter input {
+            width: 100%; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px;
+        }
+        .event-filter input::placeholder { color: rgba(255,255,255,0.6); }
+        .event-filter input:focus { outline: none; border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.15); }
+        .event.hidden { display: none; }
+        #messages { height: 0; flex: 1; overflow-y: auto; padding: 15px; background: #fafafa; }
+        .message {
+            margin: 8px 0; padding: 10px 14px; border-radius: 14px; max-width: 80%;
+            animation: slideIn 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 13px;
+        }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user { background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%); color: white; margin-left: auto; text-align: right; }
+        .assistant { background: white; border: 2px solid #e0e0e0; color: #333; }
+        .system { background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%); color: #f57f17; font-style: italic; text-align: center; margin: 10px auto; max-width: 60%; font-size: 12px; }
+        .tool { background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%); color: #2e7d32; font-family: 'Courier New', monospace; font-size: 12px; }
+        #events { height: 0; flex: 1; overflow-y: auto; padding: 15px; background: #1e1e1e; font-family: 'SF Mono','Monaco','Courier New',monospace; font-size: 11px; }
+        .event { margin: 6px 0; padding: 8px 10px; border-left: 3px solid #2d6a4f; background: #2d2d2d; color: #d4d4d4; border-radius: 4px; animation: slideIn 0.2s ease; }
+        .event.sent { border-left-color: #4caf50; background: #1a2e1a; }
+        .event.received { border-left-color: #2196f3; background: #1a2533; }
+        .event-type { color: #ffa726; font-weight: bold; font-size: 11px; margin-bottom: 3px; }
+        .event-time { color: #9e9e9e; font-size: 9px; margin-bottom: 4px; }
+        .event-data { color: #81c784; margin-top: 4px; white-space: pre-wrap; word-break: break-all; line-height: 1.4; font-size: 10px; }
+        .event-data.audio-event { max-height: 100px; overflow-y: auto; }
+        /* Modal styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal h2 { margin: 0 0 20px 0; color: #2d6a4f; font-size: 24px; }
+        .modal-form-group { margin-bottom: 16px; }
+        .modal-form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 13px; }
+        .modal-form-group input, .modal-form-group select, .modal-form-group textarea {
+            width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 13px; font-family: inherit; transition: all 0.3s ease;
+        }
+        .modal-form-group textarea { min-height: 120px; resize: vertical; font-family: 'Courier New', monospace; }
+        .modal-form-group input:focus, .modal-form-group select:focus, .modal-form-group textarea:focus { outline: none; border-color: #2d6a4f; box-shadow: 0 0 0 3px rgba(45,106,79,0.1); }
+        .modal-form-group small { display: block; margin-top: 4px; color: #666; font-size: 11px; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 24px; }
+        .modal-buttons button { flex: 1; padding: 12px 24px; }
+        .btn-primary { background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%); color: white; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-text">
+                <h1>🎙️ LangChain Voice Agent (Sandwich Architecture)</h1>
+                <p>STT (Transcribe) → Agent (Claude) → TTS (Polly)</p>
+            </div>
+            <div id="status" class="disconnected">Disconnected</div>
+        </div>
+
+        <div class="content">
+            <div class="config-section">
+                <div class="form-group">
+                    <label for="presignedUrl">🔐 Pre-signed WebSocket URL (SigV4 Query String)</label>
+                    <input type="text" id="presignedUrl" placeholder="wss://endpoint/runtimes/arn/ws?...">
+                    <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                        Paste the complete pre-signed URL or use ws://localhost:8080/ws for local testing
+                    </small>
+                </div>
+            </div>
+
+            <div id="controls">
+                <button id="toggleBtn" onclick="toggleConnection()">🚀 Start Conversation</button>
+                <button id="configBtn" onclick="openConfigModal()" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white;">⚙️ Configure</button>
+            </div>
+
+            <div id="textInputSection">
+                <input type="text" id="textInput" placeholder="Type a message and press Enter or click Send..." disabled>
+                <button id="sendTextBtn" onclick="sendTextMessage()" disabled>📤 Send</button>
+            </div>
+
+            <div class="panels-container">
+                <div class="panel">
+                    <h2>💬 Conversation</h2>
+                    <div id="messages"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📡 Raw Events</h2>
+                        <div class="event-filter">
+                            <input type="text" id="eventFilter" placeholder="🔍 Filter events by keyword..." oninput="filterEvents()" />
+                        </div>
+                    </div>
+                    <div id="events"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal-overlay">
+        <div class="modal">
+            <h2>⚙️ Agent Configuration</h2>
+
+            <div class="modal-form-group">
+                <label for="modalRegion">🌍 Region</label>
+                <select id="modalRegion">
+                    <option value="us-east-1" selected>US East (N. Virginia)</option>
+                    <option value="us-west-2">US West (Oregon)</option>
+                    <option value="eu-north-1">Europe (Stockholm)</option>
+                    <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+                </select>
+                <small>AWS region for Polly TTS and Transcribe STT</small>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="modalProfile">📋 Profile</label>
+                <select id="modalProfile" onchange="applyProfile()"></select>
+                <small>Load a pre-configured profile</small>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="modalVoice">🎤 Polly Voice</label>
+                <select id="modalVoice">
+                    <option value="Joanna" selected>Joanna (Female)</option>
+                    <option value="Matthew">Matthew (Male)</option>
+                    <option value="Ruth">Ruth (Female)</option>
+                    <option value="Gregory">Gregory (Male)</option>
+                    <option value="Ivy">Ivy (Female)</option>
+                </select>
+                <small>Amazon Polly voice for text-to-speech output</small>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="modalSystemPrompt">📝 System Prompt</label>
+                <textarea id="modalSystemPrompt" placeholder="You are a helpful assistant...">You are a helpful customer service assistant.</textarea>
+                <small>Instructions that define the agent's behavior and personality</small>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeConfigModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let audioContext = null;
+        let isRecording = false;
+        let audioPlaybackContext = null;
+        let nextPlayTime = 0;
+        let isMuted = false;  // Mute mic during TTS playback to prevent feedback loop
+
+        // Configuration
+        let agentConfig = {
+            voice: 'Joanna',
+            region: 'us-east-1',
+            gatewayArns: [],
+            systemPrompt: 'You are a helpful customer service assistant.',
+            inputSampleRate: 16000,
+            outputSampleRate: 16000
+        };
+
+        // Transcript buffering
+        let assistantBuffer = { text: '', timer: null, element: null };
+        const BUFFER_DELAY = 1000;
+
+        let profiles = [];
+
+        async function loadProfiles() {
+            try {
+                const response = await fetch('/api/profiles');
+                profiles = await response.json();
+                const select = document.getElementById('modalProfile');
+                select.innerHTML = '';
+                profiles.forEach((profile, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = profile.name;
+                    select.appendChild(option);
+                });
+                if (profiles.length > 0) {
+                    select.value = '0';
+                    applyProfileToConfig(profiles[0]);
+                }
+            } catch (e) {
+                console.error('Error loading profiles:', e);
+            }
+        }
+
+        function applyProfile() {
+            const select = document.getElementById('modalProfile');
+            const profile = profiles[select.value];
+            if (!profile) return;
+            document.getElementById('modalVoice').value = profile.voice || 'Joanna';
+            document.getElementById('modalRegion').value = profile.region || 'us-east-1';
+            document.getElementById('modalSystemPrompt').value = profile.system_prompt || '';
+        }
+
+        function applyProfileToConfig(profile) {
+            agentConfig = {
+                voice: profile.voice || 'Joanna',
+                region: profile.region || 'us-east-1',
+                gatewayArns: profile.gateway_arns || [],
+                systemPrompt: profile.system_prompt || '',
+                inputSampleRate: 16000,
+                outputSampleRate: 16000
+            };
+            document.getElementById('modalVoice').value = agentConfig.voice;
+            document.getElementById('modalRegion').value = agentConfig.region;
+            document.getElementById('modalSystemPrompt').value = agentConfig.systemPrompt;
+            localStorage.setItem('langchainAgentConfig', JSON.stringify(agentConfig));
+        }
+
+        function openConfigModal() {
+            document.getElementById('modalVoice').value = agentConfig.voice;
+            document.getElementById('modalRegion').value = agentConfig.region;
+            document.getElementById('modalSystemPrompt').value = agentConfig.systemPrompt;
+            document.getElementById('configModal').classList.add('active');
+        }
+
+        function closeConfigModal() {
+            document.getElementById('configModal').classList.remove('active');
+        }
+
+        function saveConfig() {
+            const voice = document.getElementById('modalVoice').value;
+            const region = document.getElementById('modalRegion').value;
+            const systemPrompt = document.getElementById('modalSystemPrompt').value.trim();
+            if (!systemPrompt) { alert('System prompt cannot be empty'); return; }
+
+            agentConfig = {
+                voice: voice,
+                region: region,
+                gatewayArns: agentConfig.gatewayArns,
+                systemPrompt: systemPrompt,
+                inputSampleRate: 16000,
+                outputSampleRate: 16000
+            };
+            localStorage.setItem('langchainAgentConfig', JSON.stringify(agentConfig));
+            closeConfigModal();
+            alert(`✅ Configuration saved!\n\nVoice: ${voice}\nRegion: ${region}\n\nNew settings apply on next conversation.`);
+        }
+
+        function loadConfig() {
+            try {
+                const saved = localStorage.getItem('langchainAgentConfig');
+                if (saved) agentConfig = { ...agentConfig, ...JSON.parse(saved) };
+            } catch (e) { console.error('Error loading config:', e); }
+        }
+
+        function addMessage(content, type) {
+            const messages = document.getElementById('messages');
+            const message = document.createElement('div');
+            message.className = 'message ' + type;
+            message.textContent = content;
+            messages.appendChild(message);
+            messages.scrollTop = messages.scrollHeight;
+            return message;
+        }
+
+        function handleAssistantChunk(text) {
+            if (assistantBuffer.timer) clearTimeout(assistantBuffer.timer);
+            assistantBuffer.text += text;
+            if (assistantBuffer.element && assistantBuffer.element.parentNode) {
+                assistantBuffer.element.textContent = '🔊 Assistant: ' + assistantBuffer.text;
+            } else {
+                assistantBuffer.element = addMessage('🔊 Assistant: ' + assistantBuffer.text, 'assistant');
+            }
+            assistantBuffer.timer = setTimeout(() => {
+                assistantBuffer = { text: '', timer: null, element: null };
+            }, BUFFER_DELAY);
+        }
+
+        function clearBuffers() {
+            if (assistantBuffer.timer) clearTimeout(assistantBuffer.timer);
+            assistantBuffer = { text: '', timer: null, element: null };
+        }
+
+        function filterEvents() {
+            const filterText = document.getElementById('eventFilter').value.toLowerCase();
+            document.querySelectorAll('#events .event').forEach(event => {
+                event.classList.toggle('hidden', !event.textContent.toLowerCase().includes(filterText));
+            });
+        }
+
+        function addEvent(direction, type, data) {
+            const events = document.getElementById('events');
+            const event = document.createElement('div');
+            event.className = 'event ' + direction;
+            const time = new Date().toLocaleTimeString();
+            const arrow = direction === 'sent' ? '⬆️' : '⬇️';
+
+            let displayData = data;
+            if (typeof data === 'object') {
+                displayData = JSON.parse(JSON.stringify(data));
+                if (displayData.audio && typeof displayData.audio === 'string' && displayData.audio.length > 20) {
+                    displayData.audio = displayData.audio.substring(0, 20) + '... [truncated]';
+                }
+            }
+            const dataStr = typeof displayData === 'object' ? JSON.stringify(displayData, null, 2) : displayData;
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'event-time';
+            timeDiv.textContent = `${time} ${arrow}`;
+            const typeDiv = document.createElement('div');
+            typeDiv.className = 'event-type';
+            typeDiv.textContent = type;
+            const dataDiv = document.createElement('div');
+            dataDiv.className = 'event-data';
+            dataDiv.textContent = dataStr;
+
+            event.appendChild(timeDiv);
+            event.appendChild(typeDiv);
+            event.appendChild(dataDiv);
+            events.appendChild(event);
+            events.scrollTop = events.scrollHeight;
+        }
+
+        function updateStatus(connected, recording = false) {
+            const status = document.getElementById('status');
+            const toggleBtn = document.getElementById('toggleBtn');
+            const textInput = document.getElementById('textInput');
+            const sendTextBtn = document.getElementById('sendTextBtn');
+            if (connected) {
+                status.textContent = recording ? '🔴 Recording' : '🟢 Connected';
+                status.className = 'connected';
+                toggleBtn.textContent = '🛑 End Conversation';
+                toggleBtn.className = 'connected';
+                textInput.disabled = false;
+                sendTextBtn.disabled = false;
+            } else {
+                status.textContent = '⚫ Disconnected';
+                status.className = 'disconnected';
+                toggleBtn.textContent = '🚀 Start Conversation';
+                toggleBtn.className = '';
+                textInput.disabled = true;
+                sendTextBtn.disabled = true;
+            }
+        }
+
+        function toggleConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) disconnect();
+            else connect();
+        }
+
+        async function playAudioOutput(base64Audio, sampleRate) {
+            const outputSampleRate = sampleRate || agentConfig.outputSampleRate;
+            if (!audioPlaybackContext) {
+                audioPlaybackContext = new AudioContext({ sampleRate: outputSampleRate });
+                nextPlayTime = audioPlaybackContext.currentTime;
+            }
+            if (audioPlaybackContext.state === 'suspended') await audioPlaybackContext.resume();
+
+            // Mute mic while playing TTS to prevent feedback loop
+            isMuted = true;
+
+            const binaryString = atob(base64Audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+
+            const int16Data = new Int16Array(bytes.buffer);
+            const float32Data = new Float32Array(int16Data.length);
+            for (let i = 0; i < int16Data.length; i++) float32Data[i] = int16Data[i] / 32768.0;
+
+            const buffer = audioPlaybackContext.createBuffer(1, float32Data.length, outputSampleRate);
+            buffer.getChannelData(0).set(float32Data);
+
+            const currentTime = audioPlaybackContext.currentTime;
+            if (nextPlayTime < currentTime) nextPlayTime = currentTime;
+
+            const source = audioPlaybackContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioPlaybackContext.destination);
+            source.start(nextPlayTime);
+            nextPlayTime += buffer.duration;
+
+            // Unmute mic after this chunk finishes playing
+            source.onended = () => {
+                // Only unmute if no more audio is queued
+                if (audioPlaybackContext && audioPlaybackContext.currentTime >= nextPlayTime - 0.05) {
+                    isMuted = false;
+                }
+            };
+        }
+
+        async function connect() {
+            document.getElementById('messages').textContent = '';
+            document.getElementById('events').textContent = '';
+            clearBuffers();
+
+            const presignedUrl = document.getElementById('presignedUrl').value.trim();
+            if (!presignedUrl) { addMessage('❌ Error: URL is required', 'system'); return; }
+            if (!presignedUrl.startsWith('ws://') && !presignedUrl.startsWith('wss://')) {
+                addMessage('❌ Error: URL must start with ws:// or wss://', 'system'); return;
+            }
+
+            addMessage('🔗 Connecting to LangChain voice agent...', 'system');
+
+            try {
+                ws = new WebSocket(presignedUrl);
+
+                ws.onerror = (error) => {
+                    addMessage(`❌ WebSocket error: ${error.message || 'Connection failed'}`, 'system');
+                    updateStatus(false);
+                };
+
+                ws.onopen = async () => {
+                    addMessage('Connected to LangChain Voice Agent', 'system');
+                    updateStatus(true);
+
+                    const configPayload = {
+                        type: "config",
+                        voice: agentConfig.voice,
+                        region: agentConfig.region,
+                        gateway_arns: agentConfig.gatewayArns,
+                        system_prompt: agentConfig.systemPrompt,
+                        input_sample_rate: agentConfig.inputSampleRate,
+                        output_sample_rate: agentConfig.outputSampleRate
+                    };
+                    ws.send(JSON.stringify(configPayload));
+                    addEvent('sent', 'config', configPayload);
+
+                    addMessage(`🎤 Voice: ${agentConfig.voice}`, 'system');
+                    addMessage(`🌍 Region: ${agentConfig.region}`, 'system');
+                    addMessage(`📊 Audio: ${agentConfig.inputSampleRate}Hz input, ${agentConfig.outputSampleRate}Hz output`, 'system');
+                    addMessage(`🏗️ Architecture: STT → Agent → TTS (Sandwich)`, 'system');
+
+                    await startRecording();
+                };
+
+                ws.onmessage = async (event) => {
+                    const data = JSON.parse(event.data);
+                    addEvent('received', data.type, data);
+
+                    switch (data.type) {
+                        case 'tts_audio':
+                            await playAudioOutput(data.audio, data.sample_rate || agentConfig.outputSampleRate);
+                            break;
+                        case 'transcript':
+                            addMessage('🎤 User: ' + data.text, 'user');
+                            break;
+                        case 'agent_chunk':
+                            handleAssistantChunk(data.text);
+                            break;
+                        case 'system':
+                            addMessage('ℹ️ ' + data.message, 'system');
+                            break;
+                        case 'error':
+                            addMessage('❌ ' + data.message, 'system');
+                            break;
+                    }
+                };
+
+                ws.onclose = () => {
+                    addMessage('Disconnected', 'system');
+                    updateStatus(false);
+                    clearBuffers();
+                    if (isRecording) stopRecording();
+                    if (audioPlaybackContext) { audioPlaybackContext.close(); audioPlaybackContext = null; }
+                };
+            } catch (error) {
+                addMessage(`❌ Failed to connect: ${error.message}`, 'system');
+                updateStatus(false);
+            }
+        }
+
+        function disconnect() {
+            if (isRecording) stopRecording();
+            if (ws) ws.close();
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+                });
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                processor.onaudioprocess = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN && !isMuted) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const downsampleRatio = audioContext.sampleRate / agentConfig.inputSampleRate;
+                        const outputLength = Math.floor(inputData.length / downsampleRatio);
+                        const int16Data = new Int16Array(outputLength);
+                        for (let i = 0; i < outputLength; i++) {
+                            const sourceIndex = Math.floor(i * downsampleRatio);
+                            int16Data[i] = Math.max(-32768, Math.min(32767, inputData[sourceIndex] * 32768));
+                        }
+                        const bytes = new Uint8Array(int16Data.buffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                        const base64Audio = btoa(binary);
+
+                        const payload = {
+                            type: "audio_input",
+                            audio: base64Audio,
+                            format: "pcm",
+                            sample_rate: agentConfig.inputSampleRate,
+                            channels: 1
+                        };
+                        ws.send(JSON.stringify(payload));
+                        addEvent('sent', 'audio_input', payload);
+                    }
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                isRecording = true;
+                updateStatus(true, true);
+                addMessage('🎤 Recording started - speak now', 'system');
+            } catch (err) {
+                addMessage('❌ Microphone access denied: ' + err.message, 'system');
+            }
+        }
+
+        function stopRecording() {
+            if (audioContext) { audioContext.close(); audioContext = null; }
+            isRecording = false;
+            addMessage('Recording stopped', 'system');
+        }
+
+        function sendTextMessage() {
+            const textInput = document.getElementById('textInput');
+            const text = textInput.value.trim();
+            if (!text) return;
+            if (!ws || ws.readyState !== WebSocket.OPEN) { addMessage('❌ Not connected', 'system'); return; }
+
+            const payload = { type: "text_input", text: text };
+            ws.send(JSON.stringify(payload));
+            addEvent('sent', 'text_input', payload);
+            addMessage(text, 'user');
+            textInput.value = '';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadConfig();
+            loadProfiles();
+            document.getElementById('textInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendTextMessage();
+            });
+        });
+    </script>
+</body>
+</html>

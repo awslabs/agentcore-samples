@@ -50,9 +50,7 @@ class MemoryManager:
             self._client = boto3.client("bedrock-agentcore", region_name=self.region)
         return self._client
 
-    def store_interaction(
-        self, actor_id: str, session_id: str, user_message: str, assistant_message: str
-    ) -> bool:
+    def store_interaction(self, actor_id: str, session_id: str, user_message: str, assistant_message: str) -> bool:
         """
         Store a conversation interaction in memory.
 
@@ -104,9 +102,7 @@ class MemoryManager:
             logger.error(f"Unexpected error storing interaction: {e}")
             return False
 
-    def get_conversation_history(
-        self, actor_id: str, session_id: str, max_results: int = 10
-    ) -> List[dict]:
+    def get_conversation_history(self, actor_id: str, session_id: str, max_results: int = 10) -> List[dict]:
         """
         Retrieve conversation history from short-term memory.
 
@@ -126,9 +122,7 @@ class MemoryManager:
         # The events we store are processed by extraction strategies
         return []
 
-    def retrieve_memories(
-        self, actor_id: str, query: str, max_results: int = 5
-    ) -> List[str]:
+    def retrieve_memories(self, actor_id: str, query: str, max_results: int = 5) -> List[str]:
         """
         Retrieve relevant long-term memories based on a query.
 

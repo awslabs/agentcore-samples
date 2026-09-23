@@ -1,0 +1,12 @@
+boto3
+botocore
+langchain[aws]
+langchain-aws
+langgraph
+langsmith[otel]
+ddgs
+langchain-community
+opentelemetry-instrumentation-langchain
+aws-opentelemetry-distro~=0.12.1
+opentelemetry-exporter-otlp-proto-http
+python-dotenv

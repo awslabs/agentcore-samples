@@ -1,0 +1,37 @@
+{
+  "name": "okta",
+  "displayName": "Okta",
+  "vendor": "CustomOauth2",
+  "providerConfigKey": "customOauth2ProviderConfig",
+  "clientIdEnv": "PORTAL_CLIENT_ID",
+  "clientSecretEnv": "PORTAL_CLIENT_SECRET",
+  "discoveryUrlEnv": "OKTA_DISCOVERY_URL",
+  "discoveryUrlMustContain": "/oauth2/",
+  "discoveryUrlExample": "https://<OKTA_DOMAIN>/oauth2/<AS_ID>/.well-known/openid-configuration",
+  "discoveryUrlWhy": "The org authorization server (https://<domain>/.well-known/openid-configuration) cannot host a custom audience or a custom scope; only a Custom Authorization Server issuer (.../oauth2/<AS_ID>) can. Pointing at the org AS makes aud/scope validation fail.",
+  "audienceEnv": "OKTA_AUDIENCE",
+  "audienceNote": "the Custom Authorization Server's `audiences` string (e.g. api://agentcore-gateway); it becomes the token aud",
+  "scopesEnv": "OKTA_ALLOWED_SCOPES",
+  "requireQualifiedScopes": false,
+  "gatewayScopes": ["access_as_user"],
+  "scopeTemplate": "{scope}",
+  "resourcePrefix": "okta",
+  "docPath": "okta/",
+  "portalCallbackHint": [
+    "    Add this URI to the portal app's Sign-in redirect URIs:",
+    "      {callback_url}",
+    "    Console: Applications -> your portal app (client_id {client_id}) ->",
+    "    General -> Sign-in redirect URIs -> Edit. Or PUT the full app object to",
+    "    https://$OKTA_DOMAIN/api/v1/apps/<PORTAL_APP_ID> with redirect_uris updated."
+  ],
+  "resourceAppDeleteHint": [
+    "  the Okta apps and Custom Authorization Server (the MCP-client app, the",
+    "    portal login client, and the AS that hosts the gateway's audience) --",
+    "    they are yours, created in okta/gateway.md and okta/consent-portal.md,",
+    "    so this script does not delete them. cleanup_gateway_entra.py leaves",
+    "    them too; remove them yourself once the gateway is gone, e.g. (deactivate",
+    "    the app first):",
+    "      curl -X DELETE -H \"Authorization: SSWS $OKTA_TOKEN\" \\",
+    "        \"https://$OKTA_DOMAIN/api/v1/apps/<APP_ID>\""
+  ]
+}

@@ -1,0 +1,5 @@
+flask>=3.0
+bedrock-agentcore>=1.14.0
+websocket-client>=1.6.0
+gevent>=23.9.0
+gevent-websocket>=0.10.1

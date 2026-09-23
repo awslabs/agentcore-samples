@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coding Agents — Compare</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="top-bar">
+    <div class="top-bar-title">
+      <div class="top-bar-row">
+        <h1>Coding Agents</h1>
+        <span class="subtitle">AgentCore Runtime — Side-by-side comparison</span>
+      </div>
+      <div class="session-row">
+        <span class="session-id" id="session-display" title="Click to copy"></span>
+        <button class="btn btn-small btn-session-renew" id="session-renew" title="Generate new session">&#x21bb;</button>
+      </div>
+    </div>
+    <div class="top-bar-center">
+      <button class="btn btn-tui btn-tui-all" id="tui-all-btn">TUI</button>
+      <button class="btn btn-danger btn-disc-all" id="disc-all-btn" disabled>Disconnect</button>
+    </div>
+    <div class="layout-toggle">
+      <button class="btn btn-small btn-layout active" id="layout-1" title="1 panel">
+        <svg width="16" height="14" viewBox="0 0 16 14"><rect x="2" y="0" width="12" height="14" rx="2" fill="currentColor"/></svg>
+      </button>
+      <button class="btn btn-small btn-layout" id="layout-2" title="2 panels">
+        <svg width="16" height="14" viewBox="0 0 16 14"><rect x="0" y="0" width="7" height="14" rx="2" fill="currentColor"/><rect x="9" y="0" width="7" height="14" rx="2" fill="currentColor"/></svg>
+      </button>
+      <button class="btn btn-small btn-layout" id="layout-4" title="4 panels">
+        <svg width="16" height="14" viewBox="0 0 16 14"><rect x="0" y="0" width="7" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="0" width="7" height="6" rx="1.5" fill="currentColor"/><rect x="0" y="8" width="7" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="8" width="7" height="6" rx="1.5" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Split pane container (2-panel mode) -->
+  <div class="split-container layout-1" id="split-container">
+    {% set pane_ids = ['tl', 'tr', 'bl', 'br'] %}
+    {% set pane_defaults = [0, 1, 2, 3] %}
+    {% for pane_id in pane_ids %}
+    <div class="pane" id="pane-{{ pane_id }}" {% if loop.index > 1 %}style="display:none"{% endif %}>
+      <div class="pane-header">
+        <select class="agent-select" id="select-{{ pane_id }}">
+          {% for key, agent in agents.items() %}
+          <option value="{{ key }}" data-arn="{{ agent.arn }}"
+            {% if loop.index0 == pane_defaults[loop.index0 if loop.index0 < agents|length else 0] %}selected{% endif %}>{{ agent.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" class="model-input" id="model-{{ pane_id }}" placeholder="model" title="Model override (leave empty for default)" />
+        <span class="pane-status" id="status-{{ pane_id }}">idle</span>
+        <button class="btn btn-small btn-tui" id="tui-{{ pane_id }}">TUI</button>
+        <button class="btn btn-small btn-danger" id="disconnect-{{ pane_id }}" disabled>Disconnect</button>
+        <button class="btn btn-small btn-clear" id="clear-{{ pane_id }}">Clear</button>
+      </div>
+      <div class="pane-output" id="output-{{ pane_id }}"><div class="empty-state">Select an agent and enter a prompt...</div></div>
+      <div class="pane-terminal hidden" id="terminal-{{ pane_id }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <script>window.AGENTS = {{ agents | tojson }};</script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -51,9 +51,7 @@ def create_oauth_provider(event, props):
     # Fetch client secret from Cognito
     cognito_client = boto3.client("cognito-idp")
     try:
-        response = cognito_client.describe_user_pool_client(
-            UserPoolId=user_pool_id, ClientId=client_id
-        )
+        response = cognito_client.describe_user_pool_client(UserPoolId=user_pool_id, ClientId=client_id)
         client_secret = response["UserPoolClient"]["ClientSecret"]
         logger.info(f"Retrieved client secret for client {client_id}")
     except Exception as e:
@@ -65,9 +63,7 @@ def create_oauth_provider(event, props):
         providers = agentcore_client.list_oauth2_credential_providers()
         for provider in providers.get("items", []):
             if provider["name"] == provider_name:
-                logger.info(
-                    f"Provider already exists: {provider['credentialProviderArn']}"
-                )
+                logger.info(f"Provider already exists: {provider['credentialProviderArn']}")
                 return send_response(
                     event,
                     "SUCCESS",
@@ -148,8 +144,7 @@ def send_response(event, status, reason=None, data=None, physical_resource_id=No
     response_body = {
         "Status": status,
         "Reason": reason or f"{status}: See CloudWatch logs",
-        "PhysicalResourceId": physical_resource_id
-        or event.get("PhysicalResourceId", "NONE"),
+        "PhysicalResourceId": physical_resource_id or event.get("PhysicalResourceId", "NONE"),
         "StackId": event["StackId"],
         "RequestId": event["RequestId"],
         "LogicalResourceId": event["LogicalResourceId"],

@@ -1,0 +1,11 @@
+venv/
+node_modules/
+frontend/node_modules/
+resource_info.json
+optimization_result.json
+backend.log
+frontend.log
+backend.pid
+frontend.pid
+pr-response.txt
+__pycache__/

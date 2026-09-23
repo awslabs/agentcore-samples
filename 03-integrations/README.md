@@ -8,18 +8,23 @@ This folder contains framework and protocol integrations that demonstrate how to
 
 * **[ADK](./agentic-frameworks/adk/)**: Agent Development Kit integration with Google Search
 * **[AutoGen](./agentic-frameworks/autogen/)**: Multi-agent conversation frameworks
-* **[CrewAI](./agentic-frameworks/crewai/)**: Collaborative AI agent orchestration
+* **[CrewAI](./agentic-frameworks/crewai/)**: Collaborative AI agent orchestration — includes [observability examples](./agentic-frameworks/crewai/observability/)
 * **[LangChain](./agentic-frameworks/langchain/)**: Chain-based agent workflows and tool integration
-* **[LangGraph](./agentic-frameworks/langgraph/)**: Multi-agent workflows with web search capabilities
-* **[LlamaIndex](./agentic-frameworks/llamaindex/)**: Document processing and retrieval-augmented generation
+* **[LangGraph](./agentic-frameworks/langgraph/)**: Multi-agent workflows with web search capabilities — includes [observability examples](./agentic-frameworks/langgraph/observability/)
+* **[LlamaIndex](./agentic-frameworks/llamaindex/)**: Document processing and retrieval-augmented generation — includes [observability examples](./agentic-frameworks/llamaindex/observability/)
 * **[OpenAI Agents](./agentic-frameworks/openai-agents/)**: OpenAI Assistant API integration with handoff patterns
 * **[PydanticAI](./agentic-frameworks/pydanticai-agents/)**: Type-safe agent development with Bedrock models
-* **[Strands Agents](./agentic-frameworks/strands-agents/)**: Native integration examples with streaming, file system, and OpenAI identity
+* **[Strands Agents](./agentic-frameworks/strands-agents/)**: Native integration examples with streaming, file system, and OpenAI identity — includes [observability examples](./agentic-frameworks/strands-agents/observability/)
 
 ## ☁️ AWS Services
 
 * **[SageMaker AI](./amazon-sagemakerai/)**: MLflow integration with AgentCore Runtime
 * **[Bedrock Agent](./bedrock-agent/)**: Integration between Bedrock Agents and AgentCore Gateway
+
+## 🖥️ Agents Hosted Outside Runtime
+
+* **[Agents on AWS Lambda](./agents-hosted-outside-runtime/agents-on-aws-lambda/)**: Running agents on Lambda with AgentCore integration
+* **[Agents on EKS](./agents-hosted-outside-runtime/agents-on-eks/)**: Running agents on Elastic Kubernetes Service with AgentCore integration
 
 ## 🔐 Identity Providers
 
@@ -32,7 +37,15 @@ This folder contains framework and protocol integrations that demonstrate how to
 
 ## 📊 Observability
 
+* **[Arize](./observability/arize/)**: LLM observability and evaluation with Arize Phoenix
+* **[Braintrust](./observability/braintrust/)**: AI evaluation and observability platform integration
+* **[Datadog](./observability/datadog/)**: Infrastructure and LLM monitoring with Datadog
+* **[Dash0](./3p-observability/dash0/)**: OpenTelemetry-native observability platform with traces, metrics, and logs via OTLP HTTP
 * **[Dynatrace](./observability/dynatrace/)**: Application performance monitoring integration with travel agent example
+* **[Honeycomb](./observability/honeycomb/)**: Distributed tracing and observability with Honeycomb
+* **[Instana](./observability/instana/)**: IBM Instana application performance monitoring
+* **[Langfuse](./observability/langfuse/)**: Open-source LLM observability and prompt management
+* **[OpenLIT](./observability/openlit/)**: OpenTelemetry-based LLM observability with OpenLIT
 * **[Simple Dual Observability](./observability/simple-dual-observability/)**: Amazon CloudWatch and Braintrust integration with automatic OpenTelemetry instrumentation for AgentCore Runtime
 
 ## 🎨 UX Examples
@@ -61,6 +74,6 @@ These integrations are perfect for:
 
 ## 🔗 Related Resources
 
-- [Tutorials](../01-tutorials/) - Learn AgentCore fundamentals
+- [Workshops](../06-workshops/) - Learn AgentCore fundamentals in Jupyter Notebooks
 - [Use Cases](../02-use-cases/) - End-to-end application examples
 - [AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)

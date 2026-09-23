@@ -1,0 +1,37 @@
+<db_tables_available>
+<tables>
+    <table>
+    <table_name>video_games_sales_units</table_name>
+    <table_description>This is a table for units sold of video games globally; the information is for 64,016 titles released from 1971 to 2024. Each record in the table contains a video game title (unique) with the total units sold for each region (1 North America, 2 Japan, 3 European Union (EU), and 4 the rest of the world), critics' scores, genres, consoles, and more.</table_description>
+    <table_schema>
+    video_games_sales_units (
+        title TEXT, -- Only include this column in queries to search for a specific title of video game name
+        console TEXT,
+        genre TEXT,
+        publisher TEXT,
+        developer TEXT,
+        critic_score NUMERIC(3,1),
+        na_sales NUMERIC(4,2),
+        jp_sales NUMERIC(4,2),
+        pal_sales NUMERIC(4,2),
+        other_sales NUMERIC(4,2),
+        release_date DATE
+    )
+    </table_schema>
+    <data_dictionary>The Video Games Sales Units table has the following structure/schema:
+    title: Game title
+    console: Console the game was released for
+    genre: Genre of the game
+    publisher: Publisher of the game
+    developer: Developer of the game
+    critic_score: Metacritic score (out of 10)
+    na_sales: North American sales of copies in millions (units)
+    jp_sales: Japanese sales of copies in millions (units)
+    pal_sales: European & African sales of copies in millions (units)
+    other_sales: Rest of world sales of copies in millions (units)
+    release_date: Date the game was released on
+    </data_dictionary>
+    </table>
+</tables>
+<business_rules></business_rules>
+</db_tables_available>

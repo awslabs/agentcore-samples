@@ -1,0 +1,23 @@
+# Keep the build context to the agent and what it needs.
+#
+# build/agentdeps is NOT excluded: deploy.py vendors the agent wheels there for
+# linux/amd64 and the Dockerfiles COPY them in, which is what lets the images
+# build with no RUN steps and therefore without QEMU emulation on an arm64 host.
+build/compliance/
+build/*.zip
+verify/
+scripts/
+dist/
+runs/
+*.md
+!requirements.txt
+.git/
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.DS_Store
+deployment_state.json

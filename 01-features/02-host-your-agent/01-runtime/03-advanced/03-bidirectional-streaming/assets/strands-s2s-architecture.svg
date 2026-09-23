@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555" />
+    </marker>
+    <marker id="arrow-up" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#667eea" />
+    </marker>
+    <marker id="arrow-down" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#764ba2" />
+    </marker>
+    <marker id="arrow-bidi" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e91e63" />
+    </marker>
+    <marker id="arrow-mcp" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#43a047" />
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="480" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#000">Strands Voice Agent — Multi-Model Speech-to-Speech</text>
+  <text x="480" y="52" text-anchor="middle" font-size="12" fill="#666">BidiAgent with Nova Sonic / Gemini / OpenAI over WebSocket via AgentCore Proxy + MCP Gateways</text>
+
+  <!-- ===== CLIENT BOX ===== -->
+  <rect x="30" y="75" width="160" height="340" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="110" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Client (Browser)</text>
+
+  <rect x="45" y="115" width="130" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="110" y="132" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🎤 Microphone</text>
+  <text x="110" y="148" text-anchor="middle" font-size="9" fill="#666">PCM 16/24kHz</text>
+
+  <rect x="45" y="165" width="130" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="110" y="182" text-anchor="middle" font-size="11" font-weight="600" fill="#000">⌨️ Text Input</text>
+  <text x="110" y="198" text-anchor="middle" font-size="9" fill="#666">text_input messages</text>
+
+  <rect x="45" y="215" width="130" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="110" y="232" text-anchor="middle" font-size="11" font-weight="600" fill="#000">🔊 Audio Playback</text>
+  <text x="110" y="248" text-anchor="middle" font-size="9" fill="#666">Web Audio API</text>
+
+  <rect x="45" y="265" width="130" height="50" rx="8" fill="white" stroke="#aaa" />
+  <text x="110" y="282" text-anchor="middle" font-size="11" font-weight="600" fill="#000">⚙️ Config + Profiles</text>
+  <text x="110" y="298" text-anchor="middle" font-size="9" fill="#666">model selector, voice</text>
+  <text x="110" y="310" text-anchor="middle" font-size="9" fill="#666">API key, prompt</text>
+
+  <rect x="45" y="325" width="130" height="40" rx="8" fill="white" stroke="#aaa" />
+  <text x="110" y="342" text-anchor="middle" font-size="11" font-weight="600" fill="#000">💬 Chat Display</text>
+  <text x="110" y="358" text-anchor="middle" font-size="9" fill="#666">transcript + agent text</text>
+
+  <!-- ===== AGENTCORE PROXY BOX ===== -->
+  <rect x="230" y="75" width="120" height="340" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="290" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">AgentCore</text>
+  <text x="290" y="116" text-anchor="middle" font-size="11" fill="#555">WS Proxy</text>
+
+  <rect x="243" y="135" width="94" height="55" rx="8" fill="white" stroke="#aaa" />
+  <text x="290" y="155" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Bidirectional</text>
+  <text x="290" y="169" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Relay</text>
+  <text x="290" y="183" text-anchor="middle" font-size="9" fill="#666">audio + events</text>
+
+  <rect x="243" y="205" width="94" height="45" rx="8" fill="white" stroke="#aaa" />
+  <text x="290" y="225" text-anchor="middle" font-size="10" font-weight="600" fill="#000">SigV4 Auth</text>
+  <text x="290" y="241" text-anchor="middle" font-size="9" fill="#666">Pre-signed URLs</text>
+
+  <rect x="243" y="265" width="94" height="45" rx="8" fill="white" stroke="#aaa" />
+  <text x="290" y="285" text-anchor="middle" font-size="10" font-weight="600" fill="#000">Event Splitting</text>
+  <text x="290" y="301" text-anchor="middle" font-size="9" fill="#666">Large audio chunks</text>
+
+  <rect x="243" y="325" width="94" height="45" rx="8" fill="white" stroke="#aaa" />
+  <text x="290" y="345" text-anchor="middle" font-size="10" font-weight="600" fill="#000">IAM / IMDS</text>
+  <text x="290" y="361" text-anchor="middle" font-size="9" fill="#666">Credential mgmt</text>
+
+  <!-- ===== SERVER BOX ===== -->
+  <rect x="390" y="75" width="260" height="340" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="520" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">Server (FastAPI)</text>
+
+  <!-- BidiAgent -->
+  <rect x="410" y="115" width="220" height="65" rx="8" fill="white" stroke="#999" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="520" y="135" text-anchor="middle" font-size="12" font-weight="700" fill="#000">🤖 BidiAgent</text>
+  <text x="520" y="151" text-anchor="middle" font-size="9" fill="#666">Separate I/O channels</text>
+  <text x="520" y="165" text-anchor="middle" font-size="9" fill="#666">inputs=[ws_handler] / outputs=[chunked_send]</text>
+  <text x="520" y="176" text-anchor="middle" font-size="9" fill="#555">Echo-immune by design</text>
+
+  <!-- Multi-Model selector -->
+  <rect x="410" y="195" width="220" height="155" rx="8" fill="none" stroke="#999" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="520" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#000">Model (selected per session)</text>
+
+  <!-- Nova Sonic -->
+  <rect x="420" y="225" width="200" height="32" rx="6" fill="white" stroke="#aaa" />
+  <text x="520" y="239" text-anchor="middle" font-size="9" font-weight="600" fill="#000">Amazon Nova Sonic</text>
+  <text x="520" y="251" text-anchor="middle" font-size="8" fill="#666">16kHz in/out • Built-in VAD • Barge-in</text>
+
+  <!-- Gemini -->
+  <rect x="420" y="263" width="200" height="32" rx="6" fill="white" stroke="#aaa" />
+  <text x="520" y="277" text-anchor="middle" font-size="9" font-weight="600" fill="#000">Google Gemini 2.5 Flash Native Audio</text>
+  <text x="520" y="289" text-anchor="middle" font-size="8" fill="#666">24kHz in/out • API key required</text>
+
+  <!-- OpenAI -->
+  <rect x="420" y="301" width="200" height="32" rx="6" fill="white" stroke="#aaa" />
+  <text x="520" y="315" text-anchor="middle" font-size="9" font-weight="600" fill="#000">OpenAI GPT Realtime</text>
+  <text x="520" y="327" text-anchor="middle" font-size="8" fill="#666">24kHz in/out • API key required</text>
+
+  <!-- Dashed S2S label -->
+  <rect x="405" y="108" width="232" height="250" rx="10" fill="none" stroke="#555" stroke-width="2" stroke-dasharray="6,3" />
+  <text x="643" y="238" text-anchor="middle" font-size="10" font-weight="600" fill="#555" transform="rotate(90, 643, 238)">S2S Pipeline</text>
+
+  <!-- mcp_gateway_arn config note -->
+  <rect x="410" y="365" width="220" height="35" rx="8" fill="white" stroke="#999" />
+  <text x="520" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#000">mcp_gateway_arn=[...]</text>
+  <text x="520" y="392" text-anchor="middle" font-size="8" fill="#666">Passed to model (Nova Sonic only)</text>
+
+  <!-- ===== MCP GATEWAYS (external) ===== -->
+  <rect x="690" y="75" width="250" height="340" rx="12" fill="none" stroke="#888" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="815" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#000">MCP Gateways (AgentCore)</text>
+
+  <rect x="705" y="115" width="220" height="40" rx="8" fill="white" stroke="#aaa" filter="url(#shadow)" />
+  <text x="815" y="132" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🔐 auth-tools-mcp</text>
+  <text x="815" y="148" text-anchor="middle" font-size="8" fill="#555">authenticate_user • verify_identity</text>
+
+  <rect x="705" y="165" width="220" height="50" rx="8" fill="white" stroke="#aaa" filter="url(#shadow)" />
+  <text x="815" y="182" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🏦 banking-tools-mcp</text>
+  <text x="815" y="196" text-anchor="middle" font-size="8" fill="#555">get_account_balance • get_recent_transactions</text>
+  <text x="815" y="208" text-anchor="middle" font-size="8" fill="#555">transfer_funds • get_account_summary</text>
+
+  <rect x="705" y="225" width="220" height="50" rx="8" fill="white" stroke="#aaa" filter="url(#shadow)" />
+  <text x="815" y="242" text-anchor="middle" font-size="10" font-weight="600" fill="#000">🏠 mortgage-tools-mcp</text>
+  <text x="815" y="256" text-anchor="middle" font-size="8" fill="#555">get_mortgage_rates • calculate_payment</text>
+  <text x="815" y="268" text-anchor="middle" font-size="8" fill="#555">check_eligibility • application_status</text>
+
+  <rect x="705" y="285" width="220" height="50" rx="8" fill="white" stroke="#aaa" filter="url(#shadow)" />
+  <text x="815" y="302" text-anchor="middle" font-size="10" font-weight="600" fill="#000">📚 anybank-faq-kb</text>
+  <text x="815" y="316" text-anchor="middle" font-size="8" fill="#555">search_anybank_faq</text>
+  <text x="815" y="328" text-anchor="middle" font-size="8" fill="#555">answer_anybank_question</text>
+
+  <rect x="705" y="345" width="220" height="30" rx="8" fill="white" stroke="#aaa" />
+  <text x="815" y="365" text-anchor="middle" font-size="9" fill="#555">Lambda targets behind Gateway endpoints</text>
+
+  <!-- ===== ARROWS ===== -->
+  <!-- Client <-> AgentCore Proxy -->
+  <line x1="190" y1="180" x2="228" y2="180" stroke="#667eea" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="209" y="173" text-anchor="middle" font-size="8" fill="#667eea">audio</text>
+  <line x1="228" y1="200" x2="190" y2="200" stroke="#764ba2" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="209" y="215" text-anchor="middle" font-size="8" fill="#764ba2">audio + events</text>
+
+  <!-- AgentCore Proxy <-> Server -->
+  <line x1="350" y1="160" x2="388" y2="160" stroke="#667eea" stroke-width="2" marker-end="url(#arrow-up)" />
+  <line x1="388" y1="180" x2="350" y2="180" stroke="#764ba2" stroke-width="2" marker-end="url(#arrow-down)" />
+
+  <!-- BidiAgent -> Model -->
+  <line x1="520" y1="180" x2="520" y2="193" stroke="#e91e63" stroke-width="2" marker-end="url(#arrow-bidi)" />
+  <text x="545" y="190" text-anchor="middle" font-size="8" fill="#e91e63">bidi stream</text>
+
+  <!-- Server -> MCP Gateways -->
+  <line x1="632" y1="270" x2="688" y2="270" stroke="#43a047" stroke-width="2.5" marker-end="url(#arrow-mcp)" />
+  <text x="660" y="262" text-anchor="middle" font-size="9" font-weight="600" fill="#2e7d32">tool calls</text>
+
+  <line x1="688" y1="290" x2="632" y2="290" stroke="#81c784" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="660" y="305" text-anchor="middle" font-size="9" fill="#558b2f">tool results</text>
+
+  <!-- Legend -->
+  <rect x="30" y="440" width="900" height="35" rx="8" fill="white" stroke="#ccc" />
+  <line x1="50" y1="458" x2="80" y2="458" stroke="#667eea" stroke-width="2" marker-end="url(#arrow-up)" />
+  <text x="85" y="462" font-size="9" fill="#333">Client → Server</text>
+  <line x1="185" y1="458" x2="215" y2="458" stroke="#764ba2" stroke-width="2" marker-end="url(#arrow-down)" />
+  <text x="220" y="462" font-size="9" fill="#333">Server → Client</text>
+  <line x1="315" y1="458" x2="345" y2="458" stroke="#e91e63" stroke-width="2" marker-end="url(#arrow-bidi)" />
+  <text x="350" y="462" font-size="9" fill="#333">Bidi audio stream</text>
+  <line x1="455" y1="458" x2="485" y2="458" stroke="#43a047" stroke-width="2.5" marker-end="url(#arrow-mcp)" />
+  <text x="490" y="462" font-size="9" fill="#333">Tool call (MCP Gateway)</text>
+  <line x1="610" y1="458" x2="640" y2="458" stroke="#81c784" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="645" y="462" font-size="9" fill="#333">Tool result</text>
+</svg>

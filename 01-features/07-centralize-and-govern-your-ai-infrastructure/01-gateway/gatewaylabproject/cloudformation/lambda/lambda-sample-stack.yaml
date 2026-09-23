@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Sample Lambda function for AgentCore Gateway Lambda target tutorials.
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              Sample IAM roles use broad permissions for tutorial clarity; scope down for production
+          - id: W12
+            reason: >-
+              Sample IAM resource wildcards acceptable for tutorial; use least-privilege in production
+          - id: W28
+            reason: >-
+              Resource deletion policy not set for sample/tutorial resources
+          - id: W76
+            reason: >-
+              sAmple code - CIS rule not required for tutorial IAM roles
+          - id: F3
+            reason: >-
+              Sample IAM policy allows broad actions for tutorial demonstration; restrict in production
+    Properties:
+      RoleName: agentcore-lambda-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: agentcore-gateway-lambda-sample
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              toolName = context.client_context.custom['bedrockAgentCoreToolName']
+              delimiter = "___"
+              if delimiter in toolName:
+                  toolName = toolName[toolName.index(delimiter) + len(delimiter):]
+              if toolName == 'get_order_tool':
+                  return {'statusCode': 200, 'body': 'Order Id 123 is in shipped status'}
+              else:
+                  return {'statusCode': 200, 'body': 'Updated the order details successfully'}
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the sample Lambda function
+    Value: !GetAtt LambdaFunction.Arn
+  LambdaFunctionName:
+    Description: Name of the sample Lambda function
+    Value: !Ref LambdaFunction

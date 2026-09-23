@@ -42,22 +42,48 @@ RETURN_POLICIES = {
 }
 
 PRODUCTS = {
-    "PROD-001": {"name": "Wireless Headphones", "price": 79.99, "category": "audio",
-                 "description": "Noise-cancelling Bluetooth headphones with 30h battery life", "warranty_months": 12},
-    "PROD-002": {"name": "Smart Watch", "price": 249.99, "category": "electronics",
-                 "description": "Fitness tracker with heart rate monitor, GPS, and 5-day battery", "warranty_months": 24},
-    "PROD-003": {"name": "Laptop Stand", "price": 39.99, "category": "accessories",
-                 "description": "Adjustable aluminum laptop stand for ergonomic desk setup", "warranty_months": 6},
-    "PROD-004": {"name": "USB-C Hub", "price": 54.99, "category": "accessories",
-                 "description": "7-in-1 USB-C hub with HDMI, USB-A, SD card reader, and ethernet", "warranty_months": 12},
-    "PROD-005": {"name": "Mechanical Keyboard", "price": 129.99, "category": "electronics",
-                 "description": "RGB mechanical keyboard with Cherry MX switches", "warranty_months": 24},
+    "PROD-001": {
+        "name": "Wireless Headphones",
+        "price": 79.99,
+        "category": "audio",
+        "description": "Noise-cancelling Bluetooth headphones with 30h battery life",
+        "warranty_months": 12,
+    },
+    "PROD-002": {
+        "name": "Smart Watch",
+        "price": 249.99,
+        "category": "electronics",
+        "description": "Fitness tracker with heart rate monitor, GPS, and 5-day battery",
+        "warranty_months": 24,
+    },
+    "PROD-003": {
+        "name": "Laptop Stand",
+        "price": 39.99,
+        "category": "accessories",
+        "description": "Adjustable aluminum laptop stand for ergonomic desk setup",
+        "warranty_months": 6,
+    },
+    "PROD-004": {
+        "name": "USB-C Hub",
+        "price": 54.99,
+        "category": "accessories",
+        "description": "7-in-1 USB-C hub with HDMI, USB-A, SD card reader, and ethernet",
+        "warranty_months": 12,
+    },
+    "PROD-005": {
+        "name": "Mechanical Keyboard",
+        "price": 129.99,
+        "category": "electronics",
+        "description": "RGB mechanical keyboard with Cherry MX switches",
+        "warranty_months": 24,
+    },
 }
 
 
 # --- Tools ---
 # The @tool decorator turns a Python function into a tool the LLM can call.
 # The docstring is what the model reads to decide when and how to use the tool.
+
 
 @tool
 def get_return_policy(product_category: str) -> str:
@@ -72,8 +98,10 @@ def get_return_policy(product_category: str) -> str:
     category = product_category.lower()
     if category in RETURN_POLICIES:
         policy = RETURN_POLICIES[category]
-        return (f"Return policy for {category}: Window: {policy['window']}, "
-                f"Condition: {policy['condition']}, Refund: {policy['refund']}")
+        return (
+            f"Return policy for {category}: Window: {policy['window']}, "
+            f"Condition: {policy['condition']}, Refund: {policy['refund']}"
+        )
     return f"No specific return policy found for '{product_category}'. Please contact support."
 
 
@@ -91,14 +119,17 @@ def get_product_info(query: str) -> str:
     # Search by product ID
     if query.upper() in PRODUCTS:
         p = PRODUCTS[query.upper()]
-        return (f"{p['name']} ({query.upper()}): ${p['price']}, Category: {p['category']}, "
-                f"{p['description']}, Warranty: {p['warranty_months']} months")
+        return (
+            f"{p['name']} ({query.upper()}): ${p['price']}, Category: {p['category']}, "
+            f"{p['description']}, Warranty: {p['warranty_months']} months"
+        )
     # Search by keyword
     results = [
         f"{pid}: {p['name']} - ${p['price']} - {p['description']}"
         for pid, p in PRODUCTS.items()
-        if query_lower in p['name'].lower() or query_lower in p['description'].lower()
-           or query_lower in p['category'].lower()
+        if query_lower in p["name"].lower()
+        or query_lower in p["description"].lower()
+        or query_lower in p["category"].lower()
     ]
     if results:
         return "Found products:\n" + "\n".join(results)

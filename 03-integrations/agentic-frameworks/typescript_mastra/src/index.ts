@@ -71,6 +71,7 @@ app.post('/invocations', async (req: Request, res: Response) => {
     console.log('Stream started');
 
     // Stream the response chunks to the client immediately
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     for await (const chunk of stream.textStream) {
       res.write(chunk);
       // Force flush the chunk immediately (if the connection supports it)

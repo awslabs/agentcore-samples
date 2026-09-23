@@ -26,8 +26,4 @@ def get_streamable_http_mcp_client(user_token: Optional[str] = None) -> MCPClien
     if not user_token:
         raise RuntimeError("User token is required for Gateway access")
 
-    return MCPClient(
-        lambda: streamablehttp_client(
-            gateway_url, headers={"Authorization": f"Bearer {user_token}"}
-        )
-    )
+    return MCPClient(lambda: streamablehttp_client(gateway_url, headers={"Authorization": f"Bearer {user_token}"}))

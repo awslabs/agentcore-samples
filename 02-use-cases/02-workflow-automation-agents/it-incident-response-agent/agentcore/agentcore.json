@@ -1,0 +1,124 @@
+{
+  "name": "ITIncidentAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "ITIncidentAgent",
+      "build": "Container",
+      "entrypoint": "main.py",
+      "codeLocation": "app/ITIncidentAgent",
+      "envVars": [
+        { "name": "_AWS_XRAY_DAEMON_ADDRESS", "value": "localhost:2000" },
+        { "name": "_AWS_XRAY_TRACING_ENABLED", "value": "true" },
+        { "name": "OTEL_METRICS_EXPORTER", "value": "none" },
+        { "name": "OTEL_TRACES_EXPORTER", "value": "otlp" },
+        { "name": "OTEL_EXPORTER_OTLP_PROTOCOL", "value": "http/protobuf" },
+        { "name": "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED", "value": "true" },
+        { "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" },
+        { "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "value": "true" },
+        { "name": "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", "value": "true" },
+        { "name": "OTEL_PROPAGATORS", "value": "baggage,tracecontext,xray" },
+        { "name": "AGENT_MODEL_ID", "value": "us.anthropic.claude-sonnet-4-6" },
+        { "name": "FAST_MODEL_ID", "value": "us.anthropic.claude-haiku-4-5-20251001-v1:0" }
+      ]
+    }
+  ],
+  "memories": [
+    {
+      "name": "ITIncidentAgentMemory",
+      "eventExpiryDuration": 30,
+      "strategies": [
+        {
+          "type": "SUMMARIZATION",
+          "name": "summary_strategy",
+          "namespaces": ["incidents/{actorId}/{sessionId}"]
+        }
+      ]
+    }
+  ],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [
+    {
+      "name": "ITIncidentAgentEval",
+      "agent": "ITIncidentAgent",
+      "evaluators": [
+        "Builtin.Correctness",
+        "Builtin.Helpfulness",
+        "Builtin.ToolSelectionAccuracy",
+        "Builtin.GoalSuccessRate"
+      ],
+      "samplingRate": 100,
+      "description": "Online evaluation for IT incident response agent (4 built-in evaluators)"
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "ITIncidentGateway",
+      "description": "MCP gateway for IT incident response tools (Lambda targets)",
+      "targets": [
+        {
+          "name": "lookup-user",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_LOOKUP_USER",
+            "toolSchemaFile": "tool-schemas/lookup-user.json"
+          }
+        },
+        {
+          "name": "get-process-info",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_GET_PROCESS_INFO",
+            "toolSchemaFile": "tool-schemas/get-process-info.json"
+          }
+        },
+        {
+          "name": "create-change-request",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_CREATE_CHANGE_REQUEST",
+            "toolSchemaFile": "tool-schemas/create-change-request.json"
+          }
+        },
+        {
+          "name": "query-kb",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_QUERY_KB",
+            "toolSchemaFile": "tool-schemas/query-kb.json"
+          }
+        }
+      ],
+      "authorizerType": "AWS_IAM",
+      "enableSemanticSearch": true,
+      "exceptionLevel": "DEBUG",
+      "policyEngineConfiguration": {
+        "policyEngineName": "ITIncidentPolicyEngine",
+        "mode": "LOG_ONLY"
+      }
+    }
+  ],
+  "policyEngines": [
+    {
+      "name": "ITIncidentPolicyEngine",
+      "description": "Cedar policy engine for bounded autonomy — logs all tool calls, enforces on high-risk actions",
+      "policies": [
+        {
+          "name": "LogAllToolCalls",
+          "description": "Log all tool invocations for observability (no enforcement)",
+          "statement": "permit(principal, action, resource is AgentCore::Gateway);",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        },
+        {
+          "name": "RequireReasonForChangeRequest",
+          "description": "Deny create-change-request calls without a reason field (LOG_ONLY mode logs violations)",
+          "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has \"toolName\" && context.toolName == \"create-change-request\" && !(context has \"reason\") };",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        }
+      ]
+    }
+  ],
+  "harnesses": []
+}

@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 650" width="900" height="650">
+  <!-- Background -->
+  <rect width="900" height="650" fill="white"/>
+
+  <!-- Definitions -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#00000015"/>
+    </filter>
+    <linearGradient id="boxGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d2d2d"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="smeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5a4a3a"/>
+      <stop offset="100%" style="stop-color:#4a3728"/>
+    </linearGradient>
+    <linearGradient id="serviceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3a3a4a"/>
+      <stop offset="100%" style="stop-color:#1a1a2a"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1a1a1a"/>
+    </marker>
+    <marker id="arrowLight" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4a3728"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#4a3728" text-anchor="middle">AgentCore Evaluation Architecture</text>
+
+  <!-- ===== AWS Cloud boundary ===== -->
+  <rect x="20" y="50" width="860" height="580" rx="8" ry="8" fill="none" stroke="#4a3728" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="70" font-family="Arial, sans-serif" font-size="10" fill="#4a3728">AWS Cloud</text>
+
+  <!-- ===== Left column: User / CI ===== -->
+
+  <!-- User/CI box -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="240" width="130" height="80" rx="6" ry="6" fill="url(#smeGradient)" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="115" y="268" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Developer</text>
+  <text x="115" y="286" font-family="Arial, sans-serif" font-size="9" fill="#d0c0b0" text-anchor="middle">or CI/CD Pipeline</text>
+  <rect x="65" y="296" width="100" height="16" rx="2" ry="2" fill="#2a1a0a"/>
+  <text x="115" y="308" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">evaluate.py</text>
+
+  <!-- ===== Center column: AgentCore Runtime ===== -->
+
+  <!-- AgentCore Runtime -->
+  <g filter="url(#shadow)">
+    <rect x="260" y="90" width="220" height="150" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="370" y="115" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="white" text-anchor="middle">AgentCore Runtime</text>
+  <text x="370" y="133" font-family="Arial, sans-serif" font-size="10" fill="#aaaaaa" text-anchor="middle">HR Assistant Agent</text>
+
+  <!-- Agent internals -->
+  <rect x="280" y="145" width="180" height="22" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="370" y="160" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">Strands Agent + Tools</text>
+
+  <rect x="280" y="175" width="180" height="22" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="370" y="190" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">ADOT (auto-instrumentation)</text>
+
+  <rect x="280" y="205" width="180" height="22" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="370" y="220" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">Amazon Nova Lite</text>
+
+  <!-- Bedrock model call -->
+  <g filter="url(#shadow)">
+    <rect x="290" y="270" width="160" height="45" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="370" y="293" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Amazon Bedrock</text>
+  <text x="370" y="308" font-family="Arial, sans-serif" font-size="9" fill="#aaaaaa" text-anchor="middle">InvokeModel</text>
+
+  <!-- Arrow: Runtime -> Bedrock -->
+  <line x1="370" y1="240" x2="370" y2="265" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Right column: CloudWatch ===== -->
+
+  <g filter="url(#shadow)">
+    <rect x="570" y="90" width="270" height="170" rx="6" ry="6" fill="url(#serviceGradient)" stroke="#1a1a2a" stroke-width="1.5"/>
+  </g>
+  <text x="705" y="115" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="white" text-anchor="middle">Amazon CloudWatch</text>
+
+  <!-- CW internals -->
+  <rect x="590" y="130" width="230" height="28" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="705" y="148" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">GenAI Observability (Traces)</text>
+
+  <rect x="590" y="166" width="230" height="28" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="705" y="184" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">Log Group: /aws/.../runtimes/ID</text>
+
+  <rect x="590" y="202" width="230" height="28" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="705" y="220" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">aws/spans (OTel span data)</text>
+
+  <!-- Arrow: Runtime -> CloudWatch (ADOT export) -->
+  <line x1="480" y1="165" x2="565" y2="165" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="522" y="157" font-family="Arial, sans-serif" font-size="8" fill="#666666" text-anchor="middle">ADOT</text>
+  <text x="522" y="168" font-family="Arial, sans-serif" font-size="8" fill="#666666" text-anchor="middle">export</text>
+
+  <!-- ===== Arrow: User -> Runtime (invoke) ===== -->
+  <line x1="180" y1="260" x2="255" y2="180" stroke="#4a3728" stroke-width="1.5" marker-end="url(#arrowLight)"/>
+  <text x="195" y="210" font-family="Arial, sans-serif" font-size="9" fill="#4a3728" text-anchor="start">invoke</text>
+
+  <!-- ===== Center-bottom: Evaluation Service ===== -->
+
+  <g filter="url(#shadow)">
+    <rect x="200" y="370" width="560" height="230" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
+  <text x="480" y="395" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="white" text-anchor="middle">AgentCore Evaluation Service</text>
+
+  <!-- Three interfaces inside -->
+  <!-- EvaluationClient -->
+  <rect x="220" y="415" width="160" height="55" rx="4" ry="4" fill="#0d0d0d"/>
+  <text x="300" y="435" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">EvaluationClient</text>
+  <text x="300" y="452" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Per-session scoring</text>
+  <text x="300" y="464" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Sync, client-side</text>
+
+  <!-- OnDemandDatasetRunner -->
+  <rect x="400" y="415" width="170" height="55" rx="4" ry="4" fill="#0d0d0d"/>
+  <text x="485" y="435" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">OnDemandDatasetRunner</text>
+  <text x="485" y="452" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Per-scenario scoring</text>
+  <text x="485" y="464" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Invoke + wait + evaluate</text>
+
+  <!-- BatchEvaluationRunner -->
+  <rect x="590" y="415" width="150" height="55" rx="4" ry="4" fill="#0d0d0d"/>
+  <text x="665" y="435" font-family="Courier, monospace" font-size="9" fill="#7cb87c" text-anchor="middle">BatchEvalRunner</text>
+  <text x="665" y="452" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Aggregate scoring</text>
+  <text x="665" y="464" font-family="Arial, sans-serif" font-size="8" fill="#999999" text-anchor="middle">Server-side job</text>
+
+  <!-- Evaluators row -->
+  <text x="480" y="500" font-family="Arial, sans-serif" font-size="10" fill="#aaaaaa" text-anchor="middle">Evaluators (LLM-as-Judge)</text>
+
+  <rect x="230" y="512" width="130" height="25" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="295" y="529" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Builtin.Correctness</text>
+
+  <rect x="375" y="512" width="140" height="25" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="445" y="529" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Builtin.GoalSuccessRate</text>
+
+  <rect x="530" y="512" width="150" height="25" rx="3" ry="3" fill="#0d0d0d"/>
+  <text x="605" y="529" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">TrajectoryExactOrderMatch</text>
+
+  <!-- Custom evaluators -->
+  <rect x="310" y="545" width="140" height="25" rx="3" ry="3" fill="#2a1a0a"/>
+  <text x="380" y="562" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Custom LLM Evaluator</text>
+
+  <rect x="465" y="545" width="140" height="25" rx="3" ry="3" fill="#2a1a0a"/>
+  <text x="535" y="562" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Custom Code (Lambda)</text>
+
+  <!-- Arrow: CloudWatch -> Evaluation Service (read traces) -->
+  <line x1="705" y1="260" x2="705" y2="365" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="715" y="310" font-family="Arial, sans-serif" font-size="9" fill="#666666" text-anchor="start">read spans</text>
+
+  <!-- Arrow: User -> Evaluation Service (trigger) -->
+  <line x1="150" y1="310" x2="280" y2="380" stroke="#4a3728" stroke-width="1.5" marker-end="url(#arrowLight)"/>
+  <text x="180" y="355" font-family="Arial, sans-serif" font-size="9" fill="#4a3728" text-anchor="start">evaluate</text>
+
+  <!-- Ground Truth input -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="410" width="130" height="70" rx="6" ry="6" fill="url(#smeGradient)" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="115" y="435" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Ground Truth</text>
+  <rect x="62" y="445" width="106" height="14" rx="2" ry="2" fill="#2a1a0a"/>
+  <text x="115" y="456" font-family="Courier, monospace" font-size="7" fill="#cc9999" text-anchor="middle">expected_response</text>
+  <rect x="62" y="462" width="106" height="14" rx="2" ry="2" fill="#2a1a0a"/>
+  <text x="115" y="473" font-family="Courier, monospace" font-size="7" fill="#cc9999" text-anchor="middle">expected_trajectory</text>
+
+  <!-- Arrow: Ground Truth -> Evaluation Service -->
+  <line x1="180" y1="445" x2="215" y2="445" stroke="#4a3728" stroke-width="1.5" marker-end="url(#arrowLight)"/>
+
+  <!-- ===== Output: Results ===== -->
+  <g filter="url(#shadow)">
+    <rect x="330" y="595" width="260" height="35" rx="17" ry="17" fill="#4a3728" stroke="#3a2718" stroke-width="1.5"/>
+  </g>
+  <text x="460" y="617" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">Scores + Explanations (0.0 — 1.0)</text>
+
+  <!-- Arrow: Evaluation Service -> Results -->
+  <line x1="480" y1="580" x2="460" y2="590" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+</svg>

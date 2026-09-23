@@ -28,10 +28,7 @@ class cfnresponse:
 
         responseBody = {
             "Status": responseStatus,
-            "Reason": reason
-            or "See the details in CloudWatch Log Stream: {}".format(
-                context.log_stream_name
-            ),
+            "Reason": reason or "See the details in CloudWatch Log Stream: {}".format(context.log_stream_name),
             "PhysicalResourceId": physicalResourceId or context.log_stream_name,
             "StackId": event["StackId"],
             "RequestId": event["RequestId"],
@@ -48,9 +45,7 @@ class cfnresponse:
 
         try:
             http = urllib3.PoolManager()
-            response = http.request(
-                "PUT", responseUrl, headers=headers, body=json_responseBody
-            )
+            response = http.request("PUT", responseUrl, headers=headers, body=json_responseBody)
             print("Status code:", response.status)
         except Exception as e:
             print("send(..) failed executing http.request(..):", e)
@@ -83,9 +78,7 @@ def handler(event, context):
 
         while True:
             if time.time() - start_time > max_wait_time:
-                cfnresponse.send(
-                    event, context, cfnresponse.FAILED, {"Error": "Build timeout"}
-                )
+                cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Build timeout"})
                 return
 
             build_response = codebuild.batch_get_builds(ids=[build_id])
@@ -93,9 +86,7 @@ def handler(event, context):
 
             if build_status == "SUCCEEDED":
                 logger.info(f"Build {build_id} succeeded")
-                cfnresponse.send(
-                    event, context, cfnresponse.SUCCESS, {"BuildId": build_id}
-                )
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {"BuildId": build_id})
                 return
             elif build_status in ["FAILED", "FAULT", "STOPPED", "TIMED_OUT"]:
                 logger.error(f"Build {build_id} failed with status: {build_status}")

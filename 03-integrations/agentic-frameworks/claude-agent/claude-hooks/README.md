@@ -49,9 +49,9 @@ This example focuses on **SDK-level hooks** for built-in tools. For a complete g
 SDK hooks protect against misuse of **built-in tools** (file system, shell). AgentCore Policy protects against misuse of **external tools** (APIs, databases, third-party services). Together they form defense in depth — the agent can be jailbroken, but the guardrails enforce rules regardless.
 
 For AgentCore Policy examples, see:
-- [Policy Getting Started](../../../../01-tutorials/08-AgentCore-policy/01-Getting-Started/)
-- [Natural Language Policy Authoring](../../../../01-tutorials/08-AgentCore-policy/02-Natural-Language-Policy-Authoring/)
-- [Fine-Grained Access Control](../../../../01-tutorials/08-AgentCore-policy/03-Fine-Grained-Access-Control/)
+- [Policy Getting Started](../../../../06-workshops/08-AgentCore-policy/01-Getting-Started/)
+- [Natural Language Policy Authoring](../../../../06-workshops/08-AgentCore-policy/02-Natural-Language-Policy-Authoring/)
+- [Fine-Grained Access Control](../../../../06-workshops/08-AgentCore-policy/03-Fine-Grained-Access-Control/)
 
 ## What This Example Does
 
