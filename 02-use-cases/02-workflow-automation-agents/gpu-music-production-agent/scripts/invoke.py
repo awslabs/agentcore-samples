@@ -5,7 +5,7 @@ All three agents are invoked with the same runtimeSessionId on the same capacity
 provider, which is what places them on one EC2 instance sharing one volume. Each
 response reports the host that served it, so collocation is observable.
 
-    python scripts/invoke.py                  # prepare, compose, master, comply
+    python scripts/invoke.py                  # prepare, compose, deliver, comply
     python scripts/invoke.py --with-catalogue # also render a back-catalogue and a
                                               # deliberate near-copy of it, so the
                                               # similarity screen has something real
@@ -202,7 +202,7 @@ def report(step: str, body: dict, out_dir: Path | None = None, region: str = "us
             body.get("outcome"), "CLEARED" if body["validation_passed"] else "NOT CLEARED"
         )
         print(f"    verdict  : {label}")
-        qc = body.get("delivery_qc") or {}
+        qc = body.get("technical_qc") or {}
         for c in qc.get("checks", []):
             if not c["pass"]:
                 print(f"               FAIL {c['check']}: {c['detail']}")
@@ -223,8 +223,8 @@ def report(step: str, body: dict, out_dir: Path | None = None, region: str = "us
                 print(f"    flagged  : {sim['flag_reason']}")
         elif sim.get("note"):
             print(f"    screen   : {sim['note']}")
-        if body.get("master_is_stale"):
-            print("    stale    : master.wav predates the screened render - re-run mastering")
+        if body.get("delivery_is_stale"):
+            print("    stale    : delivery.wav predates the screened render - re-run delivery")
         if (body.get("verdict") or {}).get("remediation_requested"):
             print("               remediation was requested from the composition agent")
 
@@ -358,16 +358,16 @@ def main() -> None:
         hosts["composition"] = report(f"{step}. compose (renders audio on the GPU)", body, run_dir, region)
         step += 1
 
-        # 3. Master, reading the audio the composition agent rendered.
+        # 3. Prepare the delivery, reading the audio the composition agent rendered.
         body, active = invoke(
             client,
             state,
-            runtimes["mastering"],
+            runtimes["delivery"],
             active,
-            {"track_id": track, "platform": "spotify", "prompt": "Master this for streaming."},
-            "master",
+            {"track_id": track, "platform": "spotify", "prompt": "Prepare this for streaming delivery."},
+            "delivery",
         )
-        hosts["mastering"] = report(f"{step}. master (real DSP, verified by measurement)", body, run_dir, region)
+        hosts["delivery"] = report(f"{step}. delivery (real DSP, verified by measurement)", body, run_dir, region)
         step += 1
 
     body, active = invoke(
@@ -375,7 +375,7 @@ def main() -> None:
         state,
         runtimes["compliance"],
         active,
-        {"track_id": track, "prompt": "Screen this master for release."},
+        {"track_id": track, "prompt": "Screen this delivery for release."},
         "compliance",
     )
     hosts["compliance"] = report(
@@ -383,20 +383,20 @@ def main() -> None:
     )
 
     # Close the loop. A remediation replaces the composition, which leaves the
-    # master describing audio that no longer exists -- the compliance agent says so
-    # via master_is_stale. Without this the run ends holding a master of the
+    # delivery describing audio that no longer exists -- the compliance agent says so
+    # via delivery_is_stale. Without this the run ends holding a delivery of the
     # rejected material, which is the one artifact a producer would actually ship.
-    if body.get("status") == "ok" and body.get("master_is_stale"):
-        print("\n  -- remediation happened, so the master is stale: re-mastering --")
+    if body.get("status") == "ok" and body.get("delivery_is_stale"):
+        print("\n  -- remediation happened, so the delivery is stale: re-preparing --")
         body, active = invoke(
             client,
             state,
-            runtimes["mastering"],
+            runtimes["delivery"],
             active,
-            {"track_id": track, "platform": "spotify", "prompt": "Master the replacement for streaming."},
-            "re-master",
+            {"track_id": track, "platform": "spotify", "prompt": "Prepare the replacement for streaming delivery."},
+            "re-delivery",
         )
-        hosts["re-master"] = report("6. re-master the replacement", body, run_dir, region)
+        hosts["re-delivery"] = report("6. re-prepare the delivery for the replacement", body, run_dir, region)
 
         body, active = invoke(
             client,
@@ -406,13 +406,13 @@ def main() -> None:
             {
                 "track_id": track,
                 # The replacement has already been screened once; this
-                # pass is about the new master, so do not remediate again.
+                # pass is about the new delivery, so do not remediate again.
                 "auto_remediate": False,
-                "prompt": "Screen the re-mastered replacement.",
+                "prompt": "Screen the re-prepared replacement.",
             },
             "re-screen",
         )
-        hosts["re-screen"] = report("7. re-screen the new master", body, run_dir, region)
+        hosts["re-screen"] = report("7. re-screen the new delivery", body, run_dir, region)
 
     state["last_run"] = {"session_id": active, "track": track}
     save_state(state)
