@@ -42,7 +42,7 @@ A2A hosting itself comes from the AgentCore TypeScript SDK: the workers call `se
 1. **AWS account** with Amazon Bedrock model access (Claude models enabled in your region)
 2. **AWS CLI** configured with credentials
 3. **Node.js 20+** and npm 9+
-4. **Docker** (or another engine) with `linux/arm64` build support — for compose mode and deployment
+4. **Docker** (or another engine) with `linux/arm64` build support — for compose mode and deployment. `deploy.sh` auto-detects `docker`, `podman`, or `finch`; set `CONTAINER_ENGINE` to choose. A shell *alias* isn't enough — the script needs a real executable on `PATH`.
 5. **A local `bedrock-agentcore` build** — the SDK's A2A support is merged but not yet on npm, so `npm ci` needs the tarball described in [`vendor/README.md`](vendor/README.md). This step disappears with the next SDK release.
 5. **CDK bootstrapped** in the target account/region — for deployment
 

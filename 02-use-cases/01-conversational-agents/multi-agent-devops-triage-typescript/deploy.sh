@@ -3,7 +3,8 @@
 #
 # Prereqs:
 #   1. infra stack deployed:  cd infra && npx cdk deploy   (Gateway, ECR, roles)
-#   2. docker/podman logged in to ECR, arm64 build support
+#   2. a container engine with arm64 build support (docker, podman, or finch;
+#      override the auto-detected one with CONTAINER_ENGINE)
 #
 # Usage:
 #   ./deploy.sh [region]
@@ -17,6 +18,23 @@ REGION="${1:-${AWS_REGION:-us-east-1}}"
 STACK_NAME="SampleClaudeAgentcoreGateway"
 MODEL_ID="${ANTHROPIC_MODEL:-global.anthropic.claude-haiku-4-5-20251001-v1:0}"
 
+# A `docker` shell alias (a common podman setup) is invisible to this script,
+# so resolve a real executable instead of assuming one.
+ENGINE="${CONTAINER_ENGINE:-}"
+if [[ -z "$ENGINE" ]]; then
+  for candidate in docker podman finch; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      ENGINE="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$ENGINE" ]]; then
+  echo "No container engine found on PATH. Install docker, podman, or finch," >&2
+  echo "or point CONTAINER_ENGINE at the one you use." >&2
+  exit 1
+fi
+
 echo "==> Reading CDK stack outputs (${STACK_NAME}, ${REGION})"
 outputs=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
   --query 'Stacks[0].Outputs' --output json)
@@ -26,10 +44,10 @@ ROLE_ARN=$(echo "$outputs" | python3 -c "import json,sys; print([o['OutputValue'
 echo "    repo:    $REPO_URI"
 echo "    gateway: $GATEWAY_URL"
 
-echo "==> Building and pushing linux/arm64 image"
-aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
-docker build --platform linux/arm64 -f docker/agent.Dockerfile -t "$REPO_URI:latest" .
-docker push "$REPO_URI:latest"
+echo "==> Building and pushing linux/arm64 image (engine: ${ENGINE})"
+aws ecr get-login-password --region "$REGION" | "$ENGINE" login --username AWS --password-stdin "${REPO_URI%%/*}"
+"$ENGINE" build --platform linux/arm64 -f docker/agent.Dockerfile -t "$REPO_URI:latest" .
+"$ENGINE" push "$REPO_URI:latest"
 
 # create_runtime <name> <protocol> <env-json>
 create_runtime() {
