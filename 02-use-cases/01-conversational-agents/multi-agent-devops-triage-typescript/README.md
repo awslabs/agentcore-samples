@@ -94,9 +94,12 @@ npm ci                                # CDK deps live in the infra workspace
 cd infra && npx cdk deploy            # Gateway + Lambda target + roles + ECR
 cd .. && ./deploy.sh                  # push arm64 image, create/update 3 runtimes
 
-# End-to-end against the deployed stack (deploy.sh prints the ARNs):
-./invoke.sh <lead-runtime-arn> \
-  'orders-api latency spiked after the 14:00 deploy — what happened?'
+# End-to-end against the deployed stack (deploy.sh prints the ARNs).
+# With no prompt, a full built-in incident report is sent:
+./invoke.sh <lead-runtime-arn>
+
+# Or pass your own:
+./invoke.sh <lead-runtime-arn> 'payments-svc p99 is degrading, logs: …'
 ```
 
 Deployed topology: the lead's A2A calls go through SigV4-signed `InvokeAgentRuntime` URLs (derived from the worker runtime ARNs), and the runbook worker reaches the real Gateway through the in-process SigV4 MCP proxy. The same agent code runs in all three modes (local processes, docker compose, deployed).
@@ -111,7 +114,9 @@ aws bedrock-agentcore-control get-agent-runtime \
 
 ## Sample prompts
 
-Use these as the `prompt` in the local `curl` above or with `./invoke.sh` when deployed. Ownership and runbook facts in the answers come from the service-catalog tool — the mock and the Gateway Lambda serve the same three services (`orders-api`, `payments-svc`, `inventory-svc`):
+Use these as the `prompt` in the local `curl` above or with `./invoke.sh` when deployed. Ownership and runbook facts in the answers come from the service-catalog tool — the mock and the Gateway Lambda serve the same three services (`orders-api`, `payments-svc`, `inventory-svc`).
+
+**Include the evidence in the prompt.** The log-analyst worker is instructed to reason only over the log lines and metrics you send and never to invent them, so a bare "why is orders-api slow?" comes back asking for data rather than a triage. `./invoke.sh` with no prompt sends a complete report (logs, metrics, deploy timeline) that exercises both workers — read it in the script for the shape to copy.
 
 - `orders-api latency spiked after the 14:00 deploy. Logs: ERROR timeout connecting to postgres-orders x40 since 14:02. What happened and what should we do?`
 - `orders-api error rate jumped on POST /checkout right after a config change — which team owns this and how do we mitigate?`
