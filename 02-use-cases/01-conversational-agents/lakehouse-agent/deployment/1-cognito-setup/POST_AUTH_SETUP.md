@@ -222,7 +222,7 @@ aws dynamodb delete-table --table-name lakehouse_user_login_audit
 
 ## Cost Estimation
 
-- **DynamoDB**: Pay-per-request pricing (~$1.25 per million writes)
+- **DynamoDB**: Pay-per-request pricing (~$0.625 per million writes)
 - **Lambda**: Free tier covers 1M requests/month, then $0.20 per 1M requests
 - **CloudWatch Logs**: $0.50 per GB ingested
 
