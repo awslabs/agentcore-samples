@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "narrateai-qa"
+version = "1.0.0"
+description = "Production-ready LLM quality assurance samples: streaming evaluation, adaptive pipeline orchestration, and cross-account multi-model failover on Amazon Bedrock"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "boto3>=1.34.0",
+    "strands-agents>=0.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Relaxed rules for a teaching-sample package (same approach as
+# awslabs/agentcore-samples), each with a reason:
+ignore = [
+    "SIM103", # explicit if/return-bool chains kept for readability in the detector heuristics
+    "BLE001", # broad excepts are intentional: fail-open evaluation, demo outcome inspection
+    "DTZ005", # naive datetime.now() is fine; timestamps only feed relative-age cleanup
+    "RUF012", # class-level word lists / error-code sets are shared constants, not instance state
+    "TRY002", # plain Exception for all-quota-exhausted is a faithful port of the original
+]
