@@ -10,7 +10,6 @@ The scenario is a DevOps incident-triage copilot: a **lead agent** takes an inci
 | Hosting | AgentCore Runtime: HTTP protocol (lead), A2A protocol (workers) |
 | Agent ↔ agent | A2A JSON-RPC over SigV4-signed `InvokeAgentRuntime` |
 | Agent ↔ tools | MCP via AgentCore Gateway (IAM auth), in-process SigV4 signing |
-| Outbound credentials | AgentCore Identity (`withApiKey`) |
 | Infrastructure | CDK (Gateway, Lambda target, IAM, ECR) + deploy script |
 
 ## Architecture
@@ -44,7 +43,7 @@ A2A hosting itself comes from the AgentCore TypeScript SDK: the workers call `se
 3. **Node.js 20+** and npm 9+
 4. **Docker** (or another engine) with `linux/arm64` build support — for compose mode and deployment. `deploy.sh` auto-detects `docker`, `podman`, or `finch`; set `CONTAINER_ENGINE` to choose. A shell *alias* isn't enough — the script needs a real executable on `PATH`.
 5. **A local `bedrock-agentcore` build** — the SDK's A2A support is merged but not yet on npm, so `npm ci` needs the tarball described in [`vendor/README.md`](vendor/README.md). This step disappears with the next SDK release.
-5. **CDK bootstrapped** in the target account/region — for deployment
+6. **CDK bootstrapped** in the target account/region — for deployment
 
 Defaults: region `us-east-1`, model `global.anthropic.claude-haiku-4-5-20251001-v1:0` — both overridable via `AWS_REGION` / `ANTHROPIC_MODEL`.
 

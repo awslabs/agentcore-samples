@@ -3,7 +3,6 @@ import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
 import { buildRuntimeUrl } from 'bedrock-agentcore/runtime/a2a';
 import { z } from 'zod';
 
-import { notifyIncidentChannel } from './notify.js';
 import { WorkerClient } from './worker-client.js';
 
 /**
@@ -120,10 +119,7 @@ const app = new BedrockAgentCoreApp({
     process: async (request, context) => {
       context.log.info({ prompt: request.prompt }, 'triage request received');
       const answer = await triage(request.prompt);
-      // Pain #7: outbound credential via AgentCore Identity (withApiKey),
-      // not hand-rolled env plumbing. Best-effort; skipped in local mode.
-      const notified = await notifyIncidentChannel(answer, context.workloadAccessToken);
-      return { answer, notified };
+      return { answer };
     },
   },
 });
