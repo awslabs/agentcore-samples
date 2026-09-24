@@ -1,0 +1,14 @@
+{
+  "CLM-001": {
+    "rating": 1,
+    "note": "Agreed after joint review: the rubric treats a missing required referral as a critical failure."
+  },
+  "CLM-004": {
+    "rating": 1,
+    "note": "Agreed after joint review: no liability referral while specialist review is required."
+  },
+  "CLM-010": {
+    "rating": 2,
+    "note": "Evidence is sufficient: the trace shows no search_claims call, so the duplicate was never checked."
+  }
+}

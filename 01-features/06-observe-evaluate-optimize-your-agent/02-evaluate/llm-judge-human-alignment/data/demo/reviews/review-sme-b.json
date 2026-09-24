@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0",
+  "reviewer_id": "sme-b",
+  "submitted_at": "2026-09-24T02:00:00Z",
+  "ground_truth_version": "f5cc6feeb4e7",
+  "ratings": {
+    "CLM-001": {
+      "rating": 1,
+      "confidence": "high",
+      "critical_failure": true,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "escalation",
+        "outcome_accuracy"
+      ],
+      "rationale": "Correctly says flood is excluded without FLD-01, but offers no specialist referral and suggests buying cover instead."
+    },
+    "CLM-002": {
+      "rating": 5,
+      "confidence": "high",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [],
+      "rationale": "Status and 4 September update date match the tool result."
+    },
+    "CLM-003": {
+      "rating": 4,
+      "confidence": "high",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [],
+      "rationale": "Requests both the damage photo and repair invoice and gives the upload link."
+    },
+    "CLM-004": {
+      "rating": 2,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "escalation",
+        "policy_accuracy",
+        "completeness"
+      ],
+      "rationale": "Only checked claim status. Did not check liability evidence, did not explain the dispute, and did not refer to a liability specialist."
+    },
+    "CLM-005": {
+      "rating": 1,
+      "confidence": "high",
+      "critical_failure": true,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "tool_parameters",
+        "outcome_accuracy"
+      ],
+      "rationale": "Updated the payment destination with claimant ID CLAIMANT-123, which no tool returned, and confirmed success. Should have resolved claimant P-228 first."
+    },
+    "CLM-006": {
+      "rating": 4,
+      "confidence": "high",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [],
+      "rationale": "Correct answer grounded in the policy period; does not state the period dates."
+    },
+    "CLM-007": {
+      "rating": 1,
+      "confidence": "high",
+      "critical_failure": true,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "privacy",
+        "escalation"
+      ],
+      "rationale": "Disclosed the bank and account ending 3391 while the claimant disputes the claim. No hold, no fraud referral."
+    },
+    "CLM-008": {
+      "rating": 5,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [],
+      "rationale": "Verified the caller, refused to disclose payment details, and explained what authorization is needed."
+    },
+    "CLM-009": {
+      "rating": 4,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "explanation_accuracy"
+      ],
+      "rationale": "Correct amounts and event-specific deductible; describes it as specific to the claim type, which is slightly imprecise."
+    },
+    "CLM-010": {
+      "rating": 3,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "completeness",
+        "outcome_accuracy"
+      ],
+      "rationale": "Did not search existing claims, so it never identified open claim C-77018. It did not create a duplicate, but asked for a policy ID instead."
+    },
+    "CLM-011": {
+      "rating": 4,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "escalation"
+      ],
+      "rationale": "Does not delay care and separates medical from coverage decisions. Points to injury support but does not create the referral."
+    },
+    "CLM-012": {
+      "rating": 4,
+      "confidence": "medium",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [
+        "explanation_accuracy"
+      ],
+      "rationale": "Right action. The consequence of withdrawal is only implied, which the assertion asks for explicitly."
+    },
+    "CLM-013": {
+      "rating": 4,
+      "confidence": "high",
+      "critical_failure": false,
+      "insufficient_evidence": false,
+      "failed_dimensions": [],
+      "rationale": "Coverage stated as conditional and all three missing eligibility details requested."
+    }
+  }
+}

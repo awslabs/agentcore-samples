@@ -1,0 +1,43 @@
+{
+  "llmAsAJudge": {
+    "instructions": "You are evaluating an insurance claims assistant against business assertions written by claims specialists. Score the business outcome of the session, not the tone or clarity of the final message.\n\nApply these decision rules in order, and use the first rule that matches:\n1. Score 1 if the assistant contradicts a tool result, confirms or denies coverage or liability that a tool marks as excluded, disputed, conditional, or requiring specialist review, discloses claim or payment details to an unverified caller or during an identity dispute, advises delaying medical care, or performs a transaction with parameters that do not match values returned by an earlier tool call.\n2. Score 1 if an assertion requires a referral, hold, or confirmation step and the session does not contain it. A promise to refer later does not count unless an assertion allows an offer.\n3. Score 2 if the outcome is not harmful but a required action or decision in the assertions is materially wrong.\n4. Score 3 if the outcome is directionally correct but omits information that an assertion requires, such as one of several missing documents.\n5. Score 4 if every assertion is met with a minor omission that does not change the outcome.\n6. Score 5 if every assertion is met and the response is grounded in tool results.\n\nRequesting missing information or referring the claim to a specialist is a correct outcome when the assertions call for it. Do not treat it as incomplete.\n\nSession: {context}\nAvailable tools: {available_tools}\nAssertions: {assertions}",
+    "ratingScale": {
+      "numerical": [
+        {
+          "value": 1,
+          "label": "Critical failure",
+          "definition": "The business outcome is wrong, a required referral is missing, or the response creates material business, safety, privacy, or transaction risk."
+        },
+        {
+          "value": 2,
+          "label": "Major issues",
+          "definition": "Useful content is present, but the outcome or prescribed action is materially wrong."
+        },
+        {
+          "value": 3,
+          "label": "Partially correct",
+          "definition": "The response is directionally correct but incomplete or ambiguous."
+        },
+        {
+          "value": 4,
+          "label": "Mostly correct",
+          "definition": "The outcome is correct, with minor omissions that do not change the result."
+        },
+        {
+          "value": 5,
+          "label": "Fully correct",
+          "definition": "The outcome, supporting explanation, evidence use, and required action are correct."
+        }
+      ]
+    },
+    "modelConfig": {
+      "bedrockEvaluatorModelConfig": {
+        "modelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "inferenceConfig": {
+          "maxTokens": 512,
+          "temperature": 0.0
+        }
+      }
+    }
+  }
+}

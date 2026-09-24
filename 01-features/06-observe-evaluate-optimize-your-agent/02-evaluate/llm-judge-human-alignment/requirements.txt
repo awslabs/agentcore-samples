@@ -1,0 +1,5 @@
+# Local workflow dependencies. Agent runtime dependencies are in agent/requirements.txt.
+boto3>=1.42.0
+bedrock-agentcore>=1.23.0
+openpyxl>=3.1
+pytest>=8.0
