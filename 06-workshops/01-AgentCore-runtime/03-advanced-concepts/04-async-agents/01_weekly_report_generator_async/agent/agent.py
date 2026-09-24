@@ -25,7 +25,7 @@ from tools import (
 app = BedrockAgentCoreApp()
 
 # Create the agent with all tools
-model_id = "global.anthropic.claude-sonnet-4-20250514-v1:0"
+model_id = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 model = BedrockModel(model_id=model_id)
 
 weekly_update_agent = Agent(
