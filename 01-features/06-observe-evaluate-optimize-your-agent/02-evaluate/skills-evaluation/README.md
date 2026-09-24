@@ -129,7 +129,7 @@ Run one PTO prompt instead of the three built-in scenarios:
 python evaluate.py \
   --prompt "I am EMP-001. Can I take September 14 through September 16, 2026 off? Submit it using the pto-planning skill." \
   --expected-skill pto-planning \
-  --wait 150
+  --wait 180
 ```
 
 The script prints the agent response, waits for its telemetry, then runs all three evaluators. Change only the quoted prompt to try other PTO wording. Use `--expected-skill benefits-advisor` for a benefits prompt or `--expected-skill none` when the prompt should not load a skill.
@@ -235,7 +235,7 @@ Skills  : benefits-advisor, pto-planning
   [no-skill-control] session=skill-eval-<uuid>
   Response: Here is your pay stub for January 2026 ...
 
-[2/4] Waiting 150s for AgentCore telemetry ingestion ...
+[2/4] Waiting 180s for AgentCore telemetry ingestion ...
 
 [3/4] EvaluationClient + Strands.SkillInvoked — per-session on-demand evaluation ...
 

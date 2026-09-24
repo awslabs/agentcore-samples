@@ -78,7 +78,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the built-in AgentCore skill evaluators")
     parser.add_argument("--region", default=None, help="AWS region (defaults to the deployment config)")
     parser.add_argument("--config", default=str(_DEFAULT_CONFIG), help="Path to the skill-enabled agent config")
-    parser.add_argument("--wait", type=int, default=150, help="Seconds to wait for telemetry (default: 150)")
+    parser.add_argument("--wait", type=int, default=180, help="Seconds to wait for telemetry (default: 180)")
     parser.add_argument("--prompt", default=None, help="Run one custom prompt instead of the built-in scenarios")
     parser.add_argument(
         "--expected-skill",
