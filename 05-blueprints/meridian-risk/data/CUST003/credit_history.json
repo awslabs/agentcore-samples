@@ -1,0 +1,36 @@
+{
+  "customer_id": "CUST003",
+  "credit_score": 620,
+  "credit_rating": "B",
+  "existing_facilities": [
+    {
+      "type": "Trade Finance",
+      "limit": 10000000,
+      "utilized": 8500000,
+      "status": "current",
+      "bank": "International Trade Bank"
+    },
+    {
+      "type": "Letter of Credit",
+      "limit": 5000000,
+      "utilized": 4200000,
+      "status": "current",
+      "bank": "Global Commerce Bank"
+    }
+  ],
+  "payment_history": {
+    "on_time_payments": 30,
+    "late_payments": 8,
+    "defaults": 1,
+    "average_days_to_pay": 45
+  },
+  "financial_statements": {
+    "fiscal_year": 2023,
+    "total_assets": 35000000,
+    "total_liabilities": 28000000,
+    "net_income": 1200000,
+    "debt_to_equity": 4.0,
+    "current_ratio": 1.1
+  },
+  "credit_inquiries_last_12_months": 12
+}

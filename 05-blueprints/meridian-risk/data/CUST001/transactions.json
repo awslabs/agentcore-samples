@@ -1,0 +1,22 @@
+{
+  "customer_id": "CUST001",
+  "summary": {
+    "period": "last_12_months",
+    "total_inflow": 45000000,
+    "total_outflow": 42000000,
+    "average_monthly_volume": 3750000,
+    "transaction_count": 2400
+  },
+  "top_counterparties": [
+    { "name": "Supplier A", "country": "USA", "volume": 12000000, "type": "outflow" },
+    { "name": "Client B", "country": "Canada", "volume": 15000000, "type": "inflow" },
+    { "name": "Client C", "country": "UK", "volume": 8000000, "type": "inflow" }
+  ],
+  "geographic_distribution": {
+    "domestic": 70,
+    "international": 30
+  },
+  "high_risk_jurisdictions": [],
+  "suspicious_patterns": [],
+  "large_transactions_over_100k": 45
+}

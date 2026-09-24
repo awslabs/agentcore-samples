@@ -1,0 +1,14 @@
+# Upper bounds are deliberate. fastapi declares only `starlette>=0.46.0`, so an
+# unpinned install resolved starlette 1.3.x here — a major version the pinned
+# fastapi was not tested against. Pinning both keeps the image reproducible and
+# stops a rebuild from silently picking up a breaking transitive bump.
+fastapi>=0.115.0,<0.142.0
+starlette>=0.46.0,<2.0.0
+uvicorn[standard]>=0.32.0,<1.0.0
+boto3>=1.42.0,<2.0.0
+pydantic>=2.9.0,<3.0.0
+# Cognito ID-token verification against the pool's JWKS. Floor is 3.4.0: 3.3.0
+# carries CVE-2024-33663 (algorithm confusion). Not exploitable here — auth.py
+# pins algorithms=["RS256"] and keys come only from the Cognito JWKS — but the
+# floor keeps a future edit from relying on the vulnerable default.
+python-jose[cryptography]>=3.4.0,<4.0.0
