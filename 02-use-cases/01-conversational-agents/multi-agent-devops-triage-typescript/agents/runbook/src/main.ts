@@ -25,9 +25,8 @@ do not answer ownership or runbook questions from memory.
 Reply with a concise summary: owning team, escalation contact, and the runbook
 steps relevant to the reported symptom.`;
 
-// serveA2A resolves A2A_PORT itself; read it here too so the agent card
-// advertises the port this process actually listens on (local dev runs the two
-// workers on 9001/9002). Deployed, AGENTCORE_RUNTIME_URL wins.
+// Read here too so the agent card advertises the port this process listens on
+// (local dev runs the workers on 9001/9002). Deployed, AGENTCORE_RUNTIME_URL wins.
 const PORT = Number(process.env.A2A_PORT ?? 9000);
 const gatewayMcpUrl = process.env.GATEWAY_MCP_URL;
 const localMcpUrl = process.env.SERVICE_CATALOG_MCP_URL ?? 'http://localhost:8900/mcp';

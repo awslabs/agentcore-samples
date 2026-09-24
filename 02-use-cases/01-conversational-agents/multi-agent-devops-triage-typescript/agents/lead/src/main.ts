@@ -54,12 +54,9 @@ Keep the final answer concise and actionable.`;
  * Builds the delegation tools for one triage request.
  *
  * Per-request rather than once at startup because the worker clients carry the
- * caller's `sessionId`: sharing clients across requests would funnel unrelated
- * conversations through a single worker session. The cost is one agent-card
- * fetch per worker per request; the in-process MCP server itself does no I/O.
- *
- * The A2A calls happen inside the tool handlers, so worker output never needs
- * envelope handling anywhere.
+ * caller's `sessionId`; sharing them would funnel unrelated conversations
+ * through a single worker session. Costs one agent-card fetch per worker per
+ * request — the in-process MCP server itself does no I/O.
  */
 function buildDelegationServer(sessionId: string): ReturnType<typeof createSdkMcpServer> {
   const logAnalyst = new WorkerClient(LOG_ANALYST_URL, sessionId, REGION);

@@ -262,7 +262,7 @@ function assistantText(message: Extract<SDKMessage, { type: 'assistant' }>): str
     .join('\n');
 }
 
-/** Logs every tool_use block in an assistant message (the worker's "outgoing requests"). */
+/** Logs every tool_use block in an assistant message. */
 function logToolUses(taskId: string, message: Extract<SDKMessage, { type: 'assistant' }>): void {
   const content = message.message.content;
   if (typeof content === 'string') return;

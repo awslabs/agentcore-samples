@@ -15,9 +15,8 @@ Reply with a concise findings summary: suspected component, evidence (quote the
 relevant log lines), and confidence level. Do not use any tools; reason over the
 provided text directly.`;
 
-// serveA2A resolves A2A_PORT itself; read it here too so the agent card
-// advertises the port this process actually listens on (local dev runs the two
-// workers on 9001/9002). Deployed, AGENTCORE_RUNTIME_URL wins.
+// Read here too so the agent card advertises the port this process listens on
+// (local dev runs the workers on 9001/9002). Deployed, AGENTCORE_RUNTIME_URL wins.
 const PORT = Number(process.env.A2A_PORT ?? 9000);
 
 const executor = new ClaudeAgentExecutor({
