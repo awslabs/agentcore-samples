@@ -212,17 +212,70 @@ agentcore deploy
 ## Prerequisites
 
 - Python 3.10+
+- Node.js 20+ (for the AgentCore CLI: `npm install -g @aws/agentcore`)
 - AWS CLI installed and configured with credentials
 - Permissions for: `bedrock-agentcore:*`, `bedrock-agentcore-control:*`, `logs:*`, `iam:CreateRole`, `iam:PutRolePolicy`, `iam:PassRole`, `s3:CreateBucket`, `s3:PutObject`, `bedrock:InvokeModel`
 
-## Running the Python Scripts
+## Deploying the HR Assistant
+
+The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples all evaluate the **same** HR Assistant runtime. Deploy it once, then point any of the evaluation samples at it.
+
+### Option A — AgentCore CLI (recommended)
+
+Install the CLI:
 
 ```bash
-# Deploy the shared HR Assistant agent (runs once for all samples)
+npm install -g @aws/agentcore
+```
+
+From `utils/`, bring the existing agent entrypoint into a project and deploy it as a runtime named `HRAssistant` (the name the evaluation commands above reference):
+
+```bash
+cd utils
+agentcore add agent \
+  --name HRAssistant \
+  --type byo \
+  --code-location . \
+  --entrypoint hr_assistant_agent.py
+agentcore deploy
+```
+
+`agentcore deploy` packages the code and its dependencies, provisions the IAM execution role and runtime, and deploys to a managed serverless endpoint. Check the status and note the runtime ARN:
+
+```bash
+agentcore status
+```
+
+Invoke it to confirm it's live (the entrypoint reads the `prompt` key):
+
+```bash
+agentcore invoke '{"prompt": "How many PTO days do I have left for employee E12345?"}'
+```
+
+> **Wiring the evaluation scripts:** the Python eval scripts in the sibling folders read the runtime's connection details from `utils/agent_config.json` (`agent_arn`, `cw_log_group`, `region`). After a CLI deploy, create that file from the `agentcore status` output:
+>
+> ```json
+> {
+>   "agent_arn": "arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/HRAssistant-XXXXXXXX",
+>   "cw_log_group": "/aws/bedrock-agentcore/runtimes/HRAssistant-XXXXXXXX-DEFAULT",
+>   "otel_service_name": "HRAssistant.DEFAULT",
+>   "region": "us-east-1"
+> }
+> ```
+
+### Option B — Python script (programmatic)
+
+`utils/deploy.py` performs the equivalent deployment with boto3 and writes `agent_config.json` automatically — use this when you want the connection file generated for you or need a scripted, reproducible deploy:
+
+```bash
 cd utils
 pip install -r requirements.txt
-python deploy.py
+python deploy.py            # add --region us-west-2 to override the region
 ```
+
+## Running the Evaluation Scripts
+
+With the HR Assistant deployed (and `utils/agent_config.json` in place), run any of the evaluation samples:
 
 ```bash
 # Ground truth evaluation (EvaluationClient + DatasetRunner + BatchRunner)
