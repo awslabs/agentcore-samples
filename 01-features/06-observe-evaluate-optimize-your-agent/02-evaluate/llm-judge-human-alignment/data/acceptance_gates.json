@@ -1,0 +1,12 @@
+{
+  "description": "Acceptance gates agreed before viewing held-out results. Thresholds belong to the use case; these are starting points for a high-risk claims workflow.",
+  "severe_false_pass": {"human_reference_at_most": 2, "judge_score_at_least": 4},
+  "missed_critical_failure": {"human_reference_at_most": 1, "judge_score_at_least": 3},
+  "gates": {
+    "min_weighted_kappa": 0.7,
+    "max_mean_absolute_error": 0.75,
+    "max_severe_false_passes": 0,
+    "max_missed_critical_failures": 0,
+    "min_repeatability_within_one": 0.9
+  }
+}
