@@ -26,6 +26,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -34,13 +35,16 @@ from pathlib import Path
 
 import boto3
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from utils.client import get_agentcore_client
+sys.path.insert(0, str(Path(__file__).parent / "backend"))
+
+# The single definition lives in backend/agent.py; import it rather than keeping
+# a fourth copy. This script reports it as the "current" prompt the optimizer is
+# asked to improve, so it must be exactly what the harness actually runs — a
+# private copy here had the same drift risk that already bit the other modules.
+from agent import SYSTEM_PROMPT as CURRENT_SYSTEM_PROMPT
 
 # -- CLI -----------------------------------------------------------------------
-parser = argparse.ArgumentParser(
-    description="Generate an optimized system prompt for the Weather Agent"
-)
+parser = argparse.ArgumentParser(description="Generate an optimized system prompt for the Weather Agent")
 parser.add_argument(
     "--evaluator",
     default="Builtin.GoalSuccessRate",
@@ -60,20 +64,17 @@ parser.add_argument(
 args = parser.parse_args()
 
 # -- Configuration -------------------------------------------------------------
-REGION = boto3.session.Session().region_name or "us-east-1"
-STATE_FILE = Path(__file__).parent / "resource_info.json"
-
-CURRENT_SYSTEM_PROMPT = (
-    "You are a weather assistant. You ONLY answer questions about weather, "
-    "climate, and atmospheric conditions (temperature, wind, humidity, UV index, "
-    "sunrise, sunset, moon phase, forecasts, air quality, precipitation). "
-    "If the user asks about anything unrelated to weather, politely redirect them. "
-    "For example: 'I'm a weather assistant — I can help with forecasts, current conditions, "
-    "UV index, wind, sunrise/sunset, and more. What location would you like weather for?' "
-    "When answering weather questions: always search for real-time data using your tools, "
-    "include specific numbers with units (temperature in F/C, wind in km/h or mph), "
-    "mention the city name in your response, and keep responses concise and well-structured."
+# Same resolution order as utils/client.py and backend/resources.py. A bare
+# Session().region_name ignores AWS_REGION, which sent this script's clients to
+# us-east-1 while the harness it is trying to read lived elsewhere — the traces
+# then simply came back empty, with nothing saying why.
+REGION = (
+    os.environ.get("AWS_DEFAULT_REGION")
+    or os.environ.get("AWS_REGION")
+    or boto3.session.Session().region_name
+    or "us-east-1"
 )
+STATE_FILE = Path(__file__).parent / "resource_info.json"
 
 # -- Clients -------------------------------------------------------------------
 dp_client = boto3.client("bedrock-agentcore", region_name=REGION)
@@ -115,11 +116,11 @@ def cleanup_recommendations():
                     dp_client.delete_recommendation(recommendationId=rec_id)
                     print(f"  Deleted: {name}")
                     count += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - keep deleting the remaining recommendations
                     print(f"  Warning: {e}")
         if count == 0:
             print("  No weather_rec_* recommendations found")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - listing is best-effort
         print(f"  Error: {e}")
 
 
@@ -191,15 +192,13 @@ def main():
                         }
                     },
                     "evaluationConfig": {
-                        "evaluators": [
-                            {"evaluatorArn": f"arn:aws:bedrock-agentcore:::evaluator/{args.evaluator}"}
-                        ]
+                        "evaluators": [{"evaluatorArn": f"arn:aws:bedrock-agentcore:::evaluator/{args.evaluator}"}]
                     },
                 }
             },
             clientToken=str(uuid.uuid4()),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - report the reason instead of a traceback
         print(f"\n  Error starting recommendation: {e}")
         sys.exit(1)
 
@@ -219,22 +218,22 @@ def main():
                 print(f"    [{i * 10}s] {status}")
             if status in ("COMPLETED", "FAILED"):
                 break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - retry the poll on the next iteration
             print(f"    Error polling: {e}")
 
     if status != "COMPLETED":
         print(f"\n  Recommendation did not complete (status: {status})")
         if status == "FAILED":
-            error_msg = result.get("recommendationResult", {}).get(
-                "systemPromptRecommendationResult", {}
-            ).get("errorMessage", "Unknown error")
+            error_msg = (
+                result.get("recommendationResult", {})
+                .get("systemPromptRecommendationResult", {})
+                .get("errorMessage", "Unknown error")
+            )
             print(f"  Error: {error_msg}")
         sys.exit(1)
 
     # Extract result
-    rec_result = result.get("recommendationResult", {}).get(
-        "systemPromptRecommendationResult", {}
-    )
+    rec_result = result.get("recommendationResult", {}).get("systemPromptRecommendationResult", {})
     recommended_prompt = rec_result.get("recommendedSystemPrompt", "")
     explanation = rec_result.get("explanation", "")
 
@@ -276,7 +275,7 @@ def main():
     print("  2. Update backend/agent.py SYSTEM_PROMPT with the recommendation")
     print("  3. Restart the app and compare agent behavior")
     print("  4. Run a batch evaluation to measure improvement")
-    print(f"\n  View in console: Bedrock AgentCore > Optimizations > Recommendations")
+    print("\n  View in console: Bedrock AgentCore > Optimizations > Recommendations")
     print("=" * 65)
 
 
