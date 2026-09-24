@@ -45,7 +45,23 @@ app = Flask(__name__)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENTS_DIR = os.path.dirname(SCRIPT_DIR)
 
-REGION = os.environ.get("AWS_REGION", "us-west-2")
+
+def _default_region():
+    """Region resolution order: AWS_REGION env → infra.config (where agents
+    were actually deployed) → us-west-2 fallback."""
+    env_region = os.environ.get("AWS_REGION")
+    if env_region:
+        return env_region
+    infra_config = os.path.join(AGENTS_DIR, "infra.config")
+    if os.path.exists(infra_config):
+        with open(infra_config) as f:
+            for line in f:
+                if line.startswith("INFRA_REGION="):
+                    return line.split("=", 1)[1].strip()
+    return "us-west-2"
+
+
+REGION = _default_region()
 
 agentcore_client = AgentCoreRuntimeClient(region=REGION)
 

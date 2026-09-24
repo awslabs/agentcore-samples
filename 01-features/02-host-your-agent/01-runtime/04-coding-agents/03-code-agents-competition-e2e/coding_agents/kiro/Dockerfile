@@ -1,6 +1,9 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
-RUN dnf install -y --allowerasing git curl nodejs npm python3 python3-pip jq tar gzip unzip which findutils && dnf clean all
+# `hostname` is not in the amazonlinux:2023 base image; the Kiro CLI shells out
+# to it for session/host naming, which otherwise spams
+# "/bin/sh: hostname: command not found" in the terminal.
+RUN dnf install -y --allowerasing git curl nodejs npm python3 python3-pip jq tar gzip unzip which findutils hostname && dnf clean all
 
 RUN npm install -g typescript ts-node
 
