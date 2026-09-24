@@ -50,6 +50,7 @@ with browser_session("us-west-2") as client:
 - **What it is**: A fully managed web search connector exposed through AgentCore gateway via MCP
 - **Use it for**: Agents that need real-time information — current events, latest releases, fact-checking, competitive intelligence
 - **Entry point**: Create a Gateway with `connectorId: "web-search"`, then connect any MCP client
+- **Not a local import**: There is no `from strands.tools.web_search import web_search` or `from strands_tools import web_search` — web search requires Gateway setup
 
 ```python
 from strands.tools.mcp.mcp_client import MCPClient
