@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import zipfile
+
 import boto3
 from boto3.session import Session
 
@@ -78,7 +79,7 @@ def create_execution_role() -> str:
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
                 ],
-                "Resource": "arn:aws:logs:*:*:*",
+                "Resource": f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/*",
             },
             {
                 "Effect": "Allow",
@@ -143,6 +144,16 @@ def zip_and_upload_code():
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         pass
 
+    s3.put_public_access_block(
+        Bucket=S3_BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
+
     if os.path.isdir(pkg_dir):
         shutil.rmtree(pkg_dir)
     if os.path.exists(zip_file):
@@ -188,7 +199,7 @@ def zip_and_upload_code():
         capture_output=True,
     )
     # Flatten: re-zip from inside pkg_dir so imports work at root level
-    zip_buf = io.BytesIO()  # noqa: F841
+    zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(pkg_dir):
             dirs[:] = [d for d in dirs if d not in ("__pycache__",)]
