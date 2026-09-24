@@ -52,7 +52,7 @@ click==8.3.0
     #   uvicorn
 colorama==0.4.6
     # via griffe
-cryptography==46.0.5
+cryptography==50.0.0
     # via pyjwt
 distro==1.9.0
     # via openai
