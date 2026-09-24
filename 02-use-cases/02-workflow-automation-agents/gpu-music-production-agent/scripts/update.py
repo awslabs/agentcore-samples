@@ -6,7 +6,7 @@ artifact and its own runtime version, so one team can release while the other tw
 keep serving. The capacity provider, the volumes and the session are untouched.
 
     python scripts/update.py composition            # rebuild + update one agent
-    python scripts/update.py composition mastering  # or several
+    python scripts/update.py composition delivery   # or several
     python scripts/update.py --all
     python scripts/update.py composition --restart-session
 
@@ -42,8 +42,8 @@ STATE_FILE = PROJECT / "deployment_state.json"
 BUILD_PLATFORM = "linux/amd64"
 WHEEL_PLATFORM = "x86_64-manylinux_2_28"
 PYTHON_VERSION = "3.12"
-CONTAINER_AGENTS = ("composition", "mastering")
-ALL_AGENTS = ("composition", "mastering", "compliance")
+CONTAINER_AGENTS = ("composition", "delivery")
+ALL_AGENTS = ("composition", "delivery", "compliance")
 
 
 def log(msg: str) -> None:
