@@ -4,8 +4,10 @@ import json
 import os
 import sys
 import time
+
 import boto3
 from boto3.session import Session
+from botocore.exceptions import ClientError
 
 
 def main():
@@ -28,29 +30,31 @@ def main():
     print(f"Cleaning up: {agent_name}\n")
     try:
         for ep in control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id).get("runtimeEndpoints", []):
+            if ep["name"] == "DEFAULT":
+                continue  # DEFAULT endpoint is auto-deleted with the runtime
             control.delete_agent_runtime_endpoint(agentRuntimeId=runtime_id, endpointName=ep["name"])
         time.sleep(30)
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
     try:
         control.delete_agent_runtime(agentRuntimeId=runtime_id)
         time.sleep(30)
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
     try:
         boto3.client("s3", region_name=region).delete_object(
             Bucket=f"agentcore-code-{account_id}-{region}", Key=f"{agent_name}/code.zip"
         )
-    except Exception:
-        pass
+    except ClientError:
+        print("Cleanup: resource already deleted or not found")
     role_name = f"agentcore-{agent_name}-role"
     iam = boto3.client("iam", region_name=region)
     try:
         for p in iam.list_role_policies(RoleName=role_name).get("PolicyNames", []):
             iam.delete_role_policy(RoleName=role_name, PolicyName=p)
         iam.delete_role(RoleName=role_name)
-    except Exception:
-        pass
+    except ClientError:
+        print("Cleanup: resource already deleted or not found")
 
     # Delete DynamoDB table
     try:
@@ -59,7 +63,7 @@ def main():
         table.delete()
         table.wait_until_not_exists()
         print(f"✓ DynamoDB table '{dynamo_table}' deleted")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning (DynamoDB): {e}")
 
     if os.path.exists("runtime_config.json"):

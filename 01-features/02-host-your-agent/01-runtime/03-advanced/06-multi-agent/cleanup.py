@@ -12,6 +12,7 @@ import time
 
 import boto3
 from boto3.session import Session
+from botocore.exceptions import ClientError
 
 
 def main():
@@ -38,21 +39,23 @@ def main():
         # Delete endpoints
         try:
             for ep in control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id).get("runtimeEndpoints", []):
+                if ep["name"] == "DEFAULT":
+                    continue  # DEFAULT endpoint is auto-deleted with the runtime
                 control.delete_agent_runtime_endpoint(agentRuntimeId=runtime_id, endpointName=ep["name"])
-        except Exception as e:
+        except ClientError as e:
             print(f"  Warning (endpoints): {e}")
 
         # Delete runtime
         try:
             control.delete_agent_runtime(agentRuntimeId=runtime_id)
             print("  ✓ Runtime deleted")
-        except Exception as e:
+        except ClientError as e:
             print(f"  Warning (runtime): {e}")
 
         # Delete S3 code
         try:
             s3.delete_object(Bucket=bucket, Key=f"{agent_name}/code.zip")
-        except Exception:
+        except ClientError:
             pass
 
         # Delete IAM role
@@ -62,7 +65,7 @@ def main():
                 iam.delete_role_policy(RoleName=role_name, PolicyName=p)
             iam.delete_role(RoleName=role_name)
             print("  ✓ IAM role deleted")
-        except Exception:
+        except ClientError:
             pass
 
     # Wait for deletions to propagate
