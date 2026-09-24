@@ -7,8 +7,5 @@
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
-  },
-  "dependencies": {
-    "@a2a-js/sdk": "1.0.0"
   }
 }

@@ -38,12 +38,6 @@ export class WorkerClient {
     return this.client;
   }
 
-  async describe(): Promise<{ name: string; description: string }> {
-    const client = await this.connect();
-    const card = await client.getAgentCard();
-    return { name: card.name, description: card.description };
-  }
-
   /**
    * Sends a message with `message/send` (blocking) and returns the final
    * text: the completed task's last artifact or status message.
