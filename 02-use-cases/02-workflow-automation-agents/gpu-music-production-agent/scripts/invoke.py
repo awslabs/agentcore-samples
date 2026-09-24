@@ -301,6 +301,10 @@ def main() -> None:
     run_dir = STATE_FILE.parent / "runs" / track
     hosts: dict[str, dict] = {}
     active = session_id
+    # Printed step numbers are driven by this counter, not hardcoded: a run
+    # without --with-catalogue has one fewer render, so a literal "5." there
+    # would print 1, 2, 3, 5 and look like a step had failed silently.
+    step = 1
 
     if args.resume:
         print("  -- stopping every agent in the session --")
@@ -379,8 +383,9 @@ def main() -> None:
         "compliance",
     )
     hosts["compliance"] = report(
-        "compliance (resumed session)" if args.resume else "5. compliance screen", body, run_dir, region
+        "compliance (resumed session)" if args.resume else f"{step}. compliance screen", body, run_dir, region
     )
+    step += 1
 
     # Close the loop. A remediation replaces the composition, which leaves the
     # delivery describing audio that no longer exists -- the compliance agent says so
@@ -396,7 +401,8 @@ def main() -> None:
             {"track_id": track, "platform": "spotify", "prompt": "Prepare the replacement for streaming delivery."},
             "re-delivery",
         )
-        hosts["re-delivery"] = report("6. re-prepare the delivery for the replacement", body, run_dir, region)
+        hosts["re-delivery"] = report(f"{step}. re-prepare the delivery for the replacement", body, run_dir, region)
+        step += 1
 
         body, active = invoke(
             client,
@@ -412,7 +418,7 @@ def main() -> None:
             },
             "re-screen",
         )
-        hosts["re-screen"] = report("7. re-screen the new delivery", body, run_dir, region)
+        hosts["re-screen"] = report(f"{step}. re-screen the new delivery", body, run_dir, region)
 
     state["last_run"] = {"session_id": active, "track": track}
     save_state(state)
