@@ -12,6 +12,7 @@ around individual helpers cannot see.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -300,7 +301,10 @@ class FakeTargetClient:
                 new_record_id=known_record_id,
                 record=dict(record, recordId=known_record_id, status="DRAFT"),
             )
-        new_record_id = "new-" + display_name.rsplit("-", 1)[-1]
+        # Derived from `name`, not `displayName`: the two are the same for every fixture here except
+        # a record renamed by `duplicateNames = "suffix"`, which keeps its source displayName and so
+        # would otherwise be handed the id of the record it collided with.
+        new_record_id = "new-" + name.rsplit("-", 1)[-1]
         if display_name in type(self).fail_after_create:
             raise RegistryApiError(
                 f"target record {new_record_id} reached failure status CREATE_FAILED: Failed to fetch agent card from URL",
@@ -727,6 +731,191 @@ class JobsEndToEnd(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertEqual(failures[0]["name"], "server-1")
         self.assertIn("already claimed", failures[0]["error"])
+
+    def test_duplicate_names_suffix_migrates_both_records_under_distinct_names(self):
+        """``transform.duplicateNames = "suffix"`` loads the second claimant instead of refusing it.
+
+        Same two colliding source records as the test above, with the setting flipped: the run has to
+        succeed with every record migrated, the second one under a distinct name derived from its own
+        source identity, and its ``displayName``/``previewName`` still reading what the source record
+        was called -- the rename moves the dedup key only, so the record stays recognisable in the
+        crosswalk. Both stages get the same ``transform`` block because it is fingerprinted; a load
+        that disagreed with its extract about this setting is refused by the replay guard.
+        """
+        collide = dict(preview_record(2, updated_at="2026-07-02T10:00:00Z"), name="server-1")
+        FakePreviewClient.records = [
+            preview_record(1, updated_at="2026-07-01T10:00:00Z"),
+            collide,
+            preview_record(3, updated_at="2026-07-03T10:00:00Z"),
+        ]
+        suffixed = "server-1-" + hashlib.sha256(b"111122223333/us-east-1/reg-preview/rec-2").hexdigest()[:8]
+
+        self._run_extract(transform={"duplicateNames": "suffix"})
+        # The target client's own guard stays in "fail" mode, so leaving it armed proves the load
+        # stage disambiguated before writing: a second claim of "server-1" would surface as an error.
+        FakeTargetClient.refuse_second_claim_for = {"server-1"}
+        self._run_load(dryRun=False, loadConcurrency=1, transform={"duplicateNames": "suffix"})
+
+        load_report = self.s3.json(f"reports/run_id={RUN_ID}/attempt={ATTEMPT_ID}/summary.json")
+        self.assertEqual(load_report["status"], "SUCCEEDED")
+        self.assertEqual(load_report["errorCount"], 0)
+        self.assertEqual(load_report["registries"][0]["created"], 3)
+        self.assertEqual(self._failure_rows(), [])
+        self.assertEqual(
+            [entry["record"]["name"] for entry in FakeTargetClient.created],
+            ["server-1", suffixed, "server-3"],
+        )
+
+        # Only the dedup key moved: the renamed record still says what it was called in preview, and
+        # a warning points at the name it now answers to.
+        renamed = next(row for row in self._comparison_rows() if row["oldRecordId"] == "rec-2")
+        self.assertEqual(renamed["name"], suffixed)
+        self.assertEqual(renamed["previewName"], "server-1")
+        self.assertEqual(renamed["displayName"], "server-1")
+        self.assertEqual(renamed["transformedRecord"]["displayName"], "server-1")
+        self.assertTrue(
+            any("duplicateNames" in warning and suffixed in warning for warning in renamed["warnings"]),
+            renamed["warnings"],
+        )
+        crosswalk = self.s3.text(
+            f"reports/run_id={RUN_ID}/attempt={ATTEMPT_ID}/id-crosswalk/mapping=map-a.csv"
+        ).splitlines()
+        header = crosswalk[0].split(",")
+        row = dict(zip(header, next(line for line in crosswalk[1:] if line.startswith("rec-2,")).split(",")))
+        self.assertEqual(row["previewName"], "server-1")
+        self.assertEqual(row["name"], suffixed)
+        self.assertEqual(row["displayName"], "server-1")
+
+        # Re-running is not a second migration: the id map matches each source record to the target
+        # record it already produced, so nothing is created again and the suffixed name is unchanged.
+        FakeTargetClient.created = []
+        self._run_load(dryRun=False, loadConcurrency=1, transform={"duplicateNames": "suffix"}, attempt="attempt-2")
+        self.assertEqual(FakeTargetClient.created, [])
+        self.assertEqual(
+            [entry["record"]["name"] for entry in FakeTargetClient.updated],
+            ["server-1", suffixed, "server-3"],
+        )
+        # And the name each record answers to is committed state, not something the next run has to
+        # work out again from whatever it happens to stage.
+        self.assertEqual(
+            self.s3.json("state/idmap/mapping=map-a.json")["names"],
+            {
+                "rec-1": {"name": "server-1", "recordVersion": None},
+                "rec-2": {"name": suffixed, "recordVersion": None},
+                "rec-3": {"name": "server-3", "recordVersion": None},
+            },
+        )
+
+    def _suffix_collision_fixture(self) -> tuple[dict, str]:
+        """Two source records that transform onto one name, plus the name the second must be given."""
+        collide = dict(preview_record(2, updated_at="2026-07-02T10:00:00Z"), name="server-1")
+        FakePreviewClient.records = [
+            preview_record(1, updated_at="2026-07-01T10:00:00Z"),
+            collide,
+        ]
+        return collide, "server-1-" + hashlib.sha256(b"111122223333/us-east-1/reg-preview/rec-2").hexdigest()[:8]
+
+    def _names_in(self, run_id: str, attempt: str) -> dict[str, str]:
+        """``oldRecordId -> name`` from one attempt's comparison rows."""
+        return {
+            row["oldRecordId"]: row["name"]
+            for key in self.s3.keys_under(f"reports/run_id={run_id}/attempt={attempt}/record-comparison/")
+            for row in self.s3.json(key)
+        }
+
+    def test_a_suffixed_record_keeps_its_name_when_a_later_run_stages_only_it(self):
+        """The record moved off a shared name keeps its name when the next run carries only it.
+
+        The incremental case, and the one that decides whether ``suffix`` is safe to leave switched
+        on: run one stages both colliding records, so one keeps ``server-1`` and the other is
+        migrated as ``server-1-<hex>``. Nothing about the first record then changes, so an
+        incremental window carries only the second -- and a run that worked out the name from the
+        records *it* staged would find ``server-1`` unclaimed, hand it back to the record that had
+        been moved off it, and rename that target record onto a name another record answers to. Two
+        records would then share one name, which is the one thing the target registry does not allow,
+        and the run would report SUCCEEDED.
+        """
+        collide, suffixed = self._suffix_collision_fixture()
+        transform = {"duplicateNames": "suffix"}
+        suffixed_record_id = "new-" + suffixed.rsplit("-", 1)[-1]
+
+        self._run_extract(transform=transform)
+        self._run_load(dryRun=False, loadConcurrency=1, transform=transform)
+        self.assertEqual(
+            [entry["record"]["name"] for entry in FakeTargetClient.created],
+            ["server-1", suffixed],
+        )
+
+        FakePreviewClient.records = [dict(collide, updated_at="2026-07-05T10:00:00Z")]
+        FakeTargetClient.created = []
+        second_run = "20260705T000000Z-second"
+        self._run_extract(run_id=second_run, transform=transform)
+        self._run_load(run_id=second_run, attempt="attempt-2", dryRun=False, loadConcurrency=1, transform=transform)
+
+        self.assertEqual(FakeTargetClient.created, [], "a record the id map already names must not be created again")
+        self.assertEqual(
+            [(entry["recordId"], entry["record"]["name"]) for entry in FakeTargetClient.updated],
+            [(suffixed_record_id, suffixed)],
+            "the record must keep the name it was migrated under, not take back the one server-1 holds",
+        )
+        self.assertEqual(self._names_in(second_run, "attempt-2"), {"rec-2": suffixed})
+        summary = self.s3.json(f"reports/run_id={second_run}/attempt=attempt-2/summary.json")
+        self.assertEqual(summary["status"], "SUCCEEDED")
+        self.assertEqual(summary["registries"][0]["updated"], 1)
+
+    def test_which_record_keeps_a_shared_name_does_not_depend_on_staged_order(self):
+        """Re-extracting the same registry in a different order migrates it to the same names.
+
+        Preview list pagination does not promise a stable order, and nothing in the extract sorts
+        what it stages, so two extracts of an unchanged registry can present the same records the
+        other way round. Deciding the name from arrival order would then rename *both* records on the
+        second run -- they would swap names -- while reporting a clean run.
+        """
+        _collide, suffixed = self._suffix_collision_fixture()
+        transform = {"duplicateNames": "suffix"}
+
+        self._run_extract(transform=transform)
+        self._run_load(dryRun=False, loadConcurrency=1, transform=transform)
+        self.assertEqual(
+            [entry["record"]["name"] for entry in FakeTargetClient.created],
+            ["server-1", suffixed],
+        )
+
+        FakePreviewClient.records = list(reversed(FakePreviewClient.records))
+        FakeTargetClient.created = []
+        second_run = "20260706T000000Z-reordered"
+        self._run_extract(run_id=second_run, transform=transform)
+        self._run_load(run_id=second_run, attempt="attempt-2", dryRun=False, loadConcurrency=1, transform=transform)
+
+        self.assertEqual(FakeTargetClient.created, [])
+        self.assertEqual(
+            sorted((entry["recordId"], entry["record"]["name"]) for entry in FakeTargetClient.updated),
+            sorted([("new-1", "server-1"), ("new-" + suffixed.rsplit("-", 1)[-1], suffixed)]),
+            "re-staging the same records in another order must not swap the names they answer to",
+        )
+        self.assertEqual(self._names_in(second_run, "attempt-2"), {"rec-1": "server-1", "rec-2": suffixed})
+
+    def test_a_dry_run_predicts_the_same_names_whatever_order_it_reads(self):
+        """Order independence does not come from committed state: with none, the answer is the same.
+
+        Both attempts here are dry runs against a registry nothing has migrated yet, so there is no
+        id map to fall back on and the only thing left to decide the question with is the records'
+        own canonical source identity -- which is what makes a dry run's prediction worth reading.
+        """
+        _collide, suffixed = self._suffix_collision_fixture()
+        transform = {"duplicateNames": "suffix"}
+        expected = {"rec-1": "server-1", "rec-2": suffixed}
+
+        self._run_extract(transform=transform)
+        self._run_load(dryRun=True, loadConcurrency=1, transform=transform)
+        self.assertEqual(self._names_in(RUN_ID, ATTEMPT_ID), expected)
+
+        FakePreviewClient.records = list(reversed(FakePreviewClient.records))
+        reordered_run = "20260706T000000Z-dry-reordered"
+        self._run_extract(run_id=reordered_run, transform=transform)
+        self._run_load(run_id=reordered_run, attempt="attempt-2", dryRun=True, loadConcurrency=1, transform=transform)
+        self.assertEqual(self._names_in(reordered_run, "attempt-2"), expected)
+        self.assertIsNone(self.s3.versions.get("state/idmap/mapping=map-a.json"))
 
     def test_a_record_error_does_not_stop_the_run_but_can_still_fail_it(self):
         """``failOnRecordError`` only decides the run's final status, not whether it keeps going."""

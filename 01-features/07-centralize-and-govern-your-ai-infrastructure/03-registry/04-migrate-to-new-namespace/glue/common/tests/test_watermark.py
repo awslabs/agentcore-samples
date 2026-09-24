@@ -448,5 +448,109 @@ class WhatTheIdMapRemembers(unittest.TestCase):
             watermark.read_idmap(self.store, "map-a")
 
 
+class WhatNameEachRecordWasMigratedUnder(unittest.TestCase):
+    """The ``names`` half of the map: what the target record a source record became is *called*.
+
+    This is what keeps ``transform.duplicateNames = "suffix"`` stable across runs. Without it, which
+    of two records sharing a name keeps it would be decided by whichever record the current run
+    happened to stage, so a later run carrying a different subset would rename records that are
+    already published.
+    """
+
+    def setUp(self):
+        self.s3 = FakeS3()
+        self.store = S3Store(self.s3, "staging-bucket")
+
+    def _write(self, names):
+        watermark.write_idmap(
+            self.store,
+            "map-a",
+            {"prev-1": "new-1"},
+            run_id="run-1",
+            updated_at="2026-07-01T00:00:00Z",
+            names=names,
+        )
+
+    def test_no_map_yet_reads_as_empty(self):
+        self.assertEqual(watermark.read_idmap_names(self.store, "map-a"), {})
+
+    def test_a_written_name_reads_back_with_its_record_version(self):
+        self._write({"prev-1": {"name": "payments-mcp-9f8e7d6c", "recordVersion": "2.0"}})
+        self.assertEqual(
+            watermark.read_idmap_names(self.store, "map-a"),
+            {"prev-1": {"name": "payments-mcp-9f8e7d6c", "recordVersion": "2.0"}},
+        )
+
+    def test_a_record_with_no_version_reads_back_as_none_not_as_empty_string(self):
+        # The claim key normalizes an absent recordVersion to None, so a name recorded without one has
+        # to come back the same way or the planned identity would not match the claimed one.
+        self._write({"prev-1": {"name": "payments-mcp", "recordVersion": ""}})
+        self.assertEqual(
+            watermark.read_idmap_names(self.store, "map-a"),
+            {"prev-1": {"name": "payments-mcp", "recordVersion": None}},
+        )
+
+    def test_a_map_written_before_names_were_recorded_reads_as_empty(self):
+        # Backward compatibility: an id map from an earlier version of this tool has no `names` at
+        # all. "Not recorded" is a state the loader handles, so it must not be an error.
+        watermark.write_idmap(
+            self.store, "map-a", {"prev-1": "new-1"}, run_id="run-1", updated_at="2026-07-01T00:00:00Z"
+        )
+        self.assertEqual(watermark.read_idmap(self.store, "map-a"), {"prev-1": "new-1"})
+        self.assertEqual(watermark.read_idmap_names(self.store, "map-a"), {})
+
+    def test_an_individually_unusable_entry_is_skipped_rather_than_fatal(self):
+        self._write(
+            {
+                "prev-1": {"name": "payments-mcp"},
+                "prev-2": {"name": ""},
+                "prev-3": "not-an-object",
+                "": {"name": "orphan"},
+            }
+        )
+        self.assertEqual(
+            watermark.read_idmap_names(self.store, "map-a"),
+            {"prev-1": {"name": "payments-mcp", "recordVersion": None}},
+        )
+
+    def test_a_non_object_names_member_is_an_error(self):
+        # Same reasoning as a non-object `records`: reading it as empty would re-decide names that
+        # were already handed out, renaming published records.
+        self.s3.objects[watermark.idmap_key("map-a")] = json.dumps({"schemaVersion": 1, "names": []})
+        with self.assertRaises(watermark.IdMapError):
+            watermark.read_idmap_names(self.store, "map-a")
+
+    def test_merging_keeps_names_this_run_did_not_see(self):
+        merged = watermark.merge_idmap_names(
+            {"prev-1": {"name": "a", "recordVersion": None}},
+            {"prev-2": {"name": "b", "recordVersion": "1.0"}},
+        )
+        self.assertEqual(
+            merged,
+            {"prev-1": {"name": "a", "recordVersion": None}, "prev-2": {"name": "b", "recordVersion": "1.0"}},
+        )
+
+    def test_merging_lets_this_run_correct_an_older_name(self):
+        # A record renamed in the source registry is renamed in the target registry in place, so the
+        # name it is remembered under has to follow it.
+        merged = watermark.merge_idmap_names(
+            {"prev-1": {"name": "old-name", "recordVersion": None}},
+            {"prev-1": {"name": "new-name", "recordVersion": None}},
+        )
+        self.assertEqual(merged, {"prev-1": {"name": "new-name", "recordVersion": None}})
+
+    def test_merging_ignores_an_entry_with_no_name(self):
+        merged = watermark.merge_idmap_names({}, {"prev-1": {"recordVersion": "1.0"}, "": {"name": "x"}})
+        self.assertEqual(merged, {})
+
+    def test_names_and_records_live_in_one_document(self):
+        # Both are read at the start of a load and written at the end; splitting them would let a run
+        # commit one and not the other.
+        self._write({"prev-1": {"name": "payments-mcp", "recordVersion": None}})
+        stored = json.loads(self.s3.objects[watermark.idmap_key("map-a")])
+        self.assertEqual(stored["records"], {"prev-1": "new-1"})
+        self.assertEqual(stored["names"], {"prev-1": {"name": "payments-mcp", "recordVersion": None}})
+
+
 if __name__ == "__main__":
     unittest.main()

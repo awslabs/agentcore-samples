@@ -35,6 +35,11 @@ DEFAULT_TRANSFORM: dict[str, Any] = {
     "namePrefix": "migrated",
     "allowedRecordTypes": ["AGENT", "MCP", "SKILL", "CUSTOM"],
     "passthroughFields": ["description"],
+    # "fail": two source records that transform to one target (name, recordVersion) stop at the
+    # second, which is reported and skipped. "suffix": the second is migrated under a deterministic
+    # distinct name instead. Keep this in step with lib/config.ts -- a local run and a deployed run
+    # must default to the same value or one would refuse to load records the other staged.
+    "duplicateNames": "fail",
 }
 
 

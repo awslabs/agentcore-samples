@@ -15,6 +15,7 @@
 - chanbi
 - crupakheti
 - danystinson
+- dgallitelli
 - dhawalkp
 - didhd
 - EashanKaushik

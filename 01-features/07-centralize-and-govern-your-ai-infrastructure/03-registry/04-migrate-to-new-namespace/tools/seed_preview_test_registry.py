@@ -50,15 +50,16 @@ more -- the fixtures that produced them were removed and the conclusions kept he
     fetched document. All eight fixtures pointing at one MCP endpoint were renamed to the same
     (name, recordVersion) -- "contextstudios-mcp" / "1.2.1" -- which is exactly the target dedup key.
     The same overwrite happens again on the target side when the migration recreates the record, so a
-    registry holding two records synced from one upstream cannot be migrated at all: renaming them
-    in Preview only moves the collision from the extract stage's duplicate-name guard to the load
-    stage. This is the headline migration risk in this matrix, and it cost the tool a real defect --
+    registry holding two records synced from one upstream cannot be migrated under distinct names at
+    all: renaming them in Preview does not help, because the sync overwrites the new names too.
+    This is the headline migration risk in this matrix, and it cost the tool a real defect --
     the loader used to perform the collapse silently, merging four source records into one target record
     and reporting three of them as successes. It now refuses instead (``_claim_target_record``).
     Only one fixture is seeded on the shared URL; see ONE_SYNC_FIXTURE_ONLY.
   * the target dedup key is (name, recordVersion) and Preview enforced neither part, so a Preview
     registry may legitimately hold two records with one name and no version. The tool handles this
-    correctly -- extract detects the clash, names the offending records, and resolves it once
+    correctly -- the load stage claims target identities in staged order, names the second claimant
+    in a per-record failure, and migrates it under a distinct name once
     ``runtime.transform.duplicateNames`` is set to ``suffix`` -- so a duplicate pair is no longer
     seeded. It only forced every run of this matrix to carry that setting.
 
@@ -511,10 +512,11 @@ def build_matrix(
         },
         # A duplicate-name pair (two records sharing one name with no recordVersion) used to sit
         # here. It was removed: it is not a tool defect. The target dedup key is (name, recordVersion),
-        # Preview enforced neither, and the extract stage already detects the clash, aborts with a
-        # named DuplicateRecordNames error that lists the offending names, and resolves it once
-        # ``runtime.transform.duplicateNames`` is set to ``suffix``. Keeping the pair only forced
-        # every run of this matrix to carry that setting, which masked the rest of the matrix.
+        # Preview enforced neither, and the load stage already claims target identities in staged
+        # order -- refusing the second claimant and naming both records in the failure report, or
+        # migrating it under a distinct name once ``runtime.transform.duplicateNames`` is set to
+        # ``suffix``. Keeping the pair only forced every run of this matrix to carry that setting,
+        # which masked the rest of the matrix.
         # ---- the one shape-space gap in the Preview model the service allows -----------
         # The model is far looser than the service: it requires only registryId + name +
         # descriptorType, no descriptor sub-structure has a required member, Descriptors is a
