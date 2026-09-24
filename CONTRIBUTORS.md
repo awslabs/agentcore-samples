@@ -134,6 +134,7 @@
 - Irene Arroyo Delgado (iiarroyo)
 - rmncardoso
 - ach1ntya
+- Anand Komandooru (akomandooru)
 - Shruthi Rajoli (rajolishruthi)
 - ratnopam
 - Mark Roy (markproy)
