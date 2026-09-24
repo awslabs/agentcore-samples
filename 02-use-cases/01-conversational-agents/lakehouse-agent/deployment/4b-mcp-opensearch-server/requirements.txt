@@ -1,0 +1,8 @@
+bedrock-agentcore>=1.0.0
+bedrock-agentcore-starter-toolkit
+boto3>=1.43.0
+mcp>=1.9.0,<2
+requests>=2.31.0
+opensearch-py>=2.4.0,<4
+aws-requests-auth>=0.4.3
+PyJWT>=2.8.0

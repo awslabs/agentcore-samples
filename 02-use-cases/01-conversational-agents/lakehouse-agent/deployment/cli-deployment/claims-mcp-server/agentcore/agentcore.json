@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "LakehouseMcpServer",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "lakehouse_mcp_server",
+      "build": "Container",
+      "codeLocation": "../../4a-mcp-lakehouse-server",
+      "entrypoint": "server.py",
+      "protocol": "MCP",
+      "networkMode": "PUBLIC",
+      "envVars": [
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "value": "840016564632-us-east-1-lakehouse-agent"
+        },
+        {
+          "name": "ATHENA_DATABASE_NAME",
+          "value": "lakehouse_data"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "DEBUG"
+        },
+        {
+          "name": "CATALOG_NAME",
+          "value": "s3tablescatalog/lakehouse-840016564632-j6awxq"
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "allowedAudience": [
+            "https://lakehouse-api"
+          ],
+          "discoveryUrl": "https://dev-a3xj8d6if5f4qnwz.us.auth0.com/.well-known/openid-configuration"
+        }
+      }
+    }
+  ],
+  "memories": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": []
+}
