@@ -19,11 +19,17 @@ export class WorkerClient {
   private agentName = 'unknown';
   private readonly factory: ClientFactory;
 
+  /**
+   * @param sessionId - The AgentCore session the lead was invoked with; every
+   *   call this client makes is tagged with it, so one id spans the whole
+   *   delegation chain. A client therefore belongs to a single request.
+   */
   constructor(
     private readonly baseUrl: string,
+    sessionId: string,
     region: string = process.env.AWS_REGION ?? 'us-east-1',
   ) {
-    this.factory = createA2AClientFactory(baseUrl, region);
+    this.factory = createA2AClientFactory(baseUrl, region, sessionId);
   }
 
   /** Discovers the worker via its agent card and prepares the transport. */

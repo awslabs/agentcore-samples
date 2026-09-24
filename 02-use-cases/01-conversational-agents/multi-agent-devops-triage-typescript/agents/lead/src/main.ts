@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { BedrockAgentCoreApp } from 'bedrock-agentcore/runtime';
 import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk';
 import { buildRuntimeUrl } from 'bedrock-agentcore/runtime/a2a';
@@ -29,14 +31,12 @@ function workerUrl(arnVar: string, urlVar: string, fallback: string): string {
   return process.env[urlVar] ?? fallback;
 }
 
-const logAnalyst = new WorkerClient(
-  workerUrl('LOG_ANALYST_RUNTIME_ARN', 'LOG_ANALYST_URL', 'http://localhost:9001'),
-  REGION,
+const LOG_ANALYST_URL = workerUrl(
+  'LOG_ANALYST_RUNTIME_ARN',
+  'LOG_ANALYST_URL',
+  'http://localhost:9001',
 );
-const runbook = new WorkerClient(
-  workerUrl('RUNBOOK_RUNTIME_ARN', 'RUNBOOK_URL', 'http://localhost:9002'),
-  REGION,
-);
+const RUNBOOK_URL = workerUrl('RUNBOOK_RUNTIME_ARN', 'RUNBOOK_URL', 'http://localhost:9002');
 
 const SYSTEM_PROMPT = `You are the lead agent of a DevOps incident triage copilot.
 You have two specialist workers available as tools:
@@ -50,43 +50,60 @@ For an incident report, consult BOTH workers, then compose a triage summary:
 3. Recommended next steps (from the runbook worker, tailored to the findings)
 Keep the final answer concise and actionable.`;
 
-// Delegation tools run in-process via the SDK's MCP transport — the A2A
-// calls happen inside the tool handlers, so worker output never needs
-// envelope handling anywhere.
-const delegationServer = createSdkMcpServer({
-  name: 'workers',
-  version: '1.0.0',
-  tools: [
-    tool(
-      'delegate_to_log_analyst',
-      'Delegate log/metric analysis to the log-analyst worker agent. Include the raw log lines and metrics in the request.',
-      { request: z.string().describe('The analysis request, including all relevant log/metric data') },
-      async ({ request }) => {
-        // Streaming A2A call (message/stream) — exercises the second
-        // interaction pattern required by the sample. WorkerClient logs the
-        // delegate.stream/response trail; this callback surfaces the
-        // worker's intermediate output as it streams in.
-        const answer = await logAnalyst.stream(request, (update) =>
-          console.log(`[lead] log-analyst update: ${update.slice(0, 120)}`),
-        );
-        return { content: [{ type: 'text', text: answer }] };
-      },
-    ),
-    tool(
-      'delegate_to_runbook',
-      'Delegate a service-catalog/runbook lookup to the runbook worker agent. Name the service and the observed symptom.',
-      { request: z.string().describe('The lookup request, naming the service and symptom') },
-      async ({ request }) => {
-        // Blocking A2A call (message/send). WorkerClient logs the
-        // delegate.send/response/failed trail.
-        const answer = await runbook.send(request);
-        return { content: [{ type: 'text', text: answer }] };
-      },
-    ),
-  ],
-});
+/**
+ * Builds the delegation tools for one triage request.
+ *
+ * Per-request rather than once at startup because the worker clients carry the
+ * caller's `sessionId`: sharing clients across requests would funnel unrelated
+ * conversations through a single worker session. The cost is one agent-card
+ * fetch per worker per request; the in-process MCP server itself does no I/O.
+ *
+ * The A2A calls happen inside the tool handlers, so worker output never needs
+ * envelope handling anywhere.
+ */
+function buildDelegationServer(sessionId: string): ReturnType<typeof createSdkMcpServer> {
+  const logAnalyst = new WorkerClient(LOG_ANALYST_URL, sessionId, REGION);
+  const runbook = new WorkerClient(RUNBOOK_URL, sessionId, REGION);
 
-async function triage(prompt: string): Promise<string> {
+  return createSdkMcpServer({
+    name: 'workers',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'delegate_to_log_analyst',
+        'Delegate log/metric analysis to the log-analyst worker agent. Include the raw log lines and metrics in the request.',
+        {
+          request: z
+            .string()
+            .describe('The analysis request, including all relevant log/metric data'),
+        },
+        async ({ request }) => {
+          // Streaming A2A call (message/stream) — exercises the second
+          // interaction pattern required by the sample. WorkerClient logs the
+          // delegate.stream/response trail; this callback surfaces the
+          // worker's intermediate output as it streams in.
+          const answer = await logAnalyst.stream(request, (update) =>
+            console.log(`[lead] log-analyst update: ${update.slice(0, 120)}`),
+          );
+          return { content: [{ type: 'text', text: answer }] };
+        },
+      ),
+      tool(
+        'delegate_to_runbook',
+        'Delegate a service-catalog/runbook lookup to the runbook worker agent. Name the service and the observed symptom.',
+        { request: z.string().describe('The lookup request, naming the service and symptom') },
+        async ({ request }) => {
+          // Blocking A2A call (message/send). WorkerClient logs the
+          // delegate.send/response/failed trail.
+          const answer = await runbook.send(request);
+          return { content: [{ type: 'text', text: answer }] };
+        },
+      ),
+    ],
+  });
+}
+
+async function triage(prompt: string, sessionId: string): Promise<string> {
   const session = query({
     prompt,
     options: {
@@ -94,7 +111,7 @@ async function triage(prompt: string): Promise<string> {
       env: { ...process.env, CLAUDE_CODE_USE_BEDROCK: '1' },
       model: process.env.ANTHROPIC_MODEL,
       tools: [],
-      mcpServers: { workers: delegationServer },
+      mcpServers: { workers: buildDelegationServer(sessionId) },
       allowedTools: [
         'mcp__workers__delegate_to_log_analyst',
         'mcp__workers__delegate_to_runbook',
@@ -117,8 +134,12 @@ const app = new BedrockAgentCoreApp({
   invocationHandler: {
     requestSchema: z.object({ prompt: z.string() }),
     process: async (request, context) => {
-      context.log.info({ prompt: request.prompt }, 'triage request received');
-      const answer = await triage(request.prompt);
+      // Forward the caller's session to the workers so one id ties the
+      // whole delegation chain together in the logs. A direct curl without the
+      // session header (local dev) gets a generated one.
+      const sessionId = context.sessionId || randomUUID();
+      context.log.info({ prompt: request.prompt, sessionId }, 'triage request received');
+      const answer = await triage(request.prompt, sessionId);
       return { answer };
     },
   },

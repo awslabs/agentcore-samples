@@ -170,7 +170,9 @@ aws logs tail /aws/bedrock-agentcore/runtimes/<worker-runtime-id>-DEFAULT --sinc
   | grep '\[a2a\]'
 ```
 
-A healthy worker shows `executor task.received` (with the `sessionId` the lead propagated), any `tool.call` lines, then `executor task.result`. Locally the trail is the same, minus `sessionId` — nothing sets the runtime session header outside AgentCore.
+A healthy worker shows `executor task.received` (with the `sessionId` the lead propagated), any `tool.call` lines, then `executor task.result`.
+
+The lead forwards its *inbound* session id to both workers, so a single id spans client → lead → workers and one query reconstructs an invocation across all three log groups. This holds in every run mode: the session header goes on plain-HTTP worker calls too, not just SigV4-signed ones.
 
 ## Repository layout
 
