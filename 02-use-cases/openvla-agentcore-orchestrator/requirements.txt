@@ -1,0 +1,6 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# MCP server dependency (for slurm_mcp_server.py)
+# The training agent (vla_training_agent.py) uses only stdlib.
+mcp>=1.0.0,<2.0.0
