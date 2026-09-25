@@ -36,10 +36,8 @@ def main() -> int:
     if not arn:
         sys.exit("no runtime in state -- run `python deploy.py` first")
 
-    # botocore defaults to a 60s read timeout and retries on timeout. An agent turn
-    # easily exceeds 60s, and each retry re-enters /invocations and spawns ANOTHER
-    # claude process, so a single logical request becomes several concurrent agent
-    # runs. Long read timeout plus no retries keeps one invocation to one run.
+    # An agent turn can outlast botocore's 60s default, and a retry would start a second
+    # claude process, so use a long read timeout and no retries.
     client = boto3.client(
         "bedrock-agentcore",
         region_name=args.region,

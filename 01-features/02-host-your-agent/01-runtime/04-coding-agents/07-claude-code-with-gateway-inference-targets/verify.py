@@ -3,7 +3,7 @@ Verify model capabilities through the AgentCore Gateway inference target.
 
 Run `python setup.py` first, then:
 
-    python verify.py [--model mantle/anthropic.claude-opus-4-7]
+    python verify.py [--model mantle/anthropic.claude-sonnet-5]
 
 Sends real Messages API requests through the gateway and checks the responses for
 the signals that prove each capability worked, rather than only checking for HTTP 200:
@@ -37,17 +37,20 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-# Explicit verifying context, pinned so it cannot be weakened by a process-wide
-# default being replaced. The OAuth client secret crosses the token connection.
+# Pinned verifying TLS context: the OAuth client secret crosses the token connection.
 _TLS = ssl.create_default_context()
 
 STATE_FILE = Path(__file__).with_name(".provision-state.json")
 PREFIX_TOKENS = 6000  # clears every model's cache-checkpoint minimum
-# Adaptive thinking engages at the model's discretion: identical requests can return
-# thinking_tokens=45,45,0. One sample cannot distinguish "unsupported" from "did not
-# engage this time", so the reasoning check samples several times and passes if any
-# request engaged.
+# Adaptive thinking may skip a request, so the reasoning check tries several times.
 REASONING_SAMPLES = 4
+REASONING_PROMPT = (
+    "A tank holds 240 L. Pipe A fills at 12 L/min, pipe B at 8 L/min, and a drain empties "
+    "at 5 L/min. Pipe A runs alone for 4 minutes, then all three run together. Exactly how "
+    "many minutes from the start until the tank is full? Show each step."
+)
+RETRYABLE = {429, 500, 502, 503, 529}
+RETRY_ATTEMPTS = 4  # waits 2s, 4s, 8s between attempts
 
 _results: list[tuple[str, bool, str]] = []
 
@@ -93,10 +96,7 @@ def mint_token(out: dict[str, Any]) -> str:
 
 
 def call(url: str, token: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    # POST one Messages API request through the gateway, returning (status, body).
-    # A non-JSON body comes back as {"raw": <text>}. anthropic_version is required on
-    # the Bedrock Messages surface; injected here so each check's payload stays
-    # focused on the capability under test.
+    # Returns (status, body); a non-JSON body comes back as {"raw": <text>}.
     payload = {**payload, "anthropic_version": "bedrock-2023-05-31"}
     req = urllib.request.Request(
         url,
@@ -106,15 +106,21 @@ def call(url: str, token: str, payload: dict[str, Any]) -> tuple[int, dict[str, 
             "Authorization": f"Bearer {token}",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120, context=_TLS) as resp:
-            return resp.status, json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode(errors="replace")
+    # Retry throttling, overload and transient 5xx errors with backoff.
+    for attempt in range(RETRY_ATTEMPTS):
         try:
-            return exc.code, json.loads(raw)
-        except json.JSONDecodeError:
-            return exc.code, {"raw": raw[:500]}
+            with urllib.request.urlopen(req, timeout=120, context=_TLS) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode(errors="replace")
+            if exc.code in RETRYABLE and attempt < RETRY_ATTEMPTS - 1:
+                time.sleep(2 ** (attempt + 1))
+                continue
+            try:
+                return exc.code, json.loads(raw)
+            except json.JSONDecodeError:
+                return exc.code, {"raw": raw[:500]}
+    raise AssertionError("unreachable")
 
 
 def error_text(body: dict[str, Any]) -> str:
@@ -128,10 +134,8 @@ def error_text(body: dict[str, Any]) -> str:
 
 
 def cache_prefix() -> str:
-    # The body is seeded so the two caching calls in this run are byte-identical, and
-    # salted with the current time so a re-run always starts with a COLD cache. Without
-    # the salt, a re-run within the cache TTL gets a cache read where the check asserts
-    # a write, and the write check fails while caching is in fact working.
+    # Seeded so both caching calls send the same prefix, and salted with the time so
+    # each run starts with a cold cache.
     rng = random.Random(20260828)
     words = [
         "ledger", "invoice", "tenant", "quota", "schema", "payload", "cursor", "broker",
@@ -146,9 +150,7 @@ def cache_prefix() -> str:
 
 
 def red_png_b64() -> str:
-    # A solid-red 64x64 PNG built in-process, so no image file is shipped. The
-    # multimodal check asserts the model names the colour, which is an objective check
-    # that needs no font rendering.
+    # A solid-red PNG built in-process; the check asserts the model names the colour.
     w = h = 64
     raw = b"".join(b"\x00" + b"\xff\x00\x00" * w for _ in range(h))
 
@@ -200,10 +202,9 @@ def check_reasoning(url: str, token: str, model: str, form: str) -> None:
     payload: dict[str, Any] = {
         "model": model,
         "max_tokens": 3000,
-        "messages": [{"role": "user", "content": "What is 17*23? Reason step by step."}],
+        "messages": [{"role": "user", "content": REASONING_PROMPT}],
     }
-    # The request form is model-specific: Opus 4.7+ rejects {type: "enabled"} and
-    # requires adaptive; models before 4.7 accept only enabled with a budget.
+    # Models with adaptive thinking reject the enabled form, and older models the reverse.
     if form == "adaptive":
         payload["thinking"] = {"type": "adaptive"}
         payload["output_config"] = {"effort": "high"}
@@ -311,14 +312,14 @@ def main() -> int:
     )
     ap.add_argument(
         "--model",
-        default="mantle/anthropic.claude-opus-4-7",
+        default="mantle/anthropic.claude-sonnet-5",
         help="target-qualified model id (default: %(default)s)",
     )
     ap.add_argument(
         "--thinking-form",
         choices=["adaptive", "enabled"],
         default="adaptive",
-        help="thinking request form: adaptive for Opus 4.7+, enabled for earlier models",
+        help="thinking request form; use enabled for models without adaptive thinking",
     )
     args = ap.parse_args()
 

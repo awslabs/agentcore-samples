@@ -22,7 +22,7 @@ Required environment:
                          token_url, scope}. The secret value never travels through
                          the environment.
     ANTHROPIC_BASE_URL   gateway inference base, e.g. https://<id>...amazonaws.com/inference
-    ANTHROPIC_MODEL      e.g. mantle/anthropic.claude-opus-4-7
+    ANTHROPIC_MODEL      e.g. mantle/anthropic.claude-sonnet-5
 """
 
 import json
@@ -161,9 +161,8 @@ def run_claude(prompt: str) -> tuple[bool, str]:
     )
     elapsed = time.time() - started
     if proc.returncode != 0:
-        # Log the failure as well as returning it. InvokeAgentRuntime flattens a non-200
-        # body into a generic "Received error (500) from runtime", so without this the
-        # actual cause never reaches CloudWatch and the failure is undiagnosable.
+        # InvokeAgentRuntime reports any non-200 as a generic 500, so the cause is
+        # logged here for CloudWatch.
         sys.stderr.write(
             f"[agent] claude FAILED after {elapsed:.0f}s exit={proc.returncode}\n"
             f"[agent] stdout: {proc.stdout.strip()[:2000]}\n"

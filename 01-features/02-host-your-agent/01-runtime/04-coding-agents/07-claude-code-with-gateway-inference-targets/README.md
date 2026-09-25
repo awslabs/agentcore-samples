@@ -20,8 +20,8 @@ InvokeAgentRuntime
 │  AgentCore Runtime           │
 │  (Claude Code, headless)     │
 │                              │
-│  1. read OAuth secret ───────┼──▶ Secrets Manager (execution role,
-│  2. mint token ──────────────┼──▶ Cognito /oauth2/token   one secret)
+│  1. read OAuth secret ───────┼──▶ Secrets Manager (execution role, one secret)
+│  2. mint token ──────────────┼──▶ Cognito /oauth2/token
 │  3. claude -p "<prompt>"     │
 │     ANTHROPIC_AUTH_TOKEN     │
 └──────────────┬───────────────┘
@@ -87,7 +87,9 @@ that prove each capability worked:
   `tool_use` block
 
 This step needs only the gateway from Step 1, not the runtime. It costs roughly six
-model calls. For models older than Claude Opus 4.7, pass `--thinking-form enabled`.
+model calls. For a model without
+[adaptive thinking](https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-adaptive-thinking.html),
+pass `--thinking-form enabled`.
 
 ### Step 3 — Deploy the agent
 
@@ -155,7 +157,7 @@ this sample:
   rejection through as `400 invalid beta flag`. Core capabilities (tool use, prompt
   caching, streaming) are unaffected.
 - **`ANTHROPIC_MODEL`** and **`ANTHROPIC_DEFAULT_HAIKU_MODEL`** take target-qualified
-  ids such as `mantle/anthropic.claude-opus-4-7`, where the part before the slash names
+  ids such as `mantle/anthropic.claude-sonnet-5`, where the part before the slash names
   the gateway target. Change them in `deploy.py` (`runtime_env`).
 
 ## Request and response format

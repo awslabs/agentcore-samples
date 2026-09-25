@@ -191,6 +191,9 @@ def create(region: str, prefix: str) -> None:
             "customJWTAuthorizer": {
                 "discoveryUrl": discovery_url,
                 "allowedClients": [client_id],
+                # Enforce the scope the agent requests, so a token from this client
+                # without it is rejected.
+                "allowedScopes": [scope],
             }
         },
         description="Claude Code inference gateway sample",
@@ -223,7 +226,7 @@ def _print_config(state: dict[str, Any]) -> None:
     print("# ANTHROPIC_BASE_URL -- not CLAUDE_CODE_USE_BEDROCK.")
     print(f'export ANTHROPIC_BASE_URL="{out["inference_url"]}"')
     print()
-    print(f"# Pick a model with a target-qualified id, e.g. {TARGET_NAME}/anthropic.claude-opus-4-7")
+    print(f"# Pick a model with a target-qualified id, e.g. {TARGET_NAME}/anthropic.claude-sonnet-5")
 
 
 def _write_outputs(state: dict[str, Any], region: str) -> None:

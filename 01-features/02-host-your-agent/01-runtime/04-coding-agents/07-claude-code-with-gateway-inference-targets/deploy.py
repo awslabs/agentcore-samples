@@ -108,7 +108,7 @@ def runtime_env(gw: dict[str, Any], secret_arn: str) -> dict[str, str]:
     return {
         "OAUTH_SECRET_ID": secret_arn,
         "ANTHROPIC_BASE_URL": gw["inference_url"],
-        "ANTHROPIC_MODEL": "mantle/anthropic.claude-opus-4-7",
+        "ANTHROPIC_MODEL": "mantle/anthropic.claude-sonnet-5",
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": "mantle/anthropic.claude-haiku-4-5",
     }
 
