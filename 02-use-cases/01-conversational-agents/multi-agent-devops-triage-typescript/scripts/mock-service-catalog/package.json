@@ -1,0 +1,24 @@
+{
+  "name": "@sample/mock-service-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local MCP server standing in for AgentCore Gateway + Lambda service-catalog target",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "5.2.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6"
+  }
+}
