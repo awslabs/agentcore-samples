@@ -1,0 +1,5 @@
+boto3>=1.43.102
+fastapi
+uvicorn[standard]
+sse-starlette
+pydantic
