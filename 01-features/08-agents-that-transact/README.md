@@ -5,11 +5,13 @@ Amazon Bedrock AgentCore payments is a fully managed service that enables microt
 ![AgentCore payments](00-getting-started/00-setup-agentcore-payments/images/ga-main-image.png)
 
 
-**AgentCore payments is generally available** 
+**AgentCore payments is generally available**
 
-Learn more about the latest features in this [blog post](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/). 
+Learn more about the latest features in this [blog post](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/).
 
-> **Testnet only.** All samples use Base Sepolia (Ethereum) or Solana Devnet with free USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no real-world value.
+> **Testnet by default.** Tutorials 00–07 use test networks. Tutorial 08 supports
+> Tempo testnet and optional mainnet merchants; Tutorial 09 runs on Base mainnet.
+> Mainnet paths transfer real funds—read each tutorial's warning before opting in.
 
 ## Start here
 
@@ -21,13 +23,17 @@ New? There are various ways to get started with [AgentCore payments](https://doc
 
 | Folder | What's inside |
 |--------|---------------|
-| [`00-getting-started/`](00-getting-started/) | Eight step-by-step tutorials covering setup → local agents → runtime deploy → wallet ops → gateway → browser payments → memory + payments → multi-agent orchestration |
+| [`00-getting-started/`](00-getting-started/) | Ten step-by-step tutorials covering setup, local and deployed agents, wallet operations, x402, MPP, and metered payments |
 | [`01-payments-skills-and-cli/`](01-payments-skills-and-cli/) | Add AgentCore x402 payments to an agent via the `aws-agents` coding-assistant plugin (existing agent, new agent, or OpenClaw — no coding assistant) |
-| [`02-use-cases/`](02-use-cases/) | Real-world end-to-end use cases deployed on AgentCore runtime |
+| [`02-use-cases/`](02-use-cases/) | Real-world end-to-end payment flows for local and AgentCore Runtime-hosted agents |
 
 ## How this tree is organized
 
-Tutorials in `00-getting-started/` build on each other — start with Tutorial 00 which provisions the payment stack, then run any of 01–07 in the order that fits your use case. `01-payments-skills-and-cli/` is a coding-assistant-driven path that adds payments to an agent for you, rather than a set of tutorials to read through. `02-use-cases/` contains production-style deployments that demonstrate complete end-to-end payment flows.
+Tutorials in `00-getting-started/` build on each other — start with Tutorial 00
+which provisions the payment stack, then run any of 01–09 in the order that
+fits your use case. `01-payments-skills-and-cli/` is a coding-assistant-driven
+path that adds payments to an agent for you. `02-use-cases/` contains complete
+end-to-end payment flows for local and AgentCore Runtime-hosted agents.
 
 ## Finding things
 
@@ -40,6 +46,8 @@ Tutorials in `00-getting-started/` build on each other — start with Tutorial 0
 - **Browser + payment pattern** → `00-getting-started/05-agent-with-browser-tool-pay-for-content/`
 - **Memory-aware agent (skip redundant paid calls)** → `00-getting-started/06-research-agent-with-payment-memory/`
 - **Multi-agent with per-agent budgets** → `00-getting-started/07-multi-agent-payment-orchestrator/`
+- **Machine Payments Protocol (MPP)** → `00-getting-started/08-mpp-machine-payments-protocol/`
+- **Metered x402 `upto` payments** → `00-getting-started/09-pay-per-use-with-upto/`
 - **Add payments to an existing agent (coding assistant)** → `01-payments-skills-and-cli/add-to-existing-agent/`
 - **Scaffold a new agent that can transact (coding assistant)** → `01-payments-skills-and-cli/build-new-agent-that-can-transact/`
 - **OpenClaw agent with payments (no coding assistant)** → `01-payments-skills-and-cli/converse-with-openclaw-agent/`
@@ -47,6 +55,7 @@ Tutorials in `00-getting-started/` build on each other — start with Tutorial 0
 - **Pay for a metered HTTP API** → `02-use-cases/pay-for-api-agent/`
 - **Pay for data with a pre-payment trust gate (x402-secure)** → `02-use-cases/pay-for-x402-secure-data/`
 - **Pay for data (simple x402 flow)** → `02-use-cases/pay-for-data/`
+- **Pay for premium research with an OpenAI agent** → `02-use-cases/pay-for-research-with-openai-agent/`
 
 ## Resources
 
@@ -60,7 +69,7 @@ Tutorials in `00-getting-started/` build on each other — start with Tutorial 0
 
 - Python 3.10+
 - AWS CLI configured (`aws sts get-caller-identity` to verify)
-- AWS account with access to AgentCore payments preview
+- AWS account with access to AgentCore payments
 - Wallet provider credentials — Coinbase CDP or Stripe (Privy) — see `00-getting-started/00-setup-agentcore-payments/providers/`
 
 ## Running the Python Scripts
@@ -80,7 +89,8 @@ python 00-getting-started/01-agents-payments-and-limits/langgraph_payment_agent.
 
 ## Security
 
-- All tutorials use **testnet only** for learning and enablement purpose(Base Sepolia / Solana Devnet). No real funds are involved.
+- Tutorials 00–07 use test networks. Tutorial 08 supports Tempo testnet and optional
+  mainnet merchants; Tutorial 09 requires explicit opt-in and uses Base mainnet.
 - Never commit `.env` files or private keys. Use AWS Secrets Manager for production credentials.
 - Follow IAM least-privilege: separate ControlPlaneRole, ManagementRole, and ProcessPaymentRole.
 - Follow [AWS shared responsibility model](https://aws.amazon.com/compliance/shared-responsibility-model/)

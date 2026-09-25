@@ -1,0 +1,3 @@
+-r ../requirements.txt
+pytest>=9.1.1,<10.0
+ruff>=0.16.9,<1.0

@@ -44,6 +44,25 @@ An AI agent built with **Strands Agents** pays for a registered x402 service **o
 - Four IAM roles enforce separation of duties; session spending limits enforced by AgentCore payments, not by agent prompt instructions
 - Self-contained: `pay_for_x402_secure_data.py` provisions the AgentCore payments stack inline; AgentCore Runtime deploy via CDK with CloudWatch observability
 
+---
+
+### [Pay for Research with an OpenAI Agent](pay-for-research-with-openai-agent/)
+
+A three-agent research team built with the **OpenAI Agents SDK** and **OpenAI
+models on Amazon Bedrock** evaluates public evidence first, then buys one
+application-approved premium source only when a material gap remains.
+AgentCore Payments enforces the session budget and expiry outside model context.
+
+**Highlights**
+- OpenAI Agents SDK manager pattern with a research lead and two bounded specialists
+- Only the premium specialist receives the application-bound payment tool
+- Framework-agnostic AgentCore Payments integration for OpenAI Agents SDK
+- Exact-host and public-address checks before merchant access
+- One signing attempt per source per run, with explicit handling of unknown payment outcomes
+- Optional human approval before a paid tool call
+- Python scripts for offline inspection, research, session creation, verification, and cleanup
+- Current GA AgentCore Payments APIs and SDK
+
 ## Running the Use Cases
 
 Pay for Content (Browser Use):
@@ -78,6 +97,20 @@ cp env-sample.txt .env                 # fill in Coinbase CDP creds, INSTRUMENT_
 bash test/integration/setup-roles.sh   # once per account
 bash test/integration/setup-env.sh     # generates USER_ID
 python pay_for_x402_secure_data.py
+```
+
+Pay for Research with an OpenAI Agent:
+
+```bash
+cd pay-for-research-with-openai-agent
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.sample .env
+python inspect_sample.py
+python create_payment_session.py --budget 0.25 --expiry-minutes 60
+export PAYMENT_SESSION_ID=<printed-session-id>
+python pay_for_research.py "Assess the material near-term drivers and risks for AMZN."
+python cleanup_payment_session.py
 ```
 
 ---

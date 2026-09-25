@@ -38,9 +38,9 @@ written to the shared `../.env` so downstream tutorials pick them up unchanged.
 > **Testnet only.** Base Sepolia (`NETWORK=ETHEREUM`) or Solana Devnet (`NETWORK=SOLANA`), with free
 > USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no monetary value.
 
-> **Supported regions:** 
-Set `AWS_REGION`
-> in `../.env` to one of these.
+> **Supported regions.** Run this in a region where AgentCore payments is available—see
+> [AgentCore supported regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html).
+> Set `AWS_REGION` in `../.env` to one of these regions.
 
 ## Architecture
 
@@ -105,9 +105,11 @@ session, then fund the wallet.
 ### Step 1 — Capture wallet-provider credentials (pick ONE provider)
 
 These scripts walk you through the provider portal and write the credential keys into `../.env`.
+For Coinbase, the helper uses the portal-downloaded files and the official CDP CLI, so secret
+values are never pasted into the terminal or printed.
 
 ```bash
-python providers/coinbase_cdp_account_setup.py     # Coinbase CDP
+python providers/coinbase_cdp_account_setup.py --open-portal  # Coinbase CDP
 #   or
 python providers/stripe_privy_account_setup.py     # Stripe (Privy)
 ```
@@ -115,6 +117,13 @@ python providers/stripe_privy_account_setup.py     # Stripe (Privy)
 > **Using Coinbase Quick create?** You can skip `coinbase_cdp_account_setup.py` — Quick create provisions
 > the CDP API key and Wallet secret for you in Step 2, so there are no keys to generate or paste. Still set
 > the `.env` values below.
+
+If you use an existing Coinbase configuration, follow the dedicated
+[Coinbase CDP setup guide](coinbase-cdp-setup/) for every portal setting,
+screenshot, Base Sepolia funding step, balance check, and troubleshooting
+message. This path requires separate project-level and wallet-level
+delegated-signing steps. The helper imports the downloaded files locally and
+never handles your Coinbase password or MFA code.
 
 Then set `AWS_REGION`, `CREDENTIAL_PROVIDER_TYPE` (`CoinbaseCDP` or `StripePrivy`), `USER_ID`,
 `LINKED_EMAIL` (a real inbox — used for the wallet and provider OTP), and `NETWORK`
@@ -274,12 +283,20 @@ IDs. Downstream tutorials read them all via `utils.load_tutorial_env()`.
    `https://sepolia.basescan.org/address/<WALLET_ADDRESS>` for Ethereum.
 2. Grant delegated signing so the agent can pay on the user's behalf:
    - **Coinbase** — open the WalletHub `REDIRECT_URL` printed in Step 3, sign in as
-     `LINKED_EMAIL`, and grant signing.
+     `LINKED_EMAIL`, then complete
+     [the wallet-permission step](coinbase-cdp-setup/#4-grant-permission-for-the-embedded-wallet).
    - **Stripe/Privy** — open the Privy reference frontend (`http://localhost:3000`), log in as
      `LINKED_EMAIL`, and choose **Connect agent → Give access**.
 
 Until delegated signing is granted, payment attempts report
 `Delegated signing grant is not active for the end user wallet.`
+
+The session budget is only a spending ceiling; it does not fund the wallet. The wallet needs
+testnet USDC, but no real money is required and the testnet tokens have no monetary value.
+
+For Coinbase, use the guide's
+[Base Sepolia funding and balance checks](coinbase-cdp-setup/#5-fund-base-sepolia).
+WalletHub's Base-mainnet balance is not the authoritative testnet balance.
 
 ## What this setup does
 
@@ -346,7 +363,9 @@ print(f"balance: {micro / 1_000_000:.2f} USDC")
 | `add payment-connector` fails on a missing credential | Required provider flag not provided | Re-check the credential keys in `../.env`; re-run with all flags |
 | Payment Manager stuck in `CREATING` | IAM propagation | Wait ~2 min; if `CREATE_FAILED`, check the service role |
 | Instrument status stays `CREATING` | Wallet provisioning is async | Ensure `LINKED_EMAIL` is a real address; keep polling |
-| `Delegated signing grant is not active` | Consent step not completed | Do Step 4 (funding + signing) |
+| `Delegated signing grant is not active` | The Coinbase wallet has not granted consent | Complete the [WalletHub permission step](coinbase-cdp-setup/#4-grant-permission-for-the-embedded-wallet) |
+| `Delegated signing is not enabled for your Coinbase project` | Project-level CDP switch is off | Complete the [delegated-signing setup](coinbase-cdp-setup/#2-generate-the-wallet-secret-and-enable-delegated-signing) |
+| WalletHub shows `0 USDC` after funding | WalletHub shows Base mainnet, or the faucet used Arc Testnet | Follow the [Base Sepolia diagnosis](coinbase-cdp-setup/#5-fund-base-sepolia) |
 | Deploy fails with CDK bootstrap error | Account/region not bootstrapped | `cdk bootstrap aws://<account-id>/<region>` |
 
 ## Clean Up
