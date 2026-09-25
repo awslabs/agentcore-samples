@@ -158,7 +158,7 @@ try:
                     "allowedClients": [pool1["client_id"]],
                 }
             },
-            model={"bedrockModelConfig": {"modelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0"}},
+            model={"bedrockModelConfig": {"modelId": "global.anthropic.claude-haiku-4-5-20251001-v1:0"}},
             systemPrompt=[
                 {
                     "text": (

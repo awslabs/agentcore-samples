@@ -13,18 +13,19 @@ automated evaluation, and AI-driven optimization with A/B testing.
 **CloudWatch Transaction Search must be enabled before any traces appear in CloudWatch
 Gen AI observability.** This is a one-time setup per AWS account and region.
 
-### Option 1: Infrastructure as Code (recommended)
+### Option 1: Infrastructure as Code
 
-Use the CloudFormation template provided in this repository:
+A CloudFormation template and walkthrough notebook are provided in the workshops tree:
 
 ```
-05-infrastructure-as-code/01-enable-transaction-search/
+06-workshops/06-AgentCore-observability/00-enable-transaction-search-template/
+  transaction_search.yml            # CloudFormation template
+  enable_transaction_search.ipynb   # step-by-step notebook
 ```
 
-```bash
-cd ../../05-infrastructure-as-code/01-enable-transaction-search/
-python deploy.py
-```
+Deploy `transaction_search.yml` via the CloudFormation console or
+`aws cloudformation deploy --template-file transaction_search.yml ...`, or follow
+the notebook.
 
 ### Option 2: AWS Console
 
@@ -40,9 +41,9 @@ For detailed steps, see [Enable Transaction Search — AWS Documentation](https:
 
 ```
 06-observe-evaluate-optimize-your-agent/
-  observe/         ← Advanced observability techniques
-  evaluate/        ← Automated agent evaluation
-  optimize/        ← AI-driven optimization with A/B testing
+  01-observe/      ← Advanced observability techniques
+  02-evaluate/     ← Automated agent evaluation
+  03-optimize/     ← AI-driven optimization with A/B testing
 ```
 
 ---
@@ -73,10 +74,10 @@ invoke_agent
 
 **Run:**
 ```bash
-pip install -r observe/requirements.txt
-cp observe/.env.example observe/.env
+pip install -r 01-observe/requirements.txt
+cp 01-observe/.env.example 01-observe/.env
 # Edit .env with your CloudWatch log group
-opentelemetry-instrument python observe/custom_span_creation.py --session-id "demo-001"
+opentelemetry-instrument python 01-observe/custom_span_creation.py --session-id "demo-001"
 ```
 
 ### Data Protection
@@ -88,8 +89,8 @@ Two-layer PII protection for production agents:
 
 **Run:**
 ```bash
-python observe/data_protection.py          # Creates AWS resources + demonstrates protection
-python observe/data_protection.py --cleanup
+python 01-observe/data_protection.py          # Creates AWS resources + demonstrates protection
+python 01-observe/data_protection.py --cleanup
 ```
 
 ---
@@ -142,7 +143,7 @@ HR Assistant v1  ──►  Batch Eval  ──►  SP + TD Recs  ──►  Conf
 
 **Quick start:**
 ```bash
-cd optimize/
+cd 03-optimize/
 pip install -r requirements.txt
 python deploy.py --name HRAssistV1
 python invoke.py --name HRAssistV1
