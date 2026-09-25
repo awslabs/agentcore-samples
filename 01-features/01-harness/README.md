@@ -29,6 +29,7 @@ self-contained — copy any folder and it runs independently.
 - **Auth patterns** → `07-oauth/` (JWT inbound + OAuth outbound)
 - **Persistent storage** → `14-s3-filesystem/` (mount S3 as the agent filesystem; includes an LLM wiki)
 - **Build an agent with AWS Skills** → `02-use-cases/03-aws-builder-agent/` (harness + AWS Skills = an AWS engineering agent)
+- **Lifecycle hooks** → `02-use-cases/05-refund-desk-hooks/` (Lambda, SNS and EventBridge hooks at every point of the agent loop, in a guided web app)
 
 ## AgentCore CLI
 
@@ -134,6 +135,9 @@ python 02-use-cases/02-webapp-visual-testing/webapp_visual_testing.py
 
 # Weather agent (gateway + guardrails + evals + observability)
 python 02-use-cases/04-weather-agent/weather_agent.py
+
+# Refund desk (lifecycle hooks web app)
+./02-use-cases/05-refund-desk-hooks/start.sh
 ```
 
 Run all tests:
