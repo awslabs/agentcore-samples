@@ -164,7 +164,7 @@ CLEANUP
 - Node.js 20+ (for the AgentCore CLI and content-provider CDK)
 - AWS CLI v2 configured with credentials (`aws configure`)
 - AWS CDK v2 installed (used by the AgentCore CLI under the hood)
-- AgentCore CLI installed: `npm install -g @aws/agentcore`
+- AgentCore CLI installed: `npm install -g @aws/agentcore@0.30.0`
   > **No local Docker required.** Step 5 builds the agent's container image in
   > AWS CodeBuild via the CLI's CDK app. You only need Docker if you want to use
   > `agentcore dev` for local hot-reload development.

@@ -76,7 +76,7 @@ The harness is auto-instrumented like any other — no ADOT setup, no `OTEL_*` v
 
 ## Prerequisites
 
-- **AgentCore CLI (preview):** `npm install -g @aws/agentcore@preview`
+- **AgentCore CLI:** `npm install -g @aws/agentcore@0.30.0`
 - **AWS CLI v2** with credentials for a harness preview region
   (`us-east-1`, `us-west-2`, `ap-southeast-2`, `eu-central-1`).
 - **A Bedrock API key** for the Mantle endpoint (Bedrock console → API keys). Export it as

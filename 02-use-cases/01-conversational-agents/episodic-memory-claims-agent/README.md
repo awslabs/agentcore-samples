@@ -110,7 +110,7 @@ The frontend is a React SPA (Vite) that runs locally on the developer's machine.
 ## Prerequisites
 
 - AWS account with Bedrock model access (Claude Sonnet 4.6)
-- Node.js 20+ with `npm install -g @aws/agentcore`
+- Node.js 20+ with `npm install -g @aws/agentcore@0.30.0`
 - Python 3.10+
 - AWS CLI configured with appropriate permissions
 - CDK bootstrapped: `npx cdk bootstrap aws://<ACCOUNT>/<REGION>`

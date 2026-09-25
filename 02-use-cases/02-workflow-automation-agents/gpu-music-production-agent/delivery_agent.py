@@ -1,7 +1,7 @@
-"""Mastering agent.
+"""Delivery agent.
 
 Reads the audio the composition agent rendered onto the shared volume, has a
-model choose a mastering chain from real measurements of that audio, applies the
+model choose a delivery chain from real measurements of that audio, applies the
 chain with real DSP, and measures the result.
 
 The division of labour is the point. The model decides *what* to do -- which
@@ -12,8 +12,8 @@ agent measures it again independently.
 
 Packaged as a container image in Amazon ECR. Runs on the same GPU instance as
 the composition agent because collocation is what gives it access to the audio,
-but it does no GPU work of its own -- mastering is filters and gain, and putting
-it on the CPU keeps the GPU free for generation.
+but it does no GPU work of its own -- the delivery chain is filters and gain, and
+putting it on the CPU keeps the GPU free for generation.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.session import FileSessionManager
 
-AGENT_NAME = "mastering"
+AGENT_NAME = "delivery"
 PROCESS_ID = uuid.uuid4().hex[:8]
 
 WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/mnt/tracks"))
@@ -42,7 +42,7 @@ MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
 ARTIFACT_BUCKET = os.environ.get("ARTIFACT_BUCKET")
 
-# Streaming loudness targets. Platforms normalise on playback, so mastering
+# Streaming loudness targets. Platforms normalise on playback, so delivering
 # louder than the target buys nothing and costs dynamic range.
 PLATFORM_TARGETS = {
     "spotify": (-14.0, -1.0),
@@ -52,13 +52,14 @@ PLATFORM_TARGETS = {
     "broadcast": (-23.0, -1.0),
 }
 
-SYSTEM_PROMPT = """You are a mastering engineer.
+SYSTEM_PROMPT = """You are an audio engineer who prepares finished mixes for
+release delivery.
 
 You will be given measurements of a rendered mix and a delivery target. Return a
-mastering chain as structured data. Be conservative and specific:
+delivery chain as structured data. Be conservative and specific:
 
 - Only include EQ bands that address something visible in the measurements.
-  Three or four bands is a normal master; twelve is not.
+  Three or four bands is normal; twelve is not.
 - Corrective moves are small. Use gains between -4 and +4 dB unless the
   measurements justify more.
 - If the mix already has healthy dynamics, compress gently or not at all. Say so
@@ -111,7 +112,7 @@ class EqBand(BaseModel):
     @classmethod
     def _clamp_gain(cls, v):
         # A model occasionally asks for +18 dB. Refuse politely rather than
-        # destroy the master.
+        # destroy the delivery.
         return float(min(max(v, -12.0), 12.0))
 
 
@@ -129,7 +130,7 @@ class Compressor(BaseModel):
         return float(min(max(v, 1.0), 20.0))
 
 
-class MasteringPlan(BaseModel):
+class DeliveryPlan(BaseModel):
     eq_bands: list[EqBand] = Field(default_factory=list)
     compressor: Compressor = Field(default_factory=Compressor)
     target_lufs: float = Field(default=-14.0)
@@ -199,8 +200,8 @@ def write_text(track_id: str, name: str, text: str) -> Path:
 def latest_render(track_id: str) -> tuple[str, Path]:
     """Prefer a remediated render over the original.
 
-    Same precedence the compliance agent uses, so a rerun masters the
-    replacement rather than re-mastering material that has been superseded.
+    Same precedence the compliance agent uses, so a rerun prepares the
+    replacement rather than re-preparing material that has been superseded.
     """
     for name in ("composition_remediated.wav", "composition.wav"):
         p = track_path(track_id) / name
@@ -277,7 +278,7 @@ def build_agent(session_id: str, track_id: str) -> Agent:
     )
 
 
-def apply_chain(src: Path, dst: Path, plan: MasteringPlan) -> dict:
+def apply_chain(src: Path, dst: Path, plan: DeliveryPlan) -> dict:
     """Run the model's chain and measure what actually came out.
 
     Order matters and is fixed here rather than left to the model: tonal shaping,
@@ -330,7 +331,7 @@ def apply_chain(src: Path, dst: Path, plan: MasteringPlan) -> dict:
     }
 
 
-def render_report(plan: MasteringPlan, result: dict, source_name: str) -> str:
+def render_report(plan: DeliveryPlan, result: dict, source_name: str) -> str:
     b, a = result["before"], result["after"]
 
     def row(label: str, key: str, unit: str) -> str:
@@ -339,7 +340,7 @@ def render_report(plan: MasteringPlan, result: dict, source_name: str) -> str:
         return f"| {label} | {fmt(bv)}{unit} | {fmt(av)}{unit} |"
 
     lines = [
-        "# Mastering Report",
+        "# Delivery Report",
         "",
         (f"**Source:** `{source_name}`  |  **Target:** {plan.target_lufs} LUFS / {plan.target_true_peak_dbtp} dBTP"),
         "",
@@ -400,7 +401,7 @@ def invoke(payload, context):
     session_id = getattr(context, "session_id", None) or "local-session"
     track_id = payload.get("track_id", "demo-track")
     platform_name = str(payload.get("platform", "spotify")).lower()
-    prompt = payload.get("prompt") or f"Master this for {platform_name}."
+    prompt = payload.get("prompt") or f"Prepare this for {platform_name} delivery."
     if not isinstance(prompt, str):
         # The payload is arbitrary JSON. A non-string here can carry toolUse
         # content blocks straight into the framework's event loop.
@@ -417,7 +418,7 @@ def invoke(payload, context):
         logger.info("source %s: %s", source_name, source_measurements.to_dict())
 
         task = (
-            f"Mix to master (from {source_name}, rendered by the composition agent "
+            f"Mix to prepare for delivery (from {source_name}, rendered by the composition agent "
             f"on this instance).\n\n"
             f"Measured properties of the mix:\n{json.dumps(source_measurements.to_dict(), indent=2)}\n\n"
             + (f"Composition brief:\n{brief}\n\n" if brief else "")
@@ -427,33 +428,33 @@ def invoke(payload, context):
         )
 
         agent = build_agent(session_id, track_id)
-        result = agent(task, structured_output_model=MasteringPlan)
-        plan: MasteringPlan = result.structured_output or MasteringPlan(
+        result = agent(task, structured_output_model=DeliveryPlan)
+        plan: DeliveryPlan = result.structured_output or DeliveryPlan(
             target_lufs=target_lufs, target_true_peak_dbtp=target_peak
         )
         # The platform target is not the model's to override.
         plan.target_lufs = target_lufs
         plan.target_true_peak_dbtp = target_peak
 
-        master = track_path(track_id) / "master.wav"
-        applied = apply_chain(source, master, plan)
+        delivery = track_path(track_id) / "delivery.wav"
+        applied = apply_chain(source, delivery, plan)
         try:
-            master.chmod(0o664)
+            delivery.chmod(0o664)
         except PermissionError:
             pass
 
         report = render_report(plan, applied, source_name)
-        write_text(track_id, "mastering.md", report)
+        write_text(track_id, "delivery.md", report)
         write_text(
             track_id,
-            "mastering.json",
+            "delivery.json",
             json.dumps(
                 {"plan": plan.model_dump(), "result": applied, "source": source_name, "platform": platform_name},
                 indent=2,
             ),
         )
 
-        artifacts = [publish(track_id, master), publish(track_id, track_path(track_id) / "mastering.md")]
+        artifacts = [publish(track_id, delivery), publish(track_id, track_path(track_id) / "delivery.md")]
 
         return {
             "status": "ok",

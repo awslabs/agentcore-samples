@@ -11,7 +11,7 @@ the AgentCore CLI.
 | Type              | Feature sample                                               |
 | Agent             | General-purpose assistant (Harness — no orchestration code)  |
 | Model provider    | `bedrock` (OpenAI GPT-OSS — `openai.gpt-oss-20b-1:0`)        |
-| CLI               | `@aws/agentcore@preview` (tested on `1.0.0-preview.12`)      |
+| CLI               | `@aws/agentcore@0.30.0`      |
 | Complexity        | Beginner                                                     |
 
 OpenAI's GPT-OSS models are served **through Amazon Bedrock**, so the harness
@@ -24,10 +24,14 @@ uses `--model-provider bedrock` — auth is handled by the harness execution rol
 
 ## Prerequisites
 
-- **Node.js 20+** and the preview CLI:
+- **Node.js 20+** and the CLI:
   ```bash
-  npm install -g @aws/agentcore@preview
-  agentcore --version          # 1.0.0-preview.12 or later
+  npm install -g @aws/agentcore@0.30.0
+  node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+    || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+  agentcore --version | grep -q '^0\.' \
+    || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
+  agentcore --version          # 0.30.0
   ```
 - **AWS credentials** for a harness preview region: `us-east-1`, `us-west-2`,
   `ap-southeast-2`, or `eu-central-1`.
@@ -119,7 +123,7 @@ MODEL_ID=openai.gpt-oss-120b-1:0 ./demo.sh    # larger model
 
 ## Notes
 
-- Verified end-to-end on `1.0.0-preview.12` (deploy + live invoke,
+- Last verified end-to-end on `1.0.0-preview.12`; not yet re-verified on `0.30.0` (deploy + live invoke,
   `openai.gpt-oss-20b-1:0`, us-west-2).
 - Bedrock-hosted models need no API key — the execution role's
   `bedrock:InvokeModel*` permission covers it.

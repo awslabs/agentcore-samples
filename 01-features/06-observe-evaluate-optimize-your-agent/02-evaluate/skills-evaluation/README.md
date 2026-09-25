@@ -157,7 +157,11 @@ python inner_loop_eval.py --validate-extraction
 The steps above use the Python SDK. You can also run the two `Builtin.*` skill evaluators from the AgentCore CLI, mirroring the CLI workflow in the [parent evaluation sample](../README.md#agentcore-cli). (`Strands.SkillInvoked` is client-side only and has no CLI equivalent.) Install it:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 > **Target the skill-enabled runtime.** Run these commands against the separate skill-enabled runtime deployed in [step 2](#2-deploy-a-separate-skill-enabled-hr-assistant) — its name and ARN are in this folder's `agent_config.json` (`agent_id` / `agent_arn`), not the default `../utils/agent_config.json`. Substitute that runtime name for `<skill-runtime>` below.

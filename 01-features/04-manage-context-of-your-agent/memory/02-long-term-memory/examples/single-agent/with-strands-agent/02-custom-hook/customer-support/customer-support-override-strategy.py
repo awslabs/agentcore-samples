@@ -858,7 +858,7 @@ except Exception as e:
 # ### Install the CLI
 #
 # ```bash
-# npm install -g @aws/agentcore@0.11.0
+# npm install -g @aws/agentcore@0.30.0
 # agentcore --version   # should print 0.11.0
 # ```
 #

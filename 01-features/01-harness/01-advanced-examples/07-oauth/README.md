@@ -136,10 +136,14 @@ The script now raises on those frames instead.
 
 ## AgentCore CLI
 
-The CLI supports both inbound JWT auth and outbound OAuth2 credential providers via the preview channel:
+The CLI supports both inbound JWT auth and outbound OAuth2 credential providers via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name myauthagent --model-provider bedrock
 ```
 

@@ -1,16 +1,15 @@
-import logging
-import uvicorn
-import os
-import json
 import asyncio
-import requests
+import json
+import logging
+import os
 from datetime import datetime
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
+import requests
+import uvicorn
 from agent import handle_websocket_session
-
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # ---------------------------------------------------------------------------
 # Large-event splitting (adapted from Sonic server for Strands event format)
@@ -105,8 +104,8 @@ def get_imdsv2_token():
         )
         if response.status_code == 200:
             return response.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -161,6 +160,27 @@ def get_credentials_from_imds():
         result["error"] = str(e)
 
     return result
+
+
+def refresh_credentials_now():
+    """Re-fetch IMDS credentials before starting a session.
+
+    AgentCore Runtime V2 snapshots the container at deploy time and restores that
+    snapshot for later sessions, so credentials captured at application startup are
+    frozen and will have expired. Without this, Bedrock returns 403
+    ExpiredTokenException on the first call of a restored session.
+    """
+    imds_result = get_credentials_from_imds()
+    if not imds_result["success"]:
+        logger.error(f"Could not refresh credentials from IMDS: {imds_result.get('error')}")
+        return False
+
+    creds = imds_result["credentials"]
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
+    logger.info(f"Credentials refreshed for session (expire {creds.get('Expiration')})")
+    return True
 
 
 async def refresh_credentials_from_imds():
@@ -251,7 +271,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global _credential_refresh_task
 
     logger.info("🛑 Shutting down...")
 
@@ -301,6 +320,10 @@ async def invocations(request: dict):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+
+    # Under Runtime V2 the container may have been restored from a deploy-time
+    # snapshot, so refresh credentials before doing any AWS work in this session.
+    refresh_credentials_now()
 
     async def chunked_send_json(event_dict):
         """Send output events, splitting large audio payloads into smaller chunks."""

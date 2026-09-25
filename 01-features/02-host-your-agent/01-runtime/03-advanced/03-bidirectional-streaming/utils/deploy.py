@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Amazon Bedrock AgentCore Deployment Script using Starter Toolkit
+Amazon Bedrock AgentCore Runtime V2 Deployment Script
 
-This script is a Python-based deployment
-using the bedrock-agentcore-starter-toolkit.
+Builds the agent container remotely with CodeBuild (linux/arm64) and creates the
+agent runtime on AgentCore Runtime V2.
 
 Usage:
     python deploy.py <websocket-folder> [options]
@@ -18,21 +18,34 @@ Examples:
 import argparse
 import json
 import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 import time
 import traceback
-import yaml
-from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from pathlib import Path
 
 import boto3
+import yaml
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
+
+# The starter toolkit is used only to build the ARM64 image and push it to ECR.
+# The runtime itself is created with boto3 so that platformVersion="V2" can be set,
+# which no version of the toolkit or the AgentCore CLI currently exposes.
 from bedrock_agentcore_starter_toolkit.operations.runtime.launch import (
-    launch_bedrock_agentcore,
+    _execute_codebuild_workflow,
 )
+from bedrock_agentcore_starter_toolkit.utils.runtime.config import load_config
+from botocore.exceptions import ClientError
+
+# AgentCore Runtime V2 prepares and snapshots the execution environment during create,
+# so create does not complete immediately and there is no boto3 waiter for it. Poll
+# GetAgentRuntime instead, and keep the timeout generous rather than tuned to an
+# observed duration, which varies with image size and region.
+PLATFORM_VERSION = "V2"
+RUNTIME_POLL_SECONDS = 10
+RUNTIME_CREATE_TIMEOUT_SECONDS = 900
 
 
 class Colors:
@@ -92,7 +105,7 @@ class AgentCoreDeployer:
         """Print warning message"""
         self._print(f"⚠️  {message}", Colors.YELLOW)
 
-    def _run_command(self, cmd: list, cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+    def _run_command(self, cmd: list, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
         """Run a shell command and return the result"""
         try:
             result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check)
@@ -104,7 +117,7 @@ class AgentCoreDeployer:
                 raise
             return e
 
-    def create_memory(self) -> Optional[Dict]:
+    def create_memory(self) -> dict | None:
         """Create an AgentCore Memory resource for the strands agent."""
         if self.websocket_folder != "02-strands-ws":
             return None
@@ -126,8 +139,9 @@ class AgentCoreDeployer:
                         memory_id = mem["id"]
                         self._info(f"Found existing memory: {memory_name} (ID: {memory_id})")
                         return {"memory_id": memory_id, "memory_name": memory_name}
-            except Exception:
-                pass  # list may not be supported or empty, proceed to create
+            except Exception as e:
+                # list may not be supported or empty, proceed to create
+                self._info(f"Could not list existing memories ({e}); creating a new one")
 
             memory = client.create_memory(
                 name=memory_name,
@@ -148,7 +162,7 @@ class AgentCoreDeployer:
             self._info("You can create memory manually and set MEMORY_ID env var")
             return None
 
-    def deploy_mcp_gateway(self) -> Optional[Dict]:
+    def deploy_mcp_gateway(self) -> dict | None:
         """Deploy MCP Gateways (for strands and langchain agents that use MCP tools)"""
         if self.websocket_folder not in (
             "02-strands-ws",
@@ -233,7 +247,7 @@ class AgentCoreDeployer:
                                 self._success(f"Retrieved existing gateway: {gw['gatewayId']}")
                                 break
                         if not gateway:
-                            raise Exception(f"Gateway '{gateway_name}' exists but could not be found")
+                            raise RuntimeError(f"Gateway '{gateway_name}' exists but could not be found")
                     else:
                         raise
 
@@ -437,14 +451,136 @@ class AgentCoreDeployer:
 
         return role_arn
 
+    def _find_runtime_id(self, client, runtime_name: str) -> "str | None":
+        """Look up an existing runtime by name, since the API is keyed on id."""
+        next_token = None
+        while True:
+            kwargs = {"nextToken": next_token} if next_token else {}
+            response = client.list_agent_runtimes(**kwargs)
+            for runtime in response.get("agentRuntimes", []):
+                if runtime.get("agentRuntimeName") == runtime_name:
+                    return runtime.get("agentRuntimeId")
+            next_token = response.get("nextToken")
+            if not next_token:
+                return None
+
+    def _wait_for_runtime_ready(self, client, runtime_id: str) -> dict:
+        """Poll until the runtime is READY, or raise if it enters a failed state."""
+        started = time.time()
+        status = None
+
+        while time.time() - started < RUNTIME_CREATE_TIMEOUT_SECONDS:
+            runtime = client.get_agent_runtime(agentRuntimeId=runtime_id)
+            status = runtime.get("status")
+            elapsed = int(time.time() - started)
+
+            if status == "READY":
+                self._success(f"Runtime READY after {elapsed}s")
+                return runtime
+
+            # Match on a FAILED suffix rather than listing every failure status.
+            if status and status.upper().endswith("FAILED"):
+                # GetAgentRuntime returns failureReason; statusReason is not a member of that
+                # output shape. Keep both so this still reports something if it is renamed.
+                reason = runtime.get("failureReason") or runtime.get("statusReason") or "no reason reported"
+                self._error(f"Runtime entered {status} after {elapsed}s: {reason}")
+                if not self._runtime_log_hint(runtime_id):
+                    self._info("No container log stream was produced, which usually means")
+                    self._info("provisioning failed before the container started. Check the")
+                    self._info("execution role's permissions.")
+                raise RuntimeError(f"Runtime {status}: {reason}")
+
+            self._info(f"   [{elapsed:>4}s] {status}")
+            time.sleep(RUNTIME_POLL_SECONDS)
+
+        raise RuntimeError(
+            f"Runtime did not become READY within {RUNTIME_CREATE_TIMEOUT_SECONDS}s (last status: {status})"
+        )
+
+    def _runtime_log_hint(self, runtime_id: str) -> bool:
+        """Report whether the container produced logs, which narrows down a failure."""
+        try:
+            logs = boto3.client("logs", region_name=self.aws_region)
+            group = f"/aws/bedrock-agentcore/runtimes/{runtime_id}-DEFAULT"
+            streams = logs.describe_log_streams(logGroupName=group).get("logStreams", [])
+            names = [s.get("logStreamName", "") for s in streams]
+            # build-logs-* holds container output from the V2 snapshot phase.
+            container_streams = [n for n in names if n.startswith("build-logs") or "microvm" in n]
+            if container_streams:
+                self._info("Container logs are available at:")
+                self._info(f"   log group:  {group}")
+                for name in container_streams:
+                    self._info(f"   log stream: {name}")
+                return True
+            return False
+        except Exception:
+            return False
+
+    def create_runtime_v2(
+        self,
+        container_uri: str,
+        role_arn: str,
+        env_vars: dict,
+    ) -> dict:
+        """Create or update the agent runtime on AgentCore Runtime V2 using boto3."""
+        self._print(f"\n🚀 Creating AgentCore Runtime ({PLATFORM_VERSION})...", Colors.YELLOW)
+
+        client = boto3.client("bedrock-agentcore-control", region_name=self.aws_region)
+
+        request = {
+            "agentRuntimeName": self.agent_name,
+            "agentRuntimeArtifact": {"containerConfiguration": {"containerUri": container_uri}},
+            "roleArn": role_arn,
+            "networkConfiguration": {"networkMode": "PUBLIC"},
+            "protocolConfiguration": {"serverProtocol": "HTTP"},
+            "platformVersion": PLATFORM_VERSION,
+        }
+        if env_vars:
+            request["environmentVariables"] = env_vars
+
+        existing_id = self._find_runtime_id(client, self.agent_name)
+
+        if existing_id:
+            self._info(f"Runtime {self.agent_name} exists, updating it ({existing_id})")
+            # UpdateAgentRuntime is keyed on agentRuntimeId and does not accept
+            # agentRuntimeName, so it has to be removed from the request.
+            update_request = {k: v for k, v in request.items() if k != "agentRuntimeName"}
+            try:
+                client.update_agent_runtime(agentRuntimeId=existing_id, **update_request)
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ConflictException":
+                    self._error("Runtime is still changing state. Wait for it to settle and retry.")
+                raise
+            runtime_id = existing_id
+        else:
+            response = client.create_agent_runtime(**request)
+            runtime_id = response["agentRuntimeId"]
+            self._success(f"Runtime create started: {runtime_id}")
+
+        self._info("Waiting for runtime to become READY (V2 takes a few minutes)...")
+        runtime = self._wait_for_runtime_ready(client, runtime_id)
+
+        # Neither create nor update echoes platformVersion, so confirm it from Get.
+        reported = runtime.get("platformVersion", "<absent>")
+        if reported != PLATFORM_VERSION:
+            self._warning(f"Expected platformVersion {PLATFORM_VERSION} but runtime reports {reported}")
+        else:
+            self._success(f"Confirmed platformVersion: {reported}")
+
+        return {
+            "agent_arn": runtime["agentRuntimeArn"],
+            "agent_id": runtime_id,
+            "platform_version": reported,
+        }
+
     def deploy_agent(
         self,
         role_arn: str,
-        gateway_info: Optional[Dict] = None,
-        memory_info: Optional[Dict] = None,
-    ) -> Dict:
-        """Deploy agent using starter toolkit"""
-        self._print("\n🚀 Deploying agent to AgentCore Runtime...", Colors.YELLOW)
+        gateway_info: dict | None = None,
+        memory_info: dict | None = None,
+    ) -> dict:
+        """Build the image, then create the runtime on AgentCore Runtime V2"""
+        self._print(f"\n🚀 Deploying agent to AgentCore Runtime {PLATFORM_VERSION}...", Colors.YELLOW)
 
         # Change to websocket directory
         original_dir = Path.cwd()
@@ -525,50 +661,56 @@ class AgentCoreDeployer:
 
             self._success(f"Configuration created: {config_path}")
 
-            # Determine deployment mode
-            local = self.args.local
-            use_codebuild = not self.args.local_build
+            # The containers read the region from the environment to build their Bedrock
+            # endpoint, and fall back to a hardcoded default if it is unset. Samples 01 and
+            # 03 read AWS_DEFAULT_REGION; sample 04 reads AWS_REGION. Set both so the
+            # deploy region always wins, whichever variable a given sample happens to read.
+            env_vars.setdefault("AWS_DEFAULT_REGION", self.aws_region)
+            env_vars.setdefault("AWS_REGION", self.aws_region)
 
-            if local:
-                self._info("Deploying with local mode (requires Docker)")
-            elif not use_codebuild:
-                self._info("Deploying with local build mode (requires Docker)")
-            else:
-                self._info("Deploying with CodeBuild (no Docker required)")
+            # Step 1: build the ARM64 image with CodeBuild and push it to ECR.
+            # ecr_only=True stops the toolkit before it creates a runtime, so we can
+            # create the runtime ourselves with platformVersion="V2".
+            self._print("\n🏗️  Building container image (CodeBuild ARM64)...", Colors.YELLOW)
+            self._info("This may take several minutes...")
 
-            self._info("Launching agent (this may take a few minutes)...")
+            project_config = load_config(config_path)
+            agent_config = project_config.agents[self.agent_name]
 
-            # Use starter toolkit to launch
-            result = launch_bedrock_agentcore(
+            _, container_uri, _, _ = _execute_codebuild_workflow(
                 config_path=config_path,
                 agent_name=self.agent_name,
-                local=local,
-                use_codebuild=use_codebuild,
-                env_vars=env_vars,
-                auto_update_on_conflict=True,
+                agent_config=agent_config,
+                project_config=project_config,
+                ecr_only=True,
             )
 
-            # Extract agent information from result
-            agent_arn = result.agent_arn
-            agent_id = result.agent_id
+            self._success(f"Image pushed: {container_uri}")
 
-            if not agent_arn:
-                raise RuntimeError("Failed to get agent ARN from deployment result")
+            # Step 2: create the runtime on V2 with boto3.
+            runtime_info = self.create_runtime_v2(
+                container_uri=container_uri,
+                role_arn=role_arn,
+                env_vars=env_vars,
+            )
 
             self._success("Agent deployed successfully!")
-            self._info(f"   Agent ARN: {agent_arn}")
-            self._info(f"   Agent ID: {agent_id}")
+            self._info(f"   Agent ARN: {runtime_info['agent_arn']}")
+            self._info(f"   Agent ID: {runtime_info['agent_id']}")
+            self._info(f"   Platform:  {runtime_info['platform_version']}")
 
             return {
-                "agent_arn": agent_arn,
+                "agent_arn": runtime_info["agent_arn"],
                 "agent_runtime_name": self.agent_name,
                 "role_arn": role_arn,
+                "platform_version": runtime_info["platform_version"],
+                "container_uri": container_uri,
             }
 
         finally:
             os.chdir(original_dir)
 
-    def save_configuration(self, deployment_info: Dict):
+    def save_configuration(self, deployment_info: dict):
         """Save deployment configuration to JSON file"""
         self._print("\n💾 Saving configuration...", Colors.YELLOW)
 
@@ -581,7 +723,9 @@ class AgentCoreDeployer:
             "agent_runtime_name": deployment_info["agent_runtime_name"],
             "agent_arn": deployment_info["agent_arn"],
             "iam_role_arn": deployment_info["role_arn"],
-            "deployment_method": "agentcore-starter-toolkit",
+            "platform_version": deployment_info.get("platform_version"),
+            "container_uri": deployment_info.get("container_uri"),
+            "deployment_method": "codebuild-image + boto3-runtime-v2",
         }
 
         # Include memory info if available
@@ -593,7 +737,7 @@ class AgentCoreDeployer:
 
         self._success(f"Configuration saved to {self.config_file}")
 
-    def print_summary(self, deployment_info: Dict):
+    def print_summary(self, deployment_info: dict):
         """Print deployment summary"""
         self._print("\n" + "=" * 80, Colors.GREEN)
         self._print("✅ Deployment Complete!", Colors.GREEN)
@@ -693,14 +837,16 @@ class AgentCoreDeployer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Deploy agents to Amazon Bedrock AgentCore Runtime using starter toolkit",
+        description="Deploy agents to Amazon Bedrock AgentCore Runtime V2",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python deploy.py 01-bedrock-sonic-ws
   python deploy.py 02-strands-ws --region us-west-2
   python deploy.py 03-langchain-transcribe-polly-ws --agent-name my-langchain-agent
-  python deploy.py 01-bedrock-sonic-ws --agent-name my-sonic-agent --local-build
+
+The image is always built remotely with CodeBuild, because AgentCore requires
+linux/arm64 and no local Docker is needed.
 
 Environment Variables:
   ACCOUNT_ID    AWS Account ID (required if not provided via --account-id)
@@ -715,8 +861,6 @@ Environment Variables:
             "02-strands-ws",
             "03-langchain-transcribe-polly-ws",
             "04-pipecat-sonic-ws",
-            "echo",
-            "webrtc-kvs",
         ],
         help="Websocket folder to deploy",
     )
@@ -726,14 +870,6 @@ Environment Variables:
     parser.add_argument("--region", help="AWS Region (default: us-east-1 or AWS_REGION env var)")
 
     parser.add_argument("--agent-name", help="Custom agent name (default: bidi_<folder>_agent)")
-
-    parser.add_argument("--local", action="store_true", help="Build and run locally (requires Docker)")
-
-    parser.add_argument(
-        "--local-build",
-        action="store_true",
-        help="Build locally, deploy to cloud (requires Docker)",
-    )
 
     args = parser.parse_args()
 
