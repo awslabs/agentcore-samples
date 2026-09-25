@@ -58,9 +58,10 @@ AgentCore Payments enforces the session budget and expiry outside model context.
 - Only the premium specialist receives the application-bound payment tool
 - Framework-agnostic AgentCore Payments integration for OpenAI Agents SDK
 - Exact-host and public-address checks before merchant access
-- Stable idempotency token and bounded settlement retries
+- One signing attempt per source per run, with explicit handling of unknown payment outcomes
 - Optional human approval before a paid tool call
-- Guided notebook and a single live end-to-end verification runner
+- Python scripts for offline inspection, research, session creation, verification, and cleanup
+- Current GA AgentCore Payments APIs and SDK
 
 ## Running the Use Cases
 
@@ -105,8 +106,11 @@ cd pay-for-research-with-openai-agent
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.sample .env
+python inspect_sample.py
 python create_payment_session.py --budget 0.25 --expiry-minutes 60
+export PAYMENT_SESSION_ID=<printed-session-id>
 python pay_for_research.py "Assess the material near-term drivers and risks for AMZN."
+python cleanup_payment_session.py
 ```
 
 ---

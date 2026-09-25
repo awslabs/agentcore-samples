@@ -7,7 +7,9 @@ import asyncio
 import base64
 import json
 import os
-from typing import NoReturn
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, NoReturn
 
 import httpx
 from agents import Runner, ToolCallItem
@@ -25,14 +27,11 @@ class DisabledPaymentClient:
         raise AssertionError("The model smoke test must not query payment state")
 
 
-async def model_smoke() -> dict[str, str | bool | None]:
+async def model_smoke(url: str) -> dict[str, str | bool | None]:
     runtime = configure_bedrock_openai()
     agent = build_agent(
         DisabledPaymentClient(),
-        approved_paid_url=os.getenv(
-            "PAID_RESEARCH_URL",
-            "https://sandbox.node4all.com/v1/x402-test",
-        ),
+        approved_paid_url=url,
         model=runtime.model,
         include_web_search=runtime.include_web_search,
     )
@@ -61,7 +60,7 @@ After the public specialist returns, reply with exactly PAID_RESEARCH_MODEL_OK."
     }
 
 
-def merchant_challenge(url: str) -> dict[str, str | int | bool | None]:
+def merchant_challenge(url: str) -> dict[str, Any]:
     response = httpx.get(url, follow_redirects=False, timeout=30.0)
     if response.status_code != 402:
         raise RuntimeError(f"Expected HTTP 402 from test merchant, got {response.status_code}")
@@ -70,21 +69,40 @@ def merchant_challenge(url: str) -> dict[str, str | int | bool | None]:
         body = response.json()
     except json.JSONDecodeError:
         body = {}
-    version = body.get("x402Version") if isinstance(body, dict) else None
+    challenge = body if isinstance(body, dict) else {}
     payment_required = response.headers.get("payment-required")
-    if version is None and payment_required:
+    if not challenge.get("accepts") and payment_required:
         try:
             padding = "=" * (-len(payment_required) % 4)
             decoded = base64.b64decode(payment_required + padding)
             header_challenge = json.loads(decoded)
-            version = header_challenge.get("x402Version")
+            if isinstance(header_challenge, dict):
+                challenge = header_challenge
         except (ValueError, json.JSONDecodeError):
             pass
+    version = challenge.get("x402Version")
+    accepts = challenge.get("accepts")
+    if (
+        version not in (1, 2)
+        or not isinstance(accepts, list)
+        or not accepts
+        or any(not isinstance(offer, dict) or not offer.get("network") for offer in accepts)
+    ):
+        raise RuntimeError("Merchant returned HTTP 402 without a supported x402 challenge")
     return {
         "status": "passed",
         "status_code": response.status_code,
         "x402_version": version,
         "has_payment_required_header": payment_required is not None,
+        "offers": [
+            {
+                "network": offer["network"],
+                "scheme": offer.get("scheme"),
+                "amount_base_units": offer.get("amount", offer.get("maxAmountRequired")),
+                "asset": offer.get("asset"),
+            }
+            for offer in accepts
+        ],
     }
 
 
@@ -106,22 +124,32 @@ def parser() -> argparse.ArgumentParser:
         "--url",
         default=os.getenv(
             "PAID_RESEARCH_URL",
-            "https://sandbox.node4all.com/v1/x402-test",
+            "https://x402-test.genesisblock.ai/api/market-news",
         ),
     )
-    result.add_argument(
+    mode = result.add_mutually_exclusive_group()
+    mode.add_argument(
         "--payment",
         action="store_true",
         help="Execute a real testnet payment; requires configured payment resources",
     )
+    mode.add_argument(
+        "--merchant-only",
+        action="store_true",
+        help="Inspect the x402 challenge and price without AWS credentials, model calls, or payments",
+    )
     return result
 
 
-def main() -> None:
-    load_dotenv()
-    args = parser().parse_args()
+def main(argv: Sequence[str] | None = None) -> None:
+    load_dotenv(Path(__file__).with_name(".env"))
+    args = parser().parse_args(argv)
     report = {
-        "model": asyncio.run(model_smoke()),
+        "model": (
+            {"status": "skipped", "reason": "--merchant-only was supplied"}
+            if args.merchant_only
+            else asyncio.run(model_smoke(args.url))
+        ),
         "merchant_challenge": merchant_challenge(args.url),
     }
     if args.payment:

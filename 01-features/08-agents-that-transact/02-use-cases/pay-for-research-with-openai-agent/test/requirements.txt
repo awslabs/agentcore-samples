@@ -1,6 +1,3 @@
 -r ../requirements.txt
-ipykernel>=6.29.0
-nbclient>=0.10.0
-nbformat>=5.10.0
-pytest>=8.0.0
-ruff>=0.8.0
+pytest>=9.1.1,<10.0
+ruff>=0.16.9,<1.0

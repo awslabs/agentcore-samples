@@ -7,8 +7,9 @@ import asyncio
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
-from agents import Agent, ModelSettings, Runner, WebSearchTool, function_tool, trace
+from agents import Agent, Model, ModelSettings, Runner, WebSearchTool, function_tool, trace
 from bedrock_openai import configure_bedrock_openai
 from dotenv import load_dotenv
 from payment import X402PaymentClient
@@ -25,6 +26,8 @@ Workflow:
   gap remains. Pass that gap and the public evidence it should corroborate.
 - Treat a payment failure or budget rejection as final. Never seek another merchant,
   trial URL, redirect, or payment workaround.
+- A null payment_made means the payment outcome is unknown. Disclose it and stop;
+  never describe it as a free request or request another payment.
 - Do not claim that a specialist ran, a source was checked, or a payment occurred
   unless the corresponding specialist output says so.
 
@@ -44,6 +47,9 @@ PUBLIC_EVIDENCE_INSTRUCTIONS = """Role: Public evidence analyst.
 Research the supplied financial question using public sources only.
 
 - Use web search when it is available.
+- If web search is unavailable, evaluate only evidence supplied in the request.
+  Explicitly report that current public sources could not be retrieved. Do not
+  invent citations or describe remembered information as newly verified evidence.
 - Return a compact evidence report with claim-level URLs.
 - Distinguish direct evidence from inference and note source dates.
 - Name conflicts, stale observations, and material residual evidence gaps.
@@ -59,6 +65,7 @@ You are the only specialist with payment capability.
   The tool intentionally accepts no URL argument.
 - Never seek another merchant, path, redirect, trial, or workaround.
 - Treat a payment failure or budget rejection as final.
+- A null payment_made means the outcome is unknown; report it and do not retry.
 - After a successful fetch, call payment_session_status.
 - Return the source URL, evidence obtained, the gap it closes, conflicts with public
   evidence, payment outcome, and remaining budget.
@@ -87,7 +94,7 @@ def build_agent_team(
     *,
     approved_paid_url: str | None = None,
     require_payment_approval: bool = False,
-    model: str | None = None,
+    model: str | Model | None = None,
     include_web_search: bool = True,
 ) -> ResearchAgentTeam:
     """Build a manager-style team with payment authority isolated to one specialist."""
@@ -133,9 +140,8 @@ def build_agent_team(
                 function_tool(
                     fetch_approved_premium_source,
                     needs_approval=require_payment_approval,
-                    timeout=90.0,
                 ),
-                function_tool(payment_session_status, timeout=30.0),
+                function_tool(payment_session_status),
             ],
         )
         lead_tools.append(
@@ -167,7 +173,7 @@ def build_agent(
     *,
     approved_paid_url: str | None = None,
     require_payment_approval: bool = False,
-    model: str | None = None,
+    model: str | Model | None = None,
     include_web_search: bool = True,
 ) -> Agent:
     """Return the research lead for callers that do not need to inspect the team."""
@@ -216,7 +222,7 @@ async def run_research(
 
     with trace("AgentCore multi-agent paid financial research"):
         result = await Runner.run(agent, prompt)
-        if result.interruptions:
+        while result.interruptions:
             if not approve_interactively:
                 return "Payment approval required; run paused before the paid tool call."
 
@@ -239,10 +245,16 @@ async def run_research(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a budget-bounded OpenAI multi-agent financial research team")
     parser.add_argument("query", help="Research question, company, or market topic")
-    parser.add_argument(
+    paid_source = parser.add_mutually_exclusive_group()
+    paid_source.add_argument(
         "--paid-url",
         default=os.getenv("PAID_RESEARCH_URL"),
         help="Exact approved x402 URL the agent may buy",
+    )
+    paid_source.add_argument(
+        "--public-only",
+        action="store_true",
+        help="Run without a premium specialist, even when PAID_RESEARCH_URL is configured",
     )
     parser.add_argument(
         "--require-payment-approval",
@@ -253,12 +265,12 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    load_dotenv()
+    load_dotenv(Path(__file__).with_name(".env"))
     args = _parser().parse_args(argv)
     output = asyncio.run(
         run_research(
             args.query,
-            paid_url=args.paid_url,
+            paid_url=None if args.public_only else args.paid_url,
             require_payment_approval=args.require_payment_approval,
         )
     )

@@ -6,27 +6,69 @@ import ipaddress
 import json
 import os
 import socket
+import threading
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
+from bedrock_agentcore.payments import PaymentManager
+from bedrock_agentcore.payments.manager import (
+    InsufficientBudget,
+    InvalidPaymentInstrument,
+    PaymentError,
+    PaymentInstrumentNotFound,
+    PaymentSessionExpired,
+    PaymentSessionNotFound,
+)
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError
 
 MAX_BODY_CHARS = 100_000
-GetRequest = Callable[[str, dict[str, str] | None], Any]
+GetRequest = Callable[[httpx.URL, str, dict[str, str] | None], Any]
 Resolver = Callable[[str, int], Sequence[str]]
 
 
-def _http_get(url: str, headers: dict[str, str] | None = None) -> httpx.Response:
-    """Issue a cookie-free GET without following redirects."""
-    with httpx.Client(cookies=None, follow_redirects=False, timeout=30.0) as client:
-        return client.get(url, headers=headers)
+def _http_get(url: httpx.URL, address: str, headers: dict[str, str] | None = None) -> httpx.Response:
+    """Connect to the validated address while verifying TLS for the merchant."""
+    with httpx.Client(verify=True, trust_env=False, follow_redirects=False, timeout=30.0) as client:
+        return client.get(
+            url.copy_with(host=address),
+            headers={**(headers or {}), "Host": url.netloc.decode("ascii")},
+            extensions={"sni_hostname": url.host},
+        )
 
 
 def _resolve(hostname: str, port: int) -> Sequence[str]:
     return [entry[4][0] for entry in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)]
+
+
+def payment_region(manager_arn: str) -> str:
+    """Use the manager's region, independently of the Bedrock model region."""
+    parts = manager_arn.split(":", 5)
+    if (
+        len(parts) != 6
+        or parts[0] != "arn"
+        or parts[2] != "bedrock-agentcore"
+        or not parts[3]
+        or not parts[5].startswith("payment-manager/")
+    ):
+        raise ValueError("PAYMENT_MANAGER_ARN must be an AgentCore payment-manager ARN")
+    return parts[3]
+
+
+def create_payment_manager(manager_arn: str) -> PaymentManager:
+    """Create a GA SDK client with bounded timeouts and standard AWS retries."""
+    return PaymentManager(
+        payment_manager_arn=manager_arn,
+        region_name=payment_region(manager_arn),
+        boto_client_config=Config(
+            connect_timeout=10,
+            read_timeout=30,
+            retries={"mode": "standard", "total_max_attempts": 2},
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -37,7 +79,6 @@ class PaymentConfig:
     user_id: str
     allowed_hosts: frozenset[str]
     region: str = "us-east-1"
-    max_payment_attempts: int = 5
 
     @classmethod
     def from_env(cls) -> PaymentConfig:
@@ -60,15 +101,10 @@ class PaymentConfig:
         if not allowed_hosts:
             raise ValueError("PAID_RESEARCH_ALLOWED_HOSTS must contain an exact host")
 
-        attempts = int(os.getenv("X402_MAX_PAYMENT_ATTEMPTS", "5"))
-        if not 1 <= attempts <= 10:
-            raise ValueError("X402_MAX_PAYMENT_ATTEMPTS must be between 1 and 10")
-
         return cls(
             **values,
             allowed_hosts=allowed_hosts,
-            region=os.getenv("AWS_REGION", "us-east-1"),
-            max_payment_attempts=attempts,
+            region=payment_region(values["manager_arn"]),
         )
 
 
@@ -89,51 +125,80 @@ class X402PaymentClient:
         self.get = get
         self.resolver = resolver
         self.token_factory = token_factory or (lambda: str(uuid.uuid4()))
+        self._results: dict[str, str] = {}
+        # PaymentManager is not thread-safe. Also prevent repeated tool calls
+        # from signing for the same source twice during one research run.
+        self._lock = threading.Lock()
 
     @classmethod
     def from_env(cls) -> X402PaymentClient:
-        from bedrock_agentcore.payments import PaymentManager
-
         config = PaymentConfig.from_env()
-        return cls(
-            config,
-            PaymentManager(
-                payment_manager_arn=config.manager_arn,
-                region_name=config.region,
-            ),
-        )
+        return cls(config, create_payment_manager(config.manager_arn))
 
     @staticmethod
     def _json(**values: Any) -> str:
         return json.dumps(values, default=str, sort_keys=True)
 
-    def _validate_url(self, url: str) -> str | None:
-        parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.hostname:
-            return "Paid research requires an HTTPS URL with a hostname"
-        if parsed.username or parsed.password:
-            return "URLs containing credentials are not allowed"
+    def _validate_url(self, url: str) -> tuple[httpx.URL, str]:
+        try:
+            parsed = httpx.URL(url)
+        except httpx.InvalidURL as error:
+            raise ValueError("Invalid payment URL") from error
+        if parsed.scheme != "https" or not parsed.host:
+            raise ValueError("Paid research requires an HTTPS URL with a hostname")
+        if parsed.userinfo or "%" in parsed.host:
+            raise ValueError("URL credentials and scoped IP addresses are not allowed")
+        port = parsed.port if parsed.port is not None else 443
+        if not 1 <= port <= 65535:
+            raise ValueError("URL port must be between 1 and 65535")
 
-        hostname = parsed.hostname.lower().rstrip(".")
+        hostname = parsed.host.lower().rstrip(".")
         if hostname not in self.config.allowed_hosts:
-            return f"Host is not approved for paid research: {hostname}"
+            raise ValueError(f"Host is not approved for paid research: {hostname}")
 
         try:
-            addresses = self.resolver(hostname, parsed.port or 443)
-        except OSError:
-            return "Could not resolve the merchant hostname"
+            addresses = self.resolver(hostname, port)
+        except OSError as error:
+            raise ValueError("Could not resolve the merchant hostname") from error
         if not addresses:
-            return "Merchant hostname resolved to no addresses"
-        if any(not ipaddress.ip_address(address).is_global for address in addresses):
-            return "Merchant hostname resolves to a private or non-routable address"
-        return None
+            raise ValueError("Merchant hostname resolved to no addresses")
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if (
+                not ip.is_global
+                or ip.is_multicast
+                or ip.is_reserved
+                or (isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None)
+            ):
+                raise ValueError("Merchant hostname resolves to a private or non-routable address")
+        address = next((address for address in addresses if ipaddress.ip_address(address).version == 4), addresses[0])
+        return parsed, address
 
     def fetch(self, url: str) -> str:
-        """GET an approved URL, settle a 402, and return structured JSON."""
-        if error := self._validate_url(url):
-            return self._json(ok=False, source_url=url, error=error)
+        """Fetch once per source per run, retaining successes and terminal failures."""
+        with self._lock:
+            if url not in self._results:
+                self._results[url] = self._fetch_once(url)
+            return self._results[url]
 
-        response = self.get(url, None)
+    def _fetch_once(self, url: str) -> str:
+        """Make at most one signing attempt and one GET with the resulting proof."""
+        try:
+            parsed, address = self._validate_url(url)
+        except ValueError as error:
+            return self._json(ok=False, source_url=url, error=str(error), payment_made=False, payment_attempts=0)
+
+        try:
+            response = self.get(parsed, address, None)
+        except httpx.RequestError:
+            return self._json(
+                ok=False,
+                source_url=url,
+                error="Initial merchant request failed",
+                payment_made=False,
+                payment_attempts=0,
+            )
+
         if response.status_code != 402:
             return self._json(
                 ok=200 <= response.status_code < 300,
@@ -141,60 +206,81 @@ class X402PaymentClient:
                 status_code=response.status_code,
                 body=response.text[:MAX_BODY_CHARS],
                 payment_made=False,
+                payment_attempts=0,
             )
 
-        client_token = self.token_factory()
-        for attempt in range(1, self.config.max_payment_attempts + 1):
-            try:
-                payment_header = self.payment_manager.generate_payment_header(
-                    payment_instrument_id=self.config.instrument_id,
-                    payment_session_id=self.config.session_id,
-                    user_id=self.config.user_id,
-                    client_token=client_token,
-                    payment_required_request={
-                        "statusCode": response.status_code,
-                        "headers": dict(response.headers),
-                        "body": response.text,
-                    },
-                )
-                if not payment_header:
-                    raise ValueError("AgentCore returned an empty payment header")
-                response = self.get(url, payment_header)
-            except Exception as exc:  # noqa: BLE001 - SDK exposes provider-specific exceptions.
-                return self._json(
-                    ok=False,
-                    source_url=url,
-                    status_code=402,
-                    error=f"Payment failed: {type(exc).__name__}: {exc}",
-                    payment_attempts=attempt,
-                )
+        try:
+            payment_header = self.payment_manager.generate_payment_header(
+                payment_instrument_id=self.config.instrument_id,
+                payment_session_id=self.config.session_id,
+                user_id=self.config.user_id,
+                client_token=self.token_factory(),
+                payment_required_request={
+                    "statusCode": response.status_code,
+                    "headers": dict(response.headers),
+                    "body": response.text,
+                },
+            )
+            if not payment_header:
+                raise PaymentError("AgentCore returned an empty payment header")
+        except (
+            InsufficientBudget,
+            InvalidPaymentInstrument,
+            PaymentInstrumentNotFound,
+            PaymentSessionExpired,
+            PaymentSessionNotFound,
+        ) as error:
+            return self._json(
+                ok=False,
+                source_url=url,
+                status_code=402,
+                error=f"Payment rejected: {type(error).__name__}",
+                payment_made=False,
+                payment_attempts=1,
+            )
+        except (PaymentError, BotoCoreError):
+            return self._json(
+                ok=False,
+                source_url=url,
+                error="Payment proof generation failed; inspect the session before trying again",
+                payment_made=None,
+                payment_attempts=1,
+            )
 
-            if response.status_code != 402:
-                paid = 200 <= response.status_code < 300
-                return self._json(
-                    ok=paid,
-                    source_url=url,
-                    status_code=response.status_code,
-                    body=response.text[:MAX_BODY_CHARS],
-                    payment_made=paid,
-                    payment_attempts=attempt,
-                )
+        try:
+            response = self.get(parsed, address, payment_header)
+        except httpx.RequestError:
+            return self._json(
+                ok=False,
+                source_url=url,
+                error="Merchant request failed after proof generation; payment outcome is unknown. Do not retry.",
+                payment_made=None,
+                payment_attempts=1,
+            )
 
-        return self._json(
-            ok=False,
-            source_url=url,
-            status_code=402,
-            error="Merchant still returned 402 after the bounded settlement retries",
-            payment_made=False,
-            payment_attempts=self.config.max_payment_attempts,
-        )
+        accepted = 200 <= response.status_code < 300
+        result = {
+            "ok": accepted,
+            "source_url": url,
+            "status_code": response.status_code,
+            "body": response.text[:MAX_BODY_CHARS],
+            "payment_made": True if accepted else None,
+            "payment_attempts": 1,
+        }
+        if not accepted:
+            result["error"] = (
+                "Merchant did not return paid content; payment outcome is unknown. "
+                "Inspect the session before trying again."
+            )
+        return self._json(**result)
 
     def session_status(self) -> str:
         """Return budget status without exposing wallet or session identifiers."""
-        session = self.payment_manager.get_payment_session(
-            payment_session_id=self.config.session_id,
-            user_id=self.config.user_id,
-        )
+        with self._lock:
+            session = self.payment_manager.get_payment_session(
+                payment_session_id=self.config.session_id,
+                user_id=self.config.user_id,
+            )
         maximum = session.get("limits", {}).get("maxSpendAmount", {})
         available = session.get("availableLimits", {}).get("availableSpendAmount", {})
         return self._json(
