@@ -1,5 +1,4 @@
 import asyncio
-import httpx
 import os
 import threading
 import time
@@ -8,6 +7,8 @@ from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+import httpx
 
 # Patch httpx at the request level to inject User-Agent header
 # This ensures ALL HTTP requests have the User-Agent header, including OAuth discovery calls
@@ -39,11 +40,11 @@ def _patched_httpx_request_init(self, method, url, *args, **kwargs):
 httpx.Request.__init__ = _patched_httpx_request_init
 
 # Now import MCP modules - they will use patched httpx
-from mcp.client.auth import OAuthClientProvider, TokenStorage  # noqa: E402
-from mcp.client.session import ClientSession  # noqa: E402
-from mcp.client.sse import sse_client  # noqa: E402
-from mcp.client.streamable_http import streamablehttp_client  # noqa: E402
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken  # noqa: E402
+from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 
 
 class InMemoryTokenStorage(TokenStorage):
@@ -117,7 +118,6 @@ class CallbackHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Suppress default logging."""
-        pass
 
 
 class CallbackServer:
@@ -162,9 +162,9 @@ class CallbackServer:
             if self.callback_data["authorization_code"]:
                 return self.callback_data["authorization_code"]
             elif self.callback_data["error"]:
-                raise Exception(f"OAuth error: {self.callback_data['error']}")
+                raise Exception(f"OAuth error: {self.callback_data['error']}")  # noqa: TRY002
             time.sleep(0.1)
-        raise Exception("Timeout waiting for OAuth callback")
+        raise Exception("Timeout waiting for OAuth callback")  # noqa: TRY002
 
     def get_state(self):
         """Get the received state parameter."""
@@ -292,7 +292,7 @@ class SimpleAuthClient:
                 ) as (read_stream, write_stream, get_session_id):
                     await self._run_session(read_stream, write_stream, get_session_id)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ Failed to connect: {e}")
             import traceback
 
@@ -334,7 +334,7 @@ class SimpleAuthClient:
                     print()
             else:
                 print("No tools available")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ Failed to list tools: {e}")
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None):
@@ -354,7 +354,7 @@ class SimpleAuthClient:
                         print(content)
             else:
                 print(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ Failed to call tool '{tool_name}': {e}")
 
     async def invoke_mcp_server(self):
@@ -413,8 +413,25 @@ async def main(agent_arn, base_endpoint, auth0_audience):
 
 
 def run_test():
-    """CLI entry point for uv script."""
-    asyncio.run(main())
+    """CLI entry point for uv script.
+
+    Reads the configuration the README and invoke.py document as environment
+    variables (AGENT_ARN, AUTH0_AUDIENCE) and derives the AgentCore data-plane
+    endpoint from the ARN's region, then hands them to main().
+    """
+    agent_arn = os.getenv("AGENT_ARN", "")
+    auth0_audience = os.getenv("AUTH0_AUDIENCE", "")
+
+    # Derive the data-plane endpoint from the ARN region:
+    # arn:aws:bedrock-agentcore:<region>:<account>:runtime/<id>
+    base_endpoint = os.getenv("MCP_BASE_ENDPOINT", "")
+    if not base_endpoint and agent_arn:
+        parts = agent_arn.split(":")
+        region = parts[3] if len(parts) > 3 else ""
+        if region:
+            base_endpoint = f"https://bedrock-agentcore.{region}.amazonaws.com"
+
+    asyncio.run(main(agent_arn, base_endpoint, auth0_audience))
 
 
 if __name__ == "__main__":
