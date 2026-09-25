@@ -108,7 +108,7 @@ The lifecycle is the same handful of calls as tutorial 01, plus the execution ro
     "customMemoryStrategy": {            # StrategyType.CUSTOM.value
         "name": "ClinicalFactsOverride",
         "description": "Semantic extraction overridden for clinical intake facts",
-        "namespaces": ["/patients/{actorId}/clinical-facts/"],
+        "namespaceTemplates": ["/patients/{actorId}/clinical-facts/"],
         "configuration": {
             "semanticOverride": {        # wraps the built-in Semantic strategy
                 "extraction": {

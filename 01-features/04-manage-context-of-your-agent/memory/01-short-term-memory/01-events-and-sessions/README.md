@@ -9,6 +9,9 @@ Events are the atomic unit of short-term memory. Each event is **immutable**, **
 - `GetEvent` fetches one event in full
 - `ListSessions` discovers prior sessions for an actor
 
+> Optionally, you can use your framework's **session manager / checkpointer** to make these calls on your
+> behalf. See [06-usage-patterns.md](../../00-getting-started/06-usage-patterns.md).
+
 ## Run
 
 ```bash

@@ -275,6 +275,7 @@ plan/
 # Generated configuration and result files
 **/agents_config.json
 **/gateway_config.json
+**/setup_config.json
 **/config.json
 **/evals_results/
 **/results/
@@ -284,6 +285,8 @@ plan/
 **/Dockerfile
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/app/claimsagent/Dockerfile
 !01-features/02-host-your-agent/01-runtime/04-coding-agents/06-codex-with-efs/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/agent/Dockerfile
+!01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*
@@ -325,3 +328,20 @@ plan/
 
 # Blog post drafts
 02-use-cases/data-analyst-conversational-assistant/blog-*
+
+# Consent Portal pen-test working document (internal; upstream source for
+# 01-features/.../authorization-code-flow/consent-portal/)
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/pen-test-details.md
+
+# Locally-staged SDK wheels for the Consent Portal walkthrough (~15 MB each).
+# portal.md floors boto3/botocore at 1.43.88 in pyproject.toml instead; these are
+# only a convenience for offline installs and must not be committed.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/*.whl
+
+# In-progress target guidance folders — only atlassian/ and github/ ship for now.
+# The rest are boilerplate pending per-server platform setup + tool schema.
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/aws/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/box/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/datadog/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/glean/
+01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/snowflake/

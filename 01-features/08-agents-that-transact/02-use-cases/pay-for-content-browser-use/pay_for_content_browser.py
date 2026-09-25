@@ -17,7 +17,7 @@ Usage:
 Prerequisites:
     - bash setup_roles.sh        (creates the four IAM roles — once per account)
     - cp .env.sample .env        (fill in CDP credentials, role ARNs, CONTENT_DISTRIBUTION_URL)
-    - npm install -g @aws/agentcore
+    - npm install -g @aws/agentcore@0.30.0
     - AWS CDK v2 installed
     - Content provider deployed: cd content-provider && PAY_TO=0x<wallet> bash deploy.sh
       then set CONTENT_DISTRIBUTION_URL in .env to the printed CloudFront URL
@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import boto3
 from boto3.session import Session
@@ -146,12 +146,12 @@ def assume_role(role_arn: str, session_name: str) -> Session:
 
 
 print("Assuming ControlPlaneRole...")
-cp_session = assume_role(CONTROL_PLANE_ROLE_ARN, f"cp-setup-{int(datetime.now().timestamp())}")
+cp_session = assume_role(CONTROL_PLANE_ROLE_ARN, f"cp-setup-{int(datetime.now(timezone.utc).timestamp())}")
 cp_client = cp_session.client("bedrock-agentcore-control", endpoint_url=CP_ENDPOINT)
 print("CP client ready")
 
 print("Assuming ManagementRole...")
-mgmt_session = assume_role(MANAGEMENT_ROLE_ARN, f"payments-mgmt-{int(datetime.now().timestamp())}")
+mgmt_session = assume_role(MANAGEMENT_ROLE_ARN, f"payments-mgmt-{int(datetime.now(timezone.utc).timestamp())}")
 mgmt_client = mgmt_session.client("bedrock-agentcore", endpoint_url=DP_ENDPOINT)
 print("Management client ready")
 
@@ -265,7 +265,9 @@ print("\n== Step 3e: Verify Wallet Balance ==")
 # Briefly assume ProcessPaymentRole to call GetPaymentInstrumentBalance.
 # The deployed agent on Runtime uses this same role automatically.
 print("Assuming ProcessPaymentRole for balance check...")
-balance_check_session = assume_role(PROCESS_PAYMENT_ROLE_ARN, f"balance-check-{int(datetime.now().timestamp())}")
+balance_check_session = assume_role(
+    PROCESS_PAYMENT_ROLE_ARN, f"balance-check-{int(datetime.now(timezone.utc).timestamp())}"
+)
 balance_check_client = balance_check_session.client("bedrock-agentcore", endpoint_url=DP_ENDPOINT)
 
 try:
@@ -288,7 +290,7 @@ try:
     else:
         print("Balance returned empty — faucet may still be pending. Continue if wallet is funded.")
     print(f"Instrument ID: {PAYMENT_INSTRUMENT_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001 - sample continues if the balance probe fails
     print(f"GetPaymentInstrumentBalance failed: {e}")
     print("Verify bedrock-agentcore:GetPaymentInstrumentBalance is in the ProcessPaymentRole policy.")
     print("Continue to Step 4 if the wallet is funded.")
@@ -415,7 +417,7 @@ print("\n== Step 5: Deploy Agent to AgentCore Runtime ==")
 
 def run_cmd(cmd, cwd=None):
     """Run a CLI command and surface stdout/stderr on failure."""
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False)
     if result.returncode != 0:
         print("stdout:", result.stdout[-500:])
         print("stderr:", result.stderr[-500:])

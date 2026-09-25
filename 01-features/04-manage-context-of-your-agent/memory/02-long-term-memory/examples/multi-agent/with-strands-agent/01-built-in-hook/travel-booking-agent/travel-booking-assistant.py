@@ -94,7 +94,7 @@ memory = client.create_or_get_memory(
             StrategyType.USER_PREFERENCE.value: {
                 "name": "UserPreferences",
                 "description": "Captures user preferences",
-                "namespaces": ["travel/{actorId}/preferences/"],
+                "namespaceTemplates": ["/travel/{actorId}/preferences/"],
             }
         }
     ],

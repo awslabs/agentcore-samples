@@ -90,7 +90,7 @@ def main():
         {
             "semanticMemoryStrategy": {
                 "name": "semantic",
-                "namespaces": ["/facts/{actorId}"],
+                "namespaceTemplates": ["/facts/{actorId}/"],
             }
         }
     ]

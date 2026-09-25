@@ -61,7 +61,7 @@ def _override_strategy() -> dict:
         "customMemoryStrategy": {
             "name": "MedicalFacts",
             "description": "Health-only semantic extraction",
-            "namespaces": [NAMESPACE_TEMPLATE],
+            "namespaceTemplates": [NAMESPACE_TEMPLATE],
             "configuration": {
                 "semanticOverride": {
                     "extraction": {

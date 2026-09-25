@@ -1,0 +1,6 @@
+[
+  {"prompt": "How much is 2+2?"},
+  {"prompt": "What is the current time in UTC?"},
+  {"prompt": "What is the stock price of AAPL?"},
+  {"prompt": "How many employees are in the engineering department?"}
+]

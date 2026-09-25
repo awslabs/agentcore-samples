@@ -42,6 +42,14 @@ _EVALUATOR_IDS = (
     "Builtin.SkillInstructionFollowing",
 )
 
+# SkillInvoked is a deterministic evaluator from the Strands Evals SDK
+# (the `strands-agents-evals` distribution, imported as `strands_evals`). It is
+# NOT an AgentCore `Builtin.*` evaluator, so it runs client-side here — never
+# through the AgentCore evaluate API, the service-side batch job, or the
+# `agentcore run eval` CLI. Unlike the two LLM built-ins, it scores every
+# session, including the no-skill control, with a deterministic yes/no.
+_STRANDS_SKILL_INVOKED_ID = "Strands.SkillInvoked"
+
 # The positive prompts name the expected skill, matching the reference implementation
 # and keeping this introductory evaluator sample deterministic.
 _SCENARIOS = (
@@ -201,20 +209,16 @@ def _extract_skills_event(records: list[dict[str, Any]]) -> dict[str, Any] | Non
     return None
 
 
-def _print_skill_span_attributes(
-    records: list[dict[str, Any]],
-    available_skills: list[str] | None = None,
-) -> dict[str, Any]:
-    """Find the skills tool-call event and display the data each evaluator receives.
+def _extract_skill_signals(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Extract invoked_skill, user_message, and skill_content from session spans.
 
-    SkillSelectionAccuracy  reads: invoked_skill, available_skills, user_message, context
-    SkillInstructionFollowing reads: invoked_skill, skill_content, context
-
-    Returns a dict with the extracted attribute values so callers can save them.
+    Pure extraction (no printing). Returns {} when the session has no skills
+    tool-call event (for example the no-skill control). Shared by the verbose
+    span display and the Strands SkillInvoked trajectory builder so both read the
+    same signal.
     """
     event = _extract_skills_event(records)
     if not event:
-        print("  No skills tool-call event found in session records.")
         return {}
 
     body = event.get("body", {})
@@ -299,14 +303,41 @@ def _print_skill_span_attributes(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    return {
+        "traceId": event.get("traceId"),
+        "spanId": event.get("spanId"),
+        "session.id": attrs.get("session.id"),
+        "invoked_skill": invoked_skill,
+        "user_message": user_message,
+        "skill_content": skill_content,
+    }
+
+
+def _print_skill_span_attributes(
+    records: list[dict[str, Any]],
+    available_skills: list[str] | None = None,
+) -> dict[str, Any]:
+    """Display the trace data each skill evaluator receives.
+
+    SkillSelectionAccuracy  reads: invoked_skill, available_skills, user_message, context
+    SkillInstructionFollowing reads: invoked_skill, skill_content, context
+
+    Returns a dict with the extracted attribute values so callers can save them.
+    """
+    signals = _extract_skill_signals(records)
+    if not signals:
+        print("  No skills tool-call event found in session records.")
+        return {}
+
+    skill_content = signals["skill_content"]
     print("\n  Skills tool-call event (inputs the evaluators use):")
-    print(f"    traceId        : {event.get('traceId', 'N/A')}")
-    print(f"    spanId         : {event.get('spanId', 'N/A')}")
-    print(f"    session.id     : {attrs.get('session.id', 'N/A')}")
+    print(f"    traceId        : {signals.get('traceId') or 'N/A'}")
+    print(f"    spanId         : {signals.get('spanId') or 'N/A'}")
+    print(f"    session.id     : {signals.get('session.id') or 'N/A'}")
     print()
     print("  Trace-derived evaluator signals:")
-    print(f"    invoked_skill  : {invoked_skill}")
-    print(f"    user_message   : {user_message!r}")
+    print(f"    invoked_skill  : {signals['invoked_skill']}")
+    print(f"    user_message   : {signals['user_message']!r}")
     print(f"    skill_content  : {skill_content[:200]!r}")
     print(f"    context        : ({len(records)} log records in this session span)")
     if available_skills:
@@ -319,11 +350,11 @@ def _print_skill_span_attributes(
         print("        AgentCore derives the available_skills placeholder for SkillSelectionAccuracy")
         print("        service-side from those spans — not from this local catalog listing.")
     return {
-        "traceId": event.get("traceId"),
-        "spanId": event.get("spanId"),
-        "invoked_skill": invoked_skill,
+        "traceId": signals.get("traceId"),
+        "spanId": signals.get("spanId"),
+        "invoked_skill": signals["invoked_skill"],
         "configured_skills": available_skills or [],
-        "user_message": user_message,
+        "user_message": signals["user_message"],
         "skill_content": skill_content,
     }
 
@@ -344,6 +375,97 @@ def _print_eval_results(scenario_name: str, evaluator_id: str, results: list[dic
             explanation = (result.get("explanation") or "")[:220]
             if explanation:
                 print(f"    {explanation}")
+
+
+def _build_skill_trajectory(session_id: str, invoked_skill: str | None, skill_content: str | None) -> Any:
+    """Rebuild a Strands Evals trajectory from the skills span this session emitted.
+
+    SkillInvoked normally reads a live Strands `Session`, but this script only has
+    the deployed runtime's CloudWatch spans. We reconstruct the minimal trajectory
+    it needs: one ToolExecutionSpan for the `skills` tool call (argument key
+    `skill_name`) whose result is the loaded SKILL.md body. Sessions with no skill
+    invocation (the no-skill control) get an empty trajectory, which SkillInvoked
+    correctly scores as "not invoked" (0.0).
+    """
+    from strands_evals.types.trace import (
+        Session,
+        SpanInfo,
+        ToolCall,
+        ToolExecutionSpan,
+        ToolResult,
+        Trace,
+    )
+
+    now = datetime.now(timezone.utc)
+    spans: list[Any] = []
+    if invoked_skill and invoked_skill != "N/A" and skill_content and skill_content != "N/A":
+        spans.append(
+            ToolExecutionSpan(
+                span_info=SpanInfo(session_id=session_id, start_time=now, end_time=now),
+                tool_call=ToolCall(name="skills", arguments={"skill_name": invoked_skill}),
+                tool_result=ToolResult(content=skill_content, error=None),
+            )
+        )
+    return Session(
+        session_id=session_id,
+        traces=[Trace(spans=spans, trace_id=session_id, session_id=session_id)],
+    )
+
+
+def _run_skill_invoked(trajectory: Any, skill_name: str) -> list[Any]:
+    """Run the deterministic Strands SkillInvoked evaluator against a trajectory."""
+    from strands_evals.evaluators import SkillInvoked
+    from strands_evals.types.evaluation import EvaluationData
+
+    case = EvaluationData(input="", actual_trajectory=trajectory)
+    return SkillInvoked(skill_name=skill_name).evaluate(case)
+
+
+def _evaluate_skill_invoked(
+    session: dict[str, Any],
+    skill_signals: dict[str, Any],
+    configured_skills: list[str],
+    failures: list[str],
+) -> list[dict[str, Any]]:
+    """Score one session with the Strands SkillInvoked evaluator and validate it.
+
+    Positive scenarios assert the expected skill was invoked (score 1.0). The
+    no-skill control asserts that none of the deployed skills was invoked (score
+    0.0 each) — a deterministic true-negative the LLM built-ins can only skip.
+    """
+    trajectory = _build_skill_trajectory(
+        session["session_id"],
+        skill_signals.get("invoked_skill"),
+        skill_signals.get("skill_content"),
+    )
+
+    if session["expected_skill"]:
+        checks = [(session["expected_skill"], 1.0)]
+    else:
+        checks = [(name, 0.0) for name in configured_skills]
+
+    recorded: list[dict[str, Any]] = []
+    for skill_name, expected_score in checks:
+        outputs = _run_skill_invoked(trajectory, skill_name)
+        for out in outputs:
+            label = "Invoked" if out.score >= 1.0 else "Not invoked"
+            evaluator_label = f"{_STRANDS_SKILL_INVOKED_ID}({skill_name})"
+            print(f"  {session['name']:<20} {evaluator_label:<38} {out.score!s:<5} {label}")
+            if out.reason:
+                print(f"    {out.reason}")
+            recorded.append(
+                {
+                    "skill_name": skill_name,
+                    "score": out.score,
+                    "test_pass": out.test_pass,
+                    "reason": out.reason,
+                }
+            )
+            if out.score != expected_score:
+                failures.append(
+                    f"{session['name']} / {evaluator_label}: expected score {expected_score}, got {out.score}"
+                )
+    return recorded
 
 
 def main() -> int:
@@ -416,11 +538,24 @@ def main() -> int:
     # The SDK calls get_evaluator() to discover each evaluator's level
     # (SESSION / TRACE / TOOL_CALL) and routes results accordingly.
 
-    print("\n[3/4] EvaluationClient — per-session on-demand evaluation ...")
+    print("\n[3/4] EvaluationClient + Strands.SkillInvoked — per-session on-demand evaluation ...")
 
     from bedrock_agentcore.evaluation import EvaluationClient
 
     ec = EvaluationClient(region_name=region)
+
+    # The deterministic Strands SkillInvoked evaluator runs alongside the two
+    # AgentCore built-ins below. Fail fast with an install hint if its package is
+    # missing rather than surfacing a bare ImportError mid-session.
+    try:
+        import strands_evals
+    except ImportError:
+        print(
+            "ERROR: the SkillInvoked evaluator needs the strands-agents-evals package. "
+            "Install it with: pip install -r requirements.txt",
+            file=sys.stderr,
+        )
+        return 1
 
     all_ec_results: dict[str, Any] = {}
     failures: list[str] = []
@@ -429,32 +564,34 @@ def main() -> int:
         end_time = datetime.now(timezone.utc)
         print(f"\n  --- {session['name']} ---")
 
-        # For the PTO session: query the unified runtime log group, find the skills
-        # span, and display the gen_ai attributes that both evaluators receive as
-        # input. This makes the evaluator inputs visible without manually browsing
-        # CloudWatch Logs Insights.
+        # Query the unified runtime log group once and pull the skills-span signal
+        # for every session. The verbose attribute dump runs only for the PTO/custom
+        # session (to keep output readable), but each session needs invoked_skill and
+        # skill_content to rebuild the Strands SkillInvoked trajectory below.
         #
         # SkillSelectionAccuracy  reads: invoked_skill, available_skills,
         #                                user_message, context
         # SkillInstructionFollowing reads: invoked_skill, skill_content, context
         span_attrs: dict[str, Any] = {}
-        if session["name"] in ("pto-planning", "custom-prompt"):
-            print("\n  Extracting skill span attributes (evaluator inputs) ...")
-            try:
-                records = _query_session_spans(
-                    logs_client,
-                    config["cw_log_group"],
-                    session["session_id"],
-                    session["start"],
-                    end_time,
-                )
+        skill_signals: dict[str, Any] = {}
+        verbose_session = session["name"] in ("pto-planning", "custom-prompt")
+        try:
+            records = _query_session_spans(
+                logs_client,
+                config["cw_log_group"],
+                session["session_id"],
+                session["start"],
+                end_time,
+            )
+            skill_signals = _extract_skill_signals(records)
+            if verbose_session:
+                print("\n  Extracting skill span attributes (evaluator inputs) ...")
                 print(f"  {len(records)} span records found for session {session['session_id']}")
-                skills_dir = Path(__file__).parent / "skills"
-                available_skills = _read_available_skills(skills_dir)
+                available_skills = _read_available_skills(Path(__file__).parent / "skills")
                 span_attrs = _print_skill_span_attributes(records, available_skills)
-            except Exception as exc:  # noqa: BLE001
-                print(f"  Could not extract span attributes: {exc}")
-            print()
+                print()
+        except Exception as exc:  # noqa: BLE001
+            print(f"  Could not fetch session spans: {exc}")
 
         results_by_evaluator: dict[str, list] = {}
         for evaluator_id in _EVALUATOR_IDS:
@@ -478,6 +615,10 @@ def main() -> int:
                         f"{session['name']} / {evaluator_id}: {result['errorCode']} - {result.get('errorMessage', '')}"
                     )
 
+        # Strands SkillInvoked (deterministic, client-side) — scores every session,
+        # including the no-skill control, which the two LLM built-ins skip.
+        skill_invoked = _evaluate_skill_invoked(session, skill_signals, config.get("skills", []), failures)
+
         all_ec_results[session["name"]] = {
             "session_id": session["session_id"],
             "prompt": session["prompt"],
@@ -485,6 +626,7 @@ def main() -> int:
             "response": session["response"],
             "span_attributes": span_attrs,
             "evaluations": results_by_evaluator,
+            "skill_invoked": skill_invoked,
         }
 
     _ec_path = _RESULTS_DIR / "eval_client_results.json"

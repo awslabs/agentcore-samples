@@ -58,7 +58,7 @@
 # First, let's install the required libraries:
 
 
-# Run: pip install "boto3>=1.42.63" "bedrock-agentcore[strands-agents]" strands-agents strands-agents-tools pandas
+# Run: pip install "boto3>=1.42.63" "bedrock-agentcore[strands-agents]" strands-agents strands-agents-tools
 
 
 # ### Setting Up Environment
@@ -81,7 +81,7 @@ os.environ["BYPASS_TOOL_CONSENT"] = "true"
 os.environ["PYTHON_REPL_INTERACTIVE"] = "false"
 
 REGION = "us-west-2"
-MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID = "global.anthropic.claude-opus-4-6-v1"
 KNOWN_CUSTOMERS = ["customer_001", "customer_002", "customer_003"]
 
 agentcore_client = boto3.client("bedrock-agentcore", region_name=REGION)
@@ -406,36 +406,46 @@ def create_admin_agent():
     )
 
 
-agent = create_admin_agent()
-print("✅ Created admin analytics agent")
-
-
 # ## 4. Cross-Customer Analytics Queries
 #
 # These queries demonstrate the agent reasoning across multiple customers simultaneously. Each query creates a fresh agent to avoid context bleed.
 
 
-# (%%capture output suppression removed - not needed in script)
-
-
+# ### Recommendation funnel across all customers
+response = create_admin_agent()(
+    "For every customer in the base, count the pending, accepted and declined "
+    "recommendations, using namespace types 'recommendations/pending', "
+    "'recommendations/accepted' and 'recommendations/declined'. Report the totals, "
+    "the acceptance rate and the decline rate. Use python_repl for the arithmetic."
+)
 print(response)
 
 
-# (%%capture output suppression removed - not needed in script)
-
-
+# ### Common decline reasons
+response = create_admin_agent()(
+    "Fetch declined recommendations across every customer from namespace type "
+    "'recommendations/declined'. Cluster the decline reasons into themes and rank "
+    "them by frequency. Use python_repl if you need to count."
+)
 print(response)
 
 
-# (%%capture output suppression removed - not needed in script)
-
-
+# ### Cross-customer spending patterns
+response = create_admin_agent()(
+    "Fetch the spending summaries for every customer from namespace type "
+    "'transactions/summary'. Compute the spend per category across the base and "
+    "flag the top 2 categories by total spend."
+)
 print(response)
 
 
-# (%%capture output suppression removed - not needed in script)
-
-
+# ### Product-gap analysis
+response = create_admin_agent()(
+    "Combine each customer's stated preferences ('preferences'), their declined "
+    "recommendations ('recommendations/declined') and their spending summaries "
+    "('transactions/summary') to propose 2-3 product ideas that would plausibly "
+    "reduce declines. Reason across the whole base, not one customer at a time."
+)
 print(response)
 
 

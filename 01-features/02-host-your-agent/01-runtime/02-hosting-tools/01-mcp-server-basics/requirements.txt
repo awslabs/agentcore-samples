@@ -1,2 +1,9 @@
-mcp>=1.10.0
+# What to install on your machine to run this sample: deploy.py, invoke.py and
+# cleanup.py, plus mcp so you can start mcp_server.py locally before deploying.
+#
+# The server's own dependencies live in requirements-server.txt (included below,
+# so the mcp pin has a single home). That file — not this one — is what deploy.py
+# vendors into the zip. boto3 stays out of it: mcp_server.py never imports boto3,
+# and shipping it would nearly double the deployment artifact.
+-r requirements-server.txt
 boto3>=1.38.0

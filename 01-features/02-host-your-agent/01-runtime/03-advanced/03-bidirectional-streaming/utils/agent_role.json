@@ -87,7 +87,8 @@
          "Effect": "Allow", 
          "Action": [ 
                 "bedrock:InvokeModel", 
-                "bedrock:InvokeModelWithResponseStream"
+                "bedrock:InvokeModelWithResponseStream",
+                "bedrock:InvokeModelWithBidirectionalStream"
               ], 
         "Resource": [
             "arn:aws:bedrock:*::foundation-model/*",

@@ -13,12 +13,16 @@ Composite patterns that connect AgentCore Memory to other AgentCore primitives a
 
 ![AgentCore runtime + memory](./01-runtime-integration/RuntimeMemoryIntegration.png)
 
-When a user invokes the agent endpoint, AgentCore runtime starts a session and runs the Strands agent. Memory hooks fire at two points in the lifecycle:
+When a user invokes the agent endpoint, AgentCore runtime starts a session and runs the Strands agent. Persistence is handled by `AgentCoreMemorySessionManager` — the Strands **session manager** adapter — which fires at two points in the lifecycle:
 
 - **Agent Initialized** — retrieve recent conversation turns from short-term memory, inject them into context before the first LLM call.
 - **Message Added** — store each new user/assistant message back to short-term memory.
 
 The agent continues a conversation seamlessly across runtime sessions: even after a session expires, the next invocation re-hydrates from memory.
+
+Every framework has an equivalent adapter for this slot — LangGraph calls it a **checkpointer**
+(`AgentCoreMemorySaver`), LlamaIndex calls it a memory (`AgentCoreMemory`). See
+[06-usage-patterns.md](../00-getting-started/06-usage-patterns.md).
 
 ## Running
 

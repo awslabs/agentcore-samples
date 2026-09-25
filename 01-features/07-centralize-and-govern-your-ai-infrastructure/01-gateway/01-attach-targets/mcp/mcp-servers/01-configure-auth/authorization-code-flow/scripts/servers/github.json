@@ -1,0 +1,19 @@
+{
+  "name": "github",
+  "displayName": "GitHub",
+  "authModel": "oauth_app",
+  "vendor": "GithubOauth2",
+  "providerConfigKey": "githubOauth2ProviderConfig",
+  "clientIdEnv": "GITHUB_CLIENT_ID",
+  "clientSecretEnv": "GITHUB_CLIENT_SECRET",
+  "endpoint": "https://api.githubcopilot.com/mcp",
+  "scopes": ["repo", "user", "workflow"],
+  "toolSchema": "../github/github.json",
+  "demoTool": "search_repositories",
+  "demoArgs": {
+    "query": "amazon-bedrock-agentcore-samples",
+    "perPage": 3
+  },
+  "appSettingsUrl": "https://github.com/settings/apps",
+  "resourcePrefix": "github"
+}

@@ -105,7 +105,7 @@ aws bedrock-agentcore-control update-memory \
     "addMemoryStrategies": [{
       "semanticMemoryStrategy": {
         "name": "UserFacts",
-        "namespaces": ["/users/{actorId}/facts"]
+        "namespaceTemplates": ["/users/{actorId}/facts/"]
       }
     }]
   }'

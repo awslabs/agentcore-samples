@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Debug: your access token{% endblock %}
+{% block content %}
+  <h1>Your access token</h1>
+  <div class="box warn">
+    <p>This is the token this app received from {{ idp }} at sign-in, and the same token it
+      sends to the AgentCore Runtime as <code>Authorization: Bearer</code>. The agent forwards
+      it to the gateway unchanged &mdash; that is the passthrough contract.</p>
+    <p>Debug route only. The token is sensitive; remove this route if you reuse this
+      scaffold.</p>
+  </div>
+  {% if claims %}
+    <div class="box">
+      <h2>Decoded claims</h2>
+      <table style="border-collapse: collapse; width: 100%; font-size: 0.9rem;">
+        {% for k, v in claims.items() %}
+          <tr>
+            <td style="padding: 0.25rem 0.75rem 0.25rem 0; vertical-align: top;"><code>{{ k }}</code></td>
+            <td style="padding: 0.25rem 0; word-break: break-all;">{{ v }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+      <p class="muted" style="margin-top: 0.75rem; font-size: 0.85rem;">
+        <strong>Diagnosing "Connect worked but the agent still asks for consent":</strong>
+        compare <code>sub</code> above against the user id shown in the consent portal's
+        header. They must match &mdash; consent is stored under the portal's subject and
+        looked up under this one.
+        <br><br>
+        Under Entra <code>sub</code> is a pairwise identifier keyed on the
+        <strong>resource</strong> the token is audienced at (<code>aud</code>), not on the
+        client that requested it (<code>azp</code>). Verified here: this token's
+        <code>azp</code> is the frontend app while the portal signs in through the resource
+        app, and the two <code>sub</code> values are still identical. So what matters is
+        that both sign-ins target the same <code>aud</code> &mdash; which is what
+        <code>PORTAL_SCOPES</code> and <code>GATEWAY_SCOPE</code> both pointing at
+        <code>api://&lt;resource&gt;/access_as_user</code> guarantees.
+      </p>
+    </div>
+  {% endif %}
+
+  <p>You can also paste the raw token into <a href="https://jwt.io" target="_blank" rel="noopener">jwt.io</a>:</p>
+  <ul>
+    <li><code>aud</code> &mdash; must match the <code>allowedAudience</code> on both the runtime
+      and the gateway, or you get a 401 that looks like a gateway fault.</li>
+    <li><code>iss</code> &mdash; must match the issuer in <code>IDP_DISCOVERY_URL</code>. Under Entra a
+      v1-style <code>sts.windows.net</code> issuer here means
+      <code>requestedAccessTokenVersion</code> is not 2.</li>
+    <li>{% if idp == 'entra' %}<code>oid</code>{% else %}<code>sub</code>{% endif %} &mdash; the identity
+      your GitHub consent is stored under. It must be the same user you signed in as on the
+      consent portal.</li>
+  </ul>
+  <textarea readonly onclick="this.select()">{{ access_token }}</textarea>
+  <p><a href="/">&larr; back</a></p>
+{% endblock %}

@@ -1,0 +1,3 @@
+# bedrock-agentcore-control gained the Web Search "connector" gateway target in
+# boto3/botocore 1.43.57 — older versions fail with a ParamValidationError.
+boto3>=1.43.57

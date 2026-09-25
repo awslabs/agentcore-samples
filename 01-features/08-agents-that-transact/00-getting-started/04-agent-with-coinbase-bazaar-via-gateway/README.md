@@ -72,7 +72,7 @@ PaymentConnector. Only the `.env` values differ.
   populated with `PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`, and region.
 - **Funded wallet with delegated signing** — the instrument must be `ACTIVE` (funded with testnet
   USDC and delegated-signing granted in Tutorial 00 or Tutorial 03). The script asserts this.
-- **AgentCore CLI** (this tutorial provisions the Gateway with it): `npm install -g @aws/agentcore`
+- **AgentCore CLI** (this tutorial provisions the Gateway with it): `npm install -g @aws/agentcore@0.30.0`
   (Node.js 20+).
 - **AWS CLI configured**: `aws sts get-caller-identity`.
 - **Region** — the SDK reads the region from the `AWS_REGION` env var (default `us-west-2`). Set
@@ -219,7 +219,7 @@ python validate_endpoint_example.py https://api.example.com/your-endpoint GET
 | Symptom | Cause | Fix |
 |---|---|---|
 | `GATEWAY_URL not set in .env` | Gateway URL missing | Complete Step 1, then add `GATEWAY_URL=<url>` to the shared `.env` (Step 2) |
-| `agentcore: command not found` | AgentCore CLI not installed | `npm install -g @aws/agentcore` |
+| `agentcore: command not found` | AgentCore CLI not installed | `npm install -g @aws/agentcore@0.30.0` |
 | MCP connection fails / 401 / 403 | Gateway not deployed, or wrong/missing auth | `agentcore status` to confirm deploy; for `CUSTOM_JWT`, set `CLIENT_ID`/`CLIENT_SECRET`/`TOKEN_URL` from your OIDC provider (README Step 1) |
 | `ModuleNotFoundError: No module named 'requests'` | Older install predating the `requests` dependency | `pip install -r requirements.txt` (needed for the `CUSTOM_JWT` OAuth token fetch) |
 | `AssertionError: Instrument is ... — fund and delegate` | Instrument not `ACTIVE` | Fund the wallet with testnet USDC and grant delegated signing (Tutorial 00 or Tutorial 03) |

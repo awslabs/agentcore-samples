@@ -10,7 +10,7 @@ This section collects the patterns that turn the happy-path samples into somethi
 |---|---|
 | [`01-error-handling.md`](./01-error-handling.md) | The exceptions AgentCore Memory raises, which are retry-able, exponential backoff with jitter, graceful degradation, and `try/finally` cleanup |
 | [`02-cost-optimization.md`](./02-cost-optimization.md) | Event-expiry tuning, the per-strategy cost of extraction, namespace/record lifecycle, batch-API economics, and STM-only vs. LTM |
-| [`03-production-checklist.md`](./03-production-checklist.md) | Least-privilege IAM, KMS encryption, observability, quotas, multi-region, and resource cleanup |
+| [`03-production-checklist.md`](./03-production-checklist.md) | Least-privilege IAM, KMS encryption, observability, quotas, multi-region, durable conversation persistence, and resource cleanup |
 | [`production-patterns.py`](./production-patterns.py) | A reference implementation of every pattern — copy-paste, not a runnable demo |
 
 ## Production readiness checklist
@@ -31,6 +31,7 @@ Use this as the index; each row links to the section that explains the *why* and
 | **Observability** | CloudWatch alarms on `Errors`, throttles, and `StreamPublishingFailure`; ingestion log delivery enabled | [`03`](./03-production-checklist.md) and [`../04-observability/`](../04-observability/) |
 | **Quotas** | You've checked the current per-account/per-API quotas in Service Quotas and requested increases before launch | [`03`](./03-production-checklist.md) |
 | **Multi-region** | You've decided whether memory is single-region or replicated, and made the actor/namespace scheme region-aware if replicated | [`03`](./03-production-checklist.md) |
+| **Conversation persistence** | The framework's session manager / checkpointer is the durable AgentCore adapter, not an in-process saver, and every invocation carries a non-empty actor id and session id | [`03`](./03-production-checklist.md#6-conversation-persistence-session-manager--checkpointer) |
 | **Cleanup** | Agent/tenant teardown deletes the memory resource (or its records) so you don't pay for orphaned data | [`03`](./03-production-checklist.md) |
 
 ## A note on what's verified here
@@ -41,7 +42,7 @@ Everything in this section is grounded in one of three sources, and we say which
 - **SDK source** — retry/limit behaviour of the `bedrock_agentcore` Python SDK (`MemoryClient`) is read from the installed package.
 - **AWS docs** — conceptual guidance from the [AgentCore Memory dev guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html).
 
-**Per-API request-rate quotas (TPS) are account- and region-specific and are not reproduced here** — they change and are adjustable. Check the **Service Quotas console** (search "Bedrock AgentCore") before capacity planning. See [`03-production-checklist.md`](./03-production-checklist.md#rate-limits-and-quotas).
+**Per-API request-rate quotas (TPS) are account- and region-specific and are not reproduced here** — they change and are adjustable. Check the **Service Quotas console** (search "Bedrock AgentCore") before capacity planning. See [`03-production-checklist.md`](./03-production-checklist.md#4-rate-limits-and-quotas).
 
 ## See also
 

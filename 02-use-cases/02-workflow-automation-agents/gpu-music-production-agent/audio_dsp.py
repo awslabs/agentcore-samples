@@ -1,8 +1,8 @@
 """Audio measurement and processing, in numpy and scipy only.
 
 This module is what turns the sample from three agents writing prose into three
-agents doing verifiable work: the mastering agent applies real filters and the
-compliance agent measures the result against the spec the mastering agent
+agents doing verifiable work: the delivery agent applies real filters and the
+compliance agent measures the result against the spec the delivery agent
 claimed. Every number here is reproducible from the WAV file.
 
 Deliberately has no third-party DSP dependency:
@@ -67,8 +67,8 @@ def read_audio(path: str) -> tuple[np.ndarray, int]:
 
 
 def write_audio(path: str, data: np.ndarray, rate: int, subtype: str = "PCM_24") -> None:
-    """Write (samples, channels) audio. 24-bit PCM by default: a master should
-    not be delivered as 16-bit, and float WAV confuses some players."""
+    """Write (samples, channels) audio. 24-bit PCM by default: a release file should
+    not ship as 16-bit, and float WAV confuses some players."""
     if data.ndim == 1:
         data = data[:, None]
     sf.write(path, data, rate, subtype=subtype)
@@ -297,7 +297,7 @@ def _biquad(kind: str, freq: float, rate: float, q: float = 0.707, gain_db: floa
 def apply_filters(data: np.ndarray, rate: int, bands: list[dict]) -> np.ndarray:
     """Apply a list of ``{type, freq_hz, gain_db, q}`` bands in series.
 
-    Uses sosfilt rather than sosfiltfilt: a mastering chain is causal, and
+    Uses sosfilt rather than sosfiltfilt: a delivery chain is causal, and
     zero-phase filtering would smear transients backwards in time.
     """
     if not bands:
@@ -465,7 +465,7 @@ def chroma(path: str, hop_s: float = 0.1, n_fft: int = 4096) -> np.ndarray:
     """CENS-style chroma: (frames, 12), L2-normalised per frame.
 
     Normalising per frame makes the feature insensitive to level, so a louder
-    master of the same material still matches.
+    delivery of the same material still matches.
     """
     data, rate = read_audio(path)
     mono = np.mean(data, axis=1)

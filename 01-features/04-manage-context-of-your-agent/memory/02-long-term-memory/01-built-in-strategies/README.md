@@ -13,6 +13,12 @@ Built-in strategies are managed extraction pipelines that turn raw events into s
 
 A single memory resource can host any combination of these; records land in distinct namespaces so retrieval stays clean.
 
+## Strategies read more than conversation
+
+Every script here drives a conversation, but extraction is not limited to speech. `json` payload items — behavioural events, filters applied, an approval from another system — feed the same four strategies, and the records they produce are indistinguishable in kind from those extracted from turns. A `search_filter_applied` event with `transmission: "automatic"` yields a user preference just as `"Automatic sedan please"` does, and a mixed event lets a strategy corroborate one with the other. `blob` items are never extracted.
+
+Worked end-to-end example, including the extracted output: [`../../01-short-term-memory/02-payload-types/`](../../01-short-term-memory/02-payload-types/).
+
 ## Run
 
 ```bash

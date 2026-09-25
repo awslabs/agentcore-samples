@@ -122,10 +122,14 @@ The script stops here deliberately — every later part depends on the skill bei
 
 ## AgentCore CLI
 
-Create and deploy a harness project via the CLI (preview channel), then use `ExecuteCommand` to install skills in your session:
+Create and deploy a harness project via the CLI, then use `ExecuteCommand` to install skills in your session:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name myskillsagent --model-provider bedrock
 agentcore deploy
 agentcore invoke --harness myskillsagent \

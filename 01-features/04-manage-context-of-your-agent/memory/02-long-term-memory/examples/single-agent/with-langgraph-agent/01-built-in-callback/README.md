@@ -2,7 +2,8 @@
 
 A LangGraph agent whose **long-term memory is wired in by the framework**, using the
 [`langgraph-checkpoint-aws`](https://pypi.org/project/langgraph-checkpoint-aws/) package's
-two AgentCore integrations:
+two AgentCore integrations ([source](https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws),
+in the [`langchain-aws`](https://github.com/langchain-ai/langchain-aws) monorepo):
 
 - **`AgentCoreMemorySaver`** — a LangGraph **checkpointer** that persists and resumes
   conversation state automatically, keyed by `thread_id` (session) and `actor_id`.

@@ -11,6 +11,24 @@ Amazon Bedrock AgentCore Memory. They differ in **who decides when to store and 
 
 See the [long-term memory README](../../../README.md) for the underlying strategies and APIs.
 
+## Both classes, one memory resource
+
+`langgraph-checkpoint-aws` ships two classes, and long-term memory needs only one of them:
+
+> **`AgentCoreMemoryStore` (`store=`) recalls facts about _this user_. `AgentCoreMemorySaver`
+> (`checkpointer=`) resumes _this conversation_.**
+
+They are separate arguments, not alternatives, and `01-built-in-callback/` and both
+`02-custom-callback/` scripts wire them against a **single `memory_id`** — the production shape:
+
+```python
+store        = AgentCoreMemoryStore(memory_id=memory_id, region_name=region)  # keyword-only
+checkpointer = AgentCoreMemorySaver(memory_id, region_name=region)            # positional
+```
+
+Read this [checkpointer vs. store](../../../../00-getting-started/06-usage-patterns.md#langgraph-specifically-checkpointer-vs-store) for full comparison and the gotchas —
+`InvalidConfigError` if `actor_id` is missing, `put` vs. `search` namespaces.
+
 > ### LangGraph API versions
 > The new tutorials (**`01-built-in-callback`**, **`03-memory-as-tool`**) target the
 > current **LangGraph v1.0** API: `from langchain.agents import create_agent` plus the

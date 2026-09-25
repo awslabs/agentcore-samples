@@ -21,6 +21,7 @@
 | [01-raw-mcp/](01-raw-mcp/) | Direct MCP tool discovery and invocation without an agent framework |
 | [02-strands-agent/](02-strands-agent/) | Full agent loop with Strands Agents — automatic tool selection and cited responses |
 | [03-langchain-agent/](03-langchain-agent/) | Full agent loop using LangChain + LangGraph with MCP adapter |
+| [04-claude-desktop/](04-claude-desktop/) | Integrate Web Search into Claude Desktop as a custom (Bedrock 3P) connector |
 
 ## Prerequisites
 

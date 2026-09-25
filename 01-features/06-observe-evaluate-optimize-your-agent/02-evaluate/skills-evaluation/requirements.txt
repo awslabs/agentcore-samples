@@ -1,2 +1,5 @@
 bedrock-agentcore>=1.5.0
 boto3>=1.43.0
+# Strands Evals SDK — provides the deterministic SkillInvoked evaluator.
+# Distribution is "strands-agents-evals"; it is imported as "strands_evals".
+strands-agents-evals>=1.2.0,<2.0.0

@@ -10,7 +10,7 @@ The tutorial demonstrates code-based evaluators in **both on-demand and online e
 
 ## Setup with AgentCore CLI
 
-The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.11.0`).
+The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.30.0`).
 
 ### Prerequisites
 
@@ -23,8 +23,12 @@ The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](ht
 ### Install the CLI
 
 ```bash
-npm install -g @aws/agentcore@0.11.0
-agentcore --version   # should print 0.11.0
+npm install -g @aws/agentcore@0.30.0
+agentcore --version   # should print 0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### Configure AWS credentials

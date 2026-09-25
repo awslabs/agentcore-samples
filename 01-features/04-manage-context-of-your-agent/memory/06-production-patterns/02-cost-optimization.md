@@ -61,7 +61,7 @@ Long-term records persist for the life of the memory resource — there's no aut
 - **Prune stale records.** Use `BatchDeleteMemoryRecords` (by `memoryRecordId`) to remove records that are no longer useful — superseded preferences, expired facts, or per-compliance deletions. See [`../02-long-term-memory/07-skip-STM/`](../02-long-term-memory/07-skip-STM/).
 - **List then delete by namespace.** `list_memory_records(namespace=...)` enumerates a namespace; pair it with batch-delete to clean a whole branch (e.g. a churned tenant's `/users/{actorId}/`).
 - **Namespaces are organization, not access control.** Design them hierarchically (trailing `/`) so a single prefix scan finds everything you need to clean up. (Security boundary is IAM — see [`../05-security/`](../05-security/).)
-- **Delete the resource for whole-tenant offboarding.** If an actor/tenant maps to its own memory resource, deleting that resource releases both events and records in one call. See [`03-production-checklist.md`](./03-production-checklist.md#resource-cleanup-on-teardown).
+- **Delete the resource for whole-tenant offboarding.** If an actor/tenant maps to its own memory resource, deleting that resource releases both events and records in one call. See [`03-production-checklist.md`](./03-production-checklist.md#7-resource-cleanup-on-teardown).
 
 ## 4. Batch-API economics
 

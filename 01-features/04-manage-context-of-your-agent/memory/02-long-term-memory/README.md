@@ -37,6 +37,8 @@ It creates a memory with a semantic strategy, sends a few `CreateEvent` calls, w
 
 Built-in strategies can be **overridden** to swap their extraction or consolidation prompts (`02-strategy-overrides/`), or replaced entirely with a **self-managed** worker (`03-self-managed-strategy/`).
 
+All four extract from `json` payload items as readily as from conversation turns, so behavioural signal the user never spoke aloud still becomes long-term memory — see [`../01-short-term-memory/02-payload-types/`](../01-short-term-memory/02-payload-types/). `blob` payloads are never extracted.
+
 ## Framework integrations
 
 End-to-end agent examples live under `examples/`:

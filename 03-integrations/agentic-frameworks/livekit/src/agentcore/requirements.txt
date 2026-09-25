@@ -1,0 +1,14 @@
+# Core dependencies with version constraints
+bedrock-agentcore-starter-toolkit>=0.1.21
+boto3>=1.34.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+mcp>=1.0.0
+
+# LiveKit dependencies - install these separately
+livekit>=1.0.0
+livekit-agents>=1.2.0
+livekit-plugins-aws>=1.2.0
+
+# PyJWT for token handling
+PyJWT>=2.8.0

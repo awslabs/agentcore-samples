@@ -11,7 +11,7 @@ Pick by who does the extracting. If you want AgentCore's strategies to read your
 
 ## `IngestData`
 
-`CreateEvent` does two jobs: it stores the turn as short-term conversation history *and* queues it for extraction. `IngestData` does only the second — no event is persisted, so `ListEvents` stays empty and nothing lands in the transcript your model reads back.
+`CreateEvent` does two jobs: it stores the turn as short-term conversation history *and* queues it for extraction. `IngestData` does only the second. No event is persisted, so `ListEvents` stays empty.
 
 ```python
 data.ingest_data(
@@ -29,10 +29,10 @@ data.ingest_data(
 )
 ```
 
-Three things ship together here and are easy to conflate:
+Three things shown together here and are easy to conflate:
 
 - **`IngestData`** — the extraction-only entry point (this folder).
-- **`json` payloads** — non-conversational content. An arbitrary document under `json.content`: telemetry, app state, a CRM row. Extraction reads the structure, so field names matter (`view_duration_sec`, not `d2`). Also accepted by `CreateEvent`.
+- **`json` payloads** — non-conversational content, that could be any arbitrary information under `json.content`: telemetry, app state, a CRM row, metadata from the UI.  `IngestData` (and `CreateEvent` API) covers all three types (`conversational`, `json`, `blob`). the 100 KB limit, and the field-naming rules extraction cares about.
 - **Namespace substitution** — `extractionConfig.namespaceVariables` resolves your own template variables per call. Declared on the memory via `namespaceKeys`; see [`../04-namespaces/`](../04-namespaces/).
 
 ### What you learn

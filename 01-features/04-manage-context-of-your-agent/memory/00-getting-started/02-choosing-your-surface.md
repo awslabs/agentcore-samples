@@ -12,6 +12,11 @@ AgentCore Memory exposes the same APIs through three surfaces. Any of them can d
 
 They are interchangeable: a resource created in the CLI is usable from boto3 and from the AgentCore SDK. Pick per task, not per project.
 
+> **Framework adapters aren't all in the AgentCore SDK.** Only the Strands adapter ships in
+> `bedrock-agentcore`; LangGraph needs `langgraph-checkpoint-aws` and LlamaIndex needs
+> `llama-index-memory-bedrock-agentcore`. Class names and packages per framework:
+> [06-usage-patterns.md](./06-usage-patterns.md).
+
 ## When to use each
 
 ### Use the CLI when...
@@ -34,7 +39,7 @@ They are interchangeable: a resource created in the CLI is usable from boto3 and
 ```
 Is this an agent using Strands/LangGraph/LlamaIndex?
 │
-├─ Yes → AgentCore SDK
+├─ Yes → AgentCore SDK + that framework's adapter (see 06-usage-patterns.md)
 │
 └─ No  → Is it a one-off inspection or onboarding step?
          │

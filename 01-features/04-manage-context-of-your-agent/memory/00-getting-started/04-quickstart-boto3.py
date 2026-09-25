@@ -130,7 +130,7 @@ control.update_memory(
             {
                 "semanticMemoryStrategy": {
                     "name": "UserFacts",
-                    "namespaces": ["/users/{actorId}/facts"],
+                    "namespaceTemplates": ["/users/{actorId}/facts/"],
                 }
             }
         ]

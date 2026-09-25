@@ -65,7 +65,7 @@ def run_with_boto3(cleanup: bool = False) -> None:
             {
                 "semanticMemoryStrategy": {
                     "name": "Facts",
-                    "namespaces": [NAMESPACE_TEMPLATE],
+                    "namespaceTemplates": [NAMESPACE_TEMPLATE],
                 }
             }
         ],
