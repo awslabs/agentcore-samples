@@ -109,6 +109,50 @@ mcp_rpc(client, arn, "prompts/get", {"name": "code_review", "arguments": {...}},
 
 All MCP JSON-RPC messages are passed through `invoke_agent_runtime` directly to your MCP server. AgentCore runtime handles session isolation via the `Mcp-Session-Id` header.
 
+## What Runtime V2 gives you
+
+`deploy.py` sets `platformVersion="V2"` on `create_agent_runtime`. AgentCore prepares
+the execution environment once, snapshots it, and every new environment **resumes
+from that snapshot** instead of loading the server's code and dependencies from
+scratch. That gives every session a consistently fast, predictable start instead of
+paying the code-load cost on each one — the main source of cold-start variance for a
+zip-deployed server like this one.
+
+```python
+platformVersion="V2",
+```
+
+**This field must be set explicitly.** Omitting it does not give you Runtime V2 —
+nothing in the create response tells you which platform version you got, so
+`deploy.py` confirms it with `get_agent_runtime` after the runtime reaches `READY`.
+
+A few things worth knowing about how it works:
+
+- **`GetAgentRuntime` is the only operation that returns `platformVersion`.** Neither
+  `CreateAgentRuntime` nor `UpdateAgentRuntime` echoes it back, which is why
+  `deploy.py` reads it back explicitly rather than assuming the create call's input
+  was honored.
+- **The snapshot is prepared during the create call**, so `create_agent_runtime` and
+  endpoint creation both take a few minutes rather than seconds — that time buys the
+  consistently fast starts every session gets afterwards. `CREATING` for several
+  minutes is expected, not a hang; budget for it if you script around this sample.
+- **Anything captured at startup is frozen into the snapshot** and restored later,
+  possibly hours after create. `mcp_server.py` in this sample has no startup-captured
+  state to worry about: `get_timestamp` and the `data://system-status` resource both
+  call `datetime.now()` inside the function body, per request, not at import time. If
+  you extend this server: resolve credentials per request via the SDK's normal chain
+  rather than caching them at import, and avoid the `random` module for anything that
+  must be unique per session (its module-level state is captured in the snapshot and
+  repeats across environments resumed from it) — use `uuid.uuid4()` or `secrets`
+  instead.
+- **Requires `boto3>=1.43.95`.** Older SDKs have no `platformVersion` field in the
+  service model at all.
+- **Runtime V2 is available in a subset of AgentCore's regions.** At GA, that's
+  `us-east-1`, `us-east-2`, `us-west-2`, `eu-west-1`, and `ap-northeast-1` — a
+  narrower list than AgentCore Runtime's own region coverage, and one that is
+  expected to expand over time, so check current availability before picking a
+  region.
+
 ## Files
 
 | File | Description |
@@ -116,7 +160,7 @@ All MCP JSON-RPC messages are passed through `invoke_agent_runtime` directly to 
 | `mcp_server.py` | MCP server with tools (`search_documents`, `analyze_sentiment`, `get_timestamp`), resources (`config://app`, `data://system-status`), and prompts (`code_review`, `summarize_document`) |
 | `requirements.txt` | Local deps: `boto3`, plus `requirements-server.txt` |
 | `requirements-server.txt` | The server's own deps (`mcp`, pinned `<2.0.0`) — this is what gets vendored into the zip |
-| `deploy.py` | Same deployment pattern with `serverProtocol='MCP'`, plus a `tools/list` smoke test |
+| `deploy.py` | Same deployment pattern with `serverProtocol='MCP'` and `platformVersion='V2'`, plus a `tools/list` smoke test |
 | `invoke.py` | Exercises all MCP features: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get` |
 | `cleanup.py` | Deletes runtime, S3 artifact, log groups, IAM role |
 
