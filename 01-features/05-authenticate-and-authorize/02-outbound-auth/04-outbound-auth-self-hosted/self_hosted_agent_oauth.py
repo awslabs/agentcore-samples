@@ -66,6 +66,7 @@ def create_cognito_user_pool() -> dict:
         ["bash", "create_cognito.sh"],
         capture_output=True,
         text=True,
+        check=False,  # returncode is handled explicitly below
         env={**os.environ, "AWS_REGION": REGION},
     )
     if result.returncode != 0:
@@ -74,6 +75,40 @@ def create_cognito_user_pool() -> dict:
     print(result.stdout)
     print("  Cognito user pool created. Copy the values above and set as env vars.")
     return {}
+
+
+def auto_setup_cognito() -> None:
+    """Run create_cognito.sh and inject its exported values into the environment.
+
+    Resolves the script relative to THIS file (so it works regardless of the
+    caller's working directory), runs it, parses the `export KEY='value'` lines
+    it prints, and sets them in os.environ so the rest of the flow can proceed
+    without a manual copy-paste step.
+    """
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "create_cognito.sh")
+    if not os.path.exists(script_path):
+        raise FileNotFoundError(f"create_cognito.sh not found at {script_path}")
+
+    print("  No OAuth env vars set — running create_cognito.sh automatically...")
+    result = subprocess.run(
+        ["bash", script_path],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "AWS_REGION": REGION},
+    )
+    print(result.stdout)
+
+    injected = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("export ") and "=" in line:
+            key, value = line[len("export ") :].split("=", 1)
+            os.environ[key.strip()] = value.strip().strip("'\"")
+            injected.append(key.strip())
+    if not all(os.environ.get(k) for k in ("ISSUER_URL", "CLIENT_ID", "CLIENT_SECRET")):
+        raise RuntimeError("create_cognito.sh ran but did not produce ISSUER_URL/CLIENT_ID/CLIENT_SECRET")
+    print(f"  Injected into environment: {', '.join(injected)} ✓")
 
 
 # ── Step 2: Create Credential Provider ────────────────────────────────────────
@@ -221,7 +256,7 @@ def run_agent():
     """
     agent_user_id = os.environ.get("AGENT_USER_ID", "quickstart-user")
 
-    env = {  # noqa: F841
+    env = {
         **os.environ,
         "CREDENTIAL_PROVIDER_NAME": CREDENTIAL_PROVIDER_NAME,
         "AWS_REGION": REGION,
@@ -231,7 +266,7 @@ def run_agent():
     print(f"\n  Running agent with workload: {WORKLOAD_NAME}")
     print(f"  Credential provider: {CREDENTIAL_PROVIDER_NAME}")
     print(f"  User ID: {agent_user_id}")
-    print("")
+    print()
     print("  Command:")
     print(f"  CREDENTIAL_PROVIDER_NAME={CREDENTIAL_PROVIDER_NAME} \\")
     print(f"  WORKLOAD_NAME={WORKLOAD_NAME} \\")
@@ -250,13 +285,13 @@ def cleanup():
     try:
         control.delete_workload_identity(name=WORKLOAD_NAME)
         print(f"  Deleted workload identity: {WORKLOAD_NAME} ✓")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Workload delete error: {e}")
 
     try:
         control.delete_oauth2_credential_provider(name=CREDENTIAL_PROVIDER_NAME)
         print(f"  Deleted credential provider: {CREDENTIAL_PROVIDER_NAME} ✓")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Credential provider delete error: {e}")
 
     user_pool_id = os.environ.get("USER_POOL_ID")
@@ -268,7 +303,7 @@ def cleanup():
                 cognito.delete_user_pool_domain(UserPoolId=user_pool_id, Domain=domain)
             cognito.delete_user_pool(UserPoolId=user_pool_id)
             print(f"  Deleted Cognito pool: {user_pool_id} ✓")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Cognito delete error: {e}")
 
 
@@ -311,6 +346,15 @@ def main():
         print("  export COGNITO_PASSWORD=...")
         return
 
+    # ── 1b. Auto-provision Cognito if OAuth env vars are not set ──────────────
+    # Lets the sample run end-to-end without a manual create_cognito.sh + copy-paste
+    # step. Set ISSUER_URL/CLIENT_ID/CLIENT_SECRET yourself (or use your own OAuth
+    # server) to skip this.
+    if not all(os.environ.get(v) for v in ("ISSUER_URL", "CLIENT_ID", "CLIENT_SECRET")):
+        print("=== Step 1: Auto-provisioning Cognito User Pool ===")
+        auto_setup_cognito()
+        print()
+
     # ── 2. Create credential provider ────────────────────────────────────────
     print("=== Step 2: Creating CustomOauth2 Credential Provider ===")
     provider_info = create_credential_provider()
@@ -331,10 +375,10 @@ def main():
     print(f"  Credential provider: {CREDENTIAL_PROVIDER_NAME}")
     print(f"  Workload identity: {WORKLOAD_NAME}")
     print(f"  Callback URL: {CALLBACK_URL}")
-    print("")
+    print()
     print("  To run the agent:")
     print(f"  CREDENTIAL_PROVIDER_NAME={CREDENTIAL_PROVIDER_NAME} WORKLOAD_NAME={WORKLOAD_NAME} python3 agent.py")
-    print("")
+    print()
     print("  To clean up:")
     print("  python self_hosted_agent_oauth.py --cleanup")
 
