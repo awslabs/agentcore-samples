@@ -1,0 +1,7 @@
+strands-agents
+strands-agents-tools
+strands-agents[litellm]
+boto3>=1.34.0
+bedrock-agentcore>=0.1.0
+bedrock-agentcore-starter-toolkit>=0.1.14
+awslabs.aws-api-mcp-server>=0.1.0
