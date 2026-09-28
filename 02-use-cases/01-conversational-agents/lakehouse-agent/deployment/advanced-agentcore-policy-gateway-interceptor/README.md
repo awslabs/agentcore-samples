@@ -70,7 +70,7 @@ Required tooling:
 
 > **MCP target ownership**: `lakehouse-mcp-target` referenced by the Cedar
 > policies is the first-party MCP server deployed by Phase 1 Step 4
-> (`deployment/4-mcp-lakehouse-server/`). It is part of this sample and is
+> (`deployment/4a-mcp-lakehouse-server/`). It is part of this sample and is
 > licensed under the Apache License 2.0 (see [LICENSE](../../../../../LICENSE)).
 > It is not a third-party dependency and requires no separate legal review.
 
@@ -188,7 +188,7 @@ The `geography` attribute is injected by the Design 3 Request Interceptor at
 
 | ID  | Threat                                                                              | Priority | Mitigation                                                                                                    | Verification (in `verify_policy.py`)                              |
 | --- | ----------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| T1  | Cross-tenant data access (one policyholder reading another's claims)                | Critical | Design 2 token exchange (`sts:AssumeRole`) + Lake Formation row-level security (Phase 1 Step 2 + Step 3)      | `test_data_isolation` + `test_column_masking`                     |
+| T1  | Cross-tenant data access (one policyholder reading another's claims)                | Critical | Bound identity predicate (`WHERE user_id = ?`) in the claims tools + Design 2 role exchange (Phase 1 Step 3)  | `test_data_isolation` + `test_column_masking`                     |
 | T2  | Privilege escalation via tool selection (policyholder invoking adjuster-only tools) | High     | Design 1 Cedar `forbid` rule on `get_claims_summary` for the `policyholders` Cognito group                    | `test_tool_access(get_claims_summary, DENY)`                      |
 | T3  | Data residency violation (EU user accessing individual claim records)               | Medium   | Design 3 geography injection by the Request Interceptor + Cedar `forbid` evaluating `context.input.geography` | `test_tool_access(query_claims, DENY)` for `policyholder002` (EU) |
 
@@ -301,12 +301,12 @@ and the `CfnPolicy` / `CfnPolicyEngine` resource lifecycles:
 > Lambda is a Phase 1 resource and is cleaned up in the Phase 1 cleanup below.
 > If you want to roll back to the original Phase 1 Lambda (without geography
 > injection) before destroying Phase 1, restore
-> `deployment/5-gateway-setup/interceptor-request/lambda_function.py` from git
+> `deployment/5a-gateway-setup/interceptor-request/lambda_function.py` from git
 > and redeploy:
 >
 > ```bash
-> git checkout -- deployment/5-gateway-setup/interceptor-request/lambda_function.py
-> cd deployment/5-gateway-setup/interceptor-request
+> git checkout -- deployment/5a-gateway-setup/interceptor-request/lambda_function.py
+> cd deployment/5a-gateway-setup/interceptor-request
 > AWS_REGION=us-east-1 ./deploy.sh
 > ```
 
@@ -318,8 +318,8 @@ dedicated cleanup script, run in reverse order:
 ```bash
 cd 02-use-cases/lakehouse-agent/deployment
 cd 6-lakehouse-agent              && python cleanup_agent.py
-cd ../5-gateway-setup             && python cleanup_gateway.py
-cd ../4-mcp-lakehouse-server      && python cleanup_runtime.py
+cd ../5a-gateway-setup             && python cleanup_gateway.py
+cd ../4a-mcp-lakehouse-server      && python cleanup_runtime.py
 cd ../3-s3tables-setup            && python cleanup_s3tables.py
 cd ../2-lakehouse-tenant-roles-setup && python cleanup_iam_roles.py
 cd ../1-cognito-setup             && python cleanup_cognito.py
@@ -332,7 +332,7 @@ See [../README.md](../README.md) for details.
 | Symptom                                                   | Cause                                                                                                       | Fix                                                                                                |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `CfnPolicy` → `CREATE_FAILED` with `InterceptorException` | The Gateway still had the JWT-validating Interceptor attached while Cedar tried its internal MCP validation | Re-run `scripts/pre-deploy.sh` (it detaches Interceptors) then `cdk deploy` again                  |
-| All tool calls return 500                                 | After detach, the Response Interceptor Lambda was missing when CDK re-attached                              | Deploy the Response Interceptor first: `deployment/5-gateway-setup/interceptor-response/deploy.sh` |
+| All tool calls return 500                                 | After detach, the Response Interceptor Lambda was missing when CDK re-attached                              | Deploy the Response Interceptor first: `deployment/5a-gateway-setup/interceptor-response/deploy.sh` |
 | `permit_all` fails with "Overly Permissive"               | `validationMode: FAIL_ON_ANY_FINDINGS` on a broad permit                                                    | PolicyStack already uses `IGNORE_ALL_FINDINGS` for `permit_all` — rerun `cdk deploy`               |
 | `context.input` returns `attribute not found`             | Cedar rule used a wildcard `action`                                                                         | List tools explicitly in `action in [...]` (see `forbid_eu_individual_claims.cedar`)               |
 | Every tool returns DENY after deploy                      | `permit_all` is not `ACTIVE`                                                                                | Re-check `list_policies` status; if not ACTIVE, re-run `cdk deploy`                                |

@@ -9,12 +9,13 @@ Usage:
     python setup_s3tables.py --table-bucket-name my-lakehouse
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
 import random
 import string
+import sys
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -37,7 +38,7 @@ def main():
     args = parser.parse_args()
 
     # Get AWS session
-    session, region, account_id = get_aws_session()
+    _session, region, account_id = get_aws_session()
 
     # Use default table bucket name with random suffix if not provided
     if args.table_bucket_name:
@@ -93,6 +94,19 @@ def main():
 
     if not table_bucket_arn:
         raise Exception("Failed to create or retrieve table bucket ARN")
+
+    # Tag the table bucket (fail-soft). Uses s3tables TagResource separately from
+    # create so a missing s3tables:TagResource permission leaves the bucket
+    # untagged rather than breaking the create. (Phase-7: grant the deploy
+    # identity s3tables:TagResource.)
+    try:
+        s3tables.tag_resource(
+            resourceArn=table_bucket_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "s3tables-bucket"},
+        )
+        print("   🏷️  Tagged table bucket (Purpose=s3tables-bucket)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag table bucket (non-fatal): {e}")
 
     # Step 2: Create namespace
     namespace = "lakehouse_data"
@@ -161,6 +175,19 @@ def main():
     except s3tables.exceptions.ConflictException:
         print("✅ Claims table exists")
 
+    # Tag the claims table (fail-soft; resolve ARN via get_table so re-runs converge too).
+    try:
+        claims_arn = s3tables.get_table(tableBucketARN=table_bucket_arn, namespace=namespace, name="claims").get(
+            "tableARN"
+        )
+        s3tables.tag_resource(
+            resourceArn=claims_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "claims-table"},
+        )
+        print("   🏷️  Tagged claims table (Purpose=claims-table)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag claims table (non-fatal): {e}")
+
     # Step 4: Create users table
     print("\n👥 Creating users table...")
 
@@ -190,6 +217,19 @@ def main():
     except s3tables.exceptions.ConflictException:
         print("✅ Users table exists")
 
+    # Tag the users table (fail-soft; resolve ARN via get_table so re-runs converge too).
+    try:
+        users_arn = s3tables.get_table(tableBucketARN=table_bucket_arn, namespace=namespace, name="users").get(
+            "tableARN"
+        )
+        s3tables.tag_resource(
+            resourceArn=users_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "users-table"},
+        )
+        print("   🏷️  Tagged users table (Purpose=users-table)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag users table (non-fatal): {e}")
+
     # Step 5: Create or get S3 bucket for Athena query results
     print("\n📦 Setting up S3 bucket for query results...")
     s3 = boto3.client("s3", region_name=region)
@@ -207,6 +247,22 @@ def main():
         print(f"✅ S3 bucket exists: {s3_bucket_name}")
     except Exception as e:
         print(f"⚠️  S3 bucket creation note: {e}")
+
+    # Tag the query-results bucket (fail-soft; regular S3 has no tags-at-create,
+    # so this is a separate put_bucket_tagging call).
+    try:
+        s3.put_bucket_tagging(
+            Bucket=s3_bucket_name,
+            Tagging={
+                "TagSet": [
+                    {"Key": "Application", "Value": "lakehouse-agent"},
+                    {"Key": "Purpose", "Value": "athena-results"},
+                ]
+            },
+        )
+        print("   🏷️  Tagged query-results bucket (Purpose=athena-results)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag query-results bucket (non-fatal): {e}")
 
     # Step 6: Store configuration in SSM
     print("\n💾 Storing configuration in SSM...")

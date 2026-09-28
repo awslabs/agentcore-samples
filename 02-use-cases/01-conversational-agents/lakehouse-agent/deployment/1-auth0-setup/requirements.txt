@@ -1,0 +1,12 @@
+# Auth0 Setup Dependencies
+# Install with: pip install -r requirements.txt
+
+# Auth0 Management API SDK
+# v4.0+ uses the modern Auth0 class with automatic token management
+auth0-python>=4.0.0
+
+# AWS SDK for SSM Parameter Store
+boto3>=1.26.0
+
+# Python dotenv for .env file loading (shared utility)
+python-dotenv>=1.0.0

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "OpenSearchMcpServer",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "opensearch_mcp_server",
+      "build": "Container",
+      "codeLocation": "../../4b-mcp-opensearch-server",
+      "entrypoint": "server.py",
+      "protocol": "MCP",
+      "networkMode": "PUBLIC",
+      "envVars": [
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "OPENSEARCH_COLLECTION_ENDPOINT",
+          "value": "https://1oigw6ptwv7k3qu5dnpf.us-east-1.aoss.amazonaws.com"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "DEBUG"
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "allowedAudience": [
+            "https://lakehouse-api"
+          ],
+          "discoveryUrl": "https://dev-a3xj8d6if5f4qnwz.us.auth0.com/.well-known/openid-configuration"
+        }
+      }
+    }
+  ],
+  "memories": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": []
+}

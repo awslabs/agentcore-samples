@@ -13,9 +13,21 @@ requests>=2.31.0
 # MCP
 mcp>=1.9.0
 
+# Reader path — needed so a single venv runs the notebooks + the app:
+# opensearch-py + aws-requests-auth: notebook 07 queries AOSS with SigV4-signed requests
+# PyJWT: offline JWT decode (07 isolation checks; Streamlit id_token display)
+# nest_asyncio: nested event loops for notebooks (asyncio.run inside Jupyter's running loop)
+opensearch-py>=3.2.0
+aws-requests-auth>=0.4.3
+PyJWT>=2.8.0
+nest_asyncio>=1.6.0
+
 # JWT handling
 python-jose[cryptography]>=3.4.0
 cryptography>=41.0.0
+
+# Auth0 setup (for 1-auth0-setup/setup_auth0.py)
+auth0-python>=4.0.0
 
 # Development
 jupyter>=1.0.0

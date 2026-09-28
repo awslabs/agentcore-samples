@@ -1,0 +1,10 @@
+# Okta setup — Okta management SDK for app/auth-server/group/user provisioning.
+# Pinned to 2.9.x: 3.x renamed/restructured OAuth model classes (e.g.
+# OAuthGrantType moved out of okta.models). setup_okta.py targets 2.9.x imports.
+okta>=2.9.0,<3
+
+# Used by check_m2m_client.py and decode_token.py for OAuth2 token endpoint calls
+requests>=2.31.0
+
+# Used by setup_okta.py / cleanup_okta.py for SSM persistence
+boto3>=1.43.0
