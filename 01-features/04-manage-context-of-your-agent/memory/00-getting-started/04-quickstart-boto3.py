@@ -67,7 +67,7 @@ control = boto3.client("bedrock-agentcore-control", region_name=REGION)
 data = boto3.client("bedrock-agentcore", region_name=REGION)
 
 resp = control.create_memory(
-    name="QuickstartMemory",
+    name=f"QuickstartMemory_{int(time.time()) % 100000}",
     description="Getting-started memory resource",
     eventExpiryDuration=30,
     memoryExecutionRoleArn=MEMORY_ROLE_ARN,

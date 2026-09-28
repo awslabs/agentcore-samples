@@ -1,14 +1,26 @@
-from strands import Agent, tool
-from strands_tools import calculator  # Import the calculator tool
-from strands.models.litellm import LiteLLMModel
 import os
+import sys
+
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from strands import Agent, tool
+from strands.models.litellm import LiteLLMModel
+from strands_tools import calculator  # Import the calculator tool
 
 app = BedrockAgentCoreApp()
 
-os.environ["AZURE_API_KEY"] = "<YOUR_API_KEY>"
-os.environ["AZURE_API_BASE"] = "<YOUR_API_BASE>"
-os.environ["AZURE_API_VERSION"] = "<YOUR_API_VERSION>"
+# Azure OpenAI credentials are read from the environment. Set these before running:
+#   export AZURE_API_KEY=...        # your Azure OpenAI key
+#   export AZURE_API_BASE=...       # e.g. https://<resource>.openai.azure.com
+#   export AZURE_API_VERSION=...    # e.g. 2024-08-01-preview
+_required = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
+_missing = [v for v in _required if not os.environ.get(v)]
+if _missing:
+    sys.exit(
+        "Missing required environment variable(s): "
+        + ", ".join(_missing)
+        + "\nSet AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION before running "
+        "(LiteLLM's azure provider reads these directly)."
+    )
 
 
 # Create a custom tool
