@@ -65,7 +65,7 @@ def gateway_outputs() -> dict[str, Any]:
     if not GATEWAY_STATE.exists():
         sys.exit(f"{GATEWAY_STATE} not found -- run `python setup.py` first")
     out = json.loads(GATEWAY_STATE.read_text()).get("outputs")
-    if not out or not out.get("inference_url"):
+    if not out or not out.get("inference_url") or not out.get("user_pool_id"):
         sys.exit("gateway state has no usable outputs -- re-run `python setup.py`")
     return out
 
@@ -74,12 +74,14 @@ def ensure_secret(region: str, state: dict[str, Any], gw: dict[str, Any]) -> str
     # The client secret must not travel as a runtime environment variable: those are
     # readable via GetAgentRuntime and appear in container metadata. Only the secret
     # id is passed; the container reads the value with its execution role.
+    idp = boto3.client("cognito-idp", region_name=region)
+    client = idp.describe_user_pool_client(UserPoolId=gw["user_pool_id"], ClientId=gw["client_id"])
     sm = boto3.client("secretsmanager", region_name=region)
     name = f"{NAME}-oauth"
     payload = json.dumps(
         {
             "client_id": gw["client_id"],
-            "client_secret": gw["client_secret"],
+            "client_secret": client["UserPoolClient"]["ClientSecret"],
             "token_url": gw["token_url"],
             "scope": gw["scope"],
         }
@@ -124,9 +126,7 @@ def build_and_push(region: str, state: dict[str, Any]) -> str:
     uri = f"{registry}/{NAME}:latest"
 
     try:
-        ecr.create_repository(
-            repositoryName=NAME, tags=[{"Key": k, "Value": v} for k, v in TAGS.items()]
-        )
+        ecr.create_repository(repositoryName=NAME, tags=[{"Key": k, "Value": v} for k, v in TAGS.items()])
         record(state, "ecr_repo", repository_name=NAME)
         print(f"  created ECR repo {NAME}")
     except ClientError as exc:
@@ -144,10 +144,14 @@ def build_and_push(region: str, state: dict[str, Any]) -> str:
     # image rather than an OCI index, which the runtime's image resolution prefers.
     sh(
         [
-            "docker", "buildx", "build",
-            "--platform", "linux/arm64",
+            "docker",
+            "buildx",
+            "build",
+            "--platform",
+            "linux/arm64",
             "--provenance=false",
-            "-t", uri,
+            "-t",
+            uri,
             "--push",
             str(HERE),
         ]
@@ -235,9 +239,7 @@ def ensure_role(region: str, state: dict[str, Any], secret_arn: str) -> str:
             raise
         arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
         print("  execution role already exists")
-    iam.put_role_policy(
-        RoleName=role_name, PolicyName=f"{NAME}-exec", PolicyDocument=json.dumps(policy)
-    )
+    iam.put_role_policy(RoleName=role_name, PolicyName=f"{NAME}-exec", PolicyDocument=json.dumps(policy))
     # CreateAgentRuntime validates the ECR URI using this role immediately, and fails
     # with "Access denied while validating ECR URI" if the inline policy has not
     # propagated yet.
@@ -295,16 +297,12 @@ def deploy(region: str) -> None:
     state["outputs"] = {"agent_runtime_arn": arn, "image_uri": uri}
     save_state(state)
     if status != "READY":
-        sys.exit(
-            f"deploy did not reach READY (status={status}); fix and re-run, or `python cleanup.py`"
-        )
+        sys.exit(f"deploy did not reach READY (status={status}); fix and re-run, or `python cleanup.py`")
     print("\nDeployed. Try: python invoke.py 'Reply with exactly the word: ok'")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--region", default="us-east-1")
     args = ap.parse_args()
     deploy(args.region)

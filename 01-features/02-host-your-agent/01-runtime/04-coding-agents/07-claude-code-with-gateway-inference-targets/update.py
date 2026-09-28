@@ -15,7 +15,6 @@ import sys
 import time
 
 import boto3
-
 from deploy import (
     build_and_push,
     ensure_role,
@@ -27,9 +26,7 @@ from deploy import (
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--region", default="us-east-1")
     args = ap.parse_args()
     region = args.region

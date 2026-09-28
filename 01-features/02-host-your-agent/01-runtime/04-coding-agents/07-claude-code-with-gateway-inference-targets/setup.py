@@ -123,9 +123,7 @@ def create(region: str, prefix: str) -> None:
     idp.create_user_pool_domain(Domain=domain, UserPoolId=pool_id)
     record(state, "user_pool_domain", domain=domain, user_pool_id=pool_id)
 
-    discovery_url = (
-        f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
-    )
+    discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
 
     # 5. gateway execution role (the egress credential)
     print("5. IAM role")
@@ -216,10 +214,15 @@ def _print_config(state: dict[str, Any]) -> None:
     out = state.get("outputs") or {}
     if not out.get("inference_url"):
         return
-    print("\n# OAuth client-credentials configuration")
+    region = state.get("region")
+    print("\n# OAuth client-credentials configuration (the secret is fetched from Cognito)")
     print(f'export OAUTH_TOKEN_URL="{out["token_url"]}"')
     print(f'export OAUTH_CLIENT_ID="{out["client_id"]}"')
-    print(f'export OAUTH_CLIENT_SECRET="{out["client_secret"]}"')
+    print(
+        'export OAUTH_CLIENT_SECRET="$(aws cognito-idp describe-user-pool-client'
+        f" --user-pool-id {out['user_pool_id']} --client-id {out['client_id']} --region {region}"
+        ' --query UserPoolClient.ClientSecret --output text)"'
+    )
     print(f'export OAUTH_SCOPE="{out["scope"]}"')
     print()
     print("# AgentCore Gateway serves the Anthropic Messages format, so this is")
@@ -230,10 +233,9 @@ def _print_config(state: dict[str, Any]) -> None:
 
 
 def _write_outputs(state: dict[str, Any], region: str) -> None:
-    # Everything here is derived from recorded resource ids, so a resumed run still
-    # leaves a complete outputs block.
+    # Derived from recorded resource ids, so a resumed run still leaves a complete
+    # outputs block. The client secret is not stored; consumers read it from Cognito.
     session = boto3.Session(region_name=region)
-    idp = session.client("cognito-idp")
     agc = session.client("bedrock-agentcore-control")
 
     def find(kind: str, key: str) -> Any:
@@ -248,27 +250,18 @@ def _write_outputs(state: dict[str, Any], region: str) -> None:
     if gateway_id:
         gateway_url = agc.get_gateway(gatewayIdentifier=gateway_id).get("gatewayUrl")
 
-    secret = None
-    if pool_id and client_id:
-        secret = idp.describe_user_pool_client(UserPoolId=pool_id, ClientId=client_id)[
-            "UserPoolClient"
-        ].get("ClientSecret")
-
     state["outputs"] = {
         "gateway_id": gateway_id,
         "gateway_url": gateway_url,
         "inference_url": f"{gateway_url.rstrip('/')}/inference" if gateway_url else None,
         "discovery_url": (
-            f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
-            "/.well-known/openid-configuration"
+            f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
             if pool_id
             else None
         ),
-        "token_url": (
-            f"https://{domain}.auth.{region}.amazoncognito.com/oauth2/token" if domain else None
-        ),
+        "token_url": (f"https://{domain}.auth.{region}.amazoncognito.com/oauth2/token" if domain else None),
+        "user_pool_id": pool_id,
         "client_id": client_id,
-        "client_secret": secret,
         "scope": f"{RESOURCE_SERVER_ID}/{SCOPE_NAME}",
     }
     save_state(state)
@@ -294,9 +287,7 @@ def _wait_gateway_ready(agc: Any, gateway_id: str) -> str | None:
 def create_target(region: str, state: dict[str, Any], agc: Any | None = None) -> None:
     # Idempotent on the target name, so a resumed setup run can call it safely.
     agc = agc or boto3.client("bedrock-agentcore-control", region_name=region)
-    gateway_id = next(
-        (r["gateway_id"] for r in state["resources"] if r["kind"] == "gateway"), None
-    )
+    gateway_id = next((r["gateway_id"] for r in state["resources"] if r["kind"] == "gateway"), None)
     if not gateway_id:
         sys.exit("No gateway recorded in state.")
 
@@ -312,9 +303,7 @@ def create_target(region: str, state: dict[str, Any], agc: Any | None = None) ->
         if t.get("status") == "FAILED":
             print(f"   deleting FAILED target '{TARGET_NAME}' so it can be recreated")
             agc.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=t["targetId"])
-            state["resources"] = [
-                r for r in state["resources"] if r.get("target_id") != t["targetId"]
-            ]
+            state["resources"] = [r for r in state["resources"] if r.get("target_id") != t["targetId"]]
             save_state(state)
             time.sleep(3)
         else:
@@ -342,16 +331,12 @@ def create_target(region: str, state: dict[str, Any], agc: Any | None = None) ->
     # must be deleted before the name can be reused.
     record(state, "gateway_target", gateway_id=gateway_id, target_id=target_id, name=TARGET_NAME)
     for _ in range(40):
-        status = agc.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id).get(
-            "status"
-        )
+        status = agc.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id).get("status")
         if status == "READY":
             print(f"   target '{TARGET_NAME}' READY")
             return
         if status == "FAILED":
-            detail = agc.get_gateway_target(
-                gatewayIdentifier=gateway_id, targetId=target_id
-            ).get("statusReasons")
+            detail = agc.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id).get("statusReasons")
             print(f"   target '{TARGET_NAME}' FAILED: {detail}")
             return
         time.sleep(3)
@@ -362,9 +347,7 @@ def create_target(region: str, state: dict[str, Any], agc: Any | None = None) ->
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--region", default="us-east-1")
     ap.add_argument("--prefix", default="claude-code-gw")
     args = ap.parse_args()

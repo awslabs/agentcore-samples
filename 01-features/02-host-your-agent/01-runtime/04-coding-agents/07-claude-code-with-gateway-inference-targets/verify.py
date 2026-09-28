@@ -17,9 +17,8 @@ the signals that prove each capability worked, rather than only checking for HTT
     tool use    a tool definition survives transit and the model emits a tool_use
                 block with stop_reason=tool_use
 
-Reads the gateway endpoint and OAuth client credentials from .provision-state.json.
-Needs only the Python standard library. Costs roughly six model calls, each with a
-~6k-token cached prefix.
+Reads the gateway endpoint from .provision-state.json and the client secret from
+Cognito. Costs roughly six model calls, each with a ~6k-token cached prefix.
 """
 
 import argparse
@@ -36,6 +35,8 @@ import urllib.request
 import zlib
 from pathlib import Path
 from typing import Any
+
+import boto3
 
 # Pinned verifying TLS context: the OAuth client secret crosses the token connection.
 _TLS = ssl.create_default_context()
@@ -66,23 +67,22 @@ def report(name: str, ok: bool, detail: str) -> None:
 def outputs() -> dict[str, Any]:
     if not STATE_FILE.exists():
         sys.exit(f"{STATE_FILE.name} not found -- run `python setup.py` first")
-    out = json.loads(STATE_FILE.read_text()).get("outputs") or {}
-    missing = [
-        k
-        for k in ("inference_url", "token_url", "client_id", "client_secret", "scope")
-        if not out.get(k)
-    ]
+    state = json.loads(STATE_FILE.read_text())
+    out = state.get("outputs") or {}
+    missing = [k for k in ("inference_url", "token_url", "user_pool_id", "client_id", "scope") if not out.get(k)]
     if missing:
-        sys.exit(f"state outputs missing: {', '.join(missing)}")
-    return out
+        sys.exit(f"state outputs missing: {', '.join(missing)} -- re-run `python setup.py`")
+    return {**out, "region": state.get("region")}
 
 
 def mint_token(out: dict[str, Any]) -> str:
+    idp = boto3.client("cognito-idp", region_name=out["region"])
+    client = idp.describe_user_pool_client(UserPoolId=out["user_pool_id"], ClientId=out["client_id"])
     body = urllib.parse.urlencode(
         {
             "grant_type": "client_credentials",
             "client_id": out["client_id"],
-            "client_secret": out["client_secret"],
+            "client_secret": client["UserPoolClient"]["ClientSecret"],
             "scope": out["scope"],
         }
     ).encode()
@@ -138,9 +138,30 @@ def cache_prefix() -> str:
     # each run starts with a cold cache.
     rng = random.Random(20260828)
     words = [
-        "ledger", "invoice", "tenant", "quota", "schema", "payload", "cursor", "broker",
-        "shard", "replica", "token", "policy", "region", "cluster", "artifact", "digest",
-        "manifest", "runtime", "gateway", "upstream", "latency", "throttle", "cache", "stream",
+        "ledger",
+        "invoice",
+        "tenant",
+        "quota",
+        "schema",
+        "payload",
+        "cursor",
+        "broker",
+        "shard",
+        "replica",
+        "token",
+        "policy",
+        "region",
+        "cluster",
+        "artifact",
+        "digest",
+        "manifest",
+        "runtime",
+        "gateway",
+        "upstream",
+        "latency",
+        "throttle",
+        "cache",
+        "stream",
     ]
     lines = [f"Reference corpus for cache validation, run {int(time.time())}. Do not alter.\n"]
     # ~0.75 words per token is conservative; overshoot to clear the minimum.
@@ -216,16 +237,13 @@ def check_reasoning(url: str, token: str, model: str, form: str) -> None:
         if status != 200:
             report("reasoning", False, f"HTTP {status} {error_text(body)}")
             return
-        tokens = ((body.get("usage") or {}).get("output_tokens_details") or {}).get(
-            "thinking_tokens"
-        ) or 0
+        tokens = ((body.get("usage") or {}).get("output_tokens_details") or {}).get("thinking_tokens") or 0
         if tokens > 0:
             blocks = sum(1 for b in body.get("content", []) if b.get("type") == "thinking")
             report(
                 "reasoning",
                 True,
-                f"engaged on attempt {attempt}/{REASONING_SAMPLES}: "
-                f"thinking_tokens={tokens}, thinking blocks={blocks}",
+                f"engaged on attempt {attempt}/{REASONING_SAMPLES}: thinking_tokens={tokens}, thinking blocks={blocks}",
             )
             return
     report(
@@ -263,9 +281,7 @@ def check_multimodal(url: str, token: str, model: str) -> None:
     if status != 200:
         report("multimodal", False, f"HTTP {status} {error_text(body)}")
         return
-    text = " ".join(
-        b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"
-    ).lower()
+    text = " ".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text").lower()
     if "red" in text:
         report("multimodal", True, f"image read correctly: {text[:60]!r}")
     else:
@@ -287,9 +303,7 @@ def check_tool_use(url: str, token: str, model: str) -> None:
                 },
             }
         ],
-        "messages": [
-            {"role": "user", "content": "Read the file /etc/hostname using the available tool."}
-        ],
+        "messages": [{"role": "user", "content": "Read the file /etc/hostname using the available tool."}],
     }
     status, body = call(url, token, payload)
     if status != 200:
@@ -307,9 +321,7 @@ def check_tool_use(url: str, token: str, model: str) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
         "--model",
         default="mantle/anthropic.claude-sonnet-5",

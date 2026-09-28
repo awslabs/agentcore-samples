@@ -88,9 +88,7 @@ def oauth_config() -> dict[str, str]:
             raise RuntimeError("credential configuration missing")
 
         try:
-            raw = boto3.client("secretsmanager").get_secret_value(SecretId=secret_id)[
-                "SecretString"
-            ]
+            raw = boto3.client("secretsmanager").get_secret_value(SecretId=secret_id)["SecretString"]
         except Exception as exc:  # noqa: BLE001 - message is sanitised before re-raising
             sys.stderr.write(f"[agent] secret fetch failed: {type(exc).__name__}: {exc}\n")
             sys.stderr.flush()
@@ -98,9 +96,7 @@ def oauth_config() -> dict[str, str]:
 
         try:
             cfg = json.loads(raw)
-            missing = [
-                k for k in ("client_id", "client_secret", "token_url", "scope") if not cfg.get(k)
-            ]
+            missing = [k for k in ("client_id", "client_secret", "token_url", "scope") if not cfg.get(k)]
         except (json.JSONDecodeError, AttributeError) as exc:
             sys.stderr.write(f"[agent] secret is not valid JSON: {type(exc).__name__}\n")
             sys.stderr.flush()
@@ -158,6 +154,7 @@ def run_claude(prompt: str) -> tuple[bool, str]:
         capture_output=True,
         text=True,
         timeout=1800,
+        check=False,  # exit code is handled below
     )
     elapsed = time.time() - started
     if proc.returncode != 0:
@@ -193,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
+    def do_GET(self) -> None:
         if self.path.rstrip("/") != "/ping":
             self._json(404, {"error": "not found"})
             return
@@ -202,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
             payload["time_of_last_update"] = _status_changed_at
         self._json(200, payload)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path.rstrip("/") != "/invocations":
             self._json(404, {"error": "not found"})
             return
@@ -245,9 +242,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    missing = [
-        n for n in ("OAUTH_SECRET_ID", "ANTHROPIC_BASE_URL") if not os.environ.get(n)
-    ]
+    missing = [n for n in ("OAUTH_SECRET_ID", "ANTHROPIC_BASE_URL") if not os.environ.get(n)]
     if missing:
         sys.stderr.write(f"[agent] missing required env: {', '.join(missing)}\n")
         return 2

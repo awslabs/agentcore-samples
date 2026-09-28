@@ -128,28 +128,20 @@ def cleanup_gateway(region: str, discover: bool) -> bool:
         kind = r["kind"]
         try:
             if kind == "gateway_target":
-                agc.delete_gateway_target(
-                    gatewayIdentifier=r["gateway_id"], targetId=r["target_id"]
-                )
+                agc.delete_gateway_target(gatewayIdentifier=r["gateway_id"], targetId=r["target_id"])
             elif kind == "gateway":
                 # Targets must be fully gone first; sweep any we did not record. A
                 # target deleted moments earlier can still report DELETING, and
                 # DeleteGatewayTarget on it raises a ValidationException, so skip
                 # those instead of failing the whole gateway deletion.
-                for t in agc.list_gateway_targets(gatewayIdentifier=r["gateway_id"]).get(
-                    "items", []
-                ):
+                for t in agc.list_gateway_targets(gatewayIdentifier=r["gateway_id"]).get("items", []):
                     if t.get("status") == "DELETING":
                         continue
-                    agc.delete_gateway_target(
-                        gatewayIdentifier=r["gateway_id"], targetId=t["targetId"]
-                    )
+                    agc.delete_gateway_target(gatewayIdentifier=r["gateway_id"], targetId=t["targetId"])
                 # DeleteGateway rejects a gateway that still has targets, including
                 # ones mid-deletion, so wait for the list to drain.
                 for _ in range(30):
-                    if not agc.list_gateway_targets(
-                        gatewayIdentifier=r["gateway_id"]
-                    ).get("items"):
+                    if not agc.list_gateway_targets(gatewayIdentifier=r["gateway_id"]).get("items"):
                         break
                     time.sleep(3)
                 agc.delete_gateway(gatewayIdentifier=r["gateway_id"])
@@ -160,9 +152,7 @@ def cleanup_gateway(region: str, discover: bool) -> bool:
             elif kind == "user_pool_domain":
                 idp.delete_user_pool_domain(Domain=r["domain"], UserPoolId=r["user_pool_id"])
             elif kind == "user_pool_client":
-                idp.delete_user_pool_client(
-                    UserPoolId=r["user_pool_id"], ClientId=r["client_id"]
-                )
+                idp.delete_user_pool_client(UserPoolId=r["user_pool_id"], ClientId=r["client_id"])
             elif kind == "user_pool":
                 idp.delete_user_pool(UserPoolId=r["user_pool_id"])
             else:
@@ -234,21 +224,12 @@ def _discover(session: Any, prefix: str) -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--region", default=None, help="defaults to the region in the state files")
-    ap.add_argument(
-        "--discover", action="store_true", help="find gateway resources by name prefix"
-    )
+    ap.add_argument("--discover", action="store_true", help="find gateway resources by name prefix")
     args = ap.parse_args()
 
-    region = (
-        args.region
-        or load(RUNTIME_STATE).get("region")
-        or load(GATEWAY_STATE).get("region")
-        or "us-east-1"
-    )
+    region = args.region or load(RUNTIME_STATE).get("region") or load(GATEWAY_STATE).get("region") or "us-east-1"
 
     # Runtime first: it reads gateway state, and its secret is recreated from gateway
     # state on the next deploy.
