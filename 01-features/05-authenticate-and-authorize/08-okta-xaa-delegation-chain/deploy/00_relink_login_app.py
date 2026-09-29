@@ -67,13 +67,14 @@ def main() -> None:
         sys.exit(1)
 
     oauth = (app.get("settings") or {}).get("oauthClient") or {}
-    # Copy out only the non-sensitive fields before printing. The app dict also carries
-    # client_secret, and printing anything derived from it is what static analysis flags
-    # as clear-text logging -- reasonably, since a careless edit here would leak.
-    app_label = str(app.get("label"))
-    app_status = str(app.get("status"))
     client_id = str(((app.get("credentials") or {}).get("oauthClient") or {}).get("client_id"))
-    print(f"  linked app: {app_label}  (client_id={client_id}, status={app_status})")
+    # Nothing read out of `app` is printed. The dict also holds the client secret, and a
+    # field-insensitive taint analysis cannot tell one key from another -- so printing
+    # even the label from it reads as leaking a credential. The label we already have
+    # from argv, and the client id is echoed at the end from .env once persisted.
+    print(f"  linked app: {args.app_label}")
+    if str(app.get("status")) != "ACTIVE":
+        print("  ⚠ that app is not ACTIVE in Okta -- sign-in will fail until it is")
 
     # 2. make sure it can actually run the BFF's authorization-code flow
     redirects = list(oauth.get("redirect_uris") or [])
@@ -143,7 +144,10 @@ def main() -> None:
         updates["LOGIN_CLIENT_SECRET"] = minted
     save_env(**updates)
     print("\n  ✓ .env now signs users in through the AI Agent's linked app")
-    print(f"    LOGIN_CLIENT_ID={client_id}")  # a public identifier, not a credential
+    # Read back from the environment save_env just populated, rather than echoing the
+    # value we sent. Confirms what was actually persisted, and the round trip through
+    # os.environ keeps this print clear of the app dict that holds the secret.
+    print(f"    LOGIN_CLIENT_ID={env('LOGIN_CLIENT_ID')}")
     print(
         "\n  The separate 'XAA Todo Login' app is now unused. Leave it or delete it;\n"
         "  nothing reads it after this point."

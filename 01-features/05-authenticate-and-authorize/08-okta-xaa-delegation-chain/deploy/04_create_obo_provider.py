@@ -72,23 +72,18 @@ def ensure_workload_identity(aws, name: str) -> str:
         return arn
 
 
-def summarise(config_out: dict) -> None:
+def summarise() -> None:
     """Print the provider's non-sensitive settings.
 
-    Takes the GetOauth2CredentialProvider *output* shape, which does not include the
-    client secret, and pulls out three plain strings before printing. Keeping this in
-    its own function means no expression derived from the credential config is ever in
-    the same scope as a print.
+    Deliberately reads from .env and from the literals below rather than from the
+    GetOauth2CredentialProvider response. Those two agree, and .env is the source both
+    were built from -- but a dict that holds `clientSecret` cannot be shown to be safe
+    to print one key at a time, because taint analysis cannot tell the keys apart. This
+    avoids the question instead of arguing with it.
     """
-    cfg = config_out.get("customOauth2ProviderConfig") or {}
-    client_id = str(cfg.get("clientId") or "")
-    discovery = str((cfg.get("oauthDiscovery") or {}).get("discoveryUrl") or "")
-    obo = cfg.get("onBehalfOfTokenExchangeConfig") or {}
-    grant = str(obo.get("grantType") or "")
-    actor = str((obo.get("tokenExchangeGrantTypeConfig") or {}).get("actorTokenContent") or "")
-    print(f"    clientId:  {client_id}")
-    print(f"    discovery: {discovery}")
-    print(f"    obo:       grantType={grant} actorTokenContent={actor}")
+    print(f"    clientId:  {must_env('AGENT_APP_CLIENT_ID')}")
+    print(f"    discovery: {discovery_url(must_env('AGENTCORE_AS_ISSUER'))}")
+    print("    obo:       grantType=TOKEN_EXCHANGE actorTokenContent=NONE")
 
 
 def provider_config() -> dict:
@@ -141,7 +136,7 @@ def main() -> None:
     if existing and not args.rotate_secret:
         arn = existing["credentialProviderArn"]
         print(f"  • reusing existing provider\n    {arn}")
-        summarise(existing.get("oauth2ProviderConfigOutput") or {})
+        summarise()
     elif existing:
         # Build the config only in the branches that send it, so the client secret is
         # never in scope while the summary above is printed.
