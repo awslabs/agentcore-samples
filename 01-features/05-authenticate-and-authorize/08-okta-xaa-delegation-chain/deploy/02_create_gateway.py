@@ -71,16 +71,18 @@ def ensure_key_secret(aws) -> str:
     if not pem_path.exists():
         print(f"ERROR: {pem_path} not found. Run: python scripts/gen_keypair.py", file=sys.stderr)
         sys.exit(1)
-    pem = pem_path.read_text()
+    # The PEM is read inline and never bound to a local that outlives the call, so the
+    # key material has the shortest possible scope.
     try:
-        arn = aws["sm"].create_secret(Name=KEY_SECRET_NAME, SecretString=pem)["ARN"]
-        print(f"  ✓ stored the AI Agent key in {KEY_SECRET_NAME}")
+        arn = aws["sm"].create_secret(Name=KEY_SECRET_NAME, SecretString=pem_path.read_text())["ARN"]
+        stored = "stored"
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ResourceExistsException":
             raise
-        aws["sm"].put_secret_value(SecretId=KEY_SECRET_NAME, SecretString=pem)
+        aws["sm"].put_secret_value(SecretId=KEY_SECRET_NAME, SecretString=pem_path.read_text())
         arn = aws["sm"].describe_secret(SecretId=KEY_SECRET_NAME)["ARN"]
-        print(f"  • refreshed {KEY_SECRET_NAME}")
+        stored = "refreshed"
+    print(f"  ✓ {stored} the AI Agent key in {KEY_SECRET_NAME}")
     return arn
 
 

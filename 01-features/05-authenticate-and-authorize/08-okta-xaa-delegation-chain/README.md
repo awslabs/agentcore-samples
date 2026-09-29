@@ -133,20 +133,83 @@ resource, which is exactly why hop **C** needs just one call.
 | **AS 2** | `RESOURCE_AS_ISSUER`, `api://todo` | Redeems the ID-JAG and mints `T_tool`. Separate on purpose: the API trusts **only** this issuer, which is what makes the agent's own tokens useless against it. |
 | **Org server** | `OKTA_ORG_URL` | Mints the ID-JAG. Only the org server can. |
 
-### Tokens, with claims observed live
+## Tokens: what each one is, and where it travels
 
-| Token | `iss` | `aud` | `sub` | `scp` | TTL |
-| --- | --- | --- | --- | --- | --- |
-| `T_id` | AS 1 | the `wlp…` app | user **id** | — | 1 h |
-| `T_user` | AS 1 | `api://agentcore` | **email** | `agent.access` | 1 h |
-| `T_gateway` | AS 1 | `api://agentcore` | email | `tools.access` | 1 h |
-| **ID-JAG** | **org** | AS 2 | user id | `todos.read` | **299 s**, single use |
-| **`T_tool`** | **AS 2** | **`api://todo`** | **email** | `todos.read` | 1 h |
+Five credentials appear in this sample and they are not interchangeable. Most of the
+confusion around Cross App Access comes from treating "a token" as one thing, so this
+section names each one, says who mints it, who may hold it, and what it proves.
 
-`T_tool` also carries `cid` and **`act.sub`** naming the agent, plus
-`sub_profile = ai_agent web_app`, so the API sees *who* the user is **and** *which
-agent* acted. Note `sub` is the Okta **user id** on `T_id`/ID-JAG but the **email** on
-access tokens — never assume they match.
+### Three different kinds of artefact
+
+| Kind | Answers | Presented to | In this sample |
+| --- | --- | --- | --- |
+| **Identity token** (OIDC ID token) | *who signed in* | a token endpoint, as the **subject of an exchange** | `T_id` |
+| **Access token** (OAuth 2.0) | *what the bearer may do* | a **resource**, as `Authorization` | `T_user`, `T_gateway`, `T_tool` |
+| **Authorization grant** | *that an exchange is permitted* | a token endpoint, to be **redeemed** | the ID-JAG |
+
+An ID token is not a credential for calling an API — its audience is a *client*, not a
+resource. An ID-JAG is not an access token either: it is a signed statement that an
+exchange may happen, audience-locked to one authorization server, single use, 299
+seconds. Only the three access tokens can appear in an `Authorization` header, and only
+one of them opens the todo API.
+
+### The five tokens
+
+| Token | Kind | Minted by | `aud` | `sub` | `scp` | TTL | Held by |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `T_id` | ID token | AS 1 at sign-in | the `wlp…` app | user **id** | — | 1 h | BFF → agent → interceptor |
+| `T_user` | access | AS 1 at sign-in | `api://agentcore` | **email** | `agent.access` | 1 h | BFF, Runtime |
+| `T_gateway` | access | AS 1 via **OBO** | `api://agentcore` | email | `tools.access` | 1 h | agent, Gateway |
+| **ID-JAG** | grant | **org server**, leg 1 | AS 2 | user id | `todos.read` | **299 s**, single use | interceptor only |
+| **`T_tool`** | access | **AS 2**, leg 2 | **`api://todo`** | **email** | `todos.read` | 1 h | interceptor → API |
+
+`T_tool` additionally carries `cid` and **`act.sub`** naming the AI Agent, plus
+`sub_profile = ai_agent web_app`. That is the delegation trail: the API sees *who* the
+user is **and** *which agent* acted for them, and can require both.
+
+### Which token is on the wire at each hop
+
+| Hop | On the wire | Validated by | What the receiver learns |
+| --- | --- | --- | --- |
+| Browser → BFF | *nothing* — a signed session cookie | the BFF | which session this is; tokens never leave the server |
+| BFF → Runtime | `Authorization: T_user`, plus `T_id` **in the payload** | Runtime `CUSTOM_JWT`: `aud`, `scp=agent.access` | a real user asked, through a client we trust |
+| Runtime → AgentCore Identity | `T_user` as the exchange subject | Okta, as the Agent app | this user consents to the agent acting |
+| Agent → Gateway | `Authorization: T_gateway` + `X-Okta-Id-Token: T_id` | Gateway `CUSTOM_JWT`: `aud`, `scp=tools.access`; then **Cedar** on the claims | the agent is acting, for this specific user |
+| Interceptor → org server | `T_id` as `subject_token` | Okta, via the **User access** binding | this app may act for this user |
+| Interceptor → AS 2 | the ID-JAG as `assertion` | Okta, via the **Resource connection** | this agent may reach this resource |
+| Gateway → API | `Authorization: T_tool` | the API: `iss`, `aud`, `scp`, then `sub` | the human, and the agent that acted |
+
+Note what is *not* on any wire: the agent never receives `T_tool`, and no token is ever
+placed in the model's prompt.
+
+### Why the agent holding two tokens is safe
+
+The agent handles `T_user` and `T_gateway`. Neither can call the todo API, because the
+API trusts **only** AS 2 as issuer and requires `aud=api://todo`, and both of those
+tokens come from AS 1 with `aud=api://agentcore`. A fully compromised agent can
+therefore do what it was already authorised to do — call the tools Cedar permits, as the
+user it was already acting for — and no more.
+
+The credential that *does* open the API, `T_tool`, exists only inside the interceptor and
+on the gateway's forwarded request. This is what makes the failure mode
+`wrong issuer: this API only trusts …` a **feature** of the sample: try replaying an
+agent-held token against the API and it is refused by design.
+
+### Using the wrong token, and the error you get
+
+Each of these was observed while building the sample, which is why they are listed with
+their exact text rather than paraphrased.
+
+| Mistake | Error |
+| --- | --- |
+| access token as ID-JAG leg 1 subject | `'subject_token' is invalid: no delegation policy authorizes this token` (System Log: `invalid_subject_token_no_delegation_link`) |
+| replaying `T_user` at the gateway | `insufficient_scope` — it carries `agent.access`, the gateway requires `tools.access` |
+| `T_user` or `T_gateway` sent to the API | `403 wrong issuer: this API only trusts <AS 2>` |
+| ID token sent to the API | `403 wrong audience` — its `aud` is a client, not a resource |
+| reusing an ID-JAG | `invalid_grant: id-jag already used` — single use, so mint one per exchange |
+| caching the ID-JAG instead of `T_tool` | works for 299 s then fails; cache the access token, never the grant |
+| assuming one `sub` format | `T_id`/ID-JAG carry the Okta **user id**; access tokens carry the **email** |
+
 
 ## Repository layout
 
@@ -243,6 +306,85 @@ python frontend/app.py                       # http://localhost:8000
 ```
 
 Ask *"what is on my todo list?"* and you should get your own items.
+
+## Sample prompts
+
+Ask these at <http://localhost:8000> once signed in. The target exposes four tools, and
+the model picks which one answers the question.
+
+| Prompt | Exercises |
+| :--- | :--- |
+| `What is on my todo list?` | `list_todos` — the default, and the lightest read |
+| `Who am I according to the todo API?` | `whoami` — names **you** and the **agent that acted for you** |
+| `Add "buy milk" to my list.` | `add_todo` — a write |
+| `Mark item 1 as done.` | `complete_todo` — a write on a specific row |
+
+`Who am I according to the todo API?` is the one to demo. It returns your email as the
+user and the AI Agent as `acting_agent`, from a token minted by Okta for
+`api://todo` — proving the identity survived three hops while the agent never held that
+credential.
+
+### Proving Cedar allows *and* denies
+
+A policy that only ever permits proves very little. To see enforcement, name a user in
+`.env` and redeploy the policies:
+
+```bash
+# the EMAIL as it appears in the access token's `sub`
+echo 'CEDAR_READONLY_USER=you@example.com' >> .env
+python deploy/03_create_policies.py --replace
+```
+
+That deploys [`policies/forbid_writes_for_readers.cedar`](policies/forbid_writes_for_readers.cedar).
+Then, signed in as that user:
+
+| Prompt | Expected | Why |
+| :--- | :--- | :--- |
+| `What is on my todo list?` | **works** | `allow_reads` permits the read tools |
+| `Add "buy milk" to my list.` | **denied** | `forbid` beats `permit` in Cedar, so the write tools are refused for this `sub` |
+| `Mark item 1 as done.` | **denied** | same policy, other write tool |
+
+Reads continuing to work while writes fail is the proof that the policy engine is
+reading **your** identity out of the inbound token — at the same time as the interceptor
+is swapping the credential on its way to the API. Remove `CEDAR_READONLY_USER` and
+re-run with `--replace` to restore writes.
+
+Inspect what is deployed at any point with:
+
+```bash
+python deploy/03_create_policies.py --list
+```
+
+## Does ID-JAG take an access token or an ID token?
+
+Asked often enough to deserve its own heading: **an ID token. An access token is
+refused.**
+
+| `subject_token` at leg 1 | Result |
+| --- | --- |
+| the **ID token** from the agent's linked app | ✅ ID-JAG minted |
+| an **access token** for the same user | ❌ `400 invalid_request: 'subject_token' is invalid: no delegation policy authorizes this token` |
+
+Okta records the failure in its System Log as
+`invalid_subject_token_no_delegation_link`.
+
+The reason is Okta's **User access** binding: it authorises *the ID token issued by the
+app bound to the AI Agent*, and nothing else. An access token — even a valid one, for the
+same user, from the same authorization server — carries no delegation link, so leg 1 has
+nothing to act on. This is not a quirk of configuration; it is what the binding means.
+
+Two consequences for anything built this way:
+
+- **Whoever signs the user in must pass the ID token through.** The OBO exchange at hop C
+  yields an *access* token, so the chain cannot derive an ID token from what the agent
+  holds. The BFF is the only component that has one, and this sample's agent fails with
+  an explicit message if it is missing.
+- **It travels as a connection header** (`X-Okta-Id-Token`), never in the tool arguments,
+  because those are composed by the model.
+
+See [Tokens: what each one is, and where it travels](#tokens-what-each-one-is-and-where-it-travels)
+for the full inventory, including which token is on the wire at every hop and the error
+each mix-up produces.
 
 ## Tracing a request
 

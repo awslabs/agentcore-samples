@@ -2,8 +2,30 @@
 {% block body %}
 <h1>Okta Cross App Access delegation chain</h1>
 <p class="chain">
-  you &rarr; BFF &rarr; AgentCore Runtime &rarr; Gateway (runs the ID-JAG exchange)
-  &rarr; Todo API
+  Your identity survives three hops and two different token exchanges. The agent never
+  holds a credential that can reach the API.
+</p>
+
+<pre class="mermaid">
+flowchart LR
+  U["you"]
+  BFF["BFF"]
+  RT["Agent<br/>on Runtime"]
+  GW["Gateway<br/>+ interceptor"]
+  API["Todo API"]
+
+  U -->|"sign in"| BFF
+  BFF -->|"T_user"| RT
+  RT -->|"OBO<br/>T_gateway"| GW
+  GW -->|"ID-JAG x2<br/>T_tool"| API
+
+  style GW fill:#fef9c3,stroke:#ca8a04
+  style API fill:#dcfce7,stroke:#16a34a
+</pre>
+
+<p class="muted" style="text-align:center;">
+  The <strong>gateway</strong> runs the Cross App Access exchange, so the token reaching
+  the API has your <code>sub</code> and the agent as its <code>act</code>.
 </p>
 
 {% if not user %}

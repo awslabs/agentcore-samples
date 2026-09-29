@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import SAMPLE_ROOT, account_id, clients, load_env, must_env, region
+from _common import SAMPLE_ROOT, account_id, clients, env, load_env, must_env, region
 
 POLICY_DIR = SAMPLE_ROOT / "policies"
 
@@ -82,6 +82,14 @@ def main() -> None:
     for path in files:
         name = policy_name(path)
         statement = path.read_text().replace("{gateway_arn}", gw_arn)
+        if "{readonly_user}" in statement:
+            # A policy templated on a specific user is only meaningful once that user is
+            # named. Skip rather than deploy something that can never match.
+            readonly = env("CEDAR_READONLY_USER")
+            if not readonly:
+                print(f"  • {name} skipped (set CEDAR_READONLY_USER in .env to deploy it)")
+                continue
+            statement = statement.replace("{readonly_user}", readonly)
         if name in existing:
             if not args.replace:
                 print(f"  • {name} already deployed (use --replace to re-apply)")

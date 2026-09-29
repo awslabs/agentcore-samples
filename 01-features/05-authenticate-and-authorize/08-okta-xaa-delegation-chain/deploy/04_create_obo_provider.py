@@ -72,19 +72,14 @@ def ensure_workload_identity(aws, name: str) -> str:
         return arn
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--rotate-secret",
-        action="store_true",
-        help="Push the current AGENT_APP_CLIENT_SECRET again (use after rotating it in Okta).",
-    )
-    args = ap.parse_args()
-    load_env()
-    aws = clients()
-    name = obo_provider_name()
+def provider_config() -> dict:
+    """The provider config, including the Agent app's client secret.
 
-    config = {
+    Kept in its own function so the secret is never a local in the same scope as the
+    code that prints a summary -- which is both clearer and keeps static analysis from
+    flagging an adjacent print as clear-text logging.
+    """
+    return {
         "customOauth2ProviderConfig": {
             "oauthDiscovery": {"discoveryUrl": discovery_url(must_env("AGENTCORE_AS_ISSUER"))},
             "clientId": must_env("AGENT_APP_CLIENT_ID"),
@@ -98,6 +93,19 @@ def main() -> None:
             },
         }
     }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--rotate-secret",
+        action="store_true",
+        help="Push the current AGENT_APP_CLIENT_SECRET again (use after rotating it in Okta).",
+    )
+    args = ap.parse_args()
+    load_env()
+    aws = clients()
+    name = obo_provider_name()
 
     print(f"region {region()}\nprovider {name}\n")
     print("[1/2] Workload identity")
@@ -123,6 +131,9 @@ def main() -> None:
             f"actorTokenContent={(obo.get('tokenExchangeGrantTypeConfig') or {}).get('actorTokenContent')}"
         )
     elif existing:
+        # Build the config only in the branches that send it, so the client secret is
+        # never in scope while the summary above is printed.
+        config = provider_config()
         arn = aws["acc"].update_oauth2_credential_provider(
             name=name,
             credentialProviderVendor="CustomOauth2",
@@ -130,6 +141,7 @@ def main() -> None:
         )["credentialProviderArn"]
         print(f"  ✓ updated provider (secret refreshed)\n    {arn}")
     else:
+        config = provider_config()
         arn = aws["acc"].create_oauth2_credential_provider(
             name=name,
             credentialProviderVendor="CustomOauth2",

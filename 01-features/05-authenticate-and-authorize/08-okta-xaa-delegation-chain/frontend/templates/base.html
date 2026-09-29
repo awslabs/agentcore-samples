@@ -24,10 +24,21 @@
     td, th { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid #8884; }
     a { color: #2563eb; }
     footer { margin-top: 2.5rem; font-size: .8rem; color: #778; }
+    /* Until mermaid replaces it, the diagram source shows as plain text rather than
+       a blank gap -- so the page still makes sense if the CDN is unreachable. */
+    pre.mermaid { background: transparent; font-size: .75rem; line-height: 1.3; }
+    pre.mermaid[data-processed="true"] { text-align: center; }
   </style>
 </head>
 <body>
 {% block body %}{% endblock %}
+<script type="module">
+  // Rendered client-side from the CDN. If it is unreachable the diagram source stays
+  // visible as text, which is still readable.
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? 'dark' : 'neutral' });
+</script>
 <footer>
   Sample code. See <code>README.md</code> for what happens on each hop and why each
   design choice was made.

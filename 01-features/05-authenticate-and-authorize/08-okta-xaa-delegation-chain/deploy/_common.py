@@ -69,6 +69,11 @@ def save_env(**updates: str) -> None:
     for key, value in remaining.items():
         out.append(f"{key}={value}")
     ENV_PATH.write_text("\n".join(out) + "\n")
+    # .env holds client secrets and an Okta admin token in clear text. That is
+    # unavoidable here -- the deploy chain has to persist state between steps -- so
+    # restrict it to the owner rather than leaving it world-readable. The README says
+    # plainly that this is a sandbox pattern, not a production one.
+    ENV_PATH.chmod(0o600)
     for key, value in updates.items():
         os.environ[key] = value
 
