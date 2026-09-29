@@ -1,0 +1,16 @@
+# Deployment state and secrets. `.env.*` matters as much as `.env`.
+# config.example.env is the tracked template and is deliberately not matched.
+.env
+.env.*
+
+# The Okta AI Agent signing key. Never commit private key material.
+scripts/keys/
+*.pem
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# AgentCore CLI scaffold, named after AGENT_RUNTIME_NAME — generated.
+xaaTodoAgent/

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Token claims</h1>
+<p class="muted">Signed in as <strong>{{ user }}</strong>. Debug view &mdash; the tokens
+  themselves are never sent to the browser.</p>
+
+<h3>Access token (<code>T_user</code>) &mdash; invokes the agent</h3>
+<table>
+  <tr><th>iss</th><td>{{ access.iss }}</td></tr>
+  <tr><th>aud</th><td>{{ access.aud }}</td></tr>
+  <tr><th>sub</th><td>{{ access.sub }}</td></tr>
+  <tr><th>cid</th><td>{{ access.cid }}</td></tr>
+  <tr><th>scp</th><td>{{ access.scp }}</td></tr>
+</table>
+
+<h3>ID token (<code>T_id</code>) &mdash; the subject of ID-JAG leg 1</h3>
+<table>
+  <tr><th>iss</th><td>{{ id.iss }}</td></tr>
+  <tr><th>aud</th><td>{{ id.aud }}</td></tr>
+  <tr><th>sub</th><td>{{ id.sub }}</td></tr>
+</table>
+
+<p class="muted">Note the two <code>sub</code> values differ: the ID token carries the
+  Okta <em>user id</em>, the access token the <em>email</em>. Both refer to you.</p>
+
+<p><a href="/">&larr; back</a></p>
+{% endblock %}

@@ -87,6 +87,7 @@ AgentCore identity integrates seamlessly with other AgentCore components:
 | `05-certificate-based-auth/` | Outbound `PRIVATE_KEY_JWT` client authentication (RFC 7523) with KMS-hosted signing keys for Okta and Entra ID; M2M, 3LO, and OBO flows |
 | `06-okta-xaa/` | Okta Cross-App Access: an agent reaches a resource app through Okta's identity-assertion grant |
 | `07-consent-portal-auth-code-flow-targets/` | Managed consent dashboard end-to-end: FastAPI BFF → agent on Runtime → Gateway → GitHub MCP server over the authorization code flow (3LO). Users connect GitHub themselves on the AWS-hosted consent portal (Entra ID or Okta) |
+| `08-okta-xaa-delegation-chain/` | Okta **Cross App Access** (ID-JAG) performed by a **gateway interceptor** rather than the agent: user → BFF → Runtime → Gateway → API, with an OBO exchange on the way in and a two-leg ID-JAG on the way out. The API receives a token whose `sub` is the human and whose `act` is the agent |
 | `obo-training/` | On-Behalf-Of training curriculum: concept guides plus worked Entra and Okta examples for agent-to-downstream and agent-via-gateway |
 | `okta-auth-three-tier-end-to-end-demo/` | End-to-end Okta OAuth2 three-tier demo: per-tier JWT isolation across User → Runtime → Gateway → MCP Server with RBAC |
 | `auth0-multi-agent-obo/` | Multi-agent RFC 8693 On-Behalf-Of token exchange via Auth0: coordinator mints attenuated tokens per sub-agent rather than forwarding the user JWT |
@@ -117,6 +118,7 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 | PRIVATE_KEY_JWT (Okta + Entra) | 05-certificate-based-auth/ | KMS-signed client assertions for outbound M2M, 3LO, and OBO flows; no client secret |
 | Okta Cross-App Access | 06-okta-xaa/ | Agent reaches a resource app via Okta's identity-assertion grant |
 | Consent portal + authorization-code-flow MCP target | 07-consent-portal-auth-code-flow-targets/ | Hosted consent dashboard where end users grant the agent GitHub access out of band |
+| Cross App Access (ID-JAG) at the gateway | 08-okta-xaa-delegation-chain/ | Gateway interceptor runs the ID-JAG legs; the agent never holds the resource credential |
 | Auth0 OBO (multi-agent) | auth0-multi-agent-obo/ | Coordinator mints scoped tokens per sub-agent using RFC 8693 via Auth0 |
 
 ## Finding Things
@@ -124,7 +126,7 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 **By identity provider:**
 - Cognito → `01-inbound-auth/01-inbound-auth-cognito/`, `03-m2m-3lo/`
 - Microsoft Entra ID → `01-inbound-auth/02-inbound-auth-EntraID/`, `04-entra-obo-mcp-runtime/`, `05-certificate-based-auth/entra/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/`
-- Okta → `01-inbound-auth/03-inbound-auth-okta/`, `05-certificate-based-auth/okta/`, `06-okta-xaa/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/`
+- Okta → `01-inbound-auth/03-inbound-auth-okta/`, `05-certificate-based-auth/okta/`, `06-okta-xaa/`, `07-consent-portal-auth-code-flow-targets/`, `08-okta-xaa-delegation-chain/`, `obo-training/`
 - PingFederate → `01-inbound-auth/04-inbound-auth-pingfederate/`
 - Auth0 → `auth0-multi-agent-obo/`
 

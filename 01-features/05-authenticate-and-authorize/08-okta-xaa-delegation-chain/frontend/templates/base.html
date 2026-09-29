@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Okta XAA delegation chain{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+           max-width: 52rem; margin: 2rem auto; padding: 0 1.25rem; line-height: 1.55; }
+    h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+    .muted { color: #667; font-size: .9rem; }
+    .chain { color: #667; font-size: .85rem; margin-top: 0; }
+    button { font: inherit; padding: .5rem 1rem; border-radius: .4rem;
+             border: 1px solid #888; cursor: pointer; }
+    input[type=text] { font: inherit; width: 100%; padding: .55rem .65rem;
+                       border-radius: .4rem; border: 1px solid #999; }
+    pre { background: #1113; padding: .75rem; border-radius: .4rem;
+          overflow-x: auto; font-size: .85rem; }
+    .card { border: 1px solid #4ac26b; background: #ecfdf533; border-radius: .5rem;
+            padding: 1rem 1.25rem; margin: 1rem 0; }
+    .warn { border-color: #ca8a04; background: #fef9c333; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+    td, th { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid #8884; }
+    a { color: #2563eb; }
+    footer { margin-top: 2.5rem; font-size: .8rem; color: #778; }
+  </style>
+</head>
+<body>
+{% block body %}{% endblock %}
+<footer>
+  Sample code. See <code>README.md</code> for what happens on each hop, and
+  <code>scripts/spikes/FINDINGS.md</code> for the evidence behind each design choice.
+</footer>
+</body>
+</html>

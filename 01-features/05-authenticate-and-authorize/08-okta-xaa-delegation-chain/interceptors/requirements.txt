@@ -1,0 +1,4 @@
+# The interceptor Lambda's bundle. boto3 is provided by the Lambda runtime, so only
+# the JWT signing stack needs packaging.
+pyjwt[crypto]>=2.9
+cryptography>=43

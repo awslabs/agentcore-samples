@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Okta Cross App Access delegation chain</h1>
+<p class="chain">
+  you &rarr; BFF &rarr; AgentCore Runtime &rarr; Gateway (runs the ID-JAG exchange)
+  &rarr; Todo API
+</p>
+
+{% if not user %}
+  <div class="card">
+    <p><strong>Step 1 &mdash; sign in with Okta.</strong> Your tokens stay on the
+      server; the browser only gets a signed session cookie.</p>
+    <p><a href="/auth/login"><button type="button">Sign in with Okta</button></a></p>
+  </div>
+{% else %}
+  <p class="muted">Signed in as <strong>{{ user }}</strong> &middot;
+    <a href="/debug/token">inspect token claims</a> &middot;
+    <a href="/auth/logout">sign out</a></p>
+
+  {% if not runtime_configured %}
+    <div class="card warn">
+      <p><strong>The agent is not deployed yet.</strong>
+        <code>AGENT_RUNTIME_INVOKE_URL</code> is unset in <code>.env</code>.</p>
+      <p class="muted">Until then you can still prove the gateway half of the chain with
+        <code>python scripts/test_chain.py</code>.</p>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <p><strong>Step 2 &mdash; ask the agent.</strong> It exchanges your token for a
+      gateway-scoped one, then the gateway&rsquo;s interceptor performs the Cross App
+      Access exchange and calls the API as you.</p>
+    <form method="post" action="/ask">
+      <p><input type="text" name="prompt" value="{{ default_prompt }}"></p>
+      <p><button type="submit">Ask</button></p>
+    </form>
+    <p class="muted">Try &ldquo;add buy milk to my list&rdquo;, or
+      &ldquo;who am I according to the todo API?&rdquo; &mdash; the answer names you and
+      the agent that acted for you.</p>
+  </div>
+{% endif %}
+{% endblock %}
