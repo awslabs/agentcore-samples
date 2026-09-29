@@ -20,11 +20,17 @@ Three identities, two custom authorization servers, and one manual console step.
 > - A **Single Sign-On** subscription. Cross App Access requires it.
 > - A test user you can sign in as.
 >
-> **ID-JAG quota.** Under plain SSO, XAA allows **250 ID-JAG tokens per user, per
-> resource app, per month**, and one is consumed per resource access. Ample for a
-> sample; real volume needs the **Okta for AI Agents** subscription. That
-> subscription is also what surfaces the **Machine access** tab, which this sample
-> does not use.
+> **ID-JAG quota.** Use of XAA as part of SSO is limited to **250 ID-JAG tokens per
+> user, per resource app, per month**, and one is consumed per resource access. The
+> "user" must be a licensed SSO user in an Active status, and the number of users using
+> XAA cannot exceed the org's purchased SSO seats. Ample for a sample; real volume needs
+> the **Okta for AI Agents** subscription, which is also what surfaces the **Machine
+> access** tab that this sample does not use.
+>
+> Limits and licensing terms change, so confirm the current ones against Okta's own
+> documentation rather than this page:
+> [Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/)
+> and [Okta rate limits](https://developer.okta.com/docs/reference/rate-limits/).
 
 ## Automated part
 

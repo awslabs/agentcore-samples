@@ -241,9 +241,20 @@ their exact text rather than paraphrased.
   **Single Sign-On** subscription
 - An Okta admin API token, and a test user you can sign in as
 
-> **ID-JAG quota.** Under plain SSO, Okta allows **250 ID-JAGs per user, per resource
-> app, per month**. The interceptor caches `T_tool` for its full hour and only
-> exchanges on `tools/call`, so normal use is nowhere near the cap.
+> **ID-JAG quota.** Okta limits use of XAA as part of SSO to **250 ID-JAG tokens per
+> user, per resource app, per month**, and one token is consumed every time the agent
+> uses XAA to reach a resource. Two conditions come with that: the "user" must be a
+> licensed SSO user in an Active status, and the number of users using XAA cannot exceed
+> the org's purchased SSO seats.
+>
+> The interceptor caches `T_tool` for its full hour and exchanges only on `tools/call`,
+> so ordinary use of this sample stays well clear of the cap. **Check Okta's own
+> documentation for the current limits and the exact licensing terms before you size
+> anything on them** — see
+> [Okta: Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/),
+> which is where these figures come from, and
+> [Okta rate limits](https://developer.okta.com/docs/reference/rate-limits/) for the
+> token endpoints the two legs use.
 
 ## Set up a virtual environment
 
