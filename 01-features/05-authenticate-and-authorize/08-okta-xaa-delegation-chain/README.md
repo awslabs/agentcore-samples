@@ -338,13 +338,32 @@ python deploy/03_create_policies.py --replace
 That deploys [`policies/forbid_writes_for_readers.cedar`](policies/forbid_writes_for_readers.cedar).
 Then, signed in as that user:
 
-| Prompt | Expected | Why |
+| Prompt | What you see | Why |
 | :--- | :--- | :--- |
-| `What is on my todo list?` | **works** | `allow_reads` permits the read tools |
-| `Add "buy milk" to my list.` | **denied** | `forbid` beats `permit` in Cedar, so the write tools are refused for this `sub` |
-| `Mark item 1 as done.` | **denied** | same policy, other write tool |
+| `What is on my todo list?` | your items | `allow_reads` permits the read tools |
+| `Who am I according to the todo API?` | you + the acting agent | same |
+| `Add "buy milk" to my list.` | *"I don't have a tool available to add items to your todo list"* | the write tools were **filtered out of `tools/list`**, so the model never saw them |
+| `Mark item 1 as done.` | the same refusal | same policy, other write tool |
 
-Reads continuing to work while writes fail is the proof that the policy engine is
+**The denial is not what you might expect, and the difference is the interesting part.**
+The agent does not attempt the write and get refused — it is never offered the tool. The
+gateway evaluates the policy against `tools/list` as well as `tools/call`, so a `forbid`
+removes the tool from the list the agent is given. The model's reply is then a plain
+statement of fact about its own tool set.
+
+Verified on a live run: the target defines four tools, the runtime's telemetry shows the
+model was handed exactly two, and the interceptor log for that request has a `tools/list`
+with no `tools/call` after it. The three read prompts all show `tools/list` followed by a
+`tools/call`.
+
+That is a stronger property than a refused call, and worth noticing if you are designing
+something similar: a tool the user may not use is not merely blocked, it is **invisible**,
+so no amount of prompt injection can talk the model into trying it. The trade-off is that
+the agent cannot explain *why* it cannot help — it has no way to know the tool exists. If
+you would rather it could say "you are not allowed to do that", keep the tool listed and
+enforce at call time instead.
+
+Reads continuing to work while writes disappear is the proof that the policy engine is
 reading **your** identity out of the inbound token — at the same time as the interceptor
 is swapping the credential on its way to the API. Remove `CEDAR_READONLY_USER` and
 re-run with `--replace` to restore writes.

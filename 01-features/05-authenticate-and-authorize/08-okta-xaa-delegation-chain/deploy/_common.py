@@ -210,6 +210,11 @@ def obo_provider_name() -> str:
     return env("AGENT_OBO_PROVIDER_NAME", "xaa-agent-obo-provider")
 
 
+def workload_name() -> str:
+    """The agent's workload identity. Must match AGENT_WORKLOAD_NAME in the runtime."""
+    return env("AGENT_WORKLOAD_NAME", "xaa-todo-agent")
+
+
 def policy_engine_name() -> str:
     # Policy engine AND policy names allow NO hyphens: the API enforces
     # ^[A-Za-z][A-Za-z0-9_]*$ (max 48). Gateway and target names do allow them, which
