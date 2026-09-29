@@ -8,9 +8,10 @@ Order matters, and two operations are asynchronous in ways that bite:
   * DeletePolicy is asynchronous, and DeletePolicyEngine refuses while any policy
     remains ("still contains 1 policy and cannot be deleted"), so it waits.
 
-Not deleted unless asked: the AgentCore Runtime (its own CloudFormation stack, via
---include-runtime) and anything in Okta (use deploy/00_delete_okta_apps.py; the AI Agent
-itself has no delete API and must go via the Admin Console).
+Not deleted unless asked: the AgentCore Runtime (--include-runtime deletes the
+CloudFormation stack `agentcore deploy` created -- the CLI has no teardown verb of its
+own) and anything in Okta (use deploy/00_delete_okta_apps.py; the AI Agent itself has no
+delete API and must go via the Admin Console).
 
     python deploy/teardown.py                      # preview
     python deploy/teardown.py --yes
@@ -21,14 +22,14 @@ itself has no delete API and must go via the Admin Console).
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 import time
 from pathlib import Path
 
+from botocore.exceptions import ClientError
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
-    SAMPLE_ROOT,
     clients,
     env,
     gateway_name,
@@ -47,7 +48,7 @@ from _common import (
 AGENT_KEY_SM_ID = "agentcore/xaa-ai-agent-key"
 
 
-def plan(aws, args_keep_secret: bool = False) -> list[tuple[str, str]]:
+def plan(aws, args_keep_secret: bool = False, args_include_runtime: bool = False) -> list[tuple[str, str]]:
     """Everything that exists right now, in the order it must be removed."""
     items: list[tuple[str, str]] = []
 
@@ -101,9 +102,30 @@ def plan(aws, args_keep_secret: bool = False) -> list[tuple[str, str]]:
         items.append(("log group", group))
 
     if not args_keep_secret:
-        items.append(("secret", AGENT_KEY_SM_ID))
+        # Check, rather than assume. Appending unconditionally made the post-delete
+        # verification report the secret as "still present" every single time.
+        try:
+            aws["sm"].describe_secret(SecretId=AGENT_KEY_SM_ID)
+            items.append(("secret", AGENT_KEY_SM_ID))
+        except aws["sm"].exceptions.ResourceNotFoundException:
+            pass
+
+    if args_include_runtime and runtime_stack_exists():
+        items.append(("runtime stack", runtime_stack_name()))
 
     return items
+
+
+def runtime_stack_exists() -> bool:
+    import boto3
+
+    try:
+        boto3.client("cloudformation", region_name=region()).describe_stacks(StackName=runtime_stack_name())
+        return True
+    except ClientError as exc:
+        if "does not exist" in str(exc):
+            return False
+        raise
 
 
 def find_workload_identity(acc) -> bool:
@@ -218,12 +240,43 @@ def delete(aws, args) -> None:
             pass
 
     if args.include_runtime:
-        project = SAMPLE_ROOT / env("AGENT_RUNTIME_NAME", "xaatodoagent")
-        if project.exists():
-            print(f"  removing the AgentCore runtime stack in {project.name}")
-            subprocess.run(["agentcore", "destroy", "-y"], cwd=project, check=False)
-        else:
-            print(f"  • {project.name} not found; skipping the runtime stack")
+        delete_runtime_stack(aws)
+
+
+def runtime_stack_name() -> str:
+    """The stack `agentcore deploy` creates for this project."""
+    return env("AGENT_RUNTIME_STACK", f"AgentCore-{env('AGENT_RUNTIME_NAME', 'xaatodoagent').lower()}-default")
+
+
+def delete_runtime_stack(aws) -> None:
+    """Delete the runtime by deleting its CloudFormation stack.
+
+    Not `agentcore destroy` -- that subcommand does not exist. The CLI (0.25.0) has no
+    teardown verb at all: `remove` only edits the local project config, and nothing under
+    `deploy` undoes a deployment. The runtime, its execution role and that role's inline
+    policy are all owned by the stack `agentcore deploy` created, so deleting the stack is
+    the actual mechanism, and it works whether or not the project directory still exists.
+
+    An earlier version of this script shelled out to `agentcore destroy -y` with
+    check=False, which meant the CLI printed its help, returned non-zero, and teardown
+    reported success while leaving a READY runtime behind.
+    """
+    import boto3
+
+    cfn = boto3.client("cloudformation", region_name=region())
+    stack = runtime_stack_name()
+    try:
+        cfn.describe_stacks(StackName=stack)
+    except ClientError as exc:
+        if "does not exist" in str(exc):
+            print(f"  • {stack} not found; nothing to delete")
+            return
+        raise
+    cfn.delete_stack(StackName=stack)
+    print(f"  deleting runtime stack {stack}")
+    waiter = cfn.get_waiter("stack_delete_complete")
+    waiter.wait(StackName=stack, WaiterConfig={"Delay": 10, "MaxAttempts": 60})
+    print(f"  deleted runtime stack {stack}")
 
 
 def main() -> None:
@@ -235,7 +288,7 @@ def main() -> None:
     load_env()
     aws = clients()
 
-    items = plan(aws, args.keep_secret)
+    items = plan(aws, args.keep_secret, args.include_runtime)
     print(f"region {region()}\n")
     if not items:
         print("  Nothing of this sample's remains in AWS.")
@@ -243,8 +296,6 @@ def main() -> None:
         print(f"  {len(items)} resource(s) would be deleted, in this order:")
         for kind, name in items:
             print(f"    {kind:26} {name}")
-        if args.include_runtime:
-            print(f"    {'agentcore stack':26} {env('AGENT_RUNTIME_NAME', 'xaatodoagent')}")
 
     if not args.yes:
         print("\n  Dry run. Re-run with --yes to delete.")
@@ -254,7 +305,7 @@ def main() -> None:
     delete(aws, args)
 
     print("\n--- verifying ---")
-    left = plan(aws, args.keep_secret)
+    left = plan(aws, args.keep_secret, args.include_runtime)
     if left:
         print(f"  ⚠ {len(left)} resource(s) still present:")
         for kind, name in left:
@@ -267,7 +318,7 @@ def main() -> None:
         "\n  Not covered here:\n"
         "    Okta apps and authorization servers  python deploy/00_delete_okta_apps.py --yes\n"
         "    the AI Agent itself                  Admin Console -> Directory -> AI Agents\n"
-        "    the AgentCore runtime                --include-runtime, or `agentcore destroy`"
+        "    the AgentCore runtime                --include-runtime (deletes its CFN stack)"
     )
 
 
