@@ -43,7 +43,7 @@ from _common import (
     resource_role_name,
 )
 
-KEY_SECRET_NAME = "agentcore/xaa-ai-agent-key"
+AGENT_KEY_SM_ID = "agentcore/xaa-ai-agent-key"
 
 
 def plan(aws) -> list[tuple[str, str]]:
@@ -155,8 +155,8 @@ def delete(aws, args) -> None:
 
     if not args.keep_secret:
         try:
-            aws["sm"].delete_secret(SecretId=KEY_SECRET_NAME, ForceDeleteWithoutRecovery=True)
-            print(f"  deleted secret {KEY_SECRET_NAME}")
+            aws["sm"].delete_secret(SecretId=AGENT_KEY_SM_ID, ForceDeleteWithoutRecovery=True)
+            print(f"  deleted secret {AGENT_KEY_SM_ID}")
         except aws["sm"].exceptions.ResourceNotFoundException:
             pass
 
@@ -187,7 +187,7 @@ def main() -> None:
         for kind, name in items:
             print(f"    {kind:26} {name}")
         if not args.keep_secret:
-            print(f"    {'secret':26} {KEY_SECRET_NAME}")
+            print(f"    {'secret':26} {AGENT_KEY_SM_ID}")
         if args.include_runtime:
             print(f"    {'agentcore stack':26} {env('AGENT_RUNTIME_NAME', 'xaatodoagent')}")
 

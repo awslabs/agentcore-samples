@@ -60,7 +60,7 @@ from _common import (
 )
 
 TARGET_NAME = "todo"
-KEY_SECRET_NAME = "agentcore/xaa-ai-agent-key"
+AGENT_KEY_SM_ID = "agentcore/xaa-ai-agent-key"
 
 
 def ensure_key_secret(aws) -> str:
@@ -74,15 +74,15 @@ def ensure_key_secret(aws) -> str:
     # The PEM is read inline and never bound to a local that outlives the call, so the
     # key material has the shortest possible scope.
     try:
-        arn = aws["sm"].create_secret(Name=KEY_SECRET_NAME, SecretString=pem_path.read_text())["ARN"]
+        arn = aws["sm"].create_secret(Name=AGENT_KEY_SM_ID, SecretString=pem_path.read_text())["ARN"]
         stored = "stored"
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ResourceExistsException":
             raise
-        aws["sm"].put_secret_value(SecretId=KEY_SECRET_NAME, SecretString=pem_path.read_text())
-        arn = aws["sm"].describe_secret(SecretId=KEY_SECRET_NAME)["ARN"]
+        aws["sm"].put_secret_value(SecretId=AGENT_KEY_SM_ID, SecretString=pem_path.read_text())
+        arn = aws["sm"].describe_secret(SecretId=AGENT_KEY_SM_ID)["ARN"]
         stored = "refreshed"
-    print(f"  ✓ {stored} the AI Agent key in {KEY_SECRET_NAME}")
+    print(f"  ✓ {stored} the AI Agent key in {AGENT_KEY_SM_ID}")
     return arn
 
 
@@ -159,7 +159,7 @@ def ensure_interceptor(aws, secret_arn: str) -> str:
             "RESOURCE_SCOPE": env("RESOURCE_SCOPE", "todos.read"),
             "AI_AGENT_CLIENT_ID": must_env("AI_AGENT_CLIENT_ID"),
             "AI_AGENT_KEY_KID": must_env("AI_AGENT_KEY_KID"),
-            "AI_AGENT_KEY_SECRET_ID": KEY_SECRET_NAME,
+            "AI_AGENT_KEY_SECRET_ID": AGENT_KEY_SM_ID,
             "ID_TOKEN_HEADER": env("ID_TOKEN_HEADER", "X-Okta-Id-Token"),
             "LOG_CLAIMS": "true",
         },

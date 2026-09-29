@@ -105,15 +105,15 @@ def main() -> None:
     # break the ID-JAG legs. In that case the BFF authenticates to the token
     # endpoint with a client assertion signed by the agent key instead.
     auth_method = ((app.get("credentials") or {}).get("oauthClient") or {}).get("token_endpoint_auth_method")
-    secret = None
+    minted = None
     if auth_method == "private_key_jwt":
         print("  • client auth is private_key_jwt -- no secret minted")
         print("    The BFF signs a client assertion with the AI Agent key")
         print(f"    (scripts/keys/okta_private_key.pem, kid={env('AI_AGENT_KEY_KID') or '?'}).")
     else:
         fresh = okta.post(f"/apps/{app['id']}/credentials/secrets", {})
-        secret = fresh.get("secret") or fresh.get("client_secret")
-        print(f"  ✓ minted a client secret ({'ok' if secret else 'FAILED'})")
+        minted = fresh.get("secret") or fresh.get("client_secret")
+        print(f"  ✓ minted a client secret ({'ok' if minted else 'FAILED'})")
 
     # 5. move the AS 1 sign-in policy onto this client
     moved = False
@@ -139,11 +139,11 @@ def main() -> None:
         "LINKED_APP_ID": app["id"],
         "LOGIN_CLIENT_AUTH_METHOD": auth_method or "client_secret_basic",
     }
-    if secret:
-        updates["LOGIN_CLIENT_SECRET"] = secret
+    if minted:
+        updates["LOGIN_CLIENT_SECRET"] = minted
     save_env(**updates)
     print("\n  ✓ .env now signs users in through the AI Agent's linked app")
-    print(f"    LOGIN_CLIENT_ID={client_id}")
+    print(f"    LOGIN_CLIENT_ID={client_id}")  # a public identifier, not a credential
     print(
         "\n  The separate 'XAA Todo Login' app is now unused. Leave it or delete it;\n"
         "  nothing reads it after this point."

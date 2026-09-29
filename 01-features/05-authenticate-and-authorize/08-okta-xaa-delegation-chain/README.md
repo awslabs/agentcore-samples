@@ -96,7 +96,7 @@ sequenceDiagram
     BFF-->>U: answer
 ```
 
-### Why ID-JAG takes two legs
+### The two ID-JAG legs in detail
 
 ```mermaid
 flowchart LR

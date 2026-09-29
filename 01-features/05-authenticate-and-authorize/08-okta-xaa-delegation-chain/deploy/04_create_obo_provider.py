@@ -72,6 +72,25 @@ def ensure_workload_identity(aws, name: str) -> str:
         return arn
 
 
+def summarise(config_out: dict) -> None:
+    """Print the provider's non-sensitive settings.
+
+    Takes the GetOauth2CredentialProvider *output* shape, which does not include the
+    client secret, and pulls out three plain strings before printing. Keeping this in
+    its own function means no expression derived from the credential config is ever in
+    the same scope as a print.
+    """
+    cfg = config_out.get("customOauth2ProviderConfig") or {}
+    client_id = str(cfg.get("clientId") or "")
+    discovery = str((cfg.get("oauthDiscovery") or {}).get("discoveryUrl") or "")
+    obo = cfg.get("onBehalfOfTokenExchangeConfig") or {}
+    grant = str(obo.get("grantType") or "")
+    actor = str((obo.get("tokenExchangeGrantTypeConfig") or {}).get("actorTokenContent") or "")
+    print(f"    clientId:  {client_id}")
+    print(f"    discovery: {discovery}")
+    print(f"    obo:       grantType={grant} actorTokenContent={actor}")
+
+
 def provider_config() -> dict:
     """The provider config, including the Agent app's client secret.
 
@@ -122,14 +141,7 @@ def main() -> None:
     if existing and not args.rotate_secret:
         arn = existing["credentialProviderArn"]
         print(f"  • reusing existing provider\n    {arn}")
-        out = existing.get("oauth2ProviderConfigOutput", {}).get("customOauth2ProviderConfig", {})
-        print(f"    clientId: {out.get('clientId')}")
-        print(f"    discovery: {(out.get('oauthDiscovery') or {}).get('discoveryUrl')}")
-        obo = out.get("onBehalfOfTokenExchangeConfig") or {}
-        print(
-            f"    obo: grantType={obo.get('grantType')} "
-            f"actorTokenContent={(obo.get('tokenExchangeGrantTypeConfig') or {}).get('actorTokenContent')}"
-        )
+        summarise(existing.get("oauth2ProviderConfigOutput") or {})
     elif existing:
         # Build the config only in the branches that send it, so the client secret is
         # never in scope while the summary above is printed.
