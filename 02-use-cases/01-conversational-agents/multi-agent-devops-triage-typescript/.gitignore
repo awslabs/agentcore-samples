@@ -8,5 +8,3 @@ coverage/
 .DS_Store
 cdk.out/
 
-# Temporary: unreleased bedrock-agentcore build (A2A support). See vendor/README.md.
-vendor/*.tgz

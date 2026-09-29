@@ -14,9 +14,6 @@ WORKDIR /app
 # the *container's* platform (linux-arm64) here — this is why the install
 # must happen inside the image and node_modules is never copied from the host.
 COPY package.json package-lock.json tsconfig.base.json tsconfig.json ./
-# Temporary: the agents depend on a local bedrock-agentcore tarball until the
-# SDK's A2A support is published (see vendor/README.md).
-COPY vendor ./vendor
 COPY packages ./packages
 COPY agents ./agents
 COPY scripts ./scripts

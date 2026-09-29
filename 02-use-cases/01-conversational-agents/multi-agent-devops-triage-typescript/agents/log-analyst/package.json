@@ -16,7 +16,7 @@
   "dependencies": {
     "@sample/claude-a2a-executor": "0.1.0",
     "@a2a-js/sdk": "1.0.0",
-    "bedrock-agentcore": "file:../../vendor/bedrock-agentcore-a2a.tgz",
+    "bedrock-agentcore": "^0.4.5",
     "express": "5.2.1"
   }
 }
