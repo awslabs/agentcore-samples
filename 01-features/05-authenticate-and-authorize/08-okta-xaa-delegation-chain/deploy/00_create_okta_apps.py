@@ -381,7 +381,7 @@ def main() -> None:
         "  3. Add the agent's wlp... client id to the 'XAA sample - Resource jwt-bearer'\n"
         f"     policy on '{AS2_NAME}' (its client allowlist)\n"
         "  4. Put the wlp... id in AI_AGENT_CLIENT_ID and the key's kid in AI_AGENT_KEY_KID\n"
-        "\nThen: python scripts/spikes/spike2_idjag_subject.py"
+        "\nThen: python scripts/verify_ai_agent.py"
     )
 
 

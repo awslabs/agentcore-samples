@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -34,35 +33,27 @@ POLICY_NAME = "XaaAgentOboAccess"
 
 
 def discover_role(project_dir: str) -> str | None:
-    """Read the execution role from `agentcore status`, which prints JSON."""
-    project = SAMPLE_ROOT / project_dir
-    if not project.exists():
-        return None
-    try:
-        out = subprocess.run(
-            ["agentcore", "status", "--output", "json"],
-            cwd=project,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        ).stdout
-        blob = json.loads(out[out.index("{") : out.rindex("}") + 1])
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+    """Find the Runtime execution role.
 
-    def walk(node):
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if "role" in key.lower() and isinstance(value, str) and ":role/" in value:
-                    yield value
-                else:
-                    yield from walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                yield from walk(item)
+    Prefer the CloudFormation stack outputs: the CLI creates the stack and records the
+    role ARN there, so this is deterministic. Parsing `agentcore status` was tried first
+    and is brittle -- the flag set and output shape vary by CLI version.
+    """
+    import boto3
+    from botocore.exceptions import ClientError
 
-    return next(walk(blob), None)
+    cfn = boto3.client("cloudformation", region_name=region())
+    for stack in (f"AgentCore-{project_dir}-default", f"AgentCore-{project_dir}"):
+        try:
+            outputs = cfn.describe_stacks(StackName=stack)["Stacks"][0].get("Outputs") or []
+        except ClientError:
+            continue
+        for out in outputs:
+            value = out.get("OutputValue") or ""
+            if ":role/" in value and "Role" in (out.get("OutputKey") or ""):
+                print(f"  found the execution role in stack {stack}")
+                return value
+    return None
 
 
 def main() -> None:
@@ -88,6 +79,7 @@ def main() -> None:
 
     provider_arn = must_env("AGENT_OBO_PROVIDER_ARN", "Run deploy/04_create_obo_provider.py first.")
     directory = f"arn:aws:bedrock-agentcore:{reg}:{acct}:workload-identity-directory/default"
+    token_vault = f"arn:aws:bedrock-agentcore:{reg}:{acct}:token-vault/default"
     policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -104,10 +96,25 @@ def main() -> None:
                 "Resource": [directory, f"{directory}/*"],
             },
             {
-                "Sid": "OboExchangeThisProviderOnly",
+                "Sid": "OboExchange",
                 "Effect": "Allow",
                 "Action": "bedrock-agentcore:GetResourceOauth2Token",
-                "Resource": [provider_arn, directory, f"{directory}/*"],
+                # IAM authorizes this action against SEVERAL resources, and every one
+                # of them must be listed or the call fails. Naming only the credential
+                # provider yields:
+                #
+                #   not authorized to perform: bedrock-agentcore:GetResourceOauth2Token
+                #   on resource: .../token-vault/default
+                #
+                # which names the resource it actually wanted. The token-vault ARN is
+                # the one most easily missed, because the provider ARN already contains
+                # the vault as a path prefix and reads like it should be sufficient.
+                "Resource": [
+                    directory,
+                    f"{directory}/*",
+                    token_vault,
+                    provider_arn,
+                ],
             },
             {
                 "Sid": "ReadIdentityOauthSecrets",

@@ -281,10 +281,11 @@ key whose `kid` matches `.env`, that your local private key is genuinely the pai
 of the registered public key, and that the AS 2 policy lists it.
 
 **User access** and **Resource connections** are not exposed to the Management API,
-so steps 3 and 5 are only provable by running the flow:
+so steps 3 and 5 are only provable by running the flow, which exercises both ID-JAG
+legs:
 
 ```bash
-python scripts/spikes/spike2_idjag_subject.py
+.venv/bin/python scripts/test_chain.py
 ```
 
 ## Troubleshooting

@@ -26,8 +26,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "deploy"))
-sys.path.insert(0, str(HERE / "spikes"))
+sys.path.insert(0, str(HERE))
 from _common import env, load_env, must_env, okta_org_url
+from okta_signin import sign_in
 
 MCP_VERSION = "2025-03-26"
 ID_TOKEN_HEADER = "X-Okta-Id-Token"
@@ -89,8 +90,6 @@ def main() -> None:
 
     gw_url = must_env("GATEWAY_MCP_URL", "Run deploy/02_create_gateway.py first.")
     print(f"gateway: {gw_url}\n")
-
-    from spike2_idjag_subject import sign_in
 
     tokens = sign_in(
         okta_org_url(),

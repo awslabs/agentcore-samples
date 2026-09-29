@@ -9,8 +9,8 @@ Four resources, all idempotent:
   4. An openApiSchema target for the todo API, with **no outbound credential
      provider** -- the interceptor supplies Authorization instead.
 
-Several of these choices are forced by behaviour established in
-../scripts/spikes/FINDINGS.md:
+Several of these choices are forced by behaviour that is not obvious from the docs,
+and was established against a live gateway:
 
   * `JWT_PASSTHROUGH` is rejected on every MCP-gateway target type, so the target
     carries no credentialProviderConfigurations at all. Omitting the field is exactly

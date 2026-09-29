@@ -43,11 +43,6 @@ flowchart LR
 *The API receives a token whose `sub` is the **human** and whose `act.sub` is the
 **agent** — no static API keys, and no tool credential inside the agent.*
 
-> **Verified end to end** against a real Okta tenant and AWS account: sign-in, the OBO
-> exchange, both ID-JAG legs, Cedar enforcement, and the resource API resolving the
-> caller. Evidence for every non-obvious claim is in
-> [`scripts/spikes/FINDINGS.md`](scripts/spikes/FINDINGS.md).
-
 ## How it works
 
 ```mermaid
@@ -171,7 +166,7 @@ access tokens — never assume they match.
 ├─ gateway/todo-tools.json    OpenAPI for the todo target
 ├─ policies/*.cedar       per-user, per-tool authorization
 ├─ deploy/                numbered, idempotent; each writes state back to .env
-└─ scripts/               keypair, verification, the chain test, tracing, cleanup
+└─ scripts/               keypair, verification, the chain test, tracing
 ```
 
 ## Prerequisites
@@ -271,6 +266,11 @@ that it is a cache hit of a few milliseconds.
 | `access_denied: Policy evaluation failed` | the agent is not in the AS 2 policy | `python deploy/00_authorize_agent.py` |
 | `invalid_client` on every call | the AI Agent is **STAGED**, or the key is staged not ACTIVE | Actions → Activate; check the ACTIVE badge on Public/private key |
 | `invalid_grant: id-jag already used` | ID-JAGs are single-use | mint one per exchange; never cache the ID-JAG (only `T_tool`) |
+| `Workload Identity does not belong to caller account` | the workload identity named in `AGENT_WORKLOAD_NAME` does not exist — the AgentCore CLI does not create it, and the message reads like a cross-account problem | `python deploy/04_create_obo_provider.py` creates it |
+| `not authorized to perform GetResourceOauth2Token on resource: …/token-vault/default` | that action is authorized against **four** resources; naming only the credential provider is not enough, even though its ARN contains the vault as a prefix | `python deploy/06_grant_iam.py` lists all four |
+| the agent starts but has no configuration | `agentcore.json` uses **`envVars`**, an ARRAY of `{name, value}`. An `environment` map is **silently ignored** — validate passes, deploy succeeds, the runtime comes up with no variables | `python deploy/05_patch_agentcore_json.py` writes the right shape |
+| `authorizerConfiguration with customJwtAuthorizer is required` | the CLI schema spells it **`customJwtAuthorizer`**; boto3 uses `customJWTAuthorizer` | same script handles the casing |
+| `404 UnknownOperationException` invoking the runtime | the invoke URL must end with `?qualifier=DEFAULT` | re-read `AGENT_RUNTIME_INVOKE_URL` from `.env` |
 | `wrong issuer: this API only trusts …` | a token from AS 1 reached the API | expected — this is the check that makes the agent's tokens useless |
 | Cedar denies everything | a policy names one tool action, or is still `CREATING` | `python deploy/03_create_policies.py --list` |
 | Policy engine name rejected | names allow **no hyphens** (`^[A-Za-z][A-Za-z0-9_]*$`) | unlike gateway/target names, which do |

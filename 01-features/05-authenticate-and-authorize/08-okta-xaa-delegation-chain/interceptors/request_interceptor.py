@@ -11,8 +11,8 @@ this Lambda the inbound request; it:
 The agent therefore never holds a credential that can reach the API, and the API
 receives a token whose `sub` is the human and whose `act.sub` is the agent.
 
-Four behaviours here are load-bearing, each established by a spike
-(see ../scripts/spikes/FINDINGS.md):
+Four behaviours here are load-bearing, each established by testing against a live
+gateway rather than inferred from the docs:
 
   * The injected value MUST be a parseable JWT. A non-JWT breaks the gateway's policy
     evaluation with "Policy Evaluation Internal Failure" -- an error, not a deny --

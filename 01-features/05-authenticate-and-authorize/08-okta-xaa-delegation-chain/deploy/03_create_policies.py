@@ -2,7 +2,7 @@
 
 Cedar surfaces the **inbound** token's claims as principal tags, so policies can read
 the signed-in user even though the interceptor swaps the credential before the request
-reaches the API. That combination was verified live; see ../scripts/spikes/FINDINGS.md.
+reaches the API. That combination was verified live.
 
 Policies are read from ../policies/*.cedar. `{gateway_arn}` in a file is substituted
 with the real gateway ARN.

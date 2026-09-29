@@ -34,12 +34,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
     clients,
     discovery_url,
+    env,
     load_env,
     must_env,
     obo_provider_name,
     region,
     save_env,
 )
+
+
+def ensure_workload_identity(aws, name: str) -> str:
+    """Create the workload identity the agent names in GetWorkloadAccessTokenForJWT.
+
+    This is NOT created by the AgentCore CLI, and its absence fails at runtime with
+
+        AccessDeniedException ... GetWorkloadAccessTokenForJWT ...
+        Workload Identity does not belong to caller account
+
+    which reads like an IAM or cross-account problem rather than a missing resource.
+    The name must match AGENT_WORKLOAD_NAME in the agent's environment.
+    """
+    from botocore.exceptions import ClientError
+
+    try:
+        arn = aws["acc"].create_workload_identity(name=name)["workloadIdentityArn"]
+        print(f"  ✓ created workload identity {name}")
+        return arn
+    except ClientError as exc:
+        msg = exc.response["Error"].get("Message", "")
+        if (
+            exc.response["Error"]["Code"] not in ("ConflictException", "ResourceAlreadyExistsException")
+            and "already exists" not in msg.lower()
+        ):
+            raise
+        arn = aws["acc"].get_workload_identity(name=name)["workloadIdentityArn"]
+        print(f"  • workload identity {name} exists")
+        return arn
 
 
 def main() -> None:
@@ -70,6 +100,11 @@ def main() -> None:
     }
 
     print(f"region {region()}\nprovider {name}\n")
+    print("[1/2] Workload identity")
+    wi_arn = ensure_workload_identity(aws, env("AGENT_WORKLOAD_NAME", "xaa-todo-agent"))
+    save_env(AGENT_WORKLOAD_IDENTITY_ARN=wi_arn)
+
+    print("\n[2/2] Credential provider")
     existing = None
     try:
         existing = aws["acc"].get_oauth2_credential_provider(name=name)
