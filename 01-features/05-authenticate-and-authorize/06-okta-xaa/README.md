@@ -18,6 +18,16 @@ Identity Assertion JWT Authorization Grant (**ID-JAG**,
 No static API keys, no per-call consent: the user signs in once with Okta, and
 the agent gets a short-lived, user-scoped token for the todo API.
 
+> **Looking for the same thing with the exchange outside the agent?** See
+> [`08-okta-xaa-delegation-chain`](../08-okta-xaa-delegation-chain). Here the agent runs
+> both ID-JAG legs itself and holds the signing key. That sample moves the exchange into
+> an **AgentCore Gateway interceptor**, so the agent never holds a credential that can
+> reach the resource API, and adds a browser front end, an OBO hop via AgentCore Identity,
+> and per-user **Cedar** policy on the gateway. It also caches the resource token, which
+> matters for the ID-JAG quota below — this sample mints a fresh one on every tool call.
+>
+> Start here to understand ID-JAG itself; go there for the full chain.
+
 ```mermaid
 flowchart LR
     U(["👤 User"])
@@ -112,9 +122,15 @@ flowchart TB
 
 | Identity | Env var | What it is |
 | --- | --- | --- |
-| **Login / caller app** | `OKTA_LOGIN_CLIENT_ID` | The OIDC app the **user signs into**. The ID token's `aud` is this client; it's what the AgentCore inbound authorizer allows. |
+| **Login / caller app** | `OKTA_LOGIN_CLIENT_ID` | The OIDC app the **user signs into**. The ID token's `aud` is this client; it's what the AgentCore inbound authorizer allows. This is the app Okta paired with the AI Agent, so the value is the agent's `wlp…` id — see step 1. |
 | **AI Agent** (both legs) | `OKTA_CLIENT_ID` | The Okta **AI Agent** (`wlp…`). Authenticates with `private_key_jwt` and performs *both* token-exchange legs. |
 | **Resource authz server** | `RESOURCE_AS_ISSUER` | The Okta **custom Authorization Server** for the resource. Mints the downstream token (Leg 2); the resource API validates against its JWKS. |
+
+> They are three *roles*, not necessarily three *client ids*. In the AI Agents model the
+> first two are the **same** OAuth client: the agent and its paired login app share one
+> `wlp…` id. Keep thinking of them as separate roles — the ID token's `aud` and the client
+> driving the exchange genuinely are different concerns — but expect one value in both
+> env vars.
 
 ## Repository layout
 
@@ -199,26 +215,53 @@ This writes `scripts/keys/okta_private_key.pem` and
 
 ## Okta setup (step by step)
 
+> **Okta's AI Agents UI is moving, and this page will drift.** These steps were verified
+> against a live tenant, but tab names, field labels and even the shape of the model have
+> already changed once during this sample's life — *Delegations* became **User access**,
+> and the separate login app became an app Okta pairs with the agent for you. Treat this
+> walkthrough as a guide to the *concepts* and check the current mechanics against Okta's
+> own documentation:
+> [Add AI agents manually](https://help.okta.com/oie/en-us/content/topics/ai-agents/ai-agent-add-manually.htm),
+> [Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/).
+> If a step does not match what your console shows, believe the console.
+
 > Use the Okta **org** authorization server (`https://<tenant>.okta.com`) for
 > Leg 1 — only the org server *mints* ID-JAGs. Leg 2 happens at the resource's
 > **custom** Authorization Server.
 
-### 1. Login (caller) app — automatable
+### 1. The login app — created *for* you, when you register the AI Agent
 
-The OIDC app the user signs into. Automate it with `okta_setup.py` (needs
-`OKTA_ORG_URL` + an SSWS `OKTA_API_TOKEN` in `scripts/.env`):
+**Do not create a separate login app.** Registering an AI Agent (step 3) creates a paired
+OIDC app and binds it under the agent's **User access** tab, and *that* paired app is the
+only issuer of ID tokens Leg 1 will accept. You cannot point User access at an app you
+made earlier, so a hand-rolled login app is simply unused.
+
+Two consequences, both of which cost real time to discover:
+
+- **Its OAuth `client_id` is the AI Agent's `wlp…` id**, not the `0oa…` you see in the
+  app's URL. The `0oa…` value addresses the app in the Management API
+  (`/api/v1/apps/0oa…`) and is *not* a client id. Using it at `/authorize` returns a bare
+  **400 Bad Request with no System Log entry at all**, so there is nothing to search for.
+  `OKTA_LOGIN_CLIENT_ID` and `OKTA_CLIENT_ID` therefore hold the **same** value.
+- **It is a confidential client using `private_key_jwt`**, so the login code exchange has
+  to be signed with the same key as the two exchange legs. Set
+  `LOGIN_AUTH_METHOD=private_key_jwt`. It cannot be downgraded to a public PKCE client:
+  Okta rejects `token_endpoint_auth_method: none` unless `pkce_required` is set, and that
+  field is not valid on this app type.
+
+Add `http://localhost:8080/callback` to the paired app's sign-in redirect URIs, and make
+sure your test user is assigned to it.
+
+`okta_setup.py` still exists and can create a standalone OIDC app — useful if you are
+adapting this sample to a topology where the caller is a normal app rather than an AI
+Agent's paired app — but it is **not** part of this walkthrough:
 
 ```bash
 cd scripts
 python3 okta_setup.py --auth-method none \
     --redirect-uri http://localhost:8080/callback \
-    --label "XAA Login (Agent0)" \
-    --create-user --user-email you@example.com     # omit --create-user to use an existing user
+    --label "Some other login app" --dry-run
 ```
-
-Add `--dry-run` to preview the API call. Copy the printed
-`OKTA_LOGIN_CLIENT_ID`. Assign your test user to the app (the `--create-user`
-path does this automatically). `--auth-method none` = public PKCE (no secret).
 
 ### 2. Resource custom Authorization Server — automatable via API
 
@@ -407,6 +450,9 @@ AGENT_RUNTIME_ARN=<runtime-arn> AWS_REGION=us-east-1 \
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| `400 Bad Request` from `/authorize`, **no System Log event at all** | `OKTA_LOGIN_CLIENT_ID` is the `0oa…` app id. That addresses `/api/v1/apps/0oa…`; it is not a client id | Use the AI Agent's **`wlp…`** id. Okta rejects the request before any app-level logging, so the log is silent by design |
+| `access_denied: Policy evaluation failed` (Leg 2) **and the client *is* allowlisted** | the access **policy itself is INACTIVE**. Same message as a missing allowlist entry | `GET /api/v1/authorizationServers/<as>/policies` and check `status`; activate with `POST …/policies/<id>/lifecycle/activate`. A policy can end up inactive when its client list is emptied, e.g. after deleting an agent |
+| `invalid_client` at the **login** token exchange | the paired app is confidential (`private_key_jwt`), but the login exchange was sent unauthenticated | `LOGIN_AUTH_METHOD=private_key_jwt`, signed with the same key as both legs. The app cannot be made public — Okta requires `pkce_required` with `none`, which is invalid on this app type |
 | `requested_token_type is invalid` (Leg 1) | Cross App Access / **Okta for AI Agents** not enabled on the tenant | Confirm the subscription with Okta. Not *Machine access* / agent-to-agent connections — that governs callers reaching the agent without a user |
 | `invalid_client: client_assertion signature is invalid` | Local private key ≠ the public key registered on the agent | Register the current public JWK; treat keys as immutable (rotate via a new `kid`) |
 | `invalid_client` on every call | AI Agent is **STAGED** | **Activate** the agent |
