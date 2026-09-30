@@ -2,6 +2,9 @@
 """Upload the sample receipt fixture to the inbox bucket so the agent has a real
 receipt to OCR. Prints the resulting s3:// URI.
 
+The default key is outside `receipts/`, the prefix the S3 front door watches, so the
+upload doesn't start a pipeline run of its own; only the invoke that follows runs it.
+
 Usage: python3 scripts/upload_sample_receipt.py --region us-west-2
 """
 
@@ -14,7 +17,7 @@ import boto3
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", default="us-west-2")
-    parser.add_argument("--key", default="receipts/sample-receipt.png")
+    parser.add_argument("--key", default="samples/sample-receipt.png")
     args = parser.parse_args()
 
     account = boto3.client("sts", region_name=args.region).get_caller_identity()["Account"]

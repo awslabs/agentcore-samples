@@ -25,7 +25,7 @@ Confirm: upload the sample receipt, then invoke the pipeline Runtime with it:
 ```bash
 python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
 python3 scripts/test_invoke.py --region us-west-2 \
-    --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/sample-receipt.png
+    --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/sample-receipt.png
 ```
 
 ## Tear down
