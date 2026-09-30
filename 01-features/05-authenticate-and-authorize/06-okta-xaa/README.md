@@ -13,7 +13,7 @@ Identity Assertion JWT Authorization Grant (**ID-JAG**,
 - **Resource app** — a small FastAPI "todo" API, fronted by an Okta **custom
   Authorization Server** that mints the downstream access token. The API only
   *validates* that token.
-- **IdP** — your Okta tenant with **Cross App Access / AI Agents** enabled.
+- **IdP** — your Okta tenant with **Cross App Access** / **Okta for AI Agents** enabled.
 
 No static API keys, no per-call consent: the user signs in once with Okta, and
 the agent gets a short-lived, user-scoped token for the todo API.
@@ -87,11 +87,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph Okta["Okta tenant (Cross App Access / AI Agents enabled)"]
+    subgraph Okta["Okta tenant (Cross App Access / Okta for AI Agents)"]
         LA["Login App (OIDC, PKCE)<br/>aud of the ID token<br/>assign the user"]
         AA["AI Agent (workload principal)<br/>private_key_jwt public key<br/>Status = ACTIVE"]
-        DEL["Delegation (inbound)<br/>caller = Login App<br/>on behalf of = User<br/>authz server = ORG server"]
-        RC["Resource Connection (outbound)<br/>type = Authorization server<br/>scope todos.read"]
+        DEL["User access (inbound)<br/>bound app = Login App<br/>formerly the Delegations tab<br/>Leg 1 runs at the ORG server"]
+        RC["Resource connection (outbound)<br/>type = Authorization server<br/>scope todos.read"]
         RAS["Custom Authorization Server<br/>audience api://todo<br/>scope todos.read<br/>policy allows the AI Agent<br/>+ jwt-bearer grant"]
         AA --- DEL
         AA --- RC
@@ -148,9 +148,21 @@ Okta-xaa/
 ## Prerequisites
 
 - Python 3.11+
-- An Okta tenant with **Cross App Access / AI Agents** enabled (Workforce
-  Identity; the feature is often listed as *Agent to Agent Connections* under
-  Settings → Features).
+- An Okta tenant with **Cross App Access** / **Okta for AI Agents** enabled (Workforce
+  Identity). If Leg 1 rejects `requested_token_type`, this is what is missing — ask Okta
+  which subscription or feature flag your tenant needs, rather than hunting for a toggle.
+
+> **ID-JAG quota.** Use of XAA as part of SSO is limited to **250 ID-JAG tokens per user,
+> per resource app, per month**, and one is consumed every time the agent uses XAA to
+> reach a resource. The "user" must be a licensed SSO user in an Active status, and the
+> number of users using XAA cannot exceed the org's purchased SSO seats.
+>
+> **This sample mints a fresh ID-JAG on every tool call** — there is no token cache — so a
+> chatty conversation spends the allowance quickly. Fine for a walkthrough; size real
+> usage deliberately, and confirm the current limits and licensing terms against
+> [Okta: Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/)
+> and [Okta rate limits](https://developer.okta.com/docs/reference/rate-limits/) rather
+> than this page.
 - For deployment: an AWS account with Bedrock model access and the AWS CLI
   configured.
 
@@ -229,18 +241,37 @@ grant with the AI Agent's `wlp…` client id in the policy's client allowlist.
 
 ### 3. Register the AI Agent — manual (Admin Console)
 
-Directory → **AI Agents** → **Register AI Agent** → *Register manually*:
-- Name it (e.g. `XAA Todo Agent`); assign an owner.
-- **Credentials**: client authentication = **Public key / Private key**; **Add
-  public key** and paste `scripts/keys/okta_public_jwk.json`.
+Directory → **AI Agents** → **Register AI Agent** → *Register manually*. Okta asks for
+**Profile**, **Owners**, **Client registration**, **User access** and **Machine access**:
+
+- **Profile**: name it (e.g. `XAA Todo Agent`).
+- **Owners**: assign at least one. Okta recommends two, so an agent is never ownerless.
+- **Client registration**: the method the agent uses to present its identity. Choose
+  **Public key / Private key** and paste `scripts/keys/okta_public_jwk.json`. (Okta also
+  offers client secret and a Client ID Metadata Document; this sample uses the keypair,
+  because `private_key_jwt` is what both legs authenticate with.)
 - Copy the **AI Agent ID** (`wlp…`) → `OKTA_CLIENT_ID`; note the key's **kid** →
   `OKTA_PRIVATE_KEY_KID`.
-- **Delegations → Add caller**: caller = the **Login app**, on behalf of =
-  **User**, **Authorization server = the org "Okta Authorization Server"** (not a
-  custom AS — Leg 1 runs at the org server).
+- **User access**: bind the **Login app**. This is what authorises Leg 1 — the agent may
+  act for a user only if that user signed in to the bound app, which is why Leg 1 takes
+  the Login app's **ID token** and nothing else. You can bind exactly one app, and the
+  app's own page then shows *Linked AI Agent*.
 - **Resource connections → Add**: type = **Authorization server** → your custom
-  AS (step 2), scope `todos.read`.
+  AS (step 2), scope `todos.read`. This authorises Leg 2.
 - **Actions → Activate** (the agent must be **Active**, not Staged).
+
+> **If you are following older material, the tab names changed.** What is now **User
+> access** was the **Delegations** tab, where you added a *caller* plus an *on behalf of*
+> and picked an authorization server. The replacement is a single app binding, and Leg 1
+> still runs at the org server — that is no longer something you select here.
+>
+> Do not reach for **Machine access**: that governs callers that reach this agent
+> *without a user* (agent-to-agent), which is the opposite direction from Leg 1 and is
+> not used by this sample.
+>
+> Field names and tabs move, so check
+> [Add AI agents manually](https://help.okta.com/oie/en-us/content/topics/ai-agents/ai-agent-add-manually.htm)
+> against what your console actually shows.
 
 ## Milestone A — run the flow locally
 
@@ -376,10 +407,10 @@ AGENT_RUNTIME_ARN=<runtime-arn> AWS_REGION=us-east-1 \
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `requested_token_type is invalid` (Leg 1) | Cross App Access / AI Agents not enabled | Enable **Agent to Agent Connections** (Settings → Features) |
+| `requested_token_type is invalid` (Leg 1) | Cross App Access / **Okta for AI Agents** not enabled on the tenant | Confirm the subscription with Okta. Not *Machine access* / agent-to-agent connections — that governs callers reaching the agent without a user |
 | `invalid_client: client_assertion signature is invalid` | Local private key ≠ the public key registered on the agent | Register the current public JWK; treat keys as immutable (rotate via a new `kid`) |
 | `invalid_client` on every call | AI Agent is **STAGED** | **Activate** the agent |
-| `'subject_token' is invalid: … not registered for delegation` (Leg 1) | Delegation's authz server is a custom AS | Set the delegation's authorization server to the **org** server |
+| `'subject_token' is invalid: … not registered for delegation` (Leg 1) | The ID token was not issued by the app bound under **User access**, or you sent an access token | Bind the Login app under **User access**, and pass that app's **ID token** as `subject_token`. Leg 1 runs at the **org** server. The error still says "delegation" even though the tab is now *User access* |
 | `access_denied: Policy evaluation failed` (Leg 2) | Resource AS policy doesn't list the AI Agent | Add the `wlp…` client id to the AS policy's client allowlist |
 | `invalid_grant: id-jag already used` | ID-JAGs are single-use | Mint a fresh ID-JAG per attempt (run legs back-to-back) |
 | Okta app create 400 (`Invalid signOnMode` / `Missing visibility`) | OIDC app payload missing `name: oidc_client` | Fixed in `okta_setup.py` |

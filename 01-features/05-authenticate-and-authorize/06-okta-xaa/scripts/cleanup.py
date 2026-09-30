@@ -116,7 +116,7 @@ def cleanup_okta(dry: bool) -> None:
         elif r.status_code == 409:
             print(
                 f"  ! {desc}: in use (409) — remove the AI Agent first (it holds a "
-                f"delegation/resource connection), then re-run."
+                f"User access binding/resource connection), then re-run."
             )
         else:
             print(f"  ! {desc}: HTTP {r.status_code}")
