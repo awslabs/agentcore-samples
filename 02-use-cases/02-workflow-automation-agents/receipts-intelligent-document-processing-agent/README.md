@@ -87,10 +87,12 @@ python3 scripts/test_invoke.py --region us-west-2 \
 
 ### Event-driven front door
 
-Drop a receipt in the inbox bucket and the pipeline runs:
+Drop a receipt in the inbox bucket and the pipeline runs. This one's totals don't add
+up, so the validator should hold it for review:
 
 ```bash
-aws s3 cp receipt.png s3://receipts-inbox-<account>-<region>/receipts/user-001/receipt.png
+aws s3 cp evals/fixtures/non_reconciling.png \
+    s3://receipts-inbox-<account>-<region>/receipts/user-001/non_reconciling.png
 ```
 
 S3 emits `Object Created`, an EventBridge rule scoped to `receipts/` fires the trigger
@@ -102,7 +104,8 @@ a failed trigger visible rather than dropping a receipt.
 
 Every receipt run emits one event; a writer Lambda records one row per
 receipt in `ProcessingRuns` (processed, needs_review, deferred or error), and a
-`status=error` rule notifies an SNS topic ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)):
+`status=error` rule notifies an SNS topic ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)).
+About a minute after the upload above, the held receipt is in the review queue:
 
 ```bash
 python3 scripts/receipt_status.py --status needs_review
