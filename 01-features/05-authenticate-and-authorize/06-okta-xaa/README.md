@@ -358,15 +358,26 @@ XAA (ID-JAG) flow complete.
 ## Deploy the agent to AgentCore Runtime (agentcore CLI)
 
 Deployed with the Node-based [AgentCore CLI](https://github.com/aws/agentcore-cli)
-(`@aws/agentcore`, v0.30.0 — *not* the deprecated `bedrock-agentcore-starter-toolkit`).
+(`@aws/agentcore` — *not* the deprecated `bedrock-agentcore-starter-toolkit`).
 The runtime's **inbound** auth is a `CUSTOM_JWT` authorizer trusting your Okta
-**org** server, with `allowedAudience` = the **login app** id (the invoking ID
-token's `aud`). The agent reads the ID token from the invoke payload (`id_token`)
+**org** server, with `allowedAudience` = the invoking ID token's `aud`, which is
+the AI Agent's **`wlp…`** id (see step 1 — that is also the login client). Get this
+wrong and the runtime rejects the call at the authorizer with an opaque 403.
+The agent reads the ID token from the invoke payload (`id_token`)
 or the allow-listed `Authorization` header, then drives the two-leg ID-JAG
 exchange as the AI Agent (`OKTA_CLIENT_ID`).
 
-Prerequisites: Node 20+, `uv`, AWS CLI, `npm install -g @aws/agentcore@0.30.0 aws-cdk`,
-`cdk bootstrap` once per account/region, and Bedrock model access.
+> **CLI version.** This walkthrough was last verified end to end with
+> **`@aws/agentcore` 0.25.0**; newer versions exist and the repo pins 0.30.0 elsewhere.
+> The generated `agentcore.json` schema has moved between releases — the authorizer
+> currently lands under `authorizerConfiguration.customJwtAuthorizer`, and
+> `deploy/patch_agentcore_json.py` writes that shape. If `agentcore validate` complains
+> after a CLI upgrade, compare the generated file against what the patch script expects
+> before assuming the sample is broken.
+
+Prerequisites: Node 20+, `uv`, AWS CLI, `npm install -g @aws/agentcore aws-cdk`,
+`cdk bootstrap` once per account/region, and Bedrock model access. `--build CodeZip`
+means Docker is **not** required.
 
 **1. Host the resource app** so the runtime can reach it. This sample runs it on
 **AWS Lambda** (`resource-app/lambda_handler.py` wraps the FastAPI app with
@@ -377,6 +388,13 @@ cd resource-app
 mkdir -p build && pip3 install --platform manylinux2014_x86_64 --only-binary=:all: \
   --python-version 3.12 --target build fastapi mangum "pyjwt[crypto]" pydantic python-dotenv
 cp main.py lambda_handler.py build/ && (cd build && zip -qr ../function.zip .)
+# Create (or reuse) an execution role first, and remember its name -- scripts/cleanup.py
+# needs it as LAMBDA_ROLE_NAME, and there is no canonical default:
+#   aws iam create-role --role-name obo-todo-lambda-role \
+#     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+#       "Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+#   aws iam attach-role-policy --role-name obo-todo-lambda-role \
+#     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 aws lambda create-function --function-name obo-todo-resource --runtime python3.12 \
   --handler lambda_handler.handler --role <lambda-exec-role-arn> \
   --zip-file fileb://function.zip --timeout 20 --memory-size 512 --region us-east-1 \

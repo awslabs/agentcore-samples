@@ -38,14 +38,31 @@ load_dotenv()
 
 REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 LAMBDA_NAME = os.environ.get("RESOURCE_LAMBDA_NAME", "obo-todo-resource")
+# There is no canonical name for this role -- the README has you pass an existing role
+# ARN when creating the Lambda -- so set LAMBDA_ROLE_NAME to whatever you actually used.
+# The default is only a convention; cleanup reports "not found" rather than failing.
 LAMBDA_ROLE = os.environ.get("LAMBDA_ROLE_NAME", "obo-todo-lambda-role")
 SECRET_ID = os.environ.get("XAA_KEY_SECRET_ID", "agentcore/xaa_private_key")
 RUNTIME_NAME = os.environ.get("AGENT_RUNTIME_NAME", "xaatodoagent")
 STACK_NAME = f"AgentCore-{RUNTIME_NAME}-default"
 
 
-def _do(dry: bool, desc: str, fn) -> None:
+def _do(dry: bool, desc: str, fn, exists=None) -> None:
+    """Delete one thing, or say what would be deleted.
+
+    `exists` is an optional zero-arg predicate. Pass it and the dry run checks reality
+    instead of listing intentions: a preview that names resources which are already gone
+    trains you to skim the one output that should be read carefully before deleting.
+    """
     if dry:
+        if exists is not None:
+            try:
+                if not exists():
+                    print(f"  - {desc}: already absent")
+                    return
+            except ClientError:
+                print(f"  - {desc}: already absent")
+                return
         print(f"  [dry-run] would {desc}")
         return
     try:
@@ -62,7 +79,12 @@ def _do(dry: bool, desc: str, fn) -> None:
 def cleanup_aws(dry: bool) -> None:
     print("AWS resource app:")
     lam = boto3.client("lambda", region_name=REGION)
-    _do(dry, f"delete Lambda function {LAMBDA_NAME}", lambda: lam.delete_function(FunctionName=LAMBDA_NAME))
+    _do(
+        dry,
+        f"delete Lambda function {LAMBDA_NAME}",
+        lambda: lam.delete_function(FunctionName=LAMBDA_NAME),
+        exists=lambda: bool(lam.get_function(FunctionName=LAMBDA_NAME)),
+    )
 
     sm = boto3.client("secretsmanager", region_name=REGION)
     # Note: the secret name is intentionally kept out of the log message.
@@ -70,6 +92,7 @@ def cleanup_aws(dry: bool) -> None:
         dry,
         "delete Secrets Manager secret",
         lambda: sm.delete_secret(SecretId=SECRET_ID, ForceDeleteWithoutRecovery=True),
+        exists=lambda: bool(sm.describe_secret(SecretId=SECRET_ID)),
     )
 
     iam = boto3.client("iam")
@@ -81,13 +104,36 @@ def cleanup_aws(dry: bool) -> None:
             iam.delete_role_policy(RoleName=LAMBDA_ROLE, PolicyName=name)
         iam.delete_role(RoleName=LAMBDA_ROLE)
 
-    _do(dry, f"delete IAM role {LAMBDA_ROLE}", _del_role)
+    _do(dry, f"delete IAM role {LAMBDA_ROLE}", _del_role, exists=lambda: bool(iam.get_role(RoleName=LAMBDA_ROLE)))
+
+    # Log groups outlive the functions and runtimes that wrote them, so deleting those
+    # alone leaves the logs -- and any retention cost -- behind.
+    logs = boto3.client("logs", region_name=REGION)
+    for group in _log_groups(logs):
+        _do(dry, f"delete log group {group}", lambda g=group: logs.delete_log_group(logGroupName=g))
+
+
+def _log_groups(logs) -> list[str]:
+    """Every log group this sample writes to, including the runtime's."""
+    found: list[str] = []
+    for prefix in (
+        f"/aws/lambda/{LAMBDA_NAME}",
+        f"/aws/bedrock-agentcore/runtimes/{RUNTIME_NAME.lower()}",
+    ):
+        for page in logs.get_paginator("describe_log_groups").paginate(logGroupNamePrefix=prefix):
+            found.extend(g["logGroupName"] for g in page.get("logGroups", []))
+    return sorted(set(found))
 
 
 def cleanup_runtime(dry: bool) -> None:
     print("AgentCore runtime (CloudFormation):")
     cfn = boto3.client("cloudformation", region_name=REGION)
-    _do(dry, f"delete stack {STACK_NAME}", lambda: cfn.delete_stack(StackName=STACK_NAME))
+    _do(
+        dry,
+        f"delete stack {STACK_NAME}",
+        lambda: cfn.delete_stack(StackName=STACK_NAME),
+        exists=lambda: bool(cfn.describe_stacks(StackName=STACK_NAME)),
+    )
     if not dry:
         print(f"  (stack deletion is async; check: aws cloudformation describe-stacks --stack-name {STACK_NAME})")
 
