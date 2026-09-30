@@ -10,19 +10,25 @@ list: every evaluator judges a decision a model makes, and every judge was contr
 before it was trusted. Three evaluators run live in AgentCore; the rest run against
 labelled data sent through the deployed stack.
 
-> [!IMPORTANT]
-> This sample is for experimental and educational purposes only. It demonstrates
-> concepts and techniques but is not intended for direct use in production.
+## Overview
 
-| | |
+### Use case details
+
+| Information | Details |
 |---|---|
+| **Use case type** | Event-driven (receipt pipeline) and conversational (chat assistant) |
+| **Agent type** | Multi-agent: extractor, validator and reviewer-note agents, plus a chat agent |
+| **Use case components** | Tools through AgentCore Gateway, Cedar policy, multi-modality (receipt images), observability, evaluation |
+| **Use case vertical** | Finance: expense management |
+| **Example complexity** | Advanced |
+| **SDK used** | Strands Agents, Amazon Bedrock AgentCore SDK and CLI, AWS CDK, boto3 |
 | **Time to deploy** | about 20-30 minutes the first time |
 | **Running cost** | a few dollars a day: Bedrock and Textract on demand, DynamoDB on demand, Lambda, two AgentCore Runtimes, evaluation judge calls. Tear down when not testing |
 | **Resources created** | one CloudFormation stack: two Runtimes, the Gateway with five tool Lambdas and a Cedar policy, three code-based evaluators and a live evaluation config, DynamoDB, S3, Cognito, SQS, AppConfig, EventBridge, KMS, CloudWatch |
 
 Demo of the original pipeline: [demo.mp4](demo.mp4).
 
-## What it does
+### What it does
 
 A receipt lands in S3. Textract reads it, an **extractor** agent produces a structured
 expense, and an independent **validator** agent checks it and acts on its decision by
@@ -34,18 +40,7 @@ agents decided. When a receipt is held, a third model writes a short note for th
 A separate **chat** Runtime answers questions like "how much did I spend at Mr D.I.Y.?"
 and follow-ups like "and at Starbucks?", read-only, for the signed-in user only.
 
-## The AgentCore services
-
-- **Runtime:** the pipeline Runtime and the chat Runtime (same code, separate so each is
-  evaluated on its own traffic, [ADR-0018](docs/decisions/0018-separate-chat-runtime.md)).
-- **Gateway:** five MCP tools backed by Lambda.
-- **Policy:** Cedar on tool input.
-- **Observability:** OpenTelemetry into CloudWatch, with the business outcome stamped on
-  every trace.
-- **Evaluations:** code-based evaluators, built-in and third-party judges, a live
-  configuration per Runtime ([ADR-0017](docs/decisions/0017-evaluators-from-business-outcomes.md)).
-
-## Architecture
+### Architecture
 
 ![Receipts IDP architecture](docs/diagrams/architecture.png)
 
@@ -58,19 +53,85 @@ front door is an S3 event, so there is no logged-in user at run time. Per-user d
 separation lives at the data layer (Expenses partitioned by `userId`). Full walkthrough in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+### Key features: the AgentCore services
+
+- **Runtime:** the pipeline Runtime and the chat Runtime (same code, separate so each is
+  evaluated on its own traffic, [ADR-0018](docs/decisions/0018-separate-chat-runtime.md)).
+- **Gateway:** five MCP tools backed by Lambda.
+- **Policy:** Cedar on tool input.
+- **Observability:** OpenTelemetry into CloudWatch, with the business outcome stamped on
+  every trace.
+- **Evaluations:** code-based evaluators, built-in and third-party judges, a live
+  configuration per Runtime ([ADR-0017](docs/decisions/0017-evaluators-from-business-outcomes.md)).
+
+## Prerequisites
+
+- An AWS account and credentials
+- Node.js 20 or later
+- The AgentCore CLI (`@aws/agentcore`)
+- Python 3.12 with `boto3`, and `uv`
+- Access to Anthropic Claude models in Amazon Bedrock
+
+The detailed checks are in [docs/deployment.md](docs/deployment.md).
+
 ## Deploy
 
 ```bash
 ./deploy.sh us-west-2       # the whole stack, then the chat live-evaluation config
-python3 scripts/test_invoke.py --region us-west-2
-./destroy.sh us-west-2      # removes everything billable
+python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
+python3 scripts/test_invoke.py --region us-west-2 \
+    --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/sample-receipt.png
 ```
 
-Prerequisites: the `@aws/agentcore` CLI, Node + TypeScript, Python 3.12 + `uv`, and the
-four ladder global inference profiles enabled in the account
-(`aws bedrock list-inference-profiles`). No local container engine is needed: the Runtime
-images are built in AWS CodeBuild
-([ADR-0005](docs/decisions/0005-container-build-over-codezip.md)).
+## Usage
+
+### Event-driven front door
+
+Drop a receipt in the inbox bucket and the pipeline runs:
+
+```bash
+aws s3 cp receipt.png s3://receipts-inbox-<account>-<region>/receipts/user-001/receipt.png
+```
+
+S3 emits `Object Created`, an EventBridge rule scoped to `receipts/` fires the trigger
+Lambda, and it invokes the pipeline Runtime with `{s3_uri, user_id}`. The `user_id` comes
+from the key (`receipts/<user_id>/<file>`), defaulting to `user-001`. A DLQ and retries make
+a failed trigger visible rather than dropping a receipt.
+
+### Run ledger
+
+Every receipt run emits one event; a writer Lambda records one row per
+receipt in `ProcessingRuns` (processed, needs_review, deferred or error), and a
+`status=error` rule notifies an SNS topic ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)):
+
+```bash
+python3 scripts/receipt_status.py --status needs_review
+```
+
+### Chat
+
+A chat assistant on its own Runtime:
+
+```bash
+python3 scripts/chat.py --user user-001    # one session for the whole chat
+# you> how much did I spend at Mr D.I.Y.?
+# you> and at Starbucks?
+python3 scripts/ask.py --user user-001 "what are my most recent expenses?"
+```
+
+The REPL keeps one Runtime session, so follow-ups see the earlier turns. History is held
+per verified user and session: a session id replayed under another identity starts empty.
+The `user_id` is never taken from the request body; it comes from a KMS-signed identity
+token the agent verifies, and the read tools are pinned to that user
+([ADR-0016](docs/decisions/0016-conversational-identity-no-idor.md)).
+
+## Sample prompts
+
+Ask these in one `scripts/chat.py` session, in order, so the follow-up uses the first answer:
+
+- "how much did I spend at Mr D.I.Y.?"
+- "and at Starbucks?"
+- "what are my most recent expenses?"
 
 ## Evaluation
 
@@ -118,6 +179,8 @@ on demand rather than live. Two findings shaped the design; both are in
   wrong answer as handled; only Correctness with an expected answer catches it. That is why
   both are kept.
 
+### Evaluators and the degradation ladder
+
 **The evaluators assume the default rung, L0.** On lower rungs the degradation ladder changes
 the pipeline, and each trace carries its rung as `receipts.ladder.rung`:
 - **L1** runs another model, so compare scores by rung, never pooled.
@@ -148,48 +211,21 @@ uv venv --python 3.12 && uv pip install -r ../app/receiptsagent/requirements.txt
 
 See [evals/README.md](evals/README.md).
 
-## Front door, run ledger and chat
-
-**Event-driven front door.** Drop a receipt in the inbox bucket and the pipeline runs:
+## Clean up
 
 ```bash
-aws s3 cp receipt.png s3://receipts-inbox-<account>-<region>/receipts/user-001/receipt.png
+./destroy.sh us-west-2      # removes everything billable
 ```
 
-S3 emits `Object Created`, an EventBridge rule scoped to `receipts/` fires the trigger
-Lambda, and it invokes the pipeline Runtime with `{s3_uri, user_id}`. The `user_id` comes
-from the key (`receipts/<user_id>/<file>`), defaulting to `user-001`. A DLQ and retries make
-a failed trigger visible rather than dropping a receipt.
-
-**Run ledger.** Every receipt run emits one event; a writer Lambda records one row per
-receipt in `ProcessingRuns` (processed, needs_review, deferred or error), and a
-`status=error` rule notifies an SNS topic ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)):
-
-```bash
-python3 scripts/receipt_status.py --status needs_review
-```
-
-**Chat.** A chat assistant on its own Runtime:
-
-```bash
-python3 scripts/chat.py --user user-001    # one session for the whole chat
-# you> how much did I spend at Mr D.I.Y.?
-# you> and at Starbucks?
-python3 scripts/ask.py --user user-001 "what are my most recent expenses?"
-```
-
-The REPL keeps one Runtime session, so follow-ups see the earlier turns. History is held
-per verified user and session: a session id replayed under another identity starts empty.
-The `user_id` is never taken from the request body; it comes from a KMS-signed identity
-token the agent verifies, and the read tools are pinned to that user
-([ADR-0016](docs/decisions/0016-conversational-identity-no-idor.md)).
+It deletes the chat live-evaluation config, then the stack, and recovers from a
+`DELETE_FAILED` stack. The details are in [docs/deployment.md](docs/deployment.md).
 
 ## Layout
 
 - `agentcore/`: `agentcore.json` (Runtimes, Gateway, Cedar, evaluators, live config) and the
   CDK app (`cdk/lib/cdk-stack.ts`, `cdk/lib/infra-construct.ts`).
 - `app/receiptsagent/`: the agent. `config.py` is the single env-read seam.
-- `evaluators/business_outcomes/`: the code-based evaluators, deployed as one Lambda.
+- `evaluators/business_outcomes/`: the code-based evaluators, one codebase deployed as one Lambda per evaluator.
 - `evals/`: the evaluation harness, labelled receipts and conversations.
 - `lambdas/`: Gateway tools, trigger, controller, drain, ledger writer, Transaction Search.
 - `scripts/`, `tests/`, `docs/`.
@@ -202,3 +238,11 @@ token the agent verifies, and the read tools are pinned to that user
 - [docs/tutorial.md](docs/tutorial.md): a guided run and experiments.
 - [docs/deployment.md](docs/deployment.md): deploy, destroy, local dev, live tests.
 - [evals/README.md](evals/README.md): running and extending the evaluation suite.
+
+## Disclaimer
+
+> [!IMPORTANT]
+> This sample is for experimental and educational purposes only. It demonstrates
+> concepts and techniques but is not intended for direct use in production. Make sure to
+> have Amazon Bedrock Guardrails in place to protect against
+> [prompt injection](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-injection.html).

@@ -70,5 +70,6 @@ python3 scripts/seed_dynamodb.py --region "$REGION"
 
 echo ""
 echo "✅ Done. Test with:"
-echo "   python3 scripts/test_invoke.py --region $REGION"
+echo "   python3 scripts/upload_sample_receipt.py --region $REGION"
+echo "   python3 scripts/test_invoke.py --region $REGION --s3-uri <the s3:// URI it prints>"
 echo "🧪 Local dev:  agentcore dev --no-browser"

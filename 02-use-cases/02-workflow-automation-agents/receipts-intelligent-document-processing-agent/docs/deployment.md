@@ -6,7 +6,8 @@ One command deploys everything as a single CloudFormation stack ([ADR-0001](deci
 
 ## Prerequisites
 
-- The **`@aws/agentcore` CLI**, Node + TypeScript, Python 3.12 + `uv`.
+- The **`@aws/agentcore` CLI**, Node.js 20 or later + TypeScript, Python 3.12 + `uv`.
+- **`python3` with `boto3`** on the path: `deploy.sh` and `destroy.sh` run Python scripts that call AWS.
 - **No local container engine.** The Runtimes are `Container` builds ([ADR-0005](decisions/0005-container-build-over-codezip.md)), and the images are built in AWS CodeBuild from the uploaded source.
 - The **four ladder global inference profiles** enabled in the account: `aws bedrock list-inference-profiles` should list `global.anthropic.claude-opus-4-8`, `...-opus-4-7`, `...-opus-4-6-v1`, `...-sonnet-4-6`. Copy the ids verbatim — the suffix convention is not uniform.
 - AWS credentials for the target account (a dev account; the sample provisions real resources).
@@ -19,9 +20,10 @@ One command deploys everything as a single CloudFormation stack ([ADR-0001](deci
 
 This runs `agentcore deploy`: CDK synth + deploy of the combined stack `AgentCore-ReceiptsAgent-dev`, then applies the chat live-evaluation config with `scripts/chat_online_eval.py` (it uses managed third-party evaluators, which the CloudFormation schema does not accept yet), then seeds a sample user. It also enables CloudWatch **Transaction Search** (needed once per account for span search; online evaluation reads spans from the `aws/spans` log group it creates; takes ~10 min to become active). The slowest stage is the two Runtime image builds in CodeBuild.
 
-Confirm:
+Confirm: upload the sample receipt, then invoke the pipeline Runtime with it:
 
 ```bash
+python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
 python3 scripts/test_invoke.py --region us-west-2 \
     --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/sample-receipt.png
 ```
@@ -69,7 +71,7 @@ With AppConfig/Gateway env unset, the agent runs on the L0 default model with al
 
 ## Automated end-to-end
 
-`make e2e` (or `scripts/e2e.sh`) is a one-shot **real** deploy, then assertions against the live stack, then destroy, exiting with the test result. `make unit` runs the tests that need no AWS. `make synth` builds and synthesizes the CDK app without creating resources.
+`make e2e` (or `scripts/e2e.sh`) is a one-shot **real** deploy, then assertions against the live stack, then destroy, exiting with the test result. `make test-user` runs the user-facing live tests (pipeline, front door, chat, run ledger, Cedar, tools, evaluators) against a stack that is already deployed, with no deploy or destroy. `make unit` runs the tests that need no AWS. `make synth` builds and synthesizes the CDK app without creating resources.
 
 ## What gets created
 
