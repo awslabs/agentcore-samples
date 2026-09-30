@@ -81,10 +81,19 @@ Two config surfaces stay in sync ([ADR-0001](decisions/0001-agentcore-cli-plus-c
 
 ## Evaluations
 
-The agent's runs are scored two ways ([ARCHITECTURE.md](ARCHITECTURE.md)): a SESSION LLM-as-judge evaluator (`ReceiptsExtractionQualityEvaluator`) and an online eval with built-in metrics. Run the judge on demand over recent sessions:
+Three evaluators score production traffic continuously, one online config per Runtime:
+- `ReceiptsThresholdControl` watches every pipeline session. It is a monitor on the Cedar control: did anything at or above $2,000 save automatically?
+- ConversationCompleteness and KnowledgeRetention score every chat session.
+
+Results land in CloudWatch under `/aws/bedrock-agentcore/evaluations/results/`, a few minutes after a session goes idle.
+
+The evaluators that need a right answer run against the labelled receipts and conversations in `evals/`:
 
 ```bash
-agentcore run eval -r receiptsagent -e ReceiptsExtractionQualityEvaluator --days 1
+cd evals
+.venv/bin/python run_deployed.py                                # through the deployed stack
+.venv/bin/python score_saved.py --run out/deployed-<id>
+.venv/bin/python score_chat.py  --run out/deployed-chat-<id>
 ```
 
-Scores land in CloudWatch (they lag span ingestion by a few minutes).
+Why these evaluators, and what their contrast tests found: [ADR-0017](decisions/0017-evaluators-from-business-outcomes.md).

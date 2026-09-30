@@ -6,7 +6,8 @@ REGION ?= us-west-2
 # drain, stepdown). These hit REAL AWS against an already-deployed stack — no mocks.
 USER_E2E := tests/test_e2e_pipeline_live.py tests/test_e2e_frontdoor_live.py \
             tests/test_e2e_chat_live.py tests/test_e2e_runledger_live.py \
-            tests/test_e2e_cedar_live.py tests/test_e2e_tools_live.py
+            tests/test_e2e_cedar_live.py tests/test_e2e_tools_live.py \
+            tests/test_e2e_evaluators_live.py
 
 help:
 	@echo "make preflight - RUN BEFORE COMMIT/PR: ruff lint + format-check + unit tests + synth + sensitive-data scan"
@@ -60,8 +61,8 @@ synth:
 	cd agentcore/cdk && (test -d node_modules || npm install) && npm run build
 	@test -f agentcore/aws-targets.json || (ACCT=$$(aws sts get-caller-identity --query Account --output text) && \
 	  printf '[{"name":"dev","account":"%s","region":"%s"}]\n' "$$ACCT" "$(REGION)" > agentcore/aws-targets.json)
-	agentcore validate
 	# Run the CDK app directly with an explicit outdir (reliable across cdk-CLI versions).
+	agentcore validate
 	cd agentcore/cdk && AWS_REGION=$(REGION) CDK_OUTDIR=cdk.out node dist/bin/cdk.js
 	@echo "synth OK -> agentcore/cdk/cdk.out/AgentCore-ReceiptsAgent-dev.template.json"
 

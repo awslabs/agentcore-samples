@@ -163,7 +163,7 @@ D2="$(python3 - "$REGION" "$STACK" <<'PY'
 import sys, json, uuid, boto3
 region, stack = sys.argv[1], sys.argv[2]
 cfn = boto3.client("cloudformation", region_name=region)
-arn = next(o["OutputValue"] for o in cfn.describe_stacks(StackName=stack)["Stacks"][0]["Outputs"] if "RuntimeArn" in o["OutputKey"])
+arn = next(o["OutputValue"] for o in cfn.describe_stacks(StackName=stack)["Stacks"][0]["Outputs"] if o["OutputKey"] == "ChatRuntimeArn")
 c = boto3.client("bedrock-agentcore", region_name=region)
 r = c.invoke_agent_runtime(agentRuntimeArn=arn, runtimeSessionId="userdemo-"+uuid.uuid4().hex,
     payload=json.dumps({"question":"show my expenses","identity_token":"forged.token"}).encode())

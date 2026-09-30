@@ -1,13 +1,14 @@
-# Receipts IDP on Amazon Bedrock AgentCore
+# Receipts IDP on Amazon Bedrock AgentCore, with its Evaluators
 
-An **agentic** Intelligent Document Processing sample: a dual-agent pipeline on
-AgentCore that turns a **receipt** into a validated, persisted expense record, and
-self-protects with a **model degradation ladder** when a model tier is
-capacity-constrained.
+An **agentic** Intelligent Document Processing sample: a dual-agent pipeline on AgentCore
+turns a **receipt** into a validated, persisted expense record, and a chat assistant
+answers an employee's questions about their own expenses. It self-protects with a **model
+degradation ladder** when a model tier is capacity-constrained.
 
-It is a sibling of the `event-driven-claims-agent` sample and follows its
-conventions. The distinct contribution here is the degradation ladder (config-driven
-model selection on AWS AppConfig, stepping on a Bedrock `503`).
+It ships with an **evaluation suite** chosen from the business outward, not copied from a
+list: every evaluator judges a decision a model makes, and every judge was contrast-tested
+before it was trusted. Three evaluators run live in AgentCore; the rest run against
+labelled data sent through the deployed stack.
 
 > [!IMPORTANT]
 > This sample is for experimental and educational purposes only. It demonstrates
@@ -15,138 +16,189 @@ model selection on AWS AppConfig, stepping on a Bedrock `503`).
 
 | | |
 |---|---|
-| ⏱️ **Time to deploy** | ~20-30 minutes (first time, prerequisites met) |
-| 💰 **Running cost** | a few $/day (Bedrock + Textract on demand, DynamoDB on-demand, Lambda, AgentCore Runtime). Tear down when not testing. |
-| 🏗️ **Resources created** | one CloudFormation stack (Runtime, Gateway + 5 tool Lambdas, Cedar policy, Evaluator, DynamoDB, S3, Cognito, SQS, AppConfig, EventBridge, KMS, CloudWatch) |
+| **Time to deploy** | about 20-30 minutes the first time |
+| **Running cost** | a few dollars a day: Bedrock and Textract on demand, DynamoDB on demand, Lambda, two AgentCore Runtimes, evaluation judge calls. Tear down when not testing |
+| **Resources created** | one CloudFormation stack: two Runtimes, the Gateway with five tool Lambdas and a Cedar policy, three code-based evaluators and a live evaluation config, DynamoDB, S3, Cognito, SQS, AppConfig, EventBridge, KMS, CloudWatch |
 
-🎥 **Demo:** a recorded run of the full flow is here — [demo.mp4](demo.mp4).
+Demo of the original pipeline: [demo.mp4](demo.mp4).
 
-## What it does (target)
+## What it does
 
-A receipt lands in S3 → an extractor agent OCRs it (Textract) and produces a
-structured expense → an independent validator agent checks it reconciles and
-decides auto-persist vs review → the expense is written per-user through governed
-Gateway tools, with Cedar gating writes on amount/category, Memory carrying the
-user's history, and the whole run traced and evaluated in CloudWatch.
+A receipt lands in S3. Textract reads it, an **extractor** agent produces a structured
+expense, and an independent **validator** agent checks it and acts on its decision by
+calling one of two tools: save it automatically, or send it to a person. The tools are pinned
+to the extractor's expense, so the validator chooses but cannot change what is written. The
+expense is written through governed Gateway tools, with a Cedar policy blocking any automatic save of $2,000 or more whatever the
+agents decided. When a receipt is held, a third model writes a short note for the reviewer.
 
-## The six AgentCore services
+A separate **chat** Runtime answers questions like "how much did I spend at Mr D.I.Y.?"
+and follow-ups like "and at Starbucks?", read-only, for the signed-in user only.
 
-Runtime (dual-agent host), Memory (per-user facts, `receipts/{actorId}/...`),
-Gateway (five MCP Lambda tools), Observability (OTel → CloudWatch), Policy (Cedar
-on tool input), Evaluations (LLM-as-judge + online metrics).
+## The AgentCore services
+
+- **Runtime:** the pipeline Runtime and the chat Runtime (same code, separate so each is
+  evaluated on its own traffic, [ADR-0018](docs/decisions/0018-separate-chat-runtime.md)).
+- **Gateway:** five MCP tools backed by Lambda.
+- **Policy:** Cedar on tool input.
+- **Observability:** OpenTelemetry into CloudWatch, with the business outcome stamped on
+  every trace.
+- **Evaluations:** code-based evaluators, built-in and third-party judges, a live
+  configuration per Runtime ([ADR-0017](docs/decisions/0017-evaluators-from-business-outcomes.md)).
 
 ## Architecture
 
 ![Receipts IDP architecture](docs/diagrams/architecture.png)
 
-The event-driven front door (upload → S3 → EventBridge → Trigger → Runtime):
+The event-driven front door (upload, S3, EventBridge, trigger Lambda, Runtime):
 
 ![Event-driven front door](docs/diagrams/front-door.png)
 
-The agent authenticates as itself (agent-as-principal, M2M Cognito) — the front
-door is an S3 event, so there is no logged-in user at run time. Per-user data
-separation lives at the data layer (Expenses partitioned by `userId`). Full
-walkthrough + the Mermaid source in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The agent authenticates to the Gateway as itself (agent-as-principal, M2M Cognito): the
+front door is an S3 event, so there is no logged-in user at run time. Per-user data
+separation lives at the data layer (Expenses partitioned by `userId`). Full walkthrough in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Deploy
 
 ```bash
-./deploy.sh us-west-2     # CDK infra + AgentCore Runtime, one command
+./deploy.sh us-west-2       # the whole stack, then the chat live-evaluation config
 python3 scripts/test_invoke.py --region us-west-2
-./destroy.sh us-west-2    # leaves nothing billable
+./destroy.sh us-west-2      # removes everything billable
 ```
 
-Prerequisites: the `@aws/agentcore` CLI, Node + TypeScript, Python 3.12 + `uv`, a
-container engine (**Docker or [Finch](https://runfinch.com)** — the Runtime is a
-`Container` build, ADR-0005), and the four ladder global inference profiles enabled
-in the account (`aws bedrock list-inference-profiles`).
+Prerequisites: the `@aws/agentcore` CLI, Node + TypeScript, Python 3.12 + `uv`, and the
+four ladder global inference profiles enabled in the account
+(`aws bedrock list-inference-profiles`). No local container engine is needed: the Runtime
+images are built in AWS CodeBuild
+([ADR-0005](docs/decisions/0005-container-build-over-codezip.md)).
 
-Using Finch? Start its VM once before deploying, and `deploy.sh` auto-selects it:
+## Evaluation
+
+### How the evaluators were chosen
+
+Two frameworks, applied together:
+
+- **Work backwards from the business.** What would you measure no matter how the work is
+  done? The test: state the metric without naming the agent, its model or its tools.
+  Imagine a person typing receipts in by hand; does the number still exist? That gives
+  the scoreboard: straight-through rate, dollar-weighted extraction error, control
+  breaches, review-queue precision; for chat, self-service resolution and answer accuracy.
+- **Work forwards from the architecture.** Which failures does this design make likely?
+  An extractor inventing values its OCR did not provide; a validator making the right call
+  for the wrong reason; a chat assistant forgetting earlier turns. Evaluators aimed at
+  these are diagnostics: they explain why a scoreboard number moved.
+
+Every evaluator had to pass four rules: it judges a decision a model makes, against a
+right answer or a clear reference; one question per evaluator; a contrast test first
+(pairs of cases that differ in one thing, where the verdict must flip); and product
+changes only where a team would make them anyway.
+
+### The evaluators
+
+| Evaluator | Kind | Judges | Where it runs |
+|---|---|---|---|
+| `ReceiptsThresholdControl` | code-based, deployed | Did anything at or above the Cedar limit save automatically? A control monitor, not agent quality | **Live**, every pipeline session |
+| `ThirdParty.DeepEval.ConversationCompleteness` | third-party judge | Share of the employee's requests that were handled (self-service resolution) | **Live**, every chat session |
+| `ThirdParty.DeepEval.KnowledgeRetention` | third-party judge | Whether earlier turns are remembered. Diagnostic only: noisy per conversation | **Live**, every chat session |
+| `ReceiptsExtractionAccuracy` | code-based, deployed | Every extracted field against a labelled receipt; value is the dollar gap on the total | Labelled data |
+| `ReceiptsRoutingOutcome` | code-based, deployed | The validator's save-or-review call, judged on the extraction it was shown | Labelled data |
+| `Builtin.ToolParameterAccuracy` | built-in judge | Did the extractor put a value in the record that its own input never contained? | Labelled data, on the extractor's part of the trace |
+| `Builtin.GoalSuccessRate` with assertions | built-in judge | Did the validator name the actual problem, not only route correctly? | Labelled data, on the trace through the validator |
+| `Builtin.Correctness` with expected answers | built-in judge | Each chat answer against its expected answer | Labelled conversations |
+
+Online configurations cannot carry ground truth, which is why the labelled evaluators run
+on demand rather than live. Two findings shaped the design; both are in
+[ADR-0017](docs/decisions/0017-evaluators-from-business-outcomes.md):
+
+- **Scope each judge to its own agent.** The extractor, validator and note writer share one trace, so
+  a judge scoring the extractor also sees later inputs that repeat the extractor's output,
+  and passes invented values. The harness sends each judge only the part of the trace up to
+  the model it is judging.
+- **No ground truth, no view of correctness.** ConversationCompleteness scores a confident
+  wrong answer as handled; only Correctness with an expected answer catches it. That is why
+  both are kept.
+
+**The evaluators assume the default rung, L0.** On lower rungs the degradation ladder changes
+the pipeline, and each trace carries its rung as `receipts.ladder.rung`:
+- **L1** runs another model, so compare scores by rung, never pooled.
+- **L2 and L3** shed the validator and send every receipt to review by configuration.
+  `ReceiptsRoutingOutcome` would count those as the validator's calls, so score only L0 and
+  L1 runs for routing.
+- **L4** defers the receipt with no extraction, so `ReceiptsThresholdControl` reports
+  `MISSING_REQUIRED_FIELD` for those sessions rather than a score.
+
+The labelled runs in `evals/` run at L0 unless the active rung has been changed.
+
+### Running the evaluators
+
+**Live:** nothing to do. `ReceiptsLive` (in `agentcore.json`) and `ReceiptsAgent_ChatLive`
+(created by `scripts/chat_online_eval.py`, because the CloudFormation schema does not yet
+accept managed third-party evaluator ids) score sessions after they go idle. Results land in
+CloudWatch under `/aws/bedrock-agentcore/evaluations/results/`.
+
+**Against the deployed stack**, with the labelled set in `evals/fixtures/`:
 
 ```bash
-finch vm status || finch vm start     # ensure the Finch VM is running
-./deploy.sh us-west-2                  # auto-detects Finch (or set CDK_DOCKER=finch)
+cd evals
+uv venv --python 3.12 && uv pip install -r ../app/receiptsagent/requirements.txt "bedrock-agentcore>=1.22" pillow
+.venv/bin/python run_deployed.py              # uploads the receipts, runs the chat conversations
+.venv/bin/python score_saved.py --run out/deployed-<id>        # routing, right reason, invented values
+.venv/bin/python score_chat.py  --run out/deployed-chat-<id>   # completeness, retention, correctness
 ```
 
-The container engine is only needed for full `deploy` (it builds + pushes the
-image). For the fast inner loop, `agentcore dev --no-browser` runs the agent
-directly with no container build.
+See [evals/README.md](evals/README.md).
 
-## Front door, Observability & Evaluations
+## Front door, run ledger and chat
 
-**Event-driven front door.** Drop a receipt in the inbox bucket and the pipeline
-runs itself — no direct invoke:
+**Event-driven front door.** Drop a receipt in the inbox bucket and the pipeline runs:
 
 ```bash
 aws s3 cp receipt.png s3://receipts-inbox-<account>-<region>/receipts/user-001/receipt.png
 ```
 
-S3 emits an `Object Created` event → an EventBridge rule (scoped to the `receipts/`
-prefix) fires the trigger Lambda → it invokes the Runtime with `{s3_uri, user_id}`.
-The `user_id` comes from the key (`receipts/<user_id>/<file>`), defaulting to
-`user-001` for a flat `receipts/<file>` key. A DLQ + retries make a failed trigger
-visible rather than dropping a receipt.
+S3 emits `Object Created`, an EventBridge rule scoped to `receipts/` fires the trigger
+Lambda, and it invokes the pipeline Runtime with `{s3_uri, user_id}`. The `user_id` comes
+from the key (`receipts/<user_id>/<file>`), defaulting to `user-001`. A DLQ and retries make
+a failed trigger visible rather than dropping a receipt.
 
-**Observability.** The Runtime is auto-instrumented (the full OTel env set is in
-`agentcore.json`); traces, logs, and metrics land in CloudWatch **GenAI
-Observability**, correlated by session id. Each run's span is tagged with the ladder
-rung (`receipts.ladder.rung`/`.model`/`.degraded`) so a degraded run is visible, not
-silent (spec §6.4). **One-time per account:** enable CloudWatch **Transaction
-Search** (Application Signals → Transaction search → Enable) so spans are searchable;
-`deploy.sh` / the `agentcore` CLI enables it best-effort on deploy, and it takes
-~10 min to become active.
-
-**Evaluations.** `agentcore.json` declares a SESSION-level LLM-as-judge evaluator
-(`ReceiptsExtractionQualityEvaluator` — extraction accuracy, reconciliation, routing
-correctness) plus an online-eval config with three built-in metrics
-(`Builtin.Helpfulness`, `Builtin.Correctness`, `Builtin.ToolSelectionAccuracy`)
-scored continuously from production spans. Run on-demand:
+**Run ledger.** Every receipt run emits one event; a writer Lambda records one row per
+receipt in `ProcessingRuns` (processed, needs_review, deferred or error), and a
+`status=error` rule notifies an SNS topic ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)):
 
 ```bash
-agentcore run eval -r receiptsagent -e ReceiptsExtractionQualityEvaluator --days 1
+python3 scripts/receipt_status.py --status needs_review
 ```
 
-**Run ledger (operational audit).** Every run emits one EventBridge event; a writer
-Lambda records a row in the **`ProcessingRuns`** table keyed by `receiptId =
-hash(s3_uri)` — one durable fate per receipt (processed / needs_review / deferred /
-**error**), including errors that never persisted. A `status=error` rule pushes to an
-SNS topic (`ReceiptsAgent-RunErrors` — subscribe an email/Chatbot endpoint). "What
-happened to receipt X?" is one lookup, not a log dig ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)):
+**Chat.** A chat assistant on its own Runtime:
 
 ```bash
-python3 scripts/receipt_status.py --s3-uri s3://receipts-inbox-<acct>-us-west-2/receipts/u/r.jpg
-python3 scripts/receipt_status.py --status error        # every error (GSI query)
-python3 scripts/receipt_status.py --status needs_review # everything in review, with the validator's concern
-```
-
-**Talk to the agent (conversational query).** Beyond processing receipts, a user can
-ask about their expenses in plain language — a read-only agent answers from live data
-via the Gateway read tools:
-
-```bash
-python3 scripts/chat.py --user alex            # interactive REPL
+python3 scripts/chat.py --user user-001    # one session for the whole chat
 # you> how much did I spend at Mr D.I.Y.?
-# agent> MYR 68.01 across 2 expenses: ...
-python3 scripts/ask.py --user alex "what are my most recent expenses?"   # one-shot
+# you> and at Starbucks?
+python3 scripts/ask.py --user user-001 "what are my most recent expenses?"
 ```
 
-**Security ([ADR-0016](docs/decisions/0016-conversational-identity-no-idor.md)):** the
-`user_id` is **not** trusted from the request body — it comes from a KMS-HMAC-signed
-identity token the agent verifies, and the read tools are pinned server-side to that
-verified user. So editing the request can't read another user's data (IDOR is designed
-out), and a tampered token is rejected. The belt is read-only, so a query can't write.
+The REPL keeps one Runtime session, so follow-ups see the earlier turns. History is held
+per verified user and session: a session id replayed under another identity starts empty.
+The `user_id` is never taken from the request body; it comes from a KMS-signed identity
+token the agent verifies, and the read tools are pinned to that user
+([ADR-0016](docs/decisions/0016-conversational-identity-no-idor.md)).
 
 ## Layout
 
-`agentcore/` (agentcore.json + CDK), `app/receiptsagent/` (the agent; `config.py`
-is the single env-read seam; `identity.py` is the conversational-identity verifier),
-`lambdas/` (Gateway tools + trigger + controller + drain + ledger_writer) +
-`lambdas/schemas/`, `scripts/` (incl. `chat.py`/`ask.py`), `docs/`, `tests/`.
+- `agentcore/`: `agentcore.json` (Runtimes, Gateway, Cedar, evaluators, live config) and the
+  CDK app (`cdk/lib/cdk-stack.ts`, `cdk/lib/infra-construct.ts`).
+- `app/receiptsagent/`: the agent. `config.py` is the single env-read seam.
+- `evaluators/business_outcomes/`: the code-based evaluators, deployed as one Lambda.
+- `evals/`: the evaluation harness, labelled receipts and conversations.
+- `lambdas/`: Gateway tools, trigger, controller, drain, ledger writer, Transaction Search.
+- `scripts/`, `tests/`, `docs/`.
 
 ## Docs
 
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how it works (diagram, the three planes, the pipeline, the ladder).
-- **[docs/decisions/](docs/decisions/)** — 16 ADRs: *why* it's built this way (the ladder, auth, Cedar, AppConfig, the drain, the run ledger, conversational identity).
-- **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — env vars, the AppConfig ladder config, the Cedar policy, tuning knobs.
-- **[docs/tutorial.md](docs/tutorial.md)** — a guided run + five experiments (front door, Cedar, flip a rung, the control loop, add a tool).
-- **[docs/deployment.md](docs/deployment.md)** — prerequisites, deploy/destroy, local dev, the one-shot `make e2e`.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works.
+- [docs/decisions/](docs/decisions/): 18 ADRs, the why behind each choice.
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): env vars, the ladder config, Cedar, tuning.
+- [docs/tutorial.md](docs/tutorial.md): a guided run and experiments.
+- [docs/deployment.md](docs/deployment.md): deploy, destroy, local dev, live tests.
+- [evals/README.md](evals/README.md): running and extending the evaluation suite.

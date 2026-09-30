@@ -70,7 +70,7 @@ def _seed_expense(user_id, merchant, total):
 def _ask(question, identity_token):
     client = boto3.client("bedrock-agentcore", region_name=REGION)
     resp = client.invoke_agent_runtime(
-        agentRuntimeArn=_out("RuntimeArn"),
+        agentRuntimeArn=_out("ChatRuntimeArn"),
         runtimeSessionId=f"chat-{uuid.uuid4().hex}",
         payload=json.dumps({"question": question, "identity_token": identity_token}).encode(),
     )

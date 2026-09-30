@@ -55,6 +55,10 @@ wait_for_delete() {
   done
 }
 
+# The chat online evaluation config lives outside the stack; remove it first so the
+# stack can delete the execution role it uses.
+python3 scripts/chat_online_eval.py delete --region "$REGION" || true
+
 echo "⏳ Deleting $STACK (this usually takes a few minutes)..."
 aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
 STATUS=$(wait_for_delete)

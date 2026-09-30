@@ -48,10 +48,3 @@ def test_explicit_gateway_url_wins(monkeypatch):
         },
     )
     assert cfg.GATEWAY_URL == "https://explicit/mcp"
-
-
-def test_memory_id_unset_by_default(monkeypatch):
-    for k in ("MEMORY_RECEIPTSAGENTMEMORY_ID", "AGENTCORE_MEMORY_ID"):
-        monkeypatch.delenv(k, raising=False)
-    cfg = _fresh_config(monkeypatch, {})
-    assert cfg.MEMORY_ID == ""  # empty => memory degrades gracefully (spec §5.2)

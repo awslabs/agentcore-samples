@@ -47,3 +47,15 @@ def test_real_payload_with_prompt_key_not_clobbered():
 def test_non_str_non_dict_coerced_to_prompt(bad):
     out = parse_payload(bad)
     assert "prompt" in out
+
+
+def test_to_cents_is_an_integer_the_policy_can_compare():
+    from parsing import to_cents
+
+    assert to_cents(15.9) == 1590
+    assert to_cents(1250.0) == 125000
+    assert to_cents(1999.99) == 199999
+    assert to_cents(2000) == 200000
+    assert to_cents("44.91") == 4491
+    assert to_cents(None) is None
+    assert isinstance(to_cents(15.9), int)

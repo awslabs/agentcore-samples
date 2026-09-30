@@ -22,3 +22,7 @@ A container handles a larger, multi-dependency pipeline cleanly and gives reprod
 ## Consequences
 
 A deploy includes a container build (the slowest stage, a few minutes). The build runs in the cloud, so contributors need a container engine present only for `deploy`. `deploy.sh` auto-detects Docker or Finch (`CDK_DOCKER=finch`).
+
+## Update (2026-09-23)
+
+A local container engine is no longer required. The CDK uploads the agent source, and CodeBuild builds the image from its Dockerfile. `deploy.sh` no longer checks for Docker or Finch. The code-based evaluators use a separate path: a `CodeZip` Lambda packaged with `uv`, cross-compiled for ARM64.

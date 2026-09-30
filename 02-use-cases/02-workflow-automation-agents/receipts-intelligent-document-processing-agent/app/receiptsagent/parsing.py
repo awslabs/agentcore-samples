@@ -10,6 +10,19 @@ import json
 from typing import Any
 
 
+def to_cents(amount) -> int | None:
+    """An amount as whole cents (15.9 -> 1590), or None if it is not a number.
+
+    The Cedar policy on save_expense compares an integer. Cedar will not compare a decimal
+    with a whole number, and the Gateway passes 15.9 and even 1250.0 as decimals, so the
+    amount the policy sees is sent as integer cents.
+    """
+    try:
+        return int(round(float(amount) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
 def receipt_id(s3_uri: str) -> str:
     """Stable per-RECEIPT id = hash(s3_uri). Distinct from the content-derived
     expenseId (user|merchant|date|total): two near-duplicate receipts dedup to one

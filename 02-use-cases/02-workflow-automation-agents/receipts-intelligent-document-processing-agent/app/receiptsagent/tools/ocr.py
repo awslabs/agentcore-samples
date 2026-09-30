@@ -9,13 +9,16 @@ Confidence drives the human-review gate (spec §7): we surface per-field and an
 overall mean so the agent/validator can decide auto-persist vs needs_review.
 """
 
-import json
 from typing import Any
 from urllib.parse import urlparse
 
 import boto3
+from config import REGION
 
-_textract = boto3.client("textract")
+# Pin the region through the config seam, like every other client in the agent. Without it
+# boto3 falls back to the profile's default region, and Textract cannot read a receipt from a
+# bucket in another Region ("Unable to get object metadata from S3").
+_textract = boto3.client("textract", region_name=REGION)
 
 
 def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
@@ -80,8 +83,3 @@ def analyze_receipt(s3_uri: str) -> dict[str, Any]:
         "overall_confidence": overall,
         "raw_text": raw_text,
     }
-
-
-def ocr_digest_json(s3_uri: str) -> str:
-    """Convenience: analyze and return a JSON string (for prompt embedding)."""
-    return json.dumps(analyze_receipt(s3_uri), default=str)

@@ -9,10 +9,13 @@
 
 Mints ONE KMS-HMAC identity token for the session (bound to --user) and reuses it for
 each question. The agent derives user_id only from that verified token — the IDOR fix.
+Every question in the REPL shares one Runtime session, so follow-ups ("and my most recent
+receipt?") are answered with the earlier turns in view.
 Type 'exit' / 'quit' / Ctrl-D to leave.
 """
 
 import argparse
+import uuid
 
 from ask import ask  # reuse the one-shot path (token mint + invoke)
 
@@ -24,6 +27,7 @@ def main() -> None:
     ap.add_argument("--stack", default="AgentCore-ReceiptsAgent-dev")
     args = ap.parse_args()
 
+    session_id = f"chat-{uuid.uuid4().hex}"
     print(f"Chatting as {args.user}. Ask about your expenses. (exit/quit to leave)\n")
     while True:
         try:
@@ -35,7 +39,7 @@ def main() -> None:
             continue
         if q.lower() in ("exit", "quit"):
             break
-        print("agent> " + ask(q, args.user, args.region, args.stack) + "\n")
+        print("agent> " + ask(q, args.user, args.region, args.stack, session_id=session_id) + "\n")
 
 
 if __name__ == "__main__":

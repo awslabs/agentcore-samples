@@ -15,21 +15,15 @@ import json
 from strands import tool
 
 _last_expense: dict = {}
-_last_validation: dict = {}
 
 
 def get_last_expense() -> dict:
     return dict(_last_expense)
 
 
-def get_last_validation() -> dict:
-    return dict(_last_validation)
-
-
 def reset_state() -> None:
-    global _last_expense, _last_validation
+    global _last_expense
     _last_expense = {}
-    _last_validation = {}
 
 
 def _reconciles(subtotal, tax, tip, total, tol: float = 0.02) -> bool:
@@ -94,27 +88,3 @@ def submit_expense(
     return json.dumps(
         {"status": "recorded", "reconciles": _last_expense["reconciles"], "confidence": _last_expense["confidence"]}
     )
-
-
-@tool
-def submit_validation(routing: str, confidence: int, notes: str, concerns: str = "None") -> str:
-    """Submit your independent validation of the extracted expense. Call this ONCE
-    after reviewing the extractor's output.
-
-    Args:
-        routing: Exactly AUTO_PERSIST or NEEDS_REVIEW.
-        confidence: Your 0-100 confidence that the extraction is correct and safe to persist.
-        notes: Brief assessment of the extraction.
-        concerns: Red flags (totals not reconciling, category mismatch, vague merchant), or "None".
-    """
-    global _last_validation
-    r = routing.upper()
-    if r not in ("AUTO_PERSIST", "NEEDS_REVIEW"):
-        r = "NEEDS_REVIEW"  # fail safe — when unsure, review
-    _last_validation = {
-        "routing": r,
-        "confidence": max(0, min(100, int(confidence))),
-        "notes": notes,
-        "concerns": concerns,
-    }
-    return json.dumps({"status": "recorded", "routing": r, "confidence": _last_validation["confidence"]})
