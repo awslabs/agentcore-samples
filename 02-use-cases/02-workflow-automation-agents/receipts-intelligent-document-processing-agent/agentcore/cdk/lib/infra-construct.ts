@@ -270,15 +270,20 @@ export class InfraConstruct extends Construct {
 
     // ─── Degradation ladder: AppConfig profile + alarm-driven controller ───
     const ladderApp = new appconfig.CfnApplication(this, 'LadderApp', { name: 'ReceiptsAgent-Ladder' });
+    // The Runtimes read the ladder on every run, and AppConfig deletion protection refuses to
+    // delete an environment or profile read in the last 60 minutes. Bypass it so the stack can
+    // be torn down right after use.
     const ladderEnv = new appconfig.CfnEnvironment(this, 'LadderEnv', {
       applicationId: ladderApp.ref,
       name: 'dev',
+      deletionProtectionCheck: 'BYPASS',
     });
     const ladderProfile = new appconfig.CfnConfigurationProfile(this, 'LadderProfile', {
       applicationId: ladderApp.ref,
       name: 'ladder',
       locationUri: 'hosted',
       type: 'AWS.Freeform',
+      deletionProtectionCheck: 'BYPASS',
     });
     const ladderVersion = new appconfig.CfnHostedConfigurationVersion(this, 'LadderVersion', {
       applicationId: ladderApp.ref,
