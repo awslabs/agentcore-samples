@@ -35,7 +35,8 @@ fi
 DEPLOYED=1
 
 echo "✅ [e2e] asserting against live resources..."
-AWS_REGION="$REGION" python3 -m pytest -m e2e -q
+AWS_REGION="$REGION" uv run --no-project --python 3.12 \
+  --with-requirements app/receiptsagent/requirements.txt --with pytest python -m pytest -m e2e -q
 TEST_RC=$?   # capture BEFORE the trap's destroy can clobber $?
 
 if [ "$TEST_RC" -eq 0 ]; then

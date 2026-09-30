@@ -1,5 +1,8 @@
 REGION ?= us-west-2
 
+# pytest with the agent's dependencies, supplied by uv so nothing is installed globally
+PYTEST := uv run --no-project --python 3.12 --with-requirements app/receiptsagent/requirements.txt --with pytest python -m pytest
+
 .PHONY: preflight lint format scan unit synth e2e test-user user-demo clean help
 
 # The user-perspective e2e files (NOT the dev-only resilience suite: ladder, controller,
@@ -55,7 +58,7 @@ scan:
 	else echo "✅ scan: no account id / alias / local paths in tracked files"; fi
 
 unit:
-	python3 -m pytest -m unit -q || python3 -m pytest tests/test_parsing.py tests/test_config_seam.py -q
+	$(PYTEST) -m unit -q || $(PYTEST) tests/test_parsing.py tests/test_config_seam.py -q
 
 synth:
 	cd agentcore/cdk && (test -d node_modules || npm install) && npm run build
@@ -71,7 +74,7 @@ e2e:
 
 # User e2e against an ALREADY-DEPLOYED stack (no deploy/destroy — for the kept demo stack).
 test-user:
-	AWS_REGION=$(REGION) python3 -m pytest $(USER_E2E) -v
+	AWS_REGION=$(REGION) $(PYTEST) $(USER_E2E) -v
 
 user-demo:
 	./scripts/user-demo.sh $(REGION)

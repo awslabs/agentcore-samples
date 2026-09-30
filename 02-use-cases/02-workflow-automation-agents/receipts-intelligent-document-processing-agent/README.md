@@ -111,6 +111,21 @@ About a minute after the upload above, the held receipt is in the review queue:
 python3 scripts/receipt_status.py --status needs_review
 ```
 
+### Cedar guardrail
+
+A save of $2,000 or more is denied at the Gateway, whatever the agents decide. This receipt
+is clean and reconciles, so the validator chooses to save it, and the policy overrides it:
+
+```bash
+aws s3 cp evals/fixtures/over_threshold.png \
+    s3://receipts-inbox-<account>-<region>/receipts/user-001/over_threshold.png
+python3 scripts/receipt_status.py \
+    --s3-uri s3://receipts-inbox-<account>-<region>/receipts/user-001/over_threshold.png
+```
+
+The ledger row shows `validatorRouting: AUTO_PERSIST`, `cedarBlocked: true` and
+`status: needs_review` ([ADR-0012](docs/decisions/0012-cedar-on-tool-input.md)).
+
 ### Chat
 
 A chat assistant on its own Runtime:
@@ -130,8 +145,8 @@ token the agent verifies, and the read tools are pinned to that user
 
 ## Sample prompts
 
-After the two receipts above (the smoke test and the front door), `user-001` has a
-processed expense at Blue Bottle Coffee and a held one at Ferry Building Cafe. Ask these in
+After the receipts above, `user-001` has a processed expense at Blue Bottle Coffee and
+held ones at Ferry Building Cafe and Moscone Center Catering. Ask these in
 one `scripts/chat.py` session, in order, so the follow-ups use the earlier answers:
 
 - "how much did I spend at Blue Bottle Coffee?"

@@ -57,7 +57,7 @@ cd ../..
 echo "🐍 Installing agent dependencies..."
 cd app/receiptsagent
 [ -d .venv ] || uv venv
-uv pip install -r requirements.txt --quiet
+uv pip install --python .venv/bin/python -r requirements.txt --quiet
 cd ../..
 
 # Step 3: validate
