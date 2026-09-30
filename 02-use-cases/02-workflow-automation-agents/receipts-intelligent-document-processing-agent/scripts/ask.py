@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ask the receipts agent one question about a user's expenses (conversational mode).
 
-  python3 scripts/ask.py --user user-001 "How much did I spend at Mr D.I.Y.?"
+  python3 scripts/ask.py --user user-001 "How much did I spend at Blue Bottle Coffee?"
 
 SECURITY: the user_id is bound into a KMS-HMAC-signed identity token minted here (the
 trusted invoker). The agent derives user_id ONLY from the verified token — editing the

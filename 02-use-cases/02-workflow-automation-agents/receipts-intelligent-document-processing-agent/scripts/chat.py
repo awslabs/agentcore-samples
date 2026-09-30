@@ -2,7 +2,7 @@
 """Interactive chat with the receipts agent about a user's expenses (the demo REPL).
 
   python3 scripts/chat.py --user user-001
-  you> how much did I spend at Mr D.I.Y.?
+  you> how much did I spend at Blue Bottle Coffee?
   agent> ...
   you> and my most recent receipt?
   agent> ...

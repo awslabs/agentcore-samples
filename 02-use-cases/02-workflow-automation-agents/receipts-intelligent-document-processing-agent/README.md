@@ -37,8 +37,8 @@ to the extractor's expense, so the validator chooses but cannot change what is w
 expense is written through governed Gateway tools, with a Cedar policy blocking any automatic save of $2,000 or more whatever the
 agents decided. When a receipt is held, a third model writes a short note for the reviewer.
 
-A separate **chat** Runtime answers questions like "how much did I spend at Mr D.I.Y.?"
-and follow-ups like "and at Starbucks?", read-only, for the signed-in user only.
+A separate **chat** Runtime answers questions like "how much did I spend at Blue Bottle Coffee?"
+and follow-ups like "and at Ferry Building Cafe?", read-only, for the signed-in user only.
 
 ### Architecture
 
@@ -117,8 +117,8 @@ A chat assistant on its own Runtime:
 
 ```bash
 python3 scripts/chat.py --user user-001    # one session for the whole chat
-# you> how much did I spend at Mr D.I.Y.?
-# you> and at Starbucks?
+# you> how much did I spend at Blue Bottle Coffee?
+# you> and at Ferry Building Cafe?
 python3 scripts/ask.py --user user-001 "what are my most recent expenses?"
 ```
 
@@ -130,11 +130,14 @@ token the agent verifies, and the read tools are pinned to that user
 
 ## Sample prompts
 
-Ask these in one `scripts/chat.py` session, in order, so the follow-up uses the first answer:
+After the two receipts above (the smoke test and the front door), `user-001` has a
+processed expense at Blue Bottle Coffee and a held one at Ferry Building Cafe. Ask these in
+one `scripts/chat.py` session, in order, so the follow-ups use the earlier answers:
 
-- "how much did I spend at Mr D.I.Y.?"
-- "and at Starbucks?"
+- "how much did I spend at Blue Bottle Coffee?"
+- "and at Ferry Building Cafe?"
 - "what are my most recent expenses?"
+- "why is the Ferry Building one on hold?"
 
 ## Evaluation
 
