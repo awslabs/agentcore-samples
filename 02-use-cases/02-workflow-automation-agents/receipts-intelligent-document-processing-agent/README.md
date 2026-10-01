@@ -31,8 +31,6 @@ and conversations sent through the deployed stack.
 | **SDK used**            | Strands Agents, AgentCore SDK and CLI, AWS CDK, boto3                  |
 | **Time to deploy**      | About 10 minutes                                                       |
 
-Demo of the original pipeline: [demo.mp4](demo.mp4).
-
 ### What it does
 
 How a receipt moves through the pipeline:
