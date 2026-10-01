@@ -17,10 +17,9 @@ Three identities, two custom authorization servers, and one manual console step.
 >   subscription or feature flag your org needs — it is not a toggle you can reliably find
 >   yourself, and *Agent to Agent Connections* is **not** it (that governs Machine access
 >   callers, a different thing).
-> - **Okta for AI Agents** if you want the default, simpler flow. It is what surfaces the
->   **Machine access** tab, which lets ID-JAG leg 1 accept an *access* token (step 6).
->   Without it, the sample still works — set `XAA_LEG1_SUBJECT=id_token` and
->   `SEND_ID_TOKEN=true` and follow step 3 instead. See *Which path are you setting up?*
+> - **Okta for AI Agents**. It surfaces the **Machine access** tab, which is what lets
+>   ID-JAG leg 1 accept an access token (step 6). Without it you cannot complete this
+>   guide — see the troubleshooting row *No Machine access tab*.
 > - An admin API token: **Security → API → Tokens → Create Token** (Org or Super
 >   Admin). Setup-only; never used at runtime.
 > - A **Single Sign-On** subscription. Cross App Access requires it.
@@ -37,24 +36,6 @@ Three identities, two custom authorization servers, and one manual console step.
 > documentation rather than this page:
 > [Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/)
 > and [Okta rate limits](https://developer.okta.com/docs/reference/rate-limits/).
-
-## Which path are you setting up?
-
-ID-JAG leg 1 needs a **delegation link** covering whatever token it is handed. There are two
-ways to create one, and the choice decides which tabs you configure:
-
-| | **access_token** — the default | **id_token** — the fallback |
-| :--- | :--- | :--- |
-| Leg 1 exchanges | the inbound bearer the gateway already validated (`T_gateway`) | a separate ID token the BFF forwards |
-| Okta tab that authorises it | **Machine access** (step 6) | **User access** (step 3) |
-| Needs *Okta for AI Agents* | **yes** | no |
-| `AGENTCORE_AUDIENCE` | must be an `https://` URL | anything, e.g. `api://agentcore` |
-| Tokens travelling to the gateway | one | two |
-| Set in `.env` | nothing — it is the default | `XAA_LEG1_SUBJECT=id_token`, `SEND_ID_TOKEN=true` |
-
-**Step 3 (User access) is required either way** — it is how the user signs in. Step 6 is
-what the default path adds. Configure both and the sample runs in either mode, which is
-worth doing the first time so you can compare.
 
 ## Automated part
 
@@ -137,14 +118,10 @@ stay empty; the Profile tab still shows a green check.
 **Owners → Edit** → assign yourself. Okta suggests at least two owners for real
 deployments; one is fine for a sample.
 
-### Step 3 — User access — sign-in, and leg 1 in `id_token` mode
+### Step 3 — User access — how the user signs in
 
-Still required: this binding is how the user signs in, and it is **permanent** — to change
-it you must delete and recreate the agent.
-
-> It is also what authorises leg 1 *if* you run the interceptor in `XAA_LEG1_SUBJECT=id_token`
-> mode. On the default `access_token` path, leg 1 is authorised by **Machine access**
-> (step 6) instead. Configure both and the sample works either way.
+This binding is how the user signs in, and it is **permanent** — to change it you must
+delete and recreate the agent. Leg 1 itself is authorised by **Machine access** (step 6).
 
 Okta offers two options:
 
@@ -275,10 +252,9 @@ refused with:
 'subject_token' is invalid: no delegation policy authorizes this token.
 ```
 
-Configure it and leg 1 accepts an `access_token`, so the interceptor can exchange the
-bearer the gateway **already validated** — no second token has to travel with the request.
-Skip it and you must run the interceptor in `XAA_LEG1_SUBJECT=id_token` mode and forward an
-ID token from the BFF through the runtime.
+Configure it and leg 1 accepts an `access_token`, so the interceptor exchanges the bearer
+the gateway **already validated** — no second token travels with the request, and the agent
+never handles an ID token at all.
 
 #### 6a. The audience constraint — read before you click
 
@@ -356,8 +332,7 @@ By hand instead: **Applications → XAA Todo Agent App → Assignments → Assig
 
 #### 6e. What success looks like
 
-The ID-JAG comes back with a **nested** `act` chain, which the ID-token path does not
-produce:
+The ID-JAG comes back with a **nested** `act` chain:
 
 ```json
 "sub": "00u1…",                                  // the human
@@ -369,20 +344,6 @@ produce:
 
 Read outwards: the Agent app, acting as the AI Agent, acting for the user. That chain
 carries through to `T_tool`, so the resource API can see every hop.
-
-#### Which mode should you run?
-
-| | `access_token` (default) | `id_token` |
-| :--- | :--- | :--- |
-| Okta requirement | **Machine access** + user assigned to the caller app | **User access** binding only |
-| Audience | must be `https://…` | any, including `api://…` |
-| Tokens on the wire to the gateway | one | two (`Authorization` + `X-Okta-Id-Token`) |
-| BFF must forward an ID token | no | yes |
-| `act` chain | nested, records the Agent app too | single level |
-| Set | nothing (default) | `XAA_LEG1_SUBJECT=id_token`, `SEND_ID_TOKEN=true` |
-
-Both are verified end to end in this sample. Prefer `access_token`: fewer credentials in
-flight, and the agent never handles an ID token at all.
 
 ### Step 7 — Activate
 
@@ -447,13 +408,12 @@ legs:
 | :--- | :--- | :--- |
 | No **AI Agents** item under Directory | Cross App Access not enabled on the tenant | ask Okta which subscription enables it. Not *Agent to Agent Connections* — that governs Machine access callers |
 | `requested_token_type is invalid` (leg 1) | same | as above |
-| No **Machine access** tab | the org lacks **Okta for AI Agents** | run the fallback: `XAA_LEG1_SUBJECT=id_token` + `SEND_ID_TOKEN=true`, and configure step 3 |
+| No **Machine access** tab | the org lacks **Okta for AI Agents** | that subscription is required for this guide. The sample does carry an ID-token fallback for such orgs — see `XAA_LEG1_SUBJECT` in `config.example.env` — but it is not documented here, because it needs a second token on every request |
 | `invalid_client` on every call, key is correct | agent is **STAGED**, or the key is registered but not **ACTIVE** | Actions → Activate (step 7); confirm the ACTIVE badge on Public/private key (step 4) |
 | `invalid_client: client_assertion signature is invalid` | the local private key is not the pair of the registered public key | re-register the current `okta_public_jwk.json`; never re-run `gen_keypair.py` after registering |
-| `'subject_token' is invalid: no delegation policy authorizes this token` (leg 1, access_token path) | no delegation link covers this token: **Machine access** is missing, names a different audience or AS, or the token's `cid` is the agent itself | step 6. An agent cannot be its own caller — the caller must be the **Agent app**, whose `cid` is what `T_gateway` carries |
+| `'subject_token' is invalid: no delegation policy authorizes this token` (leg 1) | no delegation link covers this token: **Machine access** is missing, names a different audience or AS, or the token's `cid` is the agent itself | step 6. An agent cannot be its own caller — the caller must be the **Agent app**, whose `cid` is what `T_gateway` carries |
 | `'subject_token' is invalid: the user is not assigned to the client application` (leg 1) | the Machine access **caller app** has no assignment for this user | assign your user to **XAA Todo Agent App** — step 6d. Note this is a *different* app from the sign-in app in step 3 |
-| `'subject_token_type' is invalid or not supported` | leg 1 accepts only `id_token` and `access_token` | check `XAA_LEG1_SUBJECT`; the generic `jwt` type is refused |
-| `'subject_token' is invalid: … not registered for delegation` (leg 1, id_token path) | the ID token did not come from the app bound under **User access** | sign in through the agent's linked app and run `deploy/00_relink_login_app.py` (step 3) |
+| `'subject_token_type' is invalid or not supported` | leg 1 accepts only `access_token` and `id_token`; the generic `jwt` is refused | leave `XAA_LEG1_SUBJECT` at its default |
 | Cannot find a **Delegations** tab | renamed by Okta to **User access** / **Machine access** | use **User access** (step 3); older docs including `06-okta-xaa` are stale |
 | The agent shows "outdated method for user sign-on" | a legacy delegation link | relink via *Create a new OIDC app linked to this agent*, or re-register the agent |
 | **Application instance** shows **No options** | wrong resource type chosen — that list only holds apps with an AI-Agent resource server | pick resource type **Authorization server** instead (step 5) |
