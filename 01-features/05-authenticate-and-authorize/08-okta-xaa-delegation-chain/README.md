@@ -6,6 +6,9 @@ signed-in user**, and the **gateway** — not the agent — performs the Okta
 (Identity Assertion JWT Authorization Grant, **ID-JAG**,
 [draft-ietf-oauth-identity-assertion-authz-grant](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant)).
 
+- **Front end** — a small FastAPI **BFF** (`frontend/app.py`) that signs the user in and
+  invokes the agent. It exists so the browser never holds a token: it keeps them
+  server-side and hands the browser a signed, `HttpOnly` session cookie.
 - **Requesting app** — a [Strands](https://strandsagents.com) agent on **AgentCore
   Runtime**, behind an inbound JWT authorizer. It calls an **AgentCore Gateway** over
   MCP and never holds a credential that can reach the API.
@@ -13,7 +16,7 @@ signed-in user**, and the **gateway** — not the agent — performs the Okta
   injects the resulting token. The AI Agent's signing key lives only here.
 - **Resource app** — a FastAPI "todo" API fronted by an Okta **custom authorization
   server**. It only *validates*.
-- **IdP** — your Okta tenant with **Cross App Access / AI Agents** enabled.
+- **IdP** — your Okta tenant with **Cross App Access** / **Okta for AI Agents** enabled.
 
 Two exchanges, deliberately different: a **standard OBO** exchange gets the agent from
 the user's token to a gateway-scoped token, then **ID-JAG** crosses into the resource's
@@ -21,7 +24,10 @@ authorization server.
 
 ```mermaid
 flowchart LR
-    U(["👤 User"])
+    U(["👤 User<br/><i>browser: session cookie only</i>"])
+    subgraph LOCAL["Your machine"]
+        BFF["BFF<br/>frontend/app.py<br/><i>holds the tokens</i>"]
+    end
     subgraph AWS["AWS · Amazon Bedrock AgentCore"]
         AG["Strands agent<br/>on Runtime"]
         GW["Gateway + interceptor<br/><i>runs the ID-JAG legs</i>"]
@@ -29,19 +35,24 @@ flowchart LR
     end
     OKTA["🔐 Okta<br/>Cross App Access"]
 
-    U -- "1 · sign in (OIDC + PKCE)" --> OKTA
-    U -- "2 · ask, with the user's token" --> AG
-    AG -- "3 · OBO exchange" --> OKTA
-    AG -- "4 · MCP tools/call" --> GW
-    GW -- "5 · ID-JAG, as the AI Agent" --> OKTA
-    GW -- "6 · call as the user" --> API
+    U -- "1 · open localhost:8000" --> BFF
+    BFF -- "2 · sign in (OIDC + PKCE)" --> OKTA
+    BFF -- "3 · ask, with the user's token" --> AG
+    AG -- "4 · OBO exchange" --> OKTA
+    AG -- "5 · MCP tools/call" --> GW
+    GW -- "6 · ID-JAG, as the AI Agent" --> OKTA
+    GW -- "7 · call as the user" --> API
 
     classDef okta fill:#eef,stroke:#66f
+    classDef local fill:#f8fafc,stroke:#94a3b8
     class OKTA okta
+    class BFF local
 ```
 
 *The API receives a token whose `sub` is the **human** and whose `act.sub` is the
-**agent** — no static API keys, and no tool credential inside the agent.*
+**agent** — no static API keys, and no tool credential inside the agent. Note where the
+tokens live: the browser holds only a signed session cookie, and every credential stays
+server-side in the BFF or beyond.*
 
 ## How it works
 
