@@ -69,8 +69,9 @@ agentcore validate
 echo "🚀 Deploying via agentcore deploy..."
 agentcore deploy --target dev --yes
 
-# Step 5: the chat online evaluation config (managed third-party evaluators, which the
-# CloudFormation schema does not accept yet; see scripts/chat_online_eval.py)
+# Step 5: configure chat live evaluation directly through the AgentCore API, outside CDK.
+# CloudFormation does not yet accept these third-party evaluator IDs. The helper uses
+# the chat Runtime and IAM role created by the stack, so it must run after deployment.
 echo "Applying the chat online evaluation config..."
 python3 scripts/chat_online_eval.py apply --region "$REGION"
 
