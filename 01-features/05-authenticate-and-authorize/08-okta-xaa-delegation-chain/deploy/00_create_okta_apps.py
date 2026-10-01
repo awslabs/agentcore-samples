@@ -2,7 +2,7 @@
 
 Creates, reusing by name on a re-run:
 
-  1. AS 1 "XAA AgentCore" (audience api://agentcore) -- the agent chain.
+  1. AS 1 "XAA AgentCore" (audience AGENTCORE_AUDIENCE, an https URL) -- the agent chain.
      Scopes: agent.access (T_user, may invoke the runtime) and tools.access
      (T_gateway, may call the gateway; minted by the OBO exchange).
 
@@ -263,7 +263,7 @@ def main() -> None:
     org = okta_org_url()
     okta = OktaAdmin(org, must_env("OKTA_API_TOKEN"))
     redirect_uri = env("FRONTEND_REDIRECT_URI", "http://localhost:8000/auth/callback")
-    agentcore_aud = env("AGENTCORE_AUDIENCE", "api://agentcore")
+    agentcore_aud = env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")
     resource_aud = env("RESOURCE_AUDIENCE", "api://todo")
     scope_agent = env("SCOPE_AGENT_ACCESS", "agent.access")
     scope_tools = env("SCOPE_TOOLS_ACCESS", "tools.access")

@@ -3,10 +3,17 @@
 This is where the sample's central idea lives. On every `tools/call` the gateway hands
 this Lambda the inbound request; it:
 
-  1. reads the user's ID token from the `X-Okta-Id-Token` header
+  1. takes the inbound `Authorization` bearer -- the token the gateway just validated
   2. leg 1 — exchanges it at the Okta **org** server for an ID-JAG (RFC 8693)
   3. leg 2 — redeems the ID-JAG at the **resource** AS for `T_tool` (RFC 7523)
   4. returns the request with `Authorization: Bearer <T_tool>`
+
+Step 1 used to read a separate `X-Okta-Id-Token` header, because leg 1 would only accept
+an ID token. Okta's **Machine access** configuration lifts that: register the inbound
+token's `cid` as a caller and leg 1 accepts an `access_token`. That removes a whole piece
+of plumbing -- the BFF no longer forwards an ID token through the runtime, and the agent
+handles one credential instead of two. `XAA_LEG1_SUBJECT=id_token` restores the old
+behaviour for orgs without Machine access; see IDP_SETUP_OKTA.md.
 
 The agent therefore never holds a credential that can reach the API, and the API
 receives a token whose `sub` is the human and whose `act.sub` is the agent.
@@ -34,7 +41,8 @@ Environment:
   AI_AGENT_CLIENT_ID    the wlp... client id
   AI_AGENT_KEY_KID      the kid of the registered public key
   AI_AGENT_KEY_SECRET_ID  Secrets Manager id holding the PEM private key
-  ID_TOKEN_HEADER       X-Okta-Id-Token (override only if the agent uses another name)
+  XAA_LEG1_SUBJECT      access_token (default) | id_token | auto
+  ID_TOKEN_HEADER       X-Okta-Id-Token (only read when XAA_LEG1_SUBJECT is not access_token)
   LOG_CLAIMS            "true" to log token CLAIMS (never token material)
 """
 
@@ -58,12 +66,19 @@ AGENT_CLIENT_ID = os.environ.get("AI_AGENT_CLIENT_ID", "")
 AGENT_KEY_KID = os.environ.get("AI_AGENT_KEY_KID", "")
 KEY_SECRET_ID = os.environ.get("AI_AGENT_KEY_SECRET_ID", "")
 ID_TOKEN_HEADER = os.environ.get("ID_TOKEN_HEADER", "X-Okta-Id-Token").lower()
+
+# Which token leg 1 exchanges. "access_token" uses the inbound bearer the gateway already
+# validated, so nothing extra travels with the request -- it needs a Machine access entry
+# in Okta. "id_token" reads ID_TOKEN_HEADER instead and needs the User access binding.
+# "auto" prefers the bearer and falls back to the header, which is useful while migrating.
+LEG1_SUBJECT = os.environ.get("XAA_LEG1_SUBJECT", "access_token").lower()
 LOG_CLAIMS = os.environ.get("LOG_CLAIMS", "true").lower() == "true"
 
 TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
 JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 ID_JAG = "urn:ietf:params:oauth:token-type:id-jag"
 TT_ID_TOKEN = "urn:ietf:params:oauth:token-type:id_token"
+TT_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"  # nosec B105
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
 # subject -> (T_tool, expires_at). Warm-container cache; a multi-tenant deployment
@@ -137,12 +152,23 @@ def post_form(url: str, form: dict) -> dict:
         raise InterceptorError(f"{url} -> HTTP {exc.code}: {detail}") from exc
 
 
-def leg1_id_jag(id_token: str) -> str:
-    """Exchange the user's ID token for an ID-JAG at the ORG server.
+def leg1_id_jag(subject_token: str, subject_token_type: str) -> str:
+    """Exchange the caller's token for an ID-JAG at the ORG server.
 
-    Only the org server mints ID-JAGs. An *access* token is rejected here with
-    "no delegation policy authorizes this token" -- Okta's User access binding
-    authorises the linked app's ID token specifically.
+    Only the org server mints ID-JAGs, and it accepts exactly two subject token types --
+    `id_token` and `access_token`. Anything else, including the generic `jwt`, is refused
+    with "'subject_token_type' is invalid or not supported".
+
+    Which one you can use is an Okta *configuration* question, not a protocol one:
+
+      * `access_token` requires a **Machine access** entry on the AI Agent naming the
+        token's `cid` as a caller, on the custom AS that issued it, for the audience the
+        token carries. Without it: "no delegation policy authorizes this token".
+      * `id_token` requires the **User access** binding, and the token must come from the
+        app bound there.
+
+    This sample prefers `access_token`, because that is the credential the gateway has
+    already validated and handed us -- no second token needs to travel with the request.
     """
     endpoint = f"{ORG_URL}/oauth2/v1/token"
     body = post_form(
@@ -150,8 +176,8 @@ def leg1_id_jag(id_token: str) -> str:
         {
             "grant_type": TOKEN_EXCHANGE,
             "requested_token_type": ID_JAG,
-            "subject_token": id_token,
-            "subject_token_type": TT_ID_TOKEN,
+            "subject_token": subject_token,
+            "subject_token_type": subject_token_type,
             "audience": RESOURCE_AS,
             "scope": RESOURCE_SCOPE,
             "client_id": AGENT_CLIENT_ID,
@@ -192,16 +218,16 @@ def cache_put(subject: str, token: str, expires_at: float) -> None:
     _TOOL_TOKENS[subject] = (token, expires_at)
 
 
-def resource_token_for(id_token: str, trace_id: str) -> str:
+def resource_token_for(subject_token: str, subject_token_type: str, trace_id: str) -> str:
     """Cached T_tool for this user, minting one through both legs when needed."""
-    subject = claims_of(id_token).get("sub", "unknown")
+    subject = claims_of(subject_token).get("sub", "unknown")
     hit = _TOOL_TOKENS.get(subject)
     if hit and hit[1] - _SKEW > time.time():
         log("t_tool.cache_hit", subject=subject, trace_id=trace_id)
         return hit[0]
 
     started = time.time()
-    id_jag = leg1_id_jag(id_token)
+    id_jag = leg1_id_jag(subject_token, subject_token_type)
     if LOG_CLAIMS:
         c = claims_of(id_jag)
         log(
@@ -211,6 +237,8 @@ def resource_token_for(id_token: str, trace_id: str) -> str:
             aud=c.get("aud"),
             sub=c.get("sub"),
             scp=c.get("scp"),
+            act=c.get("act"),
+            subject_token_type=subject_token_type,
             ttl_s=int(c.get("exp", 0) - time.time()),
         )
     token, expires_in = leg2_resource_token(id_jag)
@@ -224,11 +252,33 @@ def resource_token_for(id_token: str, trace_id: str) -> str:
             sub=c.get("sub"),
             cid=c.get("cid"),
             act_sub=(c.get("act") or {}).get("sub"),
+            act=c.get("act"),
             scp=c.get("scp"),
             ms=int((time.time() - started) * 1000),
         )
     cache_put(subject, token, time.time() + expires_in)
     return token
+
+
+def pick_subject_token(lower: dict) -> tuple[str | None, str, str]:
+    """Choose what to send as leg 1's `subject_token`.
+
+    Returns (token, subject_token_type, where it came from). The inbound bearer is
+    preferred: the gateway has already validated it, and using it means the request
+    carries one credential instead of two. Falling back to the ID token header keeps the
+    sample working on orgs that have the User access binding but not Machine access.
+    """
+    bearer = (lower.get("authorization") or "").removeprefix("Bearer ").removeprefix("bearer ").strip()
+    id_token = lower.get(ID_TOKEN_HEADER)
+
+    if LEG1_SUBJECT == "id_token":
+        return id_token, TT_ID_TOKEN, ID_TOKEN_HEADER
+    if LEG1_SUBJECT == "access_token":
+        return (bearer or None), TT_ACCESS_TOKEN, "authorization"
+    # auto
+    if bearer:
+        return bearer, TT_ACCESS_TOKEN, "authorization"
+    return id_token, TT_ID_TOKEN, ID_TOKEN_HEADER
 
 
 def handler(event, context):
@@ -253,18 +303,26 @@ def handler(event, context):
             "mcp": {"transformedGatewayRequest": {"headers": headers, "body": req.get("body")}},
         }
 
-    id_token = lower.get(ID_TOKEN_HEADER)
-    if not id_token:
+    subject_token, subject_token_type, source = pick_subject_token(lower)
+    if not subject_token:
         # Pass the request through untouched rather than injecting junk: a non-JWT in
         # Authorization would break policy evaluation for the whole request.
-        log("intercept.no_id_token", trace_id=trace_id, header=ID_TOKEN_HEADER, method=method)
+        log(
+            "intercept.no_subject_token",
+            trace_id=trace_id,
+            mode=LEG1_SUBJECT,
+            looked_in=source,
+            header=ID_TOKEN_HEADER,
+            method=method,
+        )
         return {
             "interceptorOutputVersion": "1.0",
             "mcp": {"transformedGatewayRequest": {"headers": headers, "body": req.get("body")}},
         }
 
     try:
-        t_tool = resource_token_for(id_token, trace_id)
+        log("intercept.subject", trace_id=trace_id, mode=LEG1_SUBJECT, source=source, type=subject_token_type)
+        t_tool = resource_token_for(subject_token, subject_token_type, trace_id)
     except InterceptorError as exc:
         # Same reasoning: leave Authorization alone so the failure surfaces as a clean
         # 401/403 from the API rather than an opaque policy-evaluation error.

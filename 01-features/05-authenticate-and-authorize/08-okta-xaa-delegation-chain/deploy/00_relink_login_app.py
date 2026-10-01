@@ -7,7 +7,7 @@ OIDC app, and the agent may act for a user only while that user is signed in to
 that app. The binding is permanent, and the "select an existing app" picker offers
 SAML apps only -- so you cannot bind the `XAA Todo Login` app that
 00_create_okta_apps.py creates. The linked app Okta auto-creates is therefore the
-real sign-in client, and the ID token the interceptor exchanges at leg 1 must come
+real sign-in client. On the id_token fallback path the ID token leg 1 exchanges must come
 from it.
 
 This script:

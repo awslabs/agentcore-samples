@@ -19,7 +19,7 @@ and was established against a live gateway:
     PartiallyAuthorizeActions before CreateGateway will even succeed -- the create
     call probes the policy engine using this role.
   * `passRequestHeaders: True` is required, or the interceptor never sees the
-    X-Okta-Id-Token header it needs.
+    headers it needs.
   * exceptionLevel DEBUG makes authorizer and policy denials state a reason.
 
 Writes GATEWAY_ID, GATEWAY_URL, GATEWAY_MCP_URL, GATEWAY_SERVICE_ROLE_ARN,
@@ -161,6 +161,7 @@ def ensure_interceptor(aws, secret_arn: str) -> str:
             "AI_AGENT_KEY_KID": must_env("AI_AGENT_KEY_KID"),
             "AI_AGENT_KEY_SECRET_ID": AGENT_KEY_SM_ID,
             "ID_TOKEN_HEADER": env("ID_TOKEN_HEADER", "X-Okta-Id-Token"),
+            "XAA_LEG1_SUBJECT": env("XAA_LEG1_SUBJECT", "access_token"),
             "LOG_CLAIMS": "true",
         },
     )
@@ -214,7 +215,7 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
     print("  waiting 12s for the role statement to propagate")
     time.sleep(12)
 
-    audience = env("AGENTCORE_AUDIENCE", "api://agentcore")
+    audience = env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")
     tools_scope = env("SCOPE_TOOLS_ACCESS", "tools.access")
     allowed_scopes = [tools_scope]
     if allow_user_scope:
@@ -249,7 +250,8 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
             {
                 "interceptor": {"lambda": {"arn": icept_arn}},
                 "interceptionPoints": ["REQUEST"],
-                # Without this the interceptor never sees X-Okta-Id-Token.
+                # Without this the interceptor sees no headers at all -- including
+                # Authorization, which is what it exchanges at leg 1.
                 "inputConfiguration": {"passRequestHeaders": True},
             }
         ],
@@ -320,9 +322,10 @@ def main() -> None:
         "--allow-user-scope",
         action="store_true",
         help=(
-            "Also accept agent.access at the gateway. Needed by scripts/test_chain.py "
-            "before the agent exists; drop it once the OBO hop is in so a replayed "
-            "T_user is refused."
+            "Also accept agent.access at the gateway. No longer needed by "
+            "scripts/test_chain.py, which now performs the OBO exchange itself and sends "
+            "a tools.access token. Kept for debugging a T_user directly against the "
+            "gateway; leave it off so a replayed T_user is refused."
         ),
     )
     args = ap.parse_args()

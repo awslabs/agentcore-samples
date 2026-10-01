@@ -6,7 +6,7 @@ auth or env vars, so both are written into agentcore.json directly.
 What it sets:
 
   * authorizerConfiguration.customJWTAuthorizer against AS 1, with
-    allowedAudience = api://agentcore and allowedScopes = [agent.access].
+    allowedAudience = AGENTCORE_AUDIENCE and allowedScopes = [agent.access].
     Scope pinning, not `allowedClients` -- the latter does not work with Okta tokens
     (see README troubleshooting).
   * requestHeaderAllowlist = ["Authorization"], without which the agent cannot read
@@ -82,7 +82,7 @@ def main() -> None:
         # at a casing difference.
         "customJwtAuthorizer": {
             "discoveryUrl": discovery_url(must_env("AGENTCORE_AS_ISSUER")),
-            "allowedAudience": [env("AGENTCORE_AUDIENCE", "api://agentcore")],
+            "allowedAudience": [env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")],
             # The BFF's token carries agent.access. Pinning the scope is what stops a
             # token minted for another purpose from invoking the agent.
             #
@@ -105,9 +105,12 @@ def main() -> None:
     wanted = {
         "GATEWAY_MCP_URL": must_env("GATEWAY_MCP_URL", "Run deploy/02_create_gateway.py first."),
         "AGENT_OBO_PROVIDER_NAME": obo_provider_name(),
-        "AGENTCORE_AUDIENCE": env("AGENTCORE_AUDIENCE", "api://agentcore"),
+        "AGENTCORE_AUDIENCE": env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com"),
         "SCOPE_TOOLS_ACCESS": env("SCOPE_TOOLS_ACCESS", "tools.access"),
         "AGENT_WORKLOAD_NAME": env("AGENT_WORKLOAD_NAME", "xaa-todo-agent"),
+        # The agent only forwards this header when a caller supplies an ID token, which
+        # happens on the id_token fallback path. XAA_LEG1_SUBJECT is deliberately NOT set
+        # here: the interceptor decides the mode, not the runtime.
         "ID_TOKEN_HEADER": env("ID_TOKEN_HEADER", "X-Okta-Id-Token"),
     }
     if env("MODEL_ID"):
