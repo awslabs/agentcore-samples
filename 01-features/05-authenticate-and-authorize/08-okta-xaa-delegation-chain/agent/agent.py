@@ -5,7 +5,8 @@ The agent does exactly two identity things, and deliberately no more:
   1. Exchanges the caller's `T_user` for `T_gateway` (scp=tools.access) through
      AgentCore Identity. The Agent app's secret lives in the credential provider, not
      here.
-  2. Forwards the caller's **ID token** to the gateway in the `X-Okta-Id-Token` header
+  2. Sends only `Authorization: Bearer T_gateway`; the gateway's interceptor exchanges
+     that token at ID-JAG leg 1, so no second credential travels with the request
      so the gateway's interceptor can run the Cross App Access legs.
 
 It never performs the ID-JAG exchange, never sees `T_tool`, and never puts a token in
@@ -88,7 +89,7 @@ def obo_token(user_jwt: str) -> str:
 
 @contextmanager
 def gateway(t_gateway: str, id_token: str = "") -> Iterator[MCPClient]:
-    """MCP client carrying both headers the chain needs.
+    """MCP client carrying what the chain needs.
 
     Authorization   -> the gateway's CUSTOM_JWT authorizer and Cedar read this, and the
                        interceptor exchanges it at ID-JAG leg 1

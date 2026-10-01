@@ -19,7 +19,7 @@ and was established against a live gateway:
     PartiallyAuthorizeActions before CreateGateway will even succeed -- the create
     call probes the policy engine using this role.
   * `passRequestHeaders: True` is required, or the interceptor never sees the
-    X-Okta-Id-Token header it needs.
+    headers it needs.
   * exceptionLevel DEBUG makes authorizer and policy denials state a reason.
 
 Writes GATEWAY_ID, GATEWAY_URL, GATEWAY_MCP_URL, GATEWAY_SERVICE_ROLE_ARN,
@@ -250,7 +250,8 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
             {
                 "interceptor": {"lambda": {"arn": icept_arn}},
                 "interceptionPoints": ["REQUEST"],
-                # Without this the interceptor never sees X-Okta-Id-Token.
+                # Without this the interceptor sees no headers at all -- including
+                # Authorization, which is what it exchanges at leg 1.
                 "inputConfiguration": {"passRequestHeaders": True},
             }
         ],
@@ -321,9 +322,10 @@ def main() -> None:
         "--allow-user-scope",
         action="store_true",
         help=(
-            "Also accept agent.access at the gateway. Needed by scripts/test_chain.py "
-            "before the agent exists; drop it once the OBO hop is in so a replayed "
-            "T_user is refused."
+            "Also accept agent.access at the gateway. No longer needed by "
+            "scripts/test_chain.py, which now performs the OBO exchange itself and sends "
+            "a tools.access token. Kept for debugging a T_user directly against the "
+            "gateway; leave it off so a replayed T_user is refused."
         ),
     )
     args = ap.parse_args()

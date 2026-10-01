@@ -51,8 +51,12 @@ def mcp(url: str, payload: dict, token: str, id_token: str, sid: str | None):
         "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": MCP_VERSION,
         "Authorization": f"Bearer {token}",
-        ID_TOKEN_HEADER: id_token,
     }
+    # Only when there is one. On the default access_token path the interceptor exchanges
+    # the Authorization bearer, so sending this header would prove nothing -- and sending
+    # it unconditionally would hide a regression where the chain quietly depends on it.
+    if id_token:
+        headers[ID_TOKEN_HEADER] = id_token
     if sid:
         headers["Mcp-Session-Id"] = sid
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers)
@@ -95,6 +99,11 @@ def show(label: str, raw: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--no-id-token",
+        action="store_true",
+        help="Send only Authorization, proving leg 1 needs no ID token (access_token mode).",
+    )
     ap.add_argument("--add", metavar="TITLE", help="Also add a todo with this title.")
     args = ap.parse_args()
     load_env()
@@ -110,6 +119,9 @@ def main() -> None:
         must_env("AGENTCORE_AS_ISSUER"),
     )
     t_user, t_id = tokens["access_token"], tokens["id_token"]
+    if args.no_id_token:
+        t_id = ""
+        print("  • not sending X-Okta-Id-Token at all")
 
     # Exactly what agent.py does at hop C. AgentCore Identity holds the Agent app's
     # secret and performs the RFC 8693 exchange; we only ever see the result.
@@ -171,7 +183,7 @@ def main() -> None:
     print("\n================ WHAT THIS PROVED ================")
     print("  If whoami returned your email as `user` and the AI Agent as")
     print("  `acting_agent`, then the full hop-D chain works:")
-    print("    interceptor read X-Okta-Id-Token")
+    print("    interceptor exchanged the inbound Authorization bearer")
     print("    -> ID-JAG leg 1 at the org server")
     print("    -> leg 2 at the resource AS")
     print("    -> injected T_tool")

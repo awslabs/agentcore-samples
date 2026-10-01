@@ -62,12 +62,12 @@ sequenceDiagram
     Note over U,AS1: A · sign-in
     U->>BFF: GET /
     BFF->>AS1: authorization code + PKCE<br/>client_assertion = AI Agent key
-    AS1-->>BFF: T_id + T_user
+    AS1-->>BFF: T_id + T_user<br/>T_id stays in the BFF session
     BFF-->>U: session cookie — tokens stay server-side
 
     Note over BFF,RT: B · invoke
     U->>BFF: "what is on my todo list?"
-    BFF->>RT: Bearer T_user, payload carries id_token
+    BFF->>RT: Bearer T_user<br/>no ID token in the payload
     RT->>RT: CUSTOM_JWT validates aud + scp=agent.access
 
     Note over RT,GW: C · OBO — the platform's native exchange
@@ -77,15 +77,15 @@ sequenceDiagram
     ID->>AS1: RFC 8693 exchange as the Agent app
     AS1-->>ID: T_gateway
     ID-->>RT: T_gateway
-    RT->>GW: MCP tools/call<br/>Authorization: Bearer T_gateway<br/>X-Okta-Id-Token: T_id
+    RT->>GW: MCP tools/call<br/>Authorization: Bearer T_gateway<br/>one credential, no extra header
 
     Note over GW,API: D · Cross App Access, outside the agent
     GW->>GW: CUSTOM_JWT validates T_gateway (scp=tools.access)
     GW->>EI: intercept (passRequestHeaders) — BEFORE Cedar
-    EI->>ORG: leg 1 · token-exchange → ID-JAG
+    EI->>ORG: leg 1 · token-exchange of the INBOUND<br/>T_gateway → ID-JAG
     ORG-->>EI: ID-JAG (aud=AS 2, 299 s, single use)
     EI->>AS2: leg 2 · jwt-bearer, assertion=ID-JAG
-    AS2-->>EI: T_tool (sub=user, act=agent)
+    AS2-->>EI: T_tool (sub=user, act=agent over Agent app)
     EI-->>GW: Authorization = Bearer T_tool
     GW->>GW: Cedar ENFORCE — principal is AgentCore::OAuthUser
     GW->>API: Bearer T_tool
@@ -100,19 +100,19 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    TID["<b>T_id</b><br/>ID token<br/>aud = the wlp… app"]
+    TGW["<b>T_gateway</b><br/>access token<br/>aud = AGENTCORE_AUDIENCE<br/>cid = the Agent app"]
     JAG["<b>ID-JAG</b><br/><i>a grant, not a token</i><br/>aud = AS 2<br/><b>299 s · single use</b>"]
-    TOOL["<b>T_tool</b><br/>access token<br/>aud = api://todo<br/>sub = user · act = agent"]
+    TOOL["<b>T_tool</b><br/>access token<br/>aud = api://todo<br/>sub = user · act nests agent + app"]
     API(["Todo API<br/>validates AS 2 JWKS"])
 
-    TID -->|"<b>leg 1</b> · ORG server<br/>grant_type = token-exchange<br/>requested_token_type = id-jag<br/>authorised by <b>User access</b>"| JAG
+    TGW -->|"<b>leg 1</b> · ORG server<br/>grant_type = token-exchange<br/>requested_token_type = id-jag<br/>subject_token_type = access_token<br/>authorised by <b>Machine access</b>"| JAG
     JAG -->|"<b>leg 2</b> · RESOURCE AS<br/>grant_type = jwt-bearer<br/>assertion = the ID-JAG<br/>authorised by <b>Resource connection</b>"| TOOL
     TOOL --> API
 
     classDef grant fill:#fef9c3,stroke:#ca8a04
     classDef token fill:#dcfce7,stroke:#16a34a
     class JAG grant
-    class TID,TOOL token
+    class TGW,TOOL token
 ```
 
 The IdP knows *who the user is*; the resource's authorization server owns *that API's*
@@ -127,7 +127,7 @@ resource, which is exactly why hop **C** needs just one call.
 
 | Identity | `.env` | What it is |
 | --- | --- | --- |
-| **AI Agent + linked app** | `AI_AGENT_CLIENT_ID` = `LOGIN_CLIENT_ID` (`wlp…`) | One client, three jobs: the user **signs in** to it, and it authenticates **both ID-JAG legs**. Okta's *User access* binding makes it the only app whose ID token leg 1 accepts. |
+| **AI Agent + linked app** | `AI_AGENT_CLIENT_ID` = `LOGIN_CLIENT_ID` (`wlp…`) | One client, two jobs: the user **signs in** to it, and it authenticates **both ID-JAG legs** as the client. Note it cannot be leg 1's *subject* — an agent cannot be its own caller. |
 | **Agent app** | `AGENT_APP_CLIENT_ID` (`0oa…`) | API Services app with the Token Exchange grant, used by AgentCore Identity for the OBO exchange. Holds a secret the agent never sees. |
 | **AS 1** | `AGENTCORE_AS_ISSUER`, `https://xaa-agentcore.example.com` | Issues `T_id`/`T_user` at sign-in and `T_gateway` via OBO. Runtime and Gateway both trust it. |
 | **AS 2** | `RESOURCE_AS_ISSUER`, `api://todo` | Redeems the ID-JAG and mints `T_tool`. Separate on purpose: the API trusts **only** this issuer, which is what makes the agent's own tokens useless against it. |
@@ -321,7 +321,7 @@ python scripts/verify_ai_agent.py       # confirm everything the API can see
 
 ```bash
 python deploy/01_deploy_resource.py                     # todo API → Lambda + HTTP API
-python deploy/02_create_gateway.py --allow-user-scope    # gateway, interceptor, policy engine, target
+python deploy/02_create_gateway.py           # gateway, interceptor, policy engine, target
 python deploy/03_create_policies.py                      # Cedar
 python deploy/04_create_obo_provider.py                  # AgentCore Identity provider for hop C
 ```
@@ -332,7 +332,8 @@ python deploy/04_create_obo_provider.py                  # AgentCore Identity pr
 python scripts/test_chain.py
 ```
 
-Signs you in and calls the gateway directly with the two headers the agent will send.
+Signs you in, runs the same OBO exchange the agent runs, and calls the gateway with
+exactly what the agent sends — a single `Authorization: Bearer T_gateway`.
 A pass means the interceptor, both ID-JAG legs, the injection, Cedar and the API all
 work. `whoami` should return your email as `user` and the AI Agent as `acting_agent`.
 
@@ -347,7 +348,6 @@ python deploy/05_patch_agentcore_json.py     # Okta inbound auth + env vars
 ( cd xaatodoagent && agentcore validate && agentcore deploy -y )
 python deploy/06_grant_iam.py                # OBO permissions for the execution role
 python deploy/07_enable_observability.py     # transaction search + log retention
-python deploy/02_create_gateway.py           # re-run WITHOUT --allow-user-scope to tighten
 python frontend/app.py                       # http://localhost:8000
 ```
 
@@ -422,30 +422,43 @@ python deploy/03_create_policies.py --list
 
 ## Does ID-JAG take an access token or an ID token?
 
-Asked often enough to deserve its own heading: **an ID token. An access token is
-refused.**
+Asked often enough to deserve its own heading. **Both — and which one you can use is a
+question of Okta configuration, not of the protocol.**
 
-| `subject_token` at leg 1 | Result |
-| --- | --- |
-| the **ID token** from the agent's linked app | ✅ ID-JAG minted |
-| an **access token** for the same user | ❌ `400 invalid_request: 'subject_token' is invalid: no delegation policy authorizes this token` |
+| `subject_token` at leg 1 | Needs | Result |
+| --- | --- | --- |
+| **access token** whose `cid` is a registered caller | **Machine access** on the AI Agent | ✅ ID-JAG minted, `act` nested |
+| **ID token** from the app bound under *User access* | the **User access** binding | ✅ ID-JAG minted, `act` single-level |
+| access token with **no** matching delegation link | — | ❌ `'subject_token' is invalid: no delegation policy authorizes this token` |
+| access token whose `cid` is the **agent itself** | — | ❌ same error — an agent cannot be its own caller |
+| the caller app has no **user assignment** | — | ❌ `'subject_token' is invalid: the user is not assigned to the client application` |
+| `subject_token_type: jwt` | — | ❌ `'subject_token_type' is invalid or not supported` |
 
-Okta records the failure in its System Log as
-`invalid_subject_token_no_delegation_link`.
+Okta logs the delegation failure as `invalid_subject_token_no_delegation_link`.
 
-The reason is Okta's **User access** binding: it authorises *the ID token issued by the
-app bound to the AI Agent*, and nothing else. An access token — even a valid one, for the
-same user, from the same authorization server — carries no delegation link, so leg 1 has
-nothing to act on. This is not a quirk of configuration; it is what the binding means.
+The underlying rule is that leg 1 needs a **delegation link** covering the token it is
+given. Two tabs create those links, and for a long time only one of them was obvious:
 
-Two consequences for anything built this way:
+- **User access** creates the link for the bound app's **ID token**.
+- **Machine access** creates *non-user* delegation links, which is what authorises an
+  **access token** — see [IDP_SETUP_OKTA.md](IDP_SETUP_OKTA.md) step 6. Its UI copy talks
+  about callers reaching *into* the agent, which reads like the opposite of leg 1; Okta's
+  own guide confirms these are the links that used to live under *Delegations*.
 
-- **Whoever signs the user in must pass the ID token through.** The OBO exchange at hop C
-  yields an *access* token, so the chain cannot derive an ID token from what the agent
-  holds. The BFF is the only component that has one, and this sample's agent fails with
-  an explicit message if it is missing.
-- **It travels as a connection header** (`X-Okta-Id-Token`), never in the tool arguments,
-  because those are composed by the model.
+**This sample uses the access token**, because that is the credential the gateway has
+already validated and handed to the interceptor. The consequences are worth stating, since
+earlier versions of this README argued the opposite:
+
+- **Nothing extra travels with the request.** No ID token in the invoke payload, no second
+  header, and the agent never handles an ID token. `scripts/test_chain.py --no-id-token`
+  proves the chain works with the header absent entirely.
+- **The provenance is richer.** The ID-JAG's `act` nests the Agent app inside the AI Agent
+  inside the user, where the ID-token path records one level. See
+  [Where the `act` claim appears, and where it does not](#where-the-act-claim-appears-and-where-it-does-not).
+- **It costs an https audience.** Machine access rejects `api://` schemes and an Okta custom
+  AS allows exactly one audience, so `AGENTCORE_AUDIENCE` must be an https URL.
+- **It needs the Okta for AI Agents subscription.** Without it, run
+  `XAA_LEG1_SUBJECT=id_token` and `SEND_ID_TOKEN=true`; that path is still tested.
 
 See [Tokens: what each one is, and where it travels](#tokens-what-each-one-is-and-where-it-travels)
 for the full inventory, including which token is on the wire at every hop and the error

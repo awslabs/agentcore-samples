@@ -4,7 +4,7 @@ Two things make this more than boilerplate:
 
   1. **It signs in through the AI Agent's linked app**, authenticating with
      `private_key_jwt` because that app has no client secret. Okta's *User access*
-     binding means only this app's ID token is accepted at ID-JAG leg 1.
+     binding means this is the app the user must be signed in to for the agent to act.
   2. **It does not need to send an ID token.** Okta's Machine access configuration lets
      ID-JAG leg 1 exchange the access token the gateway already validated, so the chain
      carries one credential rather than two. Set `SEND_ID_TOKEN=true` only if the
