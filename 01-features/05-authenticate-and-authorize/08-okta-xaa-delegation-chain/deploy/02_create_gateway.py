@@ -161,6 +161,7 @@ def ensure_interceptor(aws, secret_arn: str) -> str:
             "AI_AGENT_KEY_KID": must_env("AI_AGENT_KEY_KID"),
             "AI_AGENT_KEY_SECRET_ID": AGENT_KEY_SM_ID,
             "ID_TOKEN_HEADER": env("ID_TOKEN_HEADER", "X-Okta-Id-Token"),
+            "XAA_LEG1_SUBJECT": env("XAA_LEG1_SUBJECT", "access_token"),
             "LOG_CLAIMS": "true",
         },
     )
@@ -214,7 +215,7 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
     print("  waiting 12s for the role statement to propagate")
     time.sleep(12)
 
-    audience = env("AGENTCORE_AUDIENCE", "api://agentcore")
+    audience = env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")
     tools_scope = env("SCOPE_TOOLS_ACCESS", "tools.access")
     allowed_scopes = [tools_scope]
     if allow_user_scope:

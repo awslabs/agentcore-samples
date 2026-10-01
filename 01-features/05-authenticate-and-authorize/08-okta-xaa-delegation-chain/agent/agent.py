@@ -45,7 +45,7 @@ log = logging.getLogger("xaa-agent")
 
 GATEWAY_MCP_URL = os.environ.get("GATEWAY_MCP_URL", "")
 OBO_PROVIDER = os.environ.get("AGENT_OBO_PROVIDER_NAME", "xaa-agent-obo-provider")
-AUDIENCE = os.environ.get("AGENTCORE_AUDIENCE", "api://agentcore")
+AUDIENCE = os.environ.get("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")
 TOOLS_SCOPE = os.environ.get("SCOPE_TOOLS_ACCESS", "tools.access")
 WORKLOAD_NAME = os.environ.get("AGENT_WORKLOAD_NAME", "xaa-todo-agent")
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
@@ -87,15 +87,21 @@ def obo_token(user_jwt: str) -> str:
 
 
 @contextmanager
-def gateway(t_gateway: str, id_token: str) -> Iterator[MCPClient]:
+def gateway(t_gateway: str, id_token: str = "") -> Iterator[MCPClient]:
     """MCP client carrying both headers the chain needs.
 
-    Authorization  -> the gateway's CUSTOM_JWT authorizer and Cedar read this
-    X-Okta-Id-Token -> the interceptor reads this for ID-JAG leg 1
+    Authorization   -> the gateway's CUSTOM_JWT authorizer and Cedar read this, and the
+                       interceptor exchanges it at ID-JAG leg 1
+    X-Okta-Id-Token -> optional; only needed when the interceptor runs in id_token mode
     """
     if not GATEWAY_MCP_URL:
         raise RuntimeError("GATEWAY_MCP_URL is not set; re-run deploy/05_patch_agentcore_json.py")
-    headers = {"Authorization": f"Bearer {t_gateway}", ID_TOKEN_HEADER: id_token}
+    headers = {"Authorization": f"Bearer {t_gateway}"}
+    # Only sent when the caller supplied one. The gateway's interceptor exchanges the
+    # Authorization bearer by default; the ID token header exists for orgs that have the
+    # User access binding but not Machine access (XAA_LEG1_SUBJECT=id_token).
+    if id_token:
+        headers[ID_TOKEN_HEADER] = id_token
     client = MCPClient(lambda: streamablehttp_client(GATEWAY_MCP_URL, headers=headers))
     with client:
         yield client
@@ -126,12 +132,10 @@ async def invoke(payload: dict[str, Any], context: Any):
         return
     t_user = auth.split(" ", 1)[1]
 
-    # The BFF sends the ID token in the payload: leg 1 requires an ID token, and the
-    # OBO exchange above produces an access token, so the chain cannot derive it.
+    # Optional. Leg 1 normally exchanges T_gateway, which we are about to mint, so a
+    # second token does not need to travel with the request at all. A BFF running the
+    # interceptor in id_token mode can still send one.
     id_token = payload.get("id_token") or ""
-    if not id_token:
-        yield "ERROR: the request did not include an id_token, so the gateway cannot reach the API."
-        return
 
     prompt = payload.get("prompt") or "What is on my todo list?"
 

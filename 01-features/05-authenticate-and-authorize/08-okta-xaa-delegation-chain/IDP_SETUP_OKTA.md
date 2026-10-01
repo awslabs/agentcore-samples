@@ -4,7 +4,7 @@ Three identities, two custom authorization servers, and one manual console step.
 
 | What | Created by | Used for |
 | :--- | :--- | :--- |
-| **AS 1** `api://agentcore` | `deploy/00_create_okta_apps.py` | mints `T_user` at sign-in and `T_gateway` via the OBO exchange |
+| **AS 1** `https://xaa-agentcore.example.com` | `deploy/00_create_okta_apps.py` | mints `T_user` at sign-in and `T_gateway` via the OBO exchange |
 | **AS 2** `api://todo` | `deploy/00_create_okta_apps.py` | redeems the ID-JAG (leg 2) and mints `T_tool` |
 | **Login app** | `deploy/00_create_okta_apps.py` | the OIDC client the user signs into |
 | **Agent app** (API Services) | `deploy/00_create_okta_apps.py` | AgentCore Identity's client for the OBO exchange |
@@ -105,10 +105,14 @@ stay empty; the Profile tab still shows a green check.
 **Owners → Edit** → assign yourself. Okta suggests at least two owners for real
 deployments; one is fine for a sample.
 
-### Step 3 — User access — *this is what authorises ID-JAG leg 1*
+### Step 3 — User access — sign-in, and leg 1 in `id_token` mode
 
-This is the single most important choice, and it is **permanent**: to change the
-binding you must delete and recreate the agent.
+Still required: this binding is how the user signs in, and it is **permanent** — to change
+it you must delete and recreate the agent.
+
+> It is also what authorises leg 1 *if* you run the interceptor in `XAA_LEG1_SUBJECT=id_token`
+> mode. On the default `access_token` path, leg 1 is authorised by **Machine access**
+> (step 6) instead. Configure both and the sample works either way.
 
 Okta offers two options:
 
@@ -218,25 +222,132 @@ The full set of resource types, for orientation:
 | MCP server | an MCP server the agent may call |
 | Connect to another AI agent | a bilateral agent-to-agent connection |
 
-### Step 6 — Machine access — **skip this**
+### Step 6 — Machine access — *this is what lets leg 1 take an **access** token*
 
-**Machine access** declares who may call *this agent* as a resource — other apps,
-services or agents reaching it with their own token, with no user present. This
-sample's agent is invoked by AgentCore Runtime on behalf of a signed-in human, so
-nothing here applies. Leaving it unconfigured is correct.
+This is the step that removes a whole piece of plumbing, and it is easy to skip because
+the tab's own description points the other way.
 
-(It is also the tab that asks for an *Authorization server* and an
-*Audience/resource URL*, which is easy to mistake for the resource connection in
-step 5. The audience cannot be edited after it is set, so do not configure it
-speculatively.)
+**What the UI says:** *"Callers access this agent as a resource with their own access
+token. No user identity is required."* That sounds like inbound traffic — something calling
+*into* the agent — which is the opposite of leg 1, where the agent reaches *out* carrying a
+user's identity.
 
-**Machine access** appears only on orgs subscribed to **Okta for AI Agents**. Its
-absence on your tenant is not a problem for this sample.
+**What it actually does:** Machine access holds the **non-user delegation links** that used
+to live on the old *Delegations* tab. Okta's own
+[XAA guide](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/) says so: *"You
+can still have multiple non-user delegation links, which now appear in the Machine access
+tab."* A delegation link is exactly what leg 1 looks for. Without one, an access token is
+refused with:
 
-When present it is an explicit two-step flow — **1. Configure the custom
-authorization server**, then **2. Add caller** (greyed out until step 1 is done).
-Leave both untouched; the tab's circle stays unfilled and that is the correct end
-state here.
+```
+'subject_token' is invalid: no delegation policy authorizes this token.
+```
+
+Configure it and leg 1 accepts an `access_token`, so the interceptor can exchange the
+bearer the gateway **already validated** — no second token has to travel with the request.
+Skip it and you must run the interceptor in `XAA_LEG1_SUBJECT=id_token` mode and forward an
+ID token from the BFF through the runtime.
+
+#### 6a. The audience constraint — read before you click
+
+**Machine access requires an `https://` audience, and an Okta custom authorization server
+accepts exactly one audience.** Adding a second returns:
+
+```
+audiences: 'audiences' must be an array with exactly one value.
+```
+
+So AS 1 cannot keep `api://agentcore` *and* gain an https audience — the https URL has to
+*be* its audience. That is why this sample's `AGENTCORE_AUDIENCE` is
+`https://xaa-agentcore.example.com` rather than `api://agentcore`.
+
+> **If you are upgrading an existing deployment**, changing the audience touches four
+> places: AS 1, the gateway authorizer, the runtime authorizer, and the OBO provider's
+> requested audience. Set `AGENTCORE_AUDIENCE` in `.env`, then re-run
+> `00_create_okta_apps.py`, `02_create_gateway.py`, `05_patch_agentcore_json.py` and
+> redeploy the runtime. A mismatch surfaces as an opaque 403 at whichever authorizer
+> disagrees.
+>
+> `example.com` is reserved by RFC 2606, so it can never collide with a real endpoint. The
+> value is only an identifier — Okta never fetches it.
+
+#### 6b. Configure the custom authorization server
+
+**Machine access → Configure**:
+
+| Field | Value | Why |
+| :--- | :--- | :--- |
+| Authorization server | **XAA AgentCore** (AS 1) | the server that issues the token the interceptor will exchange |
+| Audience/resource URL | `https://xaa-agentcore.example.com` | must equal that token's `aud`, character for character |
+
+> **The audience cannot be changed after saving.** The authorization server can, but only
+> after removing every caller. Get the audience right the first time: mint a token and
+> check its `aud` with `scripts/show_token_claims.py` before you save.
+
+#### 6c. Add caller
+
+**Add caller** offers two kinds. Choose **Application or service**, and select the
+**Agent app** (`XAA Todo Agent App`, the `AGENT_APP_CLIENT_ID`).
+
+That is the `cid` of `T_gateway` — the token AgentCore Identity mints at the OBO hop, and
+the one the interceptor receives. The other option, *AI agent*, is for *another* agent, so
+you cannot select this agent: **an agent cannot be its own caller.** That rules out using
+`T_user`, whose `cid` is the agent itself — it fails leg 1 with `no delegation policy
+authorizes this token` no matter what you configure.
+
+The resulting row reads: caller `XAA Todo Agent App`, on behalf of **Application
+(service)**, on the custom AS.
+
+#### 6d. Assign the user to the caller app — the trap
+
+Leg 1 will still fail, with a *different* message:
+
+```
+'subject_token' is invalid: the user is not assigned to the client application.
+```
+
+The **Agent app needs the user assigned to it**, not just the sign-in app. `00_create_okta_apps.py`
+creates that app with no assignments, because until now nothing needed them.
+
+```bash
+# Applications -> XAA Todo Agent App -> Assignments -> Assign to People
+# or via the API:
+#   POST /api/v1/apps/<AGENT_APP_CLIENT_ID>/users  {"id": "<userId>", "scope": "USER"}
+```
+
+> Okta may return `200` on that assignment while the app still reports zero assigned
+> users. Do not trust either signal — run `scripts/test_chain.py`; a successful leg 1 is
+> the only proof that matters.
+
+#### 6e. What success looks like
+
+The ID-JAG comes back with a **nested** `act` chain, which the ID-token path does not
+produce:
+
+```json
+"sub": "00u1…",                                  // the human
+"act": { "sub": "wlp1…",                         // the AI Agent
+         "sub_profile": "ai_agent web_app",
+         "act": { "sub": "0oa1…",                // the Agent app
+                  "sub_profile": "service" } }
+```
+
+Read outwards: the Agent app, acting as the AI Agent, acting for the user. That chain
+carries through to `T_tool`, so the resource API can see every hop.
+
+#### Which mode should you run?
+
+| | `access_token` (default) | `id_token` |
+| :--- | :--- | :--- |
+| Okta requirement | **Machine access** + user assigned to the caller app | **User access** binding only |
+| Audience | must be `https://…` | any, including `api://…` |
+| Tokens on the wire to the gateway | one | two (`Authorization` + `X-Okta-Id-Token`) |
+| BFF must forward an ID token | no | yes |
+| `act` chain | nested, records the Agent app too | single level |
+| Set | nothing (default) | `XAA_LEG1_SUBJECT=id_token`, `SEND_ID_TOKEN=true` |
+
+Both are verified end to end in this sample. Prefer `access_token`: fewer credentials in
+flight, and the agent never handles an ID token at all.
 
 ### Step 7 — Activate
 

@@ -50,7 +50,7 @@ sequenceDiagram
     autonumber
     actor U as User
     participant BFF as BFF
-    participant AS1 as Okta AS 1<br/>api://agentcore
+    participant AS1 as Okta AS 1<br/>https://xaa-agentcore…
     participant RT as Runtime agent
     participant ID as AgentCore Identity
     participant GW as Gateway<br/>CUSTOM_JWT + Cedar
@@ -129,7 +129,7 @@ resource, which is exactly why hop **C** needs just one call.
 | --- | --- | --- |
 | **AI Agent + linked app** | `AI_AGENT_CLIENT_ID` = `LOGIN_CLIENT_ID` (`wlp…`) | One client, three jobs: the user **signs in** to it, and it authenticates **both ID-JAG legs**. Okta's *User access* binding makes it the only app whose ID token leg 1 accepts. |
 | **Agent app** | `AGENT_APP_CLIENT_ID` (`0oa…`) | API Services app with the Token Exchange grant, used by AgentCore Identity for the OBO exchange. Holds a secret the agent never sees. |
-| **AS 1** | `AGENTCORE_AS_ISSUER`, `api://agentcore` | Issues `T_id`/`T_user` at sign-in and `T_gateway` via OBO. Runtime and Gateway both trust it. |
+| **AS 1** | `AGENTCORE_AS_ISSUER`, `https://xaa-agentcore.example.com` | Issues `T_id`/`T_user` at sign-in and `T_gateway` via OBO. Runtime and Gateway both trust it. |
 | **AS 2** | `RESOURCE_AS_ISSUER`, `api://todo` | Redeems the ID-JAG and mints `T_tool`. Separate on purpose: the API trusts **only** this issuer, which is what makes the agent's own tokens useless against it. |
 | **Org server** | `OKTA_ORG_URL` | Mints the ID-JAG. Only the org server can. |
 
@@ -158,8 +158,8 @@ one of them opens the todo API.
 | Token | Kind | Minted by | `aud` | `sub` | `scp` | TTL | Held by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `T_id` | ID token | AS 1 at sign-in | the `wlp…` app | user **id** | — | 1 h | BFF → agent → interceptor |
-| `T_user` | access | AS 1 at sign-in | `api://agentcore` | **email** | `agent.access` | 1 h | BFF, Runtime |
-| `T_gateway` | access | AS 1 via **OBO** | `api://agentcore` | email | `tools.access` | 1 h | agent, Gateway |
+| `T_user` | access | AS 1 at sign-in | `AGENTCORE_AUDIENCE` | **email** | `agent.access` | 1 h | BFF, Runtime |
+| `T_gateway` | access | AS 1 via **OBO** | `AGENTCORE_AUDIENCE` | email | `tools.access` | 1 h | agent, Gateway |
 | **ID-JAG** | grant | **org server**, leg 1 | AS 2 | user id | `todos.read` | **299 s**, single use | interceptor only |
 | **`T_tool`** | access | **AS 2**, leg 2 | **`api://todo`** | **email** | `todos.read` | 1 h | interceptor → API |
 
@@ -172,21 +172,56 @@ user is **and** *which agent* acted for them, and can require both.
 | Hop | On the wire | Validated by | What the receiver learns |
 | --- | --- | --- | --- |
 | Browser → BFF | *nothing* — a signed session cookie | the BFF | which session this is; tokens never leave the server |
-| BFF → Runtime | `Authorization: T_user`, plus `T_id` **in the payload** | Runtime `CUSTOM_JWT`: `aud`, `scp=agent.access` | a real user asked, through a client we trust |
+| BFF → Runtime | `Authorization: T_user` | Runtime `CUSTOM_JWT`: `aud`, `scp=agent.access` | a real user asked, through a client we trust |
 | Runtime → AgentCore Identity | `T_user` as the exchange subject | Okta, as the Agent app | this user consents to the agent acting |
-| Agent → Gateway | `Authorization: T_gateway` + `X-Okta-Id-Token: T_id` | Gateway `CUSTOM_JWT`: `aud`, `scp=tools.access`; then **Cedar** on the claims | the agent is acting, for this specific user |
-| Interceptor → org server | `T_id` as `subject_token` | Okta, via the **User access** binding | this app may act for this user |
+| Agent → Gateway | `Authorization: T_gateway` | Gateway `CUSTOM_JWT`: `aud`, `scp=tools.access`; then **Cedar** on the claims | the agent is acting, for this specific user |
+| Interceptor → org server | **`T_gateway`** as `subject_token` | Okta, via the **Machine access** caller link | this app may act for this user |
 | Interceptor → AS 2 | the ID-JAG as `assertion` | Okta, via the **Resource connection** | this agent may reach this resource |
 | Gateway → API | `Authorization: T_tool` | the API: `iss`, `aud`, `scp`, then `sub` | the human, and the agent that acted |
 
-Note what is *not* on any wire: the agent never receives `T_tool`, and no token is ever
-placed in the model's prompt.
+Note what is *not* on any wire: `T_id` never leaves the BFF, the agent never receives
+`T_tool`, and no token is ever placed in the model's prompt.
+
+> **This used to need two tokens.** Leg 1 originally accepted only an ID token, so the BFF
+> forwarded `T_id` in the invoke payload and the agent sent it on as `X-Okta-Id-Token`.
+> Okta's **Machine access** configuration lets leg 1 exchange an *access* token, so the
+> interceptor now uses the bearer the gateway has already validated and that whole path is
+> gone. `XAA_LEG1_SUBJECT=id_token` restores it for orgs without Machine access — see
+> [IDP_SETUP_OKTA.md](IDP_SETUP_OKTA.md) step 6.
+
+### Where the `act` claim appears, and where it does not
+
+`act` is the claim that records delegation — "this token is X acting for Y". It is worth
+tracing because it is *not* continuous:
+
+| Token | `sub` | `act` |
+| --- | --- | --- |
+| `T_id` | the user | — |
+| `T_user` | the user | the AI Agent (sign-in goes through the agent's paired app) |
+| `T_gateway` | the user | **dropped** — the OBO provider sends no actor token (`actorTokenContent: NONE`) |
+| ID-JAG | the user | the AI Agent, **nested** over the Agent app |
+| `T_tool` | the user | same nested chain, carried through to the API |
+
+So `act` is present, lost, and re-established. The gap at `T_gateway` does not weaken
+anything: `sub` survives — which is what Cedar matches on — and the gateway learns which
+agent is calling from the validated `cid`. But if you expect an unbroken cryptographic
+delegation chain across every hop, `T_gateway` is where it breaks.
+
+On the access-token path the ID-JAG's `act` nests two levels:
+
+```json
+"act": { "sub": "wlp…", "sub_profile": "ai_agent web_app",
+         "act": { "sub": "0oa…", "sub_profile": "service" } }
+```
+
+Read outwards: the Agent app, acting as the AI Agent, acting for the user. The id_token
+path yields a single level, so the access-token path actually records *more* provenance.
 
 ### Why the agent holding two tokens is safe
 
 The agent handles `T_user` and `T_gateway`. Neither can call the todo API, because the
 API trusts **only** AS 2 as issuer and requires `aud=api://todo`, and both of those
-tokens come from AS 1 with `aud=api://agentcore`. A fully compromised agent can
+tokens come from AS 1 with `aud=AGENTCORE_AUDIENCE`. A fully compromised agent can
 therefore do what it was already authorised to do — call the tools Cedar permits, as the
 user it was already acting for — and no more.
 
@@ -434,7 +469,9 @@ that it is a cache hit of a few milliseconds.
 | `insufficient_scope` at the gateway | **`allowedClients` does not work with Okta** — it compares a claim Okta does not emit (`cid` is not matched), and reports the mismatch as a scope error | pin on `allowedScopes` instead; `02_create_gateway.py` does |
 | `No module named 'jwt'` as a 500 from a tool call | interceptor shipped without dependencies | rebuild: the bundle needs `pyjwt`+`cryptography` with `--platform manylinux2014_x86_64` |
 | `Policy Evaluation Internal Failure` | something non-JWT ended up in `Authorization`; Cedar cannot build a principal | the interceptor must inject a real JWT, and must pass the request through untouched on failure |
-| `'subject_token' is invalid: no delegation policy authorizes this token` | leg 1 got an **access** token, or an ID token from the wrong app | leg 1 needs the ID token from the agent's **linked** app |
+| `'subject_token' is invalid: no delegation policy authorizes this token` | no delegation link covers this token. On the access-token path: **Machine access** is missing, or names a different audience/AS, or the token's `cid` is the agent itself (an agent cannot be its own caller). On the id_token path: the ID token did not come from the app bound under **User access** | IDP_SETUP_OKTA.md step 6 (or step 3) |
+| `'subject_token' is invalid: the user is not assigned to the client application` | the Machine access **caller app** has no assignment for this user | assign the user to `XAA Todo Agent App`; IDP_SETUP_OKTA.md step 6d |
+| `'subject_token_type' is invalid or not supported` | leg 1 takes only `id_token` and `access_token` | the generic `jwt` type is refused; check `XAA_LEG1_SUBJECT` |
 | `access_denied: Policy evaluation failed` | the agent is not in the AS 2 policy | `python deploy/00_authorize_agent.py` |
 | `invalid_client` on every call | the AI Agent is **STAGED**, or the key is staged not ACTIVE | Actions → Activate; check the ACTIVE badge on Public/private key |
 | `invalid_grant: id-jag already used` | ID-JAGs are single-use | mint one per exchange; never cache the ID-JAG (only `T_tool`) |
@@ -463,7 +500,7 @@ The **AI Agent** has no delete API — remove it in the Admin Console
 ## Security notes
 
 - **The agent holds no credential that reaches the API.** It handles `T_user` and
-  `T_gateway`, both audienced at `api://agentcore`; the API trusts only AS 2 and
+  `T_gateway`, both audienced at `AGENTCORE_AUDIENCE`; the API trusts only AS 2 and
   `api://todo`, so those tokens fail there. `T_tool` exists solely in the interceptor
   and on the gateway's forwarded request.
 

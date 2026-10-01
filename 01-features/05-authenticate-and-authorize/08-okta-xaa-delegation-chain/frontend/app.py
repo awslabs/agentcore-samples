@@ -5,10 +5,10 @@ Two things make this more than boilerplate:
   1. **It signs in through the AI Agent's linked app**, authenticating with
      `private_key_jwt` because that app has no client secret. Okta's *User access*
      binding means only this app's ID token is accepted at ID-JAG leg 1.
-  2. **It sends the ID token in the invoke payload.** The agent's OBO exchange produces
-     an *access* token, and leg 1 requires an *ID* token, so the chain cannot derive
-     one -- the BFF is the only component that holds it. Forget this and the tool call
-     fails deep inside the interceptor with a confusing error.
+  2. **It does not need to send an ID token.** Okta's Machine access configuration lets
+     ID-JAG leg 1 exchange the access token the gateway already validated, so the chain
+     carries one credential rather than two. Set `SEND_ID_TOKEN=true` only if the
+     interceptor runs in `XAA_LEG1_SUBJECT=id_token` mode.
 
 Tokens never reach the browser. The session cookie is signed, HttpOnly and
 SameSite=Lax; it is deliberately not Secure so this works on http://localhost, which
@@ -209,9 +209,13 @@ async def ask(request: Request, prompt: str = Form(default=DEFAULT_PROMPT)):
             },
         )
 
-    # The id_token in the payload is load-bearing: the agent forwards it to the gateway,
-    # whose interceptor needs an ID token (not an access token) for ID-JAG leg 1.
-    payload = {"prompt": prompt, "id_token": request.session["id_token"]}
+    # No id_token here. The agent mints T_gateway and the gateway's interceptor exchanges
+    # THAT at ID-JAG leg 1, which Okta's Machine access configuration authorises. Set
+    # SEND_ID_TOKEN=true to also forward it, which orgs running the interceptor in
+    # id_token mode need.
+    payload: dict[str, Any] = {"prompt": prompt}
+    if env("SEND_ID_TOKEN", "").lower() == "true":
+        payload["id_token"] = request.session["id_token"]
     headers = {
         "Authorization": f"Bearer {request.session['access_token']}",
         "Content-Type": "application/json",
