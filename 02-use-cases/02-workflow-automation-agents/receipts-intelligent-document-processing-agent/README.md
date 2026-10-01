@@ -1,4 +1,4 @@
-# Receipts IDP on Amazon Bedrock AgentCore, with its evaluators
+# Receipt processing and evaluation on Amazon Bedrock AgentCore
 
 This sample processes expense receipts with AI agents on Amazon Bedrock AgentCore, and
 shows how to evaluate those agents.
@@ -19,10 +19,7 @@ and conversations sent through the deployed stack.
 
 ## Overview
 
-
-
 ### Use case details
-
 
 | Information             | Details                                                                |
 | ----------------------- | ---------------------------------------------------------------------- |
@@ -33,7 +30,6 @@ and conversations sent through the deployed stack.
 | **Example complexity**  | Advanced                                                               |
 | **SDK used**            | Strands Agents, AgentCore SDK and CLI, AWS CDK, boto3                  |
 | **Time to deploy**      | About 10 minutes                                                       |
-
 
 Demo of the original pipeline: [demo.mp4](demo.mp4).
 
@@ -57,8 +53,9 @@ How a receipt moves through the pipeline:
 
 The **chat assistant** runs on its own Runtime and answers questions like "how much did I
 spend at Blue Bottle Coffee?" and follow-ups like "and at Ferry Building Cafe?". It can only
-read, and only the signed-in user's expenses: the user comes from a KMS-signed identity
-token the agent verifies, never from the request.
+read expenses for the user identified by a verified KMS-signed identity token. The demo
+scripts mint that token for the selected user; the agent does not trust a user ID supplied
+in the request body.
 
 ### Architecture
 
@@ -86,11 +83,10 @@ receipt's outcome (status, total, merchant), which the evaluators read.
 evaluation configuration per Runtime
 ([ADR-0017](docs/decisions/0017-evaluators-from-business-outcomes.md)).
 
-
-
 ## Prerequisites
 
-- An AWS account and credentials
+- An AWS account with credentials permitted to deploy the sample
+- The AWS CLI (`aws`)
 - Node.js 20 or later
 - The AgentCore CLI (`@aws/agentcore`)
 - Python 3.12 with `boto3`, and `uv`
@@ -100,7 +96,8 @@ The detailed checks are in [docs/deployment.md](docs/deployment.md).
 
 ## Deploy
 
-Run from this sample's root directory:
+Run from this sample's root directory. The examples below use `us-west-2`; use your
+deployment region consistently if you choose another region:
 
 ```bash
 ./deploy.sh us-west-2
@@ -109,7 +106,7 @@ Run from this sample's root directory:
 The script installs dependencies, validates the configuration, and deploys the AgentCore
 resources and supporting AWS infrastructure through CDK. It then applies the chat live
 evaluation configuration through the AgentCore API and seeds the sample user `user-001`
-in DynamoDB.
+in DynamoDB. The region defaults to `us-west-2` if omitted.
 
 ### Verify the deployment
 
@@ -133,11 +130,11 @@ python3 scripts/test_invoke.py --region us-west-2 \
     --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/receipt.png
 ```
 
-Use `--user-id` to select a different user.
+Use `--user-id` to select a different user. With `--s3-uri`, the script skips the upload.
+An object already uploaded under `receipts/` may have been processed automatically;
+invoking it here starts another run.
 
 ## Usage
-
-
 
 ### Process receipts automatically
 
@@ -152,8 +149,8 @@ aws s3 cp evals/fixtures/non_reconciling.png \
 ```
 
 The pipeline gets the user ID from the object key. A key without a user segment, such as
-`receipts/receipt.png`, falls back to the default user, `user-001`. Retries and a
-dead-letter queue handle failed trigger attempts.
+`receipts/receipt.png`, falls back to the configured default user (`user-001` by default).
+Retries and a dead-letter queue handle failed trigger attempts.
 
 ### Run ledger
 
@@ -168,37 +165,47 @@ python3 scripts/receipt_status.py --region us-west-2 \
     --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/user-001/non_reconciling.png
 ```
 
+If no ledger row appears yet, wait and run the lookup again.
+
 To list runs routed to human review:
 
 ```bash
 python3 scripts/receipt_status.py --region us-west-2 --status needs_review
 ```
 
-
-
 ### Cedar guardrail
 
 A save of $2,000 or more is denied at the Gateway, whatever the agents decide. This receipt
-is clean and reconciles, so the validator chooses to save it, and the policy overrides it:
+is clean and reconciles, so the validator should choose to save it. The policy should
+block the save and route it to review:
 
 ```bash
 aws s3 cp evals/fixtures/over_threshold.png \
     s3://receipts-inbox-<account>-us-west-2/receipts/user-001/over_threshold.png
+```
+
+After processing finishes, check the result:
+
+```bash
 python3 scripts/receipt_status.py --region us-west-2 \
     --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/user-001/over_threshold.png
 ```
 
-The ledger row shows `validatorRouting: AUTO_PERSIST`, `cedarBlocked: true` and
+The expected ledger row shows `validatorRouting: AUTO_PERSIST`, `cedarBlocked: true` and
 `status: needs_review` ([ADR-0012](docs/decisions/0012-cedar-on-tool-input.md)).
 
 ### Chat
 
 ```bash
-python3 scripts/chat.py --user user-001    # one session for the whole chat
+python3 scripts/chat.py --region us-west-2 --user user-001
 # you> how much did I spend at Blue Bottle Coffee?
 # you> and at Ferry Building Cafe?
-python3 scripts/ask.py --user user-001 "what are my most recent expenses?"
+python3 scripts/ask.py --region us-west-2 --user user-001 "what are my most recent expenses?"
 ```
+
+`chat.py` starts an interactive conversation; type `exit` or `quit` to leave. `ask.py`
+answers one question in a new session. Both scripts require `kms:GenerateMac` permission
+on the stack's identity key to sign the selected user's identity token.
 
 `chat.py` keeps one Runtime session, so follow-ups see the earlier turns. History is kept per
 verified user and session, so a session id reused under another identity starts empty. The
@@ -207,8 +214,9 @@ read tools are pinned to the verified user
 
 ## Sample prompts
 
-After the receipts above, `user-001` has a processed expense at Blue Bottle Coffee and
-held ones at Ferry Building Cafe and Moscone Center Catering. Ask these in
+After the sample test and both automatic uploads finish successfully, `user-001` should
+have a processed expense at Blue Bottle Coffee and receipts held for review at Ferry
+Building Cafe and Moscone Center Catering. Ask these in
 one `scripts/chat.py` session, in order, so the follow-ups use the earlier answers:
 
 - "how much did I spend at Blue Bottle Coffee?"
@@ -216,11 +224,7 @@ one `scripts/chat.py` session, in order, so the follow-ups use the earlier answe
 - "what are my most recent expenses?"
 - "why is the Ferry Building one on hold?"
 
-
-
 ## Evaluation
-
-
 
 ### How the evaluators were chosen
 
@@ -241,18 +245,22 @@ thing, and its verdict had to change with that one thing.
 
 ### The evaluators
 
+| Evaluator | What it measures | Where it runs |
+|---|---|---|
+| `ReceiptsThresholdControl` | Whether the recorded total of $2,000 or more was saved automatically: `held`, `breach`, or `not_engaged`. Monitors the control's outcome. | Live pipeline sessions |
+| `ThirdParty.DeepEval.ConversationCompleteness` | Share of the employee's requests handled in a conversation. | Live chat sessions |
+| `ThirdParty.DeepEval.KnowledgeRetention` | Whether the assistant uses information from earlier turns. A diagnostic score. | Live chat sessions |
+| `ReceiptsExtractionAccuracy` | Total, date, currency, subtotal, tax, and tip against labelled values. Reports the dollar gap on the total and an error verdict. | Labelled receipts |
+| `ReceiptsRoutingOutcome` | Whether the validator chose the right route for the extraction it received. Identifies `FalseClear` and `FalseAlarm` decisions. | Labelled receipts |
+| `Builtin.ToolParameterAccuracy` | Whether extracted values are supported by the OCR text. | Labelled receipts; trace through the extractor |
+| `Builtin.GoalSuccessRate` | Whether the validator identified the actual problem, using assertions. | Labelled receipts; trace through the validator |
+| `Builtin.Correctness` | Whether each chat answer matches the expected answer for that turn. | Labelled conversations |
 
-| Evaluator                                      | Kind                 | What it checks                                                                                                                                                                                                                                                                         | Where it runs                                       |
-| ---------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `ReceiptsThresholdControl`                     | code-based, deployed | Whether a receipt of $2,000 or more was saved with no person involved. It reports `held` (blocked by Cedar or held by the validator), `breach` (saved automatically) or `not_engaged` (under the limit). It checks that the control works, not how good the agents are                 | **Live**, every pipeline session                    |
-| `ThirdParty.DeepEval.ConversationCompleteness` | third-party judge    | Whether the assistant handled everything the employee asked for in the conversation. The score is the share of requests handled                                                                                                                                                        | **Live**, every chat session                        |
-| `ThirdParty.DeepEval.KnowledgeRetention`       | third-party judge    | Whether the assistant remembers what was said in earlier turns, for example which merchant a follow-up like "and at Ferry Building Cafe?" refers to. For diagnosis only: one conversation's score is noisy                                                                             | **Live**, every chat session                        |
-| `ReceiptsExtractionAccuracy`                   | code-based, deployed | Whether the extractor read the receipt correctly: the total, date, currency, subtotal, tax and tip, each compared with the labelled receipt. The score is the dollar gap on the total; the verdict is `exact`, `minor_error`, `field_error` or `material_error` (off by more than $50) | Labelled data                                       |
-| `ReceiptsRoutingOutcome`                       | code-based, deployed | Whether the validator's save-or-review decision was right, judged on the extraction it was shown. The verdict names the mistake: `FalseClear` (saved a receipt that needed review) or `FalseAlarm` (held one that was fine)                                                            | Labelled data                                       |
-| `Builtin.ToolParameterAccuracy`                | built-in judge       | Whether every value the extractor wrote into the expense appears in the OCR text it was given. Catches invented values                                                                                                                                                                 | Labelled data, on the extractor's part of the trace |
-| `Builtin.GoalSuccessRate` with assertions      | built-in judge       | Whether the validator named the actual problem on the receipt (for example, "the totals don't add up"), not only whether it routed the receipt correctly                                                                                                                               | Labelled data, on the trace through the validator   |
-| `Builtin.Correctness` with expected answers    | built-in judge       | Whether each chat answer matches the expected answer for that turn, so a confident but wrong answer fails                                                                                                                                                                              | Labelled conversations                              |
-
+The three `Receipts*` evaluators are code-based Lambda evaluators. The `Builtin.*` and
+`ThirdParty.*` evaluators are managed judges. Extraction verdicts are `exact`,
+`minor_error`, `field_error`, or `material_error` (a total gap greater than $50). The
+threshold monitor checks the recorded total; extraction accuracy catches a misread total
+that could fall below the policy limit.
 
 A live configuration has no right answers to compare against, so the evaluators that need
 labels run on demand instead. Two findings shaped the design; both are in
@@ -266,13 +274,10 @@ trace off after the agent being judged.
 ConversationCompleteness scores a confident wrong answer as handled; only Correctness,
 which compares against an expected answer, catches it. That is why both are kept.
 
-
-
 ### Evaluators and the degradation ladder
 
-The ladder has five rungs, set in AppConfig
+The default ladder has five rungs, configured through AppConfig
 ([docs/CONFIGURATION.md](docs/CONFIGURATION.md)):
-
 
 | Rung         | What runs                                              |
 | ------------ | ------------------------------------------------------ |
@@ -281,7 +286,6 @@ The ladder has five rungs, set in AppConfig
 | L2           | Opus 4.6, no validator: every receipt goes to review   |
 | L3           | Sonnet 4.6, no validator: every receipt goes to review |
 | L4           | no model: receipts are queued for later                |
-
 
 **The evaluators assume L0.** Each trace records its rung as `receipts.ladder.rung`:
 
@@ -318,14 +322,19 @@ See [evals/README.md](evals/README.md).
 ## Clean up
 
 ```bash
-./destroy.sh us-west-2      # removes everything billable
+./destroy.sh us-west-2
 ```
 
-It deletes the chat live-evaluation config, then the stack, and recovers from a
-`DELETE_FAILED` stack. The details are in [docs/deployment.md](docs/deployment.md).
+The script attempts to delete the chat live-evaluation configuration, then deletes the
+stack. With the default removal settings, this also deletes the sample's DynamoDB tables
+and S3 bucket contents. If stack deletion fails, it retries, then retains and reports any
+resources that still need manual deletion. Check its output for remaining resources.
+See [docs/deployment.md](docs/deployment.md) for recovery commands.
 
 CloudWatch log groups are not part of the stack, so they remain (the Runtimes, CodeBuild,
-the Lambdas and the evaluation results). List them, then delete the ones you don't want:
+the Lambdas and the evaluation results). List them, then delete the ones you don't want.
+The filter below finds names containing `Receipts` or `receipts`; also check for Runtime
+and CodeBuild log groups whose names do not contain those strings:
 
 ```bash
 aws logs describe-log-groups --region us-west-2 \
@@ -333,8 +342,6 @@ aws logs describe-log-groups --region us-west-2 \
     --output text
 aws logs delete-log-group --region us-west-2 --log-group-name <name>
 ```
-
-
 
 ## Layout
 
@@ -346,8 +353,6 @@ CDK app (`cdk/lib/cdk-stack.ts`, `cdk/lib/infra-construct.ts`).
 - `lambdas/`: Gateway tools, trigger, controller, drain, ledger writer, Transaction Search.
 - `scripts/`, `tests/`, `docs/`.
 
-
-
 ## Docs
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works.
@@ -356,8 +361,6 @@ CDK app (`cdk/lib/cdk-stack.ts`, `cdk/lib/infra-construct.ts`).
 - [docs/tutorial.md](docs/tutorial.md): a guided run and experiments.
 - [docs/deployment.md](docs/deployment.md): deploy, destroy, local dev, live tests.
 - [evals/README.md](evals/README.md): running and extending the evaluation suite.
-
-
 
 ## Disclaimer
 
