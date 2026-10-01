@@ -27,13 +27,46 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import OktaAdmin, load_env, must_env, okta_org_url
+from _common import OktaAdmin, env, load_env, must_env, okta_org_url
 
 POLICY_NAME = "XAA sample - Resource jwt-bearer"
 
 
+def assign_user_to_agent_app(okta: OktaAdmin, email: str) -> None:
+    """Assign a user to the Agent app, which leg 1 needs on the access_token path.
+
+    Easy to miss, because it is a *different* app from the one the user signs in to, and
+    the error names neither: leg 1 fails with "the user is not assigned to the client
+    application". The Agent app is created with no assignments because nothing needed them
+    before Machine access existed.
+    """
+    app = env("AGENT_APP_CLIENT_ID")
+    if not app:
+        print("  - AGENT_APP_CLIENT_ID is not set; skipping the assignment")
+        return
+    users = okta.get(f"/users?q={email}&limit=5") or []
+    match = next((u for u in users if (u.get("profile") or {}).get("login") == email), None)
+    if not match:
+        print(f"  ! no Okta user with login {email}; assign them by hand (IDP_SETUP_OKTA.md step 6d)")
+        return
+    okta.post(f"/apps/{app}/users", {"id": match["id"], "scope": "USER"})
+    # Okta sometimes answers this POST with a 404 or reports zero assigned users while the
+    # assignment has in fact taken effect, so do not report success from the response. A
+    # working leg 1 is the only reliable confirmation.
+    print(f"  ✓ requested assignment of {email} to the Agent app ({app})")
+    print("    verify with scripts/test_chain.py -- Okta's response here is unreliable")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--assign-user",
+        metavar="EMAIL",
+        help=(
+            "Also assign this user to the Agent app, which ID-JAG leg 1 requires on the "
+            "access_token path. Omit to skip."
+        ),
+    )
     ap.add_argument(
         "--keep-existing",
         action="store_true",
@@ -65,23 +98,24 @@ def main() -> None:
     print(f"  policy {POLICY_NAME!r}")
     print(f"  clients before: {current}")
 
-    if agent in current and len(current) == 1:
+    already_correct = agent in current and len(current) == 1
+    if already_correct:
         print(f"  • already scoped to {agent} only -- nothing to do")
-        return
 
     include = sorted({*current, agent}) if args.keep_existing else [agent]
-    okta.put(
-        f"/authorizationServers/{as2}/policies/{policy['id']}",
-        {
-            "type": "OAUTH_AUTHORIZATION_POLICY",
-            "status": "ACTIVE",
-            "name": policy["name"],
-            "description": policy.get("description", ""),
-            "priority": policy.get("priority", 1),
-            "conditions": {"clients": {"include": include}},
-        },
-    )
-    print(f"  ✓ clients after: {include}")
+    if not already_correct:
+        okta.put(
+            f"/authorizationServers/{as2}/policies/{policy['id']}",
+            {
+                "type": "OAUTH_AUTHORIZATION_POLICY",
+                "status": "ACTIVE",
+                "name": policy["name"],
+                "description": policy.get("description", ""),
+                "priority": policy.get("priority", 1),
+                "conditions": {"clients": {"include": include}},
+            },
+        )
+        print(f"  ✓ clients after: {include}")
 
     # The rule carries the grant types and scopes; confirm it survived and is ACTIVE,
     # because an inactive rule is silently skipped during evaluation.
@@ -91,6 +125,10 @@ def main() -> None:
         scopes = (conditions.get("scopes") or {}).get("include")
         flag = "✓" if rule.get("status") == "ACTIVE" else "✗ NOT ACTIVE"
         print(f"  {flag} rule {rule['name']}: grants={grants} scopes={scopes}")
+
+    if args.assign_user:
+        print("\nAgent app assignment (needed by leg 1 on the access_token path)")
+        assign_user_to_agent_app(okta, args.assign_user)
 
     print("\n  Next: python scripts/verify_ai_agent.py")
 

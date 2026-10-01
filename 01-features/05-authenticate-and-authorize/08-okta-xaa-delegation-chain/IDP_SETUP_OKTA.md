@@ -12,9 +12,15 @@ Three identities, two custom authorization servers, and one manual console step.
 
 > **Prerequisites**
 > - An Okta org with **API Access Management** (custom authorization servers).
-> - **Cross App Access / AI Agents** enabled — often listed as *Agent to Agent
->   Connections* under **Settings → Features**. Without it, leg 1 fails with
->   `requested_token_type is invalid` and this sample cannot work on that tenant.
+> - **Cross App Access** enabled on the tenant. Without it, leg 1 fails with
+>   `requested_token_type is invalid` and this sample cannot work there. Ask Okta which
+>   subscription or feature flag your org needs — it is not a toggle you can reliably find
+>   yourself, and *Agent to Agent Connections* is **not** it (that governs Machine access
+>   callers, a different thing).
+> - **Okta for AI Agents** if you want the default, simpler flow. It is what surfaces the
+>   **Machine access** tab, which lets ID-JAG leg 1 accept an *access* token (step 6).
+>   Without it, the sample still works — set `XAA_LEG1_SUBJECT=id_token` and
+>   `SEND_ID_TOKEN=true` and follow step 3 instead. See *Which path are you setting up?*
 > - An admin API token: **Security → API → Tokens → Create Token** (Org or Super
 >   Admin). Setup-only; never used at runtime.
 > - A **Single Sign-On** subscription. Cross App Access requires it.
@@ -25,12 +31,30 @@ Three identities, two custom authorization servers, and one manual console step.
 > "user" must be a licensed SSO user in an Active status, and the number of users using
 > XAA cannot exceed the org's purchased SSO seats. Ample for a sample; real volume needs
 > the **Okta for AI Agents** subscription, which is also what surfaces the **Machine
-> access** tab that this sample does not use.
+> access** tab used in step 6.
 >
 > Limits and licensing terms change, so confirm the current ones against Okta's own
 > documentation rather than this page:
 > [Cross App Access (agent to app)](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/)
 > and [Okta rate limits](https://developer.okta.com/docs/reference/rate-limits/).
+
+## Which path are you setting up?
+
+ID-JAG leg 1 needs a **delegation link** covering whatever token it is handed. There are two
+ways to create one, and the choice decides which tabs you configure:
+
+| | **access_token** — the default | **id_token** — the fallback |
+| :--- | :--- | :--- |
+| Leg 1 exchanges | the inbound bearer the gateway already validated (`T_gateway`) | a separate ID token the BFF forwards |
+| Okta tab that authorises it | **Machine access** (step 6) | **User access** (step 3) |
+| Needs *Okta for AI Agents* | **yes** | no |
+| `AGENTCORE_AUDIENCE` | must be an `https://` URL | anything, e.g. `api://agentcore` |
+| Tokens travelling to the gateway | one | two |
+| Set in `.env` | nothing — it is the default | `XAA_LEG1_SUBJECT=id_token`, `SEND_ID_TOKEN=true` |
+
+**Step 3 (User access) is required either way** — it is how the user signs in. Step 6 is
+what the default path adds. Configure both and the sample runs in either mode, which is
+worth doing the first time so you can compare.
 
 ## Automated part
 
@@ -39,6 +63,13 @@ cp config.example.env .env
 # set OKTA_ORG_URL (app-facing host, NOT -admin, no /oauth2 path) and OKTA_API_TOKEN
 python deploy/00_create_okta_apps.py
 ```
+
+> **`AGENTCORE_AUDIENCE` must be an `https://` URL on the default path.** Okta's Machine
+> access configuration rejects `api://` schemes, and a custom authorization server accepts
+> exactly one audience — so AS 1 cannot carry both. `config.example.env` ships
+> `https://xaa-agentcore.example.com`; a fresh install needs no action. Changing it later
+> means re-running `00_create_okta_apps.py`, `02_create_gateway.py` and
+> `05_patch_agentcore_json.py` and redeploying the runtime. See step 6a.
 
 It creates both authorization servers, the three custom scopes
 (`agent.access`, `tools.access`, `todos.read`), both apps, client secrets, and one
@@ -70,7 +101,8 @@ The sections below follow Okta's current
 [Add an AI agent manually](https://help.okta.com/oie/en-us/content/topics/ai-agents/ai-agent-add-manually.htm)
 flow. The agent's page has six tabs — **Profile**, **Owners**, **Client
 registration**, **User access**, **Machine access**, **Resource connections** —
-and you need four of them.
+and this sample uses five: everything except
+*Owners* is load-bearing, and even that is recommended.
 
 > **Looking for "Delegations"? It no longer exists.** Okta renamed it: per the
 > [agent-to-app XAA guide](https://developer.okta.com/docs/guides/xaa-agent-to-app/main/),
@@ -309,11 +341,14 @@ Leg 1 will still fail, with a *different* message:
 The **Agent app needs the user assigned to it**, not just the sign-in app. `00_create_okta_apps.py`
 creates that app with no assignments, because until now nothing needed them.
 
+The deploy script can do it for you — this is the recommended route, because it is the
+step most people miss:
+
 ```bash
-# Applications -> XAA Todo Agent App -> Assignments -> Assign to People
-# or via the API:
-#   POST /api/v1/apps/<AGENT_APP_CLIENT_ID>/users  {"id": "<userId>", "scope": "USER"}
+python deploy/00_authorize_agent.py --assign-user you@example.com
 ```
+
+By hand instead: **Applications → XAA Todo Agent App → Assignments → Assign to People**.
 
 > Okta may return `200` on that assignment while the app still reports zero assigned
 > users. Do not trust either signal — run `scripts/test_chain.py`; a successful leg 1 is
@@ -362,7 +397,8 @@ reading `STAGED`.
 Put the agent's Client ID in `.env`, then run:
 
 ```bash
-python deploy/00_authorize_agent.py
+# --assign-user also does step 6d, which leg 1 needs on the access_token path
+python deploy/00_authorize_agent.py --assign-user you@example.com
 ```
 
 `00_create_okta_apps.py` had to create the AS 2 `jwt-bearer` policy **before** the
@@ -409,11 +445,15 @@ legs:
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
-| No **AI Agents** item under Directory | Cross App Access not enabled on the tenant | Settings → Features → *Agent to Agent Connections* |
+| No **AI Agents** item under Directory | Cross App Access not enabled on the tenant | ask Okta which subscription enables it. Not *Agent to Agent Connections* — that governs Machine access callers |
 | `requested_token_type is invalid` (leg 1) | same | as above |
+| No **Machine access** tab | the org lacks **Okta for AI Agents** | run the fallback: `XAA_LEG1_SUBJECT=id_token` + `SEND_ID_TOKEN=true`, and configure step 3 |
 | `invalid_client` on every call, key is correct | agent is **STAGED**, or the key is registered but not **ACTIVE** | Actions → Activate (step 7); confirm the ACTIVE badge on Public/private key (step 4) |
 | `invalid_client: client_assertion signature is invalid` | the local private key is not the pair of the registered public key | re-register the current `okta_public_jwk.json`; never re-run `gen_keypair.py` after registering |
-| `'subject_token' is invalid: … not registered for delegation` (leg 1) | the ID token did not come from the app bound under **User access** | sign in through the agent's linked app and run `deploy/00_relink_login_app.py` (step 3) |
+| `'subject_token' is invalid: no delegation policy authorizes this token` (leg 1, access_token path) | no delegation link covers this token: **Machine access** is missing, names a different audience or AS, or the token's `cid` is the agent itself | step 6. An agent cannot be its own caller — the caller must be the **Agent app**, whose `cid` is what `T_gateway` carries |
+| `'subject_token' is invalid: the user is not assigned to the client application` (leg 1) | the Machine access **caller app** has no assignment for this user | assign your user to **XAA Todo Agent App** — step 6d. Note this is a *different* app from the sign-in app in step 3 |
+| `'subject_token_type' is invalid or not supported` | leg 1 accepts only `id_token` and `access_token` | check `XAA_LEG1_SUBJECT`; the generic `jwt` type is refused |
+| `'subject_token' is invalid: … not registered for delegation` (leg 1, id_token path) | the ID token did not come from the app bound under **User access** | sign in through the agent's linked app and run `deploy/00_relink_login_app.py` (step 3) |
 | Cannot find a **Delegations** tab | renamed by Okta to **User access** / **Machine access** | use **User access** (step 3); older docs including `06-okta-xaa` are stale |
 | The agent shows "outdated method for user sign-on" | a legacy delegation link | relink via *Create a new OIDC app linked to this agent*, or re-register the agent |
 | **Application instance** shows **No options** | wrong resource type chosen — that list only holds apps with an AI-Agent resource server | pick resource type **Authorization server** instead (step 5) |
@@ -421,7 +461,7 @@ legs:
 | `429` / quota errors on leg 1 | the 250 ID-JAG per user/resource/month SSO cap | wait for the reset, use another user, or subscribe to Okta for AI Agents |
 | `access_denied: Policy evaluation failed` (leg 2) | the AS 2 policy still names the placeholder client, or the Resource connection is missing | run `deploy/00_authorize_agent.py` (step 8); check step 5 |
 | `invalid_grant: id-jag already used` | ID-JAGs are single-use | mint a fresh one per attempt; run the legs back to back |
-| `User is not assigned to the client application` | test user not assigned | step 8 |
+| Sign-in itself refuses the user | the test user is not assigned to the **sign-in** app | step 3 — assign them to the agent's linked app |
 | `E0000011 Invalid token provided` on the deploy scripts | `OKTA_API_TOKEN` expired (Okta expires tokens after 30 days of inactivity) | mint a new one, update `.env` |
 | `404 … (AppInstance)` when assigning a user | the linked app is still inactive | activate the agent first (step 7), then assign |
 | `verify_ai_agent.py` skips the key-pair check | run with a python lacking `cryptography` | use `.venv/bin/python` |
