@@ -25,6 +25,7 @@ Always restores L0 in `finally` so it never poisons shared AppConfig state
 Requires a deployed stack (run via `make e2e`); skips cleanly otherwise.
 """
 
+import contextlib
 import json
 import os
 import time
@@ -209,10 +210,8 @@ def test_control_loop_full_wiring_steps_down_via_eventbridge():
         assert rung == "L1", f"alarm->EventBridge->controller should step L0->L1, got {rung}"
     finally:
         _set_rung_l0(ac, app_id, env_id, prof_id, strat_id)
-        try:
+        with contextlib.suppress(Exception):
             _force_alarm("OK")
-        except Exception:
-            pass
 
 
 def test_controller_respects_cooldown_then_steps_up():

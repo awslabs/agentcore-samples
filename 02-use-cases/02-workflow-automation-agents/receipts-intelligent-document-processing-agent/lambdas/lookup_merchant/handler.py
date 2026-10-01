@@ -28,8 +28,8 @@ def handler(event, context):
     key = _normalize(name)
     try:
         item = table.get_item(Key={"merchantKey": key}).get("Item")
-    except Exception:
-        item = None  # catalog optional — degrade to passthrough
+    except Exception:  # noqa: BLE001 — the catalog is optional
+        item = None  # degrade to passthrough
 
     if item:
         return json.dumps({"matched": True, "merchant": item}, default=str)

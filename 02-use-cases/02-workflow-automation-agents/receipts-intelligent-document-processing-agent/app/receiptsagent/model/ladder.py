@@ -159,7 +159,7 @@ def get_active_rung() -> dict[str, Any]:
         else:
             cfg = _cache["value"]
         return resolve_rung(cfg or {})
-    except Exception:
+    except Exception:  # noqa: BLE001 — an unreachable AppConfig falls back to the L0 default
         return {**L0_DEFAULT, "defer": False}
 
 

@@ -6,10 +6,10 @@ replaced with fakes, so what is under test is only which history each turn start
 The identity check itself is covered by test_identity.py and test_e2e_chat_live.py."""
 
 import contextlib
-
-import pytest
+from typing import ClassVar
 
 import main
+import pytest
 
 pytestmark = pytest.mark.unit
 
@@ -22,7 +22,7 @@ class _FakeGateway:
 class _FakeAgent:
     """Records the history it was given and appends one user and one assistant message."""
 
-    started_with: list = []
+    started_with: ClassVar[list] = []
 
     def __init__(self, *, messages=None, **_kwargs):
         self.messages = list(messages or [])

@@ -20,14 +20,14 @@ The receipt pipeline and the chat assistant ran on one Runtime, and every chat q
 
 - **In-process history is the platform's own session model.** A Runtime session is pinned to one microVM for its lifetime, so history lives there with no new infrastructure.
 - **Keying on the verified user keeps the IDOR guarantee.** A session id replayed under another identity starts empty.
-- **AgentCore Memory was not used for chat history.** Its strategies here are namespaced for receipt recall, and chat turns would pollute them.
+- **No memory service is needed.** History lives in the Runtime session, so chat adds no AgentCore Memory resource to the stack.
 - **A separate Runtime is the documented way to separate online evaluation by workload.** Online configs have no documented filter keys, and running every judge on every session would put receipt sessions into chat scores and the reverse.
 
 ## Alternatives Considered
 
 - **One Runtime with a code-level guard** in each evaluator ("not a chat session, skip"). This covers only code-based evaluators; the managed chat judges cannot be told to skip.
 - **Two endpoints on one Runtime.** Service names are per endpoint, so this would separate traffic too. But the endpoint field is not exposed in the CLI schema used here, and a second Runtime is simpler to read.
-- **AgentCore Memory for chat history.** Rejected above.
+- **AgentCore Memory for chat history.** It would add a resource the sample does not otherwise use, for history that only needs to last one session.
 
 ## Consequences
 

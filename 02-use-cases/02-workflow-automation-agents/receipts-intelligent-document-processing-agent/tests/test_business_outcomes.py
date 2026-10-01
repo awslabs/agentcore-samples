@@ -12,7 +12,7 @@ import pytest
 from bedrock_agentcore.evaluation.custom_code_based_evaluators import EvaluatorInput
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "evaluators", "business_outcomes"))
-from business_outcomes import handler  # noqa: E402
+from business_outcomes import handler
 
 pytestmark = pytest.mark.unit
 

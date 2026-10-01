@@ -4,7 +4,6 @@
 import json
 
 import pytest
-
 from parsing import parse_payload
 
 pytestmark = pytest.mark.unit

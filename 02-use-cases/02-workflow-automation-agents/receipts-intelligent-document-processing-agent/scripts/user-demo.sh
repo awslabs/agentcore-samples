@@ -28,8 +28,8 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
 
 PASS=0; FAIL=0
-ok()   { echo "  ✅ PASS: $1"; PASS=$((PASS+1)); }
-bad()  { echo "  ❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
+bad()  { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 hr()   { echo ""; echo "════════════════════════════════════════════════════════════"; echo "$1"; echo "════════════════════════════════════════════════════════════"; }
 
 # Unique, run-scoped users so reruns never collide or read stale data.
@@ -45,11 +45,11 @@ BUCKET="receipts-inbox-${ACCOUNT}-${REGION}"
 redact() { sed "s/${ACCOUNT}/<ACCOUNT_ID>/g"; }
 ST="$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null)"
 echo "stack=$ST  region=$REGION  user=$USER"   # account intentionally not printed
-case "$ST" in CREATE_COMPLETE|UPDATE_COMPLETE) ;; *) echo "❌ stack not ready ($ST). Deploy first (./deploy.sh $REGION)."; exit 1;; esac
+case "$ST" in CREATE_COMPLETE|UPDATE_COMPLETE) ;; *) echo "stack not ready ($ST). Deploy first (./deploy.sh $REGION)."; exit 1;; esac
 
 # A sample receipt fixture.
 FIXTURE="tests/fixtures/sample-receipt.png"
-[ -f "$FIXTURE" ] || { echo "❌ missing $FIXTURE"; exit 1; }
+[ -f "$FIXTURE" ] || { echo "missing $FIXTURE"; exit 1; }
 KEY="receipts/${USER}/receipt.png"
 S3_URI="s3://${BUCKET}/${KEY}"
 
@@ -185,4 +185,4 @@ echo "$E_OUT" | grep -q '"status"' && ok "run-ledger returned the receipt's fate
 # ─── Tally ───────────────────────────────────────────────────────────────────
 hr "RESULT"
 echo "  PASS=$PASS  FAIL=$FAIL   (user: $USER)"
-if [ "$FAIL" -eq 0 ]; then echo "  ✅ user e2e GREEN"; exit 0; else echo "  ❌ user e2e had $FAIL failure(s)"; exit 1; fi
+if [ "$FAIL" -eq 0 ]; then echo "  user e2e GREEN"; exit 0; else echo "  user e2e had $FAIL failure(s)"; exit 1; fi

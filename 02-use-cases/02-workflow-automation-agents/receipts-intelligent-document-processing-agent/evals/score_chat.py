@@ -114,7 +114,7 @@ def main() -> None:
         rows.append({"id": case_dir.name, "turns": turns, **scores, "Correctness": verdicts})
         c, k = scores["ConversationCompleteness"], scores["KnowledgeRetention"]
         right = sum(1 for v in verdicts if v["label"] == "Correct")
-        print(f"{case_dir.name:20s} {turns:5d}  {str(c['value']):>12s}  {str(k['value']):>9s}  {right}/{len(verdicts)}")
+        print(f"{case_dir.name:20s} {turns:5d}  {c['value']!s:>12s}  {k['value']!s:>9s}  {right}/{len(verdicts)}")
         for v in verdicts:
             if v["label"] != "Correct":
                 print(f"    turn {v['turn']} {v['label']}: {v['explanation'][:200]}")

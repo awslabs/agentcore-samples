@@ -32,7 +32,7 @@ def _outputs():
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip(f"stack {STACK} not deployed")
     return {o["OutputKey"]: o["OutputValue"] for o in outs}
 
@@ -97,7 +97,7 @@ def _call_save_expense(total: float, send_cents: bool = True) -> "tuple[bool, st
         "category": "Meals & Entertainment",
     }
     if send_cents:
-        args["total_cents"] = int(round(total * 100))
+        args["total_cents"] = round(total * 100)
     with client as gw:
         tools = gw.list_tools_sync()
         name = next(

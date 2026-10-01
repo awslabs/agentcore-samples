@@ -108,15 +108,12 @@ def _field_errors(attributes: dict, label: dict) -> list[str]:
         recorded, expected = attributes.get(span_key), label.get(label_key)
         return (recorded, expected) if recorded is not None and expected is not None else None
 
-    if pair := both("receipts.transaction_date", "transaction_date"):
-        if str(pair[0]) != str(pair[1]):
-            errors.append(f"date {pair[0]} against a true {pair[1]}")
-    if pair := both("receipts.merchant", "merchant"):
-        if _merchant_key(pair[0]) != _merchant_key(pair[1]):
-            errors.append(f"merchant {pair[0]!r} against a true {pair[1]!r}")
-    if pair := both("receipts.currency", "currency"):
-        if str(pair[0]).upper() != str(pair[1]).upper():
-            errors.append(f"currency {pair[0]} against a true {pair[1]}")
+    if (pair := both("receipts.transaction_date", "transaction_date")) and str(pair[0]) != str(pair[1]):
+        errors.append(f"date {pair[0]} against a true {pair[1]}")
+    if (pair := both("receipts.merchant", "merchant")) and _merchant_key(pair[0]) != _merchant_key(pair[1]):
+        errors.append(f"merchant {pair[0]!r} against a true {pair[1]!r}")
+    if (pair := both("receipts.currency", "currency")) and str(pair[0]).upper() != str(pair[1]).upper():
+        errors.append(f"currency {pair[0]} against a true {pair[1]}")
     for field in ("subtotal", "tax", "tip"):
         if pair := both(f"receipts.{field}", field):
             try:

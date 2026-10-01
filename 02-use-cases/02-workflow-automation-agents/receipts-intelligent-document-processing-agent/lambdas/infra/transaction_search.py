@@ -54,7 +54,7 @@ def handler(event, context):
         dest = current.get("Destination")
         status = current.get("Status")
         logger.info("Current trace segment destination: %s (status=%s)", dest, status)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best effort; the update below is what matters
         logger.warning("get_trace_segment_destination failed (continuing): %s", exc)
         dest = None
 
@@ -73,7 +73,7 @@ def handler(event, context):
             Rule={"Probabilistic": {"DesiredSamplingPercentage": float(indexing_percentage)}},
         )
         logger.info("Set indexing rule sampling -> %s%%", indexing_percentage)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — non-fatal, see below
         # Non-fatal: destination routing is the critical part; indexing rule
         # may not be updatable in all account states.
         logger.warning("update_indexing_rule failed (non-fatal): %s", exc)

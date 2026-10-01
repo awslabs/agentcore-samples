@@ -57,7 +57,7 @@ Two policies on the Gateway's policy engine (`agentcore.json` → `policyEngines
 
 ## Tuning knobs
 
-The *shapes* are settled; these *values* are tuned against your account's real Bedrock quotas (spec §12).
+The *shapes* are settled; these *values* are tuned against your account's real Bedrock quotas ([ADR-0011](decisions/0011-l4-sqs-jittered-drain.md)).
 
 | Knob | Where | Default | Notes |
 |------|-------|---------|-------|

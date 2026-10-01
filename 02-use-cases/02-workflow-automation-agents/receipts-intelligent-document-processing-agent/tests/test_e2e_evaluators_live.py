@@ -42,7 +42,7 @@ def evaluators():
     control = boto3.client("bedrock-agentcore-control", region_name=REGION)
     try:
         found = control.list_evaluators()["evaluators"]
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip("AgentCore evaluators not reachable")
     ids = {
         e["evaluatorName"].removeprefix(PREFIX): e["evaluatorId"]

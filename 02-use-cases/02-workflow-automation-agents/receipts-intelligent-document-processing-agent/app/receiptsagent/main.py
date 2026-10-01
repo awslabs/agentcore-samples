@@ -155,7 +155,7 @@ def invoke(payload, context):
     is_query = bool(parsed.get("question") or parsed.get("query")) and not s3_uri
     try:
         result = _process(payload, context)
-    except Exception as exc:  # noqa: BLE001 — record the failure, then re-raise
+    except Exception as exc:  # record the failure, then re-raise
         log.error("unhandled processing error: %s", exc)
         if not is_query:
             _emit_run_ledger(s3_uri, user_id, {"status": "error", "error": str(exc)})
@@ -213,7 +213,7 @@ def _process(payload, context=None):
     # 1) OCR.
     try:
         ocr = analyze_receipt(s3_uri)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — any OCR failure ends the run as an error
         log.error("OCR failed: %s", exc)
         _tag_span_outcome(status="error", s3_uri=s3_uri)
         return {"error": f"OCR failed: {exc}", "s3_uri": s3_uri, "rung": rung}
@@ -659,7 +659,7 @@ def _is_denied(result) -> bool:
 def _stringify(result) -> str:
     try:
         return json.dumps(result, default=str)[:2000]
-    except Exception:
+    except Exception:  # noqa: BLE001 — fall back to str() for anything json cannot encode
         return str(result)[:2000]
 
 

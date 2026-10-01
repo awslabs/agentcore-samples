@@ -28,7 +28,7 @@ def _out(substr):
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip("stack not deployed")
     for o in outs:
         if substr in o["OutputKey"]:  # CDK may prefix construct outputs (InfraIdentityKeyId)

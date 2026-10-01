@@ -32,7 +32,7 @@ def _queue_url() -> str:
     sqs = boto3.client("sqs", region_name=REGION)
     try:
         return sqs.get_queue_url(QueueName=DEFER_QUEUE)["QueueUrl"]
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip(f"{DEFER_QUEUE} not deployed")
 
 

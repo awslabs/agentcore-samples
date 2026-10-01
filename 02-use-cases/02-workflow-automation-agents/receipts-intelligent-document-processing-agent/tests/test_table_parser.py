@@ -2,7 +2,6 @@
 Pure functions over the OCR digest shape — no AWS, no mocks."""
 
 import pytest
-
 from tools.table_parser import parse_line_items, parse_success_rate
 
 pytestmark = pytest.mark.unit

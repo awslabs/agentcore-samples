@@ -135,7 +135,13 @@ def runtime_log_group(runtime_arn: str) -> str:
 
 
 def collect_settled(
-    collector, session_id: str, start: datetime, end: datetime, min_traces: int = 1, settle_seconds: int = 45, max_rounds: int = 16
+    collector,
+    session_id: str,
+    start: datetime,
+    end: datetime,
+    min_traces: int = 1,
+    settle_seconds: int = 45,
+    max_rounds: int = 16,
 ):
     """Collect a session's spans, re-querying until the trace is complete.
 
@@ -233,7 +239,9 @@ def run_receipts(args, boto3, outs: dict[str, str], collector_cls) -> Path:
     def score(name: str, spans: list[dict], label: dict | None, session_id: str):
         refs = []
         if label:
-            refs = [{"context": {"spanContext": {"sessionId": session_id}}, "expectedResponse": {"text": json.dumps(label)}}]
+            refs = [
+                {"context": {"spanContext": {"sessionId": session_id}}, "expectedResponse": {"text": json.dumps(label)}}
+            ]
         return handler.unwrapped(
             EvaluatorInput(evaluation_level="SESSION", session_spans=spans, evaluator_name=name, reference_inputs=refs),
             None,

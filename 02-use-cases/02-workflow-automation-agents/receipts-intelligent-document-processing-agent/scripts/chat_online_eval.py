@@ -67,7 +67,9 @@ def apply(region: str, stack: str) -> None:
         )
         print(f"Updated {CONFIG_NAME} ({current['onlineEvaluationConfigId']})")
     else:
-        created = control.create_online_evaluation_config(onlineEvaluationConfigName=CONFIG_NAME, enableOnCreate=True, **settings)
+        created = control.create_online_evaluation_config(
+            onlineEvaluationConfigName=CONFIG_NAME, enableOnCreate=True, **settings
+        )
         print(f"Created {CONFIG_NAME} ({created['onlineEvaluationConfigId']})")
 
 

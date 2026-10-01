@@ -18,8 +18,8 @@ cd "$HERE"
 DEPLOYED=0
 teardown() {
   if [ "$DEPLOYED" = "1" ]; then
-    echo "🧹 [e2e] tearing down (always runs)..."
-    ./destroy.sh "$REGION" || echo "⚠️  destroy reported an error — check the account for residue."
+    echo "[e2e] tearing down (always runs)..."
+    ./destroy.sh "$REGION" || echo "WARNING: destroy reported an error — check the account for residue."
   fi
 }
 trap teardown EXIT
@@ -27,21 +27,21 @@ trap teardown EXIT
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "🔎 [e2e] account=$ACCOUNT_ID region=$REGION"
 
-echo "🚀 [e2e] deploying..."
+echo "[e2e] deploying..."
 if ! ./deploy.sh "$REGION"; then
-  echo "❌ [e2e] deploy failed."
+  echo "[e2e] deploy failed."
   exit 1   # DEPLOYED still 0 if deploy.sh bailed before creating the stack; trap is a no-op
 fi
 DEPLOYED=1
 
-echo "✅ [e2e] asserting against live resources..."
+echo "[e2e] asserting against live resources..."
 AWS_REGION="$REGION" uv run --no-project --python 3.12 \
   --with-requirements app/receiptsagent/requirements.txt --with pytest python -m pytest -m e2e -q
 TEST_RC=$?   # capture BEFORE the trap's destroy can clobber $?
 
 if [ "$TEST_RC" -eq 0 ]; then
-  echo "✅ [e2e] live assertions passed."
+  echo "[e2e] live assertions passed."
 else
-  echo "❌ [e2e] live assertions FAILED (pytest rc=$TEST_RC)."
+  echo "[e2e] live assertions FAILED (pytest rc=$TEST_RC)."
 fi
 exit "$TEST_RC"   # exit with the TEST result; trap runs destroy, then this code stands

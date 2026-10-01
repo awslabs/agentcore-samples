@@ -2,7 +2,6 @@
 Pure-function tests over resolve_rung — no AWS, no mocks."""
 
 import pytest
-
 from model.ladder import (
     L0_DEFAULT,
     RUNG_ORDER,

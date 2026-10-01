@@ -18,7 +18,7 @@ def to_cents(amount) -> int | None:
     amount the policy sees is sent as integer cents.
     """
     try:
-        return int(round(float(amount) * 100))
+        return round(float(amount) * 100)
     except (TypeError, ValueError):
         return None
 
