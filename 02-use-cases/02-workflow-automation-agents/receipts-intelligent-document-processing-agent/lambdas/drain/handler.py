@@ -1,4 +1,4 @@
-"""L4 defer-queue drain consumer (spec §12 — the thundering-herd fix).
+"""L4 defer-queue drain consumer (ADR-0011 — the thundering-herd fix).
 
 When the model tier was exhausted (L4), receipts were accepted and parked in SQS
 instead of dropped (the agent's `_defer_receipt`). When a tier recovers, a naive

@@ -1,4 +1,4 @@
-"""Degradation ladder (spec §6) — resolve the active rung from AppConfig.
+"""Degradation ladder (ADR-0007) — resolve the active rung from AppConfig.
 
 The agent runs in a CONTAINER (not a Lambda), so it reads AppConfig via the
 `appconfigdata` data API directly (StartConfigurationSession -> GetLatestConfiguration),
@@ -49,10 +49,10 @@ L0_DEFAULT: dict[str, Any] = {
     },
 }
 
-# Rung ids that perform NO model call (defer to SQS, spec §6.1 L4).
+# Rung ids that perform NO model call (defer to SQS, L4, ADR-0011).
 NO_MODEL_RUNGS = {"L4"}
 
-# The ladder order — used to find the next rung on a 503 step-down (spec §6.3).
+# The ladder order — used to find the next rung on a 503 step-down (ADR-0010).
 RUNG_ORDER = ["L0", "L1", "L2", "L3", "L4"]
 
 
@@ -66,7 +66,7 @@ def next_rung(rung_id: str) -> str | None:
 
 
 def classify_model_error(exc: Exception) -> str:
-    """Map a model-call exception to a ladder action (spec §6.3 — the error->response
+    """Map a model-call exception to a ladder action (ADR-0010 — the error->response
     mapping is the whole point):
       "step"    -> 503 ServiceUnavailable (model capacity): step the ladder
       "backoff" -> 429 ThrottlingException (quota) / 500 InternalServerException

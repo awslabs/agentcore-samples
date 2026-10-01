@@ -1,6 +1,6 @@
-"""Phase 7 end-to-end: the event-driven front door (spec §13).
+"""End-to-end: the event-driven front door (ADR-0006).
 
-The Phase 7 DoD: dropping a receipt file in S3 — with NO direct Runtime invoke — runs
+The check: dropping a receipt file in S3 — with NO direct Runtime invoke — runs
 the whole pipeline. Proves S3 -> EventBridge -> trigger Lambda -> Runtime -> DynamoDB
 end to end. No mocks; S3 PutObject is a real, immediate event (no 503/ingestion-lag
 problem). Uses a per-user key (receipts/<user_id>/<file>) so the trigger derives the

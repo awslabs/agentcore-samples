@@ -1,7 +1,7 @@
-"""Gateway tool: get_recent_expenses — list a user's recent expenses for dedup.
+"""Gateway tool: get_recent_expenses — list a user's recent expenses.
 
-Queries the Expenses table by userId (the partition key), newest first, so the
-agent can spot a likely duplicate before persisting (spec §9 step 6).
+Queries the Expenses table by userId (the partition key), newest first. The chat
+assistant uses it to answer questions about recent spending.
 """
 
 import json

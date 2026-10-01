@@ -1,10 +1,10 @@
 """Gateway tool: save_expense — persist a validated expense for a user.
 
-The Cedar-gated write (spec §5.5: BlockExcessiveExpense gates this at the Gateway
+The Cedar-gated write (ADR-0012: BlockExcessiveExpense gates this at the Gateway
 before the Lambda runs). Per-user separation is the partition key: every row is
 written under the userId the tool was handed.
 
-Idempotency / dedup (spec §8): expenseId is derived from receipt content
+Idempotency / dedup: expenseId is derived from receipt content
 (user + merchant + date + total), so a retried or replayed receipt overwrites the
 same row instead of creating a duplicate.
 """

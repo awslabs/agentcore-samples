@@ -1,4 +1,4 @@
-"""Phase 3 / M1 end-to-end: a REAL receipt through the full agent pipeline.
+"""End-to-end: a REAL receipt through the full agent pipeline.
 
 Uploads the sample receipt to S3, invokes the deployed Runtime with {s3_uri,
 user_id}, and asserts the agent OCR'd, extracted, and persisted an expense row to
@@ -43,7 +43,7 @@ def _upload_sample() -> str:
 
 
 def test_receipt_flows_through_agent_to_dynamodb():
-    """The M1 milestone assertion: receipt in -> expense row out, via the agent."""
+    """The core assertion: receipt in -> expense row out, via the agent."""
     s3_uri = _upload_sample()
     arn = _runtime_arn()
     client = boto3.client("bedrock-agentcore", region_name=REGION)
@@ -66,14 +66,14 @@ def test_receipt_flows_through_agent_to_dynamodb():
     expense = data.get("expense", {})
     assert expense.get("merchant"), "extractor should have produced a merchant"
 
-    # Phase 4: the independent validator agent ran and owns the routing decision.
+    # The independent validator agent ran and owns the routing decision.
     validator = data.get("validator", {})
     assert validator.get("routing") in ("AUTO_PERSIST", "NEEDS_REVIEW"), (
         f"validator should have produced a routing decision, got: {validator}"
     )
-    # Phase 5: status is "processed" ONLY when the validator approved AND Cedar did
+    # Status is "processed" ONLY when the validator approved AND Cedar did
     # not block at the gateway. A Cedar block (cedar_blocked) overrides an
-    # AUTO_PERSIST into needs_review — the deterministic guardrail (spec §5.5).
+    # AUTO_PERSIST into needs_review — the deterministic guardrail (ADR-0012).
     cedar_blocked = data.get("cedar_blocked", False)
     if data["status"] == "processed":
         assert validator["routing"] == "AUTO_PERSIST" and not cedar_blocked

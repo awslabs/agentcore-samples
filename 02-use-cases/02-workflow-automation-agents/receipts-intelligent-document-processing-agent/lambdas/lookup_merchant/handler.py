@@ -2,7 +2,7 @@
 
 Best-effort: returns the catalog entry if the normalized key matches, else a
 passthrough with the cleaned name so the agent always gets a usable answer. The
-Merchants table is optional (spec §8); a missing table/entry is not an error.
+Merchants table is optional; a missing table/entry is not an error.
 """
 
 import json

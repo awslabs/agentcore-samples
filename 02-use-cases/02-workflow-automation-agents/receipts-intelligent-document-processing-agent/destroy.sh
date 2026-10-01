@@ -26,10 +26,10 @@ STACK="${RECEIPTS_STACK:-AgentCore-ReceiptsAgent-dev}"
 export AWS_REGION="$REGION"
 export AWS_DEFAULT_REGION="$REGION"
 
-echo "🧹 Destroying $STACK in $REGION..."
+echo "Destroying $STACK in $REGION..."
 
 if ! aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" >/dev/null 2>&1; then
-  echo "✅ Stack $STACK not present — nothing to destroy."
+  echo "Stack $STACK not present — nothing to destroy."
   exit 0
 fi
 
@@ -66,7 +66,7 @@ STATUS=$(wait_for_delete)
 # Recovery pass 1: a plain retry clears most transient control-plane ordering orphans.
 if [ "$STATUS" = "DELETE_FAILED" ]; then
   echo ""
-  echo "⚠️  First delete hit DELETE_FAILED (AgentCore control-plane ordering)."
+  echo "First delete hit DELETE_FAILED (AgentCore control-plane ordering)."
   echo "   Stuck: $(failed_resource_ids | tr '\t' ' ')"
   echo "   Retrying the delete once (ordering orphans usually clear on a second pass)..."
   aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
@@ -84,7 +84,7 @@ if [ "$STATUS" = "DELETE_FAILED" ]; then
     --query "StackResources[?ResourceStatus=='DELETE_FAILED'].[ResourceType,PhysicalResourceId]" \
     --output text 2>/dev/null || true)
   echo ""
-  echo "⚠️  Still stuck after retry: $(echo "$STUCK" | tr '\t' ' ')"
+  echo "Still stuck after retry: $(echo "$STUCK" | tr '\t' ' ')"
   echo "   Retaining those resources so the rest of the stack deletes cleanly..."
   # shellcheck disable=SC2086 # intentional word-splitting: pass IDs as separate args
   aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION" \
@@ -95,17 +95,17 @@ fi
 echo ""
 if [ "$STATUS" = "DELETE_COMPLETE" ]; then
   if [ -n "${ORPHANS:-}" ]; then
-    echo "✅ Stack $STACK removed. A few control-plane resources were retained and"
+    echo "Stack $STACK removed. A few control-plane resources were retained and"
     echo "   need a one-time manual delete (physical ids for the AWS console/CLI):"
     echo "$ORPHANS" | while IFS=$'\t' read -r rtype pid; do
       [ -n "$rtype" ] && echo "     • $rtype  →  $pid"
     done
     echo "   See docs/deployment.md → 'Teardown & DELETE_FAILED recovery' for the delete calls."
   else
-    echo "✅ Teardown complete — $STACK removed."
+    echo "Teardown complete — $STACK removed."
   fi
 else
-  echo "❌ Teardown could not complete automatically ($STATUS)."
+  echo "Teardown could not complete automatically ($STATUS)."
   echo "   Inspect the stack events, then delete the remaining resources manually:"
   echo "     aws cloudformation describe-stack-events --stack-name $STACK --region $REGION \\"
   echo "       --query \"StackEvents[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceStatusReason]\" --output table"

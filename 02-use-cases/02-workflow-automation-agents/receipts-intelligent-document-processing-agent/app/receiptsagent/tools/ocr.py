@@ -3,9 +3,9 @@
 AnalyzeExpense is Textract's purpose-built receipt/invoice API: it returns
 SummaryFields (vendor, total, tax, date, ...) and LineItemGroups, each with a
 confidence score. We hand the agent a compact, readable digest plus the raw
-summary values so it can reason and fill the extraction schema (spec §7).
+summary values so it can reason and fill the extraction schema.
 
-Confidence drives the human-review gate (spec §7): we surface per-field and an
+Confidence drives the human-review gate: we surface per-field and an
 overall mean so the agent/validator can decide auto-persist vs needs_review.
 """
 

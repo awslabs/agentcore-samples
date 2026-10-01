@@ -1,6 +1,6 @@
 """Gateway tool: human_review — record an expense as pending human review.
 
-The HITL tool (spec §7, C1): inline `needs_review` status, no review UI. Writes
+The human-in-the-loop tool: inline `needs_review` status, no review UI. Writes
 the expense row with status=needs_review + the reason, so a reviewer (or a future
 review surface) can pick it up. Same Expenses table, same userId partition.
 """

@@ -3,7 +3,7 @@
 Instead of hoping the LLM returns clean JSON, the agent calls `submit_expense`
 with typed fields. The tool captures the structured result + runs a deterministic
 reconciliation check (totals add up?) so the orchestrator gets a machine-checkable
-answer (spec §7). The validator agent (Phase 4) consumes this.
+answer. The validator agent consumes this.
 
 Concurrency note: state is module-level globals reset per invocation via
 `reset_state()` — fine for the single-in-flight Runtime model, like the claims

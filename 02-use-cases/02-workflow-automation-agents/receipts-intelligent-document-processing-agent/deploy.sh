@@ -19,7 +19,7 @@ export AWS_REGION="$REGION"
 export AWS_DEFAULT_REGION="$REGION"
 export CDK_DEFAULT_REGION="$REGION"
 
-echo "🚀 Deploying Receipts Agent to $REGION..."
+echo "Deploying Receipts Agent to $REGION..."
 
 # Check the prerequisites first, so a missing tool stops the script before the deploy
 # rather than after it.
@@ -48,25 +48,25 @@ EOF
 echo "  Target: $ACCOUNT_ID / $REGION"
 
 # Step 1: CDK deps
-echo "📦 Installing CDK dependencies..."
+echo "Installing CDK dependencies..."
 cd agentcore/cdk
 [ -d node_modules ] || npm install --quiet
 cd ../..
 
 # Step 2: agent Python deps
-echo "🐍 Installing agent dependencies..."
+echo "Installing agent dependencies..."
 cd app/receiptsagent
 [ -d .venv ] || uv venv
 uv pip install --python .venv/bin/python -r requirements.txt --quiet
 cd ../..
 
 # Step 3: validate
-echo "✅ Validating configuration..."
+echo "Validating configuration..."
 agentcore validate
 
 # Step 4: deploy (with --yes, agentcore deploy also bootstraps CDK in the account and
 # region the first time)
-echo "🚀 Deploying via agentcore deploy..."
+echo "Deploying via agentcore deploy..."
 agentcore deploy --target dev --yes
 
 # Step 5: configure chat live evaluation directly through the AgentCore API, outside CDK.
@@ -76,11 +76,11 @@ echo "Applying the chat online evaluation config..."
 python3 scripts/chat_online_eval.py apply --region "$REGION"
 
 # Step 6: seed sample data
-echo "🌱 Seeding DynamoDB..."
+echo "Seeding DynamoDB..."
 python3 scripts/seed_dynamodb.py --region "$REGION"
 
 echo ""
-echo "✅ Done. Test with:"
+echo "Done. Test with:"
 echo "   python3 scripts/test_invoke.py --region $REGION"
 echo "   (uploads the sample receipt and runs the pipeline once; files uploaded under receipts/ run automatically)"
-echo "🧪 Local dev:  agentcore dev --no-browser"
+echo "Local dev:  agentcore dev --no-browser"

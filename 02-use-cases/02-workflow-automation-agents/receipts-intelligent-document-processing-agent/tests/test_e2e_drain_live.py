@@ -1,4 +1,4 @@
-"""Phase 6 sub-step 3 end-to-end: the L4 SQS drain consumer (spec §12).
+"""End-to-end: the L4 SQS drain consumer (ADR-0011).
 
 A receipt deferred at L4 was parked in SQS, not dropped. This proves the recovery
 path: a message on the DeferQueue is picked up by the drain Lambda, which re-invokes

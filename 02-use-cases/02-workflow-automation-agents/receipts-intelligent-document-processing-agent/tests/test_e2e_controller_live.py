@@ -1,6 +1,6 @@
-"""Phase 6 sub-step 3 end-to-end: the account-level control loop (spec §6.3 path 2).
+"""End-to-end: the account-level control loop (ADR-0010, path 2).
 
-UNLIKE the deferred 503-step-down sim (sub-step 2), this loop is faithfully
+UNLIKE the skipped 503 step-down test (test_e2e_stepdown_live.py), this loop is faithfully
 live-testable WITHOUT a real Bedrock outage. Two real, no-mock paths together cover
 the whole loop:
 
@@ -20,7 +20,7 @@ the whole loop:
      proven EventBridge hop is bypassed for the two auto-reverting branches.
 
 Always restores L0 in `finally` so it never poisons shared AppConfig state
-(the test-isolation lesson from sub-step 1).
+(the same isolation test_e2e_ladder_live.py uses).
 
 Requires a deployed stack (run via `make e2e`); skips cleanly otherwise.
 """

@@ -1,4 +1,4 @@
-"""Unit tests for the deterministic line-item table parser (Phase 4, C2).
+"""Unit tests for the deterministic line-item table parser.
 Pure functions over the OCR digest shape — no AWS, no mocks."""
 
 import pytest

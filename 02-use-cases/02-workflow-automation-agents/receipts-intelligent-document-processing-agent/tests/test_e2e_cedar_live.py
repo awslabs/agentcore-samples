@@ -1,4 +1,4 @@
-"""Phase 5 end-to-end: Cedar policy enforcement at the Gateway (no mocks).
+"""End-to-end: Cedar policy enforcement at the Gateway (no mocks).
 
 Cedar runs at the GATEWAY, not in the Lambda — so this drives a real MCP tool call
 through the gateway with the agent's own M2M token, deterministically (no LLM):

@@ -1,4 +1,4 @@
-"""The config module is the replaceable deploy seam (spec §13). These tests pin
+"""The config module is the replaceable deploy seam (ADR-0001). These tests pin
 the seam's contract: env vars in, resolved values out, sane defaults.
 
 Reimport `config` fresh per case so env changes take effect (module reads env at

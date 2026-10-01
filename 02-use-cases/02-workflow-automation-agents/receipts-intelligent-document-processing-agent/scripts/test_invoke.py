@@ -45,7 +45,10 @@ def upload(region: str, bucket: str, path: str) -> str:
     key = f"samples/{os.path.basename(path)}"
     boto3.client("s3", region_name=region).upload_file(os.path.abspath(path), bucket, key)
     s3_uri = f"s3://{bucket}/{key}"
-    print(f"Uploaded {os.path.relpath(path)} to {s3_uri} (outside receipts/, so the front door does not also run it)", file=sys.stderr)
+    print(
+        f"Uploaded {os.path.relpath(path)} to {s3_uri} (outside receipts/, so the front door does not also run it)",
+        file=sys.stderr,
+    )
     return s3_uri
 
 

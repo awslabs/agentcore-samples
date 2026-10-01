@@ -1,16 +1,21 @@
 """Receipts IDP Agent on Amazon Bedrock AgentCore.
 
-PHASE 4 (dual agent — the extraction-quality half of M2):
-  receipt in S3 -> Textract OCR -> EXTRACTOR agent (structured output, using the
-  deterministic line-item table parser) -> independent VALIDATOR agent (checks
-  reconciliation/category/confidence, OWNS the auto-persist-vs-review decision)
-  -> persist via save_expense, or route to human_review, through the Gateway.
+One entrypoint serves both Runtimes:
+- Receipt pipeline: receipt in S3 -> Textract OCR -> EXTRACTOR agent (structured
+  output, using the deterministic line-item table parser) -> independent VALIDATOR
+  agent (checks reconciliation/category/confidence, OWNS the save-or-review
+  decision) -> save_expense or human_review through the Gateway, where Cedar can
+  still block the save. A held receipt gets a short note from a REVIEWER NOTE agent.
+- Chat: a read-only assistant answering questions about the verified user's own
+  expenses.
 
 Two sequential Strands agents beat a single self-checking agent's confirmation
-bias (claims ADR-0002). The validator is isolated from the extractor's reasoning —
-it only sees the extractor's structured output + the OCR. Runs on the default L0
-model (the degradation ladder is Phase 6; the validator is a sheddable rung feature).
-Auth to the Gateway is agent-as-principal M2M Cognito (spec §10).
+bias (ADR-0002). The validator is isolated from the extractor's reasoning — it
+only sees the extractor's structured output + the OCR. Each run uses the model of
+the active degradation-ladder rung, steps down on a persistent 503, and at L4
+defers the receipt to SQS (ADR-0007, ADR-0010, ADR-0011); the validator is a
+sheddable rung feature. Auth to the Gateway is agent-as-principal M2M Cognito
+(ADR-0004).
 """
 
 import json
@@ -185,20 +190,20 @@ def _process(payload, context=None):
         session_id = getattr(context, "session_id", None) or payload.get("session_id")
         return _answer_query(verified_user, str(question), session_id=session_id)
 
-    # Degradation ladder (spec §6): resolve the active rung from AppConfig (cached;
+    # Degradation ladder (ADR-0007): resolve the active rung from AppConfig (cached;
     # safe L0 default if unavailable). The rung sets the model + which features run.
     active = get_active_rung()
     rung = active["rung"]
     features = active["features"]
     # Tag the trace span with the rung up front so even a defer/OCR-fail trace is
-    # marked with the rung it ran on (spec §6.4). Re-tagged after any step-down.
+    # marked with the rung it ran on (ADR-0007). Re-tagged after any step-down.
     _tag_span_rung(rung, active["model"])
 
     if not s3_uri:
         _tag_span_outcome(status="error")
         return {"error": "s3_uri is required", "received": payload}
 
-    # L4 — defer: no model call. Queue the receipt for replay and return (spec §6.1).
+    # L4 — defer: no model call. Queue the receipt for replay and return (ADR-0011).
     if active["defer"]:
         deferred = _defer_receipt(s3_uri, user_id, rung)
         _tag_span_outcome(status="deferred", s3_uri=s3_uri)
@@ -230,17 +235,17 @@ def _process(payload, context=None):
     with _mcp_client() as gateway:
         gateway_tools = gateway.list_tools_sync()
 
-        # 2) Extractor agent, run inside the in-agent 503 step-down loop (spec §6.3).
+        # 2) Extractor agent, run inside the in-agent 503 step-down loop (ADR-0010).
         # A persistent 503 (model capacity) steps to the next rung's model FOR THIS
         # RUN; 429/500 back off + retry the SAME model. A test hook can inject a 503.
         run_rung = rung
         run_model = active["model"]
         step_downs = []
         sim_503 = _sim_503_count(payload)
-        # NOTE (deferred, see tests/test_e2e_stepdown_live.py): the live 503 sim
-        # surfaced a reporting check to revisit — confirm the returned `rung`/`model`
-        # always reflect the rung the extraction SUCCEEDED on after a step-down. The
-        # step-down decision logic itself is unit-tested (classify_model_error/next_rung).
+        # Known issue: a simulated 503 once returned the stepped-down `rung` with the
+        # previous rung's `model`, so after a step-down the reported model may not be
+        # the one the extraction succeeded on. The step-down decision logic itself is
+        # unit-tested (classify_model_error/next_rung in tests/test_ladder.py).
 
         while True:
             try:
@@ -264,7 +269,7 @@ def _process(payload, context=None):
                     nxt = next_rung(run_rung)
                     nxt_rung = rung_for(nxt) if nxt else None
                     if not nxt_rung or nxt_rung["defer"]:
-                        # bottomed out -> defer the receipt (spec §6.1 L4)
+                        # bottomed out -> defer the receipt (L4, ADR-0011)
                         deferred = _defer_receipt(s3_uri, user_id, run_rung)
                         _tag_span_outcome(status="deferred", s3_uri=s3_uri)
                         return {
@@ -534,13 +539,13 @@ def _answer_query(user_id: str, question: str, session_id: str | None = None) ->
 
 
 def _backoff_jitter(attempt: int) -> float:
-    """Exponential backoff with jitter for 429/500 retries (spec §6.3). Capped."""
+    """Exponential backoff with jitter for 429/500 retries (ADR-0010). Capped."""
     return min(0.5 * (2**attempt) + random.uniform(0, 0.25), 4.0)
 
 
 def _tag_span_rung(rung: str, model: str, needs_review: bool | None = None) -> None:
     """Tag the current OTel span with the ladder rung so degraded runs are visible in
-    traces (spec §6.4 — 'degrade safe, not silent'). The managed Runtime configures
+    traces (ADR-0007: 'degrade safe, not silent'). The managed Runtime configures
     ADOT/OTel; we just stamp attributes on the active span. Best-effort: never break a
     receipt run over telemetry, and stay importable without opentelemetry installed."""
     try:
@@ -559,7 +564,7 @@ def _tag_span_rung(rung: str, model: str, needs_review: bool | None = None) -> N
 
 
 def _emit_step_down_metric(from_rung: str, to_rung: str) -> None:
-    """Emit the account-level ladder signal (spec §6.3 path 2). A 503 the agent
+    """Emit the account-level ladder signal (ADR-0010, path 2). A 503 the agent
     recovers from is a SUCCESSFUL Runtime invocation, so it never appears as a
     Runtime System Error metric. This custom ModelStepDowns metric is the honest
     signal the controller's alarm watches to step activeRung down for everyone.
@@ -631,7 +636,7 @@ def _fake_503(model_id: str) -> Exception:
 
 
 def _defer_receipt(s3_uri: str, user_id: str, rung: str) -> bool:
-    """L4 defer (spec §6.1): queue the receipt to SQS for replay when the model
+    """L4 defer (ADR-0011): queue the receipt to SQS for replay when the model
     tier recovers. Returns True if queued. Never drops the document — if the queue
     isn't configured, report not-queued so the caller surfaces it."""
     if not DEFER_QUEUE_URL:

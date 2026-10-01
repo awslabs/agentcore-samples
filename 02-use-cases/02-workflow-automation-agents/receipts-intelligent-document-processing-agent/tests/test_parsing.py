@@ -1,5 +1,5 @@
-"""Unit tests for payload parsing — the one piece of real logic in the Phase 1
-stub. No AWS, no runtime; pure-function tests."""
+"""Unit tests for the pure parsing helpers: parse_payload (a dict, a JSON string, the
+`agentcore dev` wrapper, a plain-text prompt) and to_cents. No AWS, no runtime."""
 
 import json
 

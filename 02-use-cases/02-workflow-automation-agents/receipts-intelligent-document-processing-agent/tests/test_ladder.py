@@ -1,4 +1,4 @@
-"""Unit tests for the degradation-ladder rung resolution (Phase 6 sub-step 1).
+"""Unit tests for the degradation-ladder rung resolution (ADR-0007).
 Pure-function tests over resolve_rung — no AWS, no mocks."""
 
 import pytest
