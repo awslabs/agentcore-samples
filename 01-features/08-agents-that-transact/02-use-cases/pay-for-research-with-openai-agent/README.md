@@ -3,7 +3,7 @@
 | Information | Details |
 |:---|:---|
 | Use case type | Budget-bounded purchase of premium research |
-| Agent type | Multi-agent (research lead + 2 specialists, agents-as-tools) |
+| Agent type | Research lead + two specialists, using agents-as-tools |
 | Hosting | Local Python application using AWS credentials |
 | Framework | OpenAI Agents SDK |
 | LLM model | OpenAI models on Amazon Bedrock (`openai.gpt-5.5`) |
@@ -13,406 +13,202 @@
 
 ## Overview
 
-This sample uses the OpenAI Agents SDK with OpenAI models on Amazon Bedrock and
-AgentCore Payments to build a three-agent financial research workflow that can
-buy x402-protected evidence without giving every agent payment authority.
+This sample demonstrates a three-agent financial research workflow using the
+OpenAI Agents SDK and the GA AgentCore Payments SDK. A research lead delegates
+public research first, then requests premium evidence only if a material gap
+remains. Only the premium specialist has a payment tool.
 
-The research lead delegates free-source discovery to a public evidence analyst.
-Only when that work leaves a material gap can it call a premium evidence
-analyst. The application binds that specialist to one exact merchant URL, and
-AgentCore enforces the payment session's maximum spend and expiry outside every
-model. The entire walkthrough runs from Python scripts.
+The application binds that tool to one exact merchant URL. AgentCore enforces
+the payment session's budget and expiry outside the model. The sample runs
+locally and reuses the shared payment setup; it does not deploy another runtime.
 
-This sample uses the public GA AgentCore Payments APIs and
-[SDK](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-python-sdk-reference.html). The dependency
-baseline in `requirements.txt` was verified on September 24, 2026:
-`bedrock-agentcore` 1.23.1, `boto3` / `botocore` 1.43.102, `openai-agents` 0.22.3,
-and `openai` 3.19.2.
-
-> This is an educational testnet sample, not investment advice. Verify service
-> availability, pricing, and model access before production use.
+> This is an educational testnet sample, not investment advice. Testnet USDC has
+> no monetary value; AWS, model, and wallet-provider usage charges can still apply.
 
 ## Architecture
 
-<p align="center">
-  <img
-    src="./images/architecture.png"
-    alt="Architecture for budget-bounded multi-agent paid research"
-    width="1200"
-  />
-</p>
+![Application, AWS, and merchant boundaries](images/architecture.png)
 
-*Figure 1 - Application, AWS Cloud, and approved external-service boundaries.*
+The lead keeps the conversation and final answer. It calls specialists through
+the OpenAI Agents SDK's `Agent.as_tool()`:
 
-The sample uses the OpenAI Agents SDK manager pattern: the lead retains the
-conversation and final answer while specialists are exposed through
-`Agent.as_tool()`.
+| Agent | Responsibility | Tools |
+|---|---|---|
+| Research lead | Delegate work and synthesize a cited brief | Public and premium specialists |
+| Public evidence analyst | Analyze public evidence and identify gaps | Hosted web search, when enabled and supported |
+| Premium evidence analyst | Acquire one approved source | Bound x402 fetch and read-only session status |
 
-### Why this sample uses a small framework adapter
+![Public research, payment, and synthesis workflow](images/workflow.png)
 
-AgentCore Payments currently provides framework-native integrations for
-[Strands (plugin) and LangGraph (middleware)][framework-integrations]. It does
-not provide a native plugin for the OpenAI Agents SDK, so this sample follows
-the documented framework-agnostic path: it registers a small OpenAI
-`function_tool` adapter.
-
-This adapter does not reimplement payment processing. It reuses
-`PaymentManager.generate_payment_header`, which validates the 402 challenge,
-selects the network, calls `ProcessPayment`, and creates the version-aware x402
-proof header. The local code only exposes that capability as an OpenAI function
-tool, applies the sample's exact-URL and public-address policy, and performs an
-initial GET followed by at most one GET with the SDK-generated proof. Both
-requests connect to the same validated public IP while preserving the merchant's
-TLS hostname; each uses a fresh client with redirects and environment proxies
-disabled.
-
-Each source is fetched once per research run. Repeated tool calls reuse the
-recorded result, including failures, so the model cannot generate another payment
-by repeating the same request. If signing succeeds but the paid response fails,
-`payment_made` is `null`: the outcome is unknown and must be checked before a new
-run. A successful paid response reports `payment_made: true`.
+AgentCore has [native integrations for Strands and LangGraph][framework-integrations].
+For the OpenAI Agents SDK, this sample uses the framework-agnostic
+`PaymentManager.generate_payment_header()` API. The SDK handles the x402
+challenge, payment processing, and proof header; the local adapter handles the
+HTTP requests and exposes them as a function tool.
 
 [framework-integrations]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-framework-integrations.html
 
-<p align="center">
-  <img
-    src="./images/workflow.png"
-    alt="Eight-step workflow for public research, payment, and synthesis"
-    width="1200"
-  />
-</p>
+### Files
 
-*Figure 2 - Public evidence comes first; the payment path begins only for a
-material gap.*
+- `pay_for_research.py` — configure Bedrock, build the three agents, and run research.
+- `payment.py` — fetch the bound source through the AgentCore Payments SDK.
+- `create_payment_session.py` — create a session with a budget and expiry.
+- `cleanup_payment_session.py` — delete one selected session.
 
-| Agent | Responsibility | Capabilities |
-|---|---|---|
-| Research lead | Plans delegation and synthesizes the cited brief | Public and premium specialists as tools |
-| Public evidence analyst | Analyzes public evidence and identifies residual gaps | OpenAI hosted web search, when supported |
-| Premium evidence analyst | Acquires one approved source and reports remaining budget | Bound x402 fetch and read-only session status |
+## Prerequisites and security
 
-The lead and public analyst have no payment function tool. If the application
-does not supply a premium URL, it omits the premium specialist from the lead's
-tool list entirely.
+- Python 3.10+ and AWS CLI v2.
+- An AWS execution profile with access to the configured OpenAI model on Bedrock.
+- For paid research, complete the [shared payment setup][setup] and
+  [wallet-provider setup][providers]: a payment manager, a `READY` connector,
+  and an active, funded, delegated testnet wallet.
+- For either Coinbase setup mode, activate the
+  [Coinbase Marketplace subscription][marketplace] after reviewing its pricing
+  and terms. An active wallet is not sufficient if the connector reports
+  `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED`.
 
-## Control Boundaries
+Before configuring payment access, read the
+[AgentCore Payments security best practices][security]. In particular:
 
-| Question | Control |
-|---|---|
-| What public evidence is available? | Public evidence analyst |
-| Is a remaining evidence gap material? | Research lead |
-| Which agent can spend? | Premium evidence analyst only |
-| Which merchant may be called? | Application-bound URL plus exact host allowlist |
-| May a person approve the purchase? | Optional nested Agents SDK tool approval |
-| How much and for how long? | AgentCore payment session budget and TTL |
-| Who may raise a budget vs. spend it? | Separate AWS permissions; select the appropriate profile for session scripts and research |
-| What happened across agents and payment? | Agent run output plus AgentCore telemetry |
+- Separate session management from payment execution. The session scripts need
+  `CreatePaymentSession` / `DeletePaymentSession`; research needs
+  `GetPaymentInstrument`, `GetPaymentSession`, and `ProcessPayment` on the
+  configured manager, plus Bedrock access. The research role must not raise budgets.
+- Keep wallet-provider credentials in AgentCore Identity, not in this sample,
+  agent prompts, or tool arguments.
+- Use conservative budgets and short sessions, and require end-user delegation.
+- For production, add merchant-recipient (`payTo`) validation, provider policies,
+  and audit logging as described in the security guide. This sample's URL checks
+  and session limits are not a complete production security boundary.
 
-## Prerequisites
+[setup]: ../../00-getting-started/00-setup-agentcore-payments/
+[providers]: ../../00-getting-started/00-setup-agentcore-payments/providers/
+[marketplace]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html
+[security]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-security-best-practices.html
 
-- Python 3.10+
-- AWS CLI v2 configured with an active AWS credential profile
-- AWS credentials that can invoke the configured OpenAI models on Amazon Bedrock
-- An AgentCore Payment Manager, connector, active instrument, and delegated
-  testnet wallet configured with a supported wallet provider
+## Run the sample
 
-Complete the shared
-[AgentCore Payments setup](../../00-getting-started/00-setup-agentcore-payments/)
-first. For provisioning through Python, use its
-[`setup_agentcore_payments.py`](../../00-getting-started/00-setup-agentcore-payments/setup_agentcore_payments.py)
-script, described under
-[Alternatives](../../00-getting-started/00-setup-agentcore-payments/#alternatives).
-Choose a supported wallet provider and follow the
-[shared wallet-provider setup guide](../../00-getting-started/00-setup-agentcore-payments/providers/)
-for provider-specific credentials, delegation, and testnet funding.
-Keep provider credentials in the shared setup's ignored environment file.
-This sample needs only payment resource identifiers and AWS credentials.
-
-The session scripts need `bedrock-agentcore:CreatePaymentSession` and
-`bedrock-agentcore:DeletePaymentSession`, respectively. The research process needs
-`bedrock-agentcore:GetPaymentInstrument`, `bedrock-agentcore:GetPaymentSession`,
-and `bedrock-agentcore:ProcessPayment` on the configured manager, plus Bedrock
-model invocation access. For role separation, run the scripts with the matching
-management or execution profile from the shared setup.
-
-## Running the Use Case
-
-This is a local Python use case. It reuses the Payment Manager, connector,
-instrument, and delegated wallet created by the shared setup; it does not deploy
-another AgentCore Runtime.
-
-| Script | Purpose |
-|---|---|
-| `inspect_sample.py` | Inspect configuration presence, SDK versions, the prompt, and agent tools offline |
-| `create_payment_session.py` | Create one session with an explicit budget and expiry |
-| `pay_for_research.py` | Run the research lead and its specialists |
-| `e2e.py` | Check the merchant, model delegation, and optionally payment |
-| `cleanup_payment_session.py` | Delete one selected payment session |
-
-### Step 1: Create the environment
+### 1. Install and select your AWS profile
 
 From the repository root:
 
 ```bash
 cd 01-features/08-agents-that-transact/02-use-cases/pay-for-research-with-openai-agent
-python3.12 -m venv .venv  # Python 3.10 or 3.11 also works
+python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade -r requirements.txt
-```
+python -m pip install -r requirements.txt
+cp .env.sample .env
 
-### Step 2: Check AWS access
-
-```bash
-export AWS_PROFILE=<your-profile>
 export AWS_REGION=us-east-1
-aws --version              # AWS CLI v2
+export AWS_PROFILE=<your-management-profile>
 aws sts get-caller-identity
 ```
 
-The live model smoke test in Step 4 confirms that the selected
-profile can invoke `openai.gpt-5.5` through Amazon Bedrock.
+Select the profile explicitly in this terminal; an AWS profile selected in
+another application is not necessarily inherited by these scripts.
+The sample uses a short-lived Bedrock bearer token from the AWS credential
+chain, not an OpenAI API key.
 
-### Step 3: Configure the sample
+### 2. Configure payment identifiers
 
-```bash
-cp .env.sample .env
-```
-
-Populate `.env` with the data-plane identifiers from the shared AgentCore
-Payments setup:
+Copy these non-secret identifiers from the shared setup into `.env`:
 
 | This sample | Shared setup output |
 |---|---|
 | `PAYMENT_MANAGER_ARN` | `PAYMENT_MANAGER_ARN` |
 | `PAYMENT_INSTRUMENT_ID` | `INSTRUMENT_ID` |
 | `PAYMENT_USER_ID` | `USER_ID` |
-| `PAYMENT_SESSION_ID` | Leave blank until Step 5 |
+| `PAYMENT_SESSION_ID` | Leave blank; create a fresh session below |
 
-`PAID_RESEARCH_ALLOWED_HOSTS` must contain the exact hostname from
-`PAID_RESEARCH_URL`. Do not copy wallet-provider credentials into this sample.
-The OpenAI Agents SDK uses a short-lived Bedrock bearer token from the active
-AWS credential chain; no OpenAI API key is required.
-`AWS_REGION` selects the Bedrock model region. The payment scripts derive their
-region from `PAYMENT_MANAGER_ARN`, so a manager in another supported region works
-without changing the model endpoint.
+Set `PAID_RESEARCH_URL` to the exact approved HTTPS endpoint and include its
+hostname in `PAID_RESEARCH_ALLOWED_HOSTS`. The default endpoint is the Genesis
+Block Base Sepolia merchant. Do not copy provider credentials into this file.
 
-### Step 4: Inspect and verify the sample
+`AWS_REGION` selects the model region. Payment clients use the region in
+`PAYMENT_MANAGER_ARN`, independently of the model endpoint.
 
-Inspect the configuration and three-agent team without making any network calls:
+### 3. Create a budgeted session
 
-```bash
-python inspect_sample.py
-python inspect_sample.py --public-only
-```
-
-The output reports only whether payment settings are present, never their values.
-Inspection builds the same agent topology as the research script but cannot invoke
-a model, query AWS, or spend. It does not establish that the configured resources
-exist or that the wallet is ready.
-
-Install the test dependencies and run the offline suite:
+Using the management profile:
 
 ```bash
-python -m pip install -r test/requirements.txt
-python -m pytest -q test/unit
-python -m ruff check .
-python -m ruff format --check .
-python -m pip check
-```
-
-Inspect the current merchant challenge and quoted price without AWS credentials:
-
-```bash
-python e2e.py --merchant-only
-```
-
-Then, with an active AWS profile, run the model and merchant smoke test:
-
-```bash
-python e2e.py
-```
-
-This command invokes OpenAI models on Amazon Bedrock, verifies
-lead-to-public-specialist delegation, and confirms that the configured merchant
-returns a supported x402 v1 or v2 `402 Payment Required` challenge. It does not make an
-AgentCore payment, although standard model-invocation charges may apply. The
-JSON report shows `"payment": {"status": "skipped", ...}`.
-
-### Step 5: Create a per-run payment session
-
-The application backend, not the agent, creates the financial boundary:
-
-```bash
-python create_payment_session.py --budget 0.25 --expiry-minutes 60
+python create_payment_session.py --budget 0.01 --expiry-minutes 15
 export PAYMENT_SESSION_ID=<printed-session-id>
 ```
 
-AgentCore supports session expiry values from 15 to 480 minutes. The helper
-uses a fresh idempotency token and creates a USD-denominated maximum spend.
-Sub-cent limits are preserved, with up to six decimal places; non-finite,
-zero, negative, and over-precision values are rejected rather than rounded.
+Choose the maximum you are willing to spend. Budgets preserve sub-cent values
+with up to six decimal places; expiry must be 15–480 minutes. A session limits
+spending but does not fund the wallet.
 
-### Step 6: Run the complete research workflow
+### 4. Run research
 
-```bash
-python pay_for_research.py \
-  "Assess the material near-term drivers and risks for AMZN" \
-  --paid-url https://x402-test.genesisblock.ai/api/market-news
-```
-
-The lead calls the public specialist first. If a material evidence gap remains,
-it delegates to the premium specialist, which alone can use the bound payment
-tool. A successful paid run returns the final cited brief and a paid-data
-ledger containing the payment outcome and remaining session budget.
-
-To run without a premium specialist, including when `.env` contains a paid URL:
+Switch to the execution profile and run with human approval enabled:
 
 ```bash
-python pay_for_research.py "Assess the material near-term drivers and risks for AMZN" --public-only
-```
-
-This mode needs model access but no payment resources. When hosted search is
-disabled, supply public evidence in the question; the public specialist reports
-that it cannot retrieve current sources.
-
-To require human review before the premium specialist spends:
-
-```bash
+export AWS_PROFILE=<your-execution-profile>
 python pay_for_research.py \
   "Assess the material near-term drivers and risks for AMZN" \
   --paid-url https://x402-test.genesisblock.ai/api/market-news \
   --require-payment-approval
 ```
 
-### Step 7: Run the deterministic paid E2E check
+The lead asks the public specialist first. If a material gap remains, the
+premium specialist requests the bound source. The CLI pauses before the paid
+tool call; enter `y` to approve or any other response to reject. Omit
+`--require-payment-approval` only when unattended spending within the session
+budget is intended.
+
+The result is a research brief with sources, limitations, and a paid-data ledger.
+The model decides whether premium evidence is needed, so a run need not spend.
+
+For public-only research, skip payment configuration and session creation:
 
 ```bash
-python create_payment_session.py --budget 0.25 --expiry-minutes 60
-export PAYMENT_SESSION_ID=<printed-session-id>
-python e2e.py --payment
+python pay_for_research.py \
+  "Summarize this public evidence: <paste an excerpt and its source URL>" \
+  --public-only
 ```
 
-This uses a fresh capped session and spends testnet USDC. Success requires all
-three report sections to show `"status": "passed"`: model delegation, merchant
-challenge, and payment. The payment section must also show
-`"payment_made": true` and `"status_code": 200`.
-The check exercises lead-to-public delegation and the payment adapter directly;
-Step 6 exercises the complete model-directed research workflow.
+This mode requires model access but has no premium specialist or payment tools.
 
-## Model and Web Search Configuration
+### 5. Clean up the session
 
-The sample obtains a short-lived Bedrock bearer token from the active AWS
-credential chain and configures the OpenAI Agents SDK for the Bedrock Responses
-API. Defaults are in `.env.sample`.
-
-Amazon Bedrock supports [hosted web search](https://docs.aws.amazon.com/bedrock/latest/userguide/web-search.html)
-on the `bedrock-mantle` Responses endpoint in supported regions. Hosted search
-remains disabled by default here because the sample's previous live verification
-encountered a rejection of the optional `filters` field emitted by the Agents
-SDK. The SDK still serializes that field, so enable
-`BEDROCK_OPENAI_WEB_SEARCH_ENABLED=true` only after confirming the endpoint
-accepts the current schema and the AWS identity has the required search permissions.
-
-With search disabled, the public specialist evaluates supplied evidence and
-discloses that it cannot retrieve current public sources. It must not invent
-citations or claim that training knowledge is newly verified research.
-
-## Sample Prompts
-
-```text
-Assess the material near-term drivers and risks for AMZN. Use premium evidence
-only when public sources leave a material gap.
-```
-
-```text
-Compare the latest public and premium evidence on a company's revenue outlook.
-Separate direct evidence from inference and include a paid-data ledger.
-```
-
-```text
-Produce the best supported brief possible within the current session budget.
-If a purchase is rejected, disclose the remaining evidence gap.
-```
-
-## Test the Hard Limit
-
-First inspect the merchant's current quote:
+Switch back to the management profile:
 
 ```bash
-python e2e.py --merchant-only
-```
-
-For USDC, divide `amount_base_units` by 1,000,000 to obtain the token amount.
-For example, if the quote is `2000` base units (`0.002` USDC), create a new
-session with a smaller cap:
-
-```bash
-python create_payment_session.py --budget 0.001 --expiry-minutes 15
-export PAYMENT_SESSION_ID=<newly-printed-session-id>
-python e2e.py --payment
-```
-
-Choose a cap below the actual quote if it has changed. This check is expected
-to exit nonzero with `Payment rejected: InsufficientBudget`. The adapter stops
-without a paid GET. The research workflow reports the rejection and remaining
-evidence gap; it has no tool that can raise the session limit.
-
-## What the Checks Cover
-
-The offline suite covers agent topology and payment-tool isolation, public-only
-mode, the free path, SDK-generated x402 headers, terminal payment outcomes,
-repeated tool calls, merchant allowlisting, IP pinning, cookie isolation,
-budget validation, session operations, and script inspection. Live model access,
-wallet delegation, funding, and settlement are checked by the commands above.
-
-Before running the live payment command, complete the
-[shared wallet-provider setup guide](../../00-getting-started/00-setup-agentcore-payments/providers/).
-Follow the instructions for your selected provider to configure credentials,
-complete end-user delegation, and fund the testnet wallet.
-
-### Expected live output
-
-A successful `python e2e.py --payment` report includes:
-
-```json
-{
-  "model": {
-    "provider": "bedrock",
-    "model": "openai.gpt-5.5",
-    "delegated_tools": "research_public_evidence",
-    "status": "passed"
-  },
-  "merchant_challenge": {
-    "status_code": 402,
-    "x402_version": 2,
-    "status": "passed"
-  },
-  "payment": {
-    "payment_attempts": 1,
-    "payment_made": true,
-    "status_code": 200,
-    "status": "passed"
-  }
-}
-```
-
-This is the expected report shape, not a substitute for running live validation
-with your configured profile and wallet.
-
-## Clean Up
-
-Delete the session after inspecting the research result:
-
-```bash
+export AWS_PROFILE=<your-management-profile>
 python cleanup_payment_session.py
 unset PAYMENT_SESSION_ID
 ```
 
-To delete an earlier session, pass its exact identifier with
-`python cleanup_payment_session.py --session-id <session-id>`. The script uses
-the configured manager and user and deletes only that session. Deletion prevents
-further use; it does not reverse completed payments. Sessions also expire after
-their configured TTL.
+To delete a different session, pass `--session-id <session-id>`. Deletion stops
+future use but does not reverse completed payments. For shared infrastructure,
+follow the [shared cleanup instructions][cleanup].
 
-To remove shared resources created during setup, follow the
-[shared cleanup instructions](../../00-getting-started/00-setup-agentcore-payments/#clean-up).
+[cleanup]: ../../00-getting-started/00-setup-agentcore-payments/#clean-up
+
+## Payment behavior
+
+The adapter requires an allowed HTTPS host, rejects private/non-routable
+addresses, and pins both requests to the same validated IP while retaining TLS
+hostname verification. Requests use fresh clients without redirects or
+environment proxies.
+
+There is at most one signing attempt and one paid GET per research run.
+Repeated calls return the recorded result, including failures. A successful
+paid response reports `payment_made: true`; failure after signing reports
+`payment_made: null` because settlement is unknown. Stop and inspect the session
+and payment telemetry before starting another run. The model has no tool to
+increase the budget or change the merchant.
+
+## Model and public evidence
+
+`.env.sample` contains the model settings. Hosted web search is disabled by
+default because the previous live check rejected an optional field emitted by
+the Agents SDK. Enable `BEDROCK_OPENAI_WEB_SEARCH_ENABLED=true` only after
+confirming compatibility and permissions for
+[Bedrock hosted web search](https://docs.aws.amazon.com/bedrock/latest/userguide/web-search.html).
+
+With search disabled, supply public evidence in the question. The public
+specialist reports that it cannot retrieve current sources rather than
+inventing citations or treating remembered information as verified research.

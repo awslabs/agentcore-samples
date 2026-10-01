@@ -24,6 +24,9 @@ an individual wallet.
 
 ## Before You Start
 
+- Activate the [Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html)
+  in the tutorial's AWS account, after reviewing its pricing and terms. This
+  applies to existing credentials as well as Quick create.
 - Sign in to the [Coinbase Developer Platform Portal](https://portal.cdp.coinbase.com/).
 - Select the CDP project dedicated to this AgentCore demo.
 - Have Coinbase 2-step verification available.
@@ -172,33 +175,33 @@ print(f"{micro_usdc / 1_000_000:.3f} USDC on Base Sepolia")
 You can also inspect
 `https://sepolia.basescan.org/address/<WALLET_ADDRESS>`.
 
-## 7. Run the Paid Smoke Test
+## 7. Run the Research Sample
 
-With a fresh payment session and the paid-research sample dependencies installed:
+From the Tutorial 00 directory, with a `READY` connector, a fresh payment
+session, and the [research sample configured](../../../02-use-cases/pay-for-research-with-openai-agent/):
 
 ```bash
-cd ../../../02-use-cases/pay-for-research-with-openai-agent
-AWS_PROFILE=<your-profile> python e2e.py --payment
+cd ../../02-use-cases/pay-for-research-with-openai-agent
+AWS_PROFILE=<your-execution-profile> python pay_for_research.py \
+  "Assess the material near-term drivers and risks for AMZN" \
+  --require-payment-approval
 ```
 
-A successful run shows:
-
-- OpenAI models on Amazon Bedrock delegation passed
-- HTTP 402 with an x402 v2 challenge
-- Payment generated on the first attempt
-- Paid retry returned HTTP 200
-
-The verified walkthrough spent `0.002` testnet USDC per paid request.
+The lead delegates public research first and asks the premium specialist only
+when a material gap remains. Approve or reject the purchase at the prompt.
+Inspect the resulting brief and paid-data ledger; a run need not spend if
+premium evidence is unnecessary.
 
 ## Troubleshooting
 
 | Error or symptom | Cause | Fix |
 |:--|:--|:--|
+| `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED` or `SubscriptionRequiredException` | The AWS account lacks an active Coinbase Marketplace subscription | Complete the Marketplace prerequisite above and verify the connector is `READY` |
 | `Delegated signing is not enabled for your Coinbase project` | Project-level CDP switch is off | Complete [Step 2](#2-generate-the-wallet-secret-and-enable-delegated-signing) and Coinbase 2FA |
 | `Delegated signing grant is not active for the end user wallet` | Wallet-specific consent is missing | Open the instrument's WalletHub `redirectUrl` and complete [Step 4](#4-grant-permission-for-the-embedded-wallet) |
 | WalletHub shows `0 USDC` after funding | WalletHub displays Base mainnet, or the faucet used Arc Testnet | Select Base Sepolia and verify with the SDK in [Step 6](#6-verify-the-testnet-balance) |
 | `Wallet does not have a USDC balance` | The correct wallet has no USDC on the merchant's chain | Fund the instrument address with Base Sepolia USDC |
-| Payment session expired | Sessions are time bounded | Create a fresh session before rerunning the paid test |
+| Payment session expired | Sessions are time bounded | Create a fresh session before rerunning research |
 
 ## Security and Cleanup
 

@@ -152,6 +152,11 @@ agentcore add payment-manager --name MyPaymentManager --auto-payment true --defa
 
 Add a payment connector for the provider you chose in Step 1 — run **one** of these:
 
+Both Coinbase modes require an active
+[Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html)
+in the deployment account. Review its pricing and terms before subscribing;
+provider usage charges are separate from testnet tokens.
+
 ```bash
 # Coinbase CDP — Quick create (recommended): no keys, you authorize through Coinbase at deploy time
 agentcore add payment-connector \
@@ -201,8 +206,11 @@ agentcore status --type payment
 > and prints an `authorizationUrl`. Open it, sign in to Coinbase, and grant access — the connector then
 > moves to `READY`. The link is single-use and short-lived; if it expires before you finish, re-run
 > `agentcore deploy` to issue a fresh one. Re-run `agentcore status --type payment` and confirm `READY` before continuing to Step 3.
-> Quick create requires an active [Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html);
-> without it, deploy fails with `SubscriptionRequiredException` (HTTP 403) and the error message includes the listing URL to subscribe.
+
+Confirm the connector is `READY` before proceeding. A missing Coinbase
+subscription can cause `SubscriptionRequiredException` or connector status
+`AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED`, even when an existing wallet is active
+and funded.
 
 From the `agentcore status --type payment` output, copy the **Payment Manager ARN** and **Payment
 Connector ID** and export them (you'll pass them to the commands in Step 3):
@@ -256,8 +264,9 @@ instrument = manager.create_payment_instrument(
     client_token=str(uuid.uuid4()),
 )
 INSTRUMENT_ID = instrument["paymentInstrumentId"]
-WALLET_ADDRESS = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]["walletAddress"]
-REDIRECT_URL = instrument.get("redirectUrl")   # WalletHub link used in Step 4 (Coinbase)
+wallet = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]
+WALLET_ADDRESS = wallet.get("walletAddress")
+REDIRECT_URL = wallet.get("redirectUrl")   # WalletHub link used in Step 4 (Coinbase)
 print("INSTRUMENT_ID:", INSTRUMENT_ID)
 print("WALLET_ADDRESS:", WALLET_ADDRESS)
 print("REDIRECT_URL:", REDIRECT_URL)
@@ -270,6 +279,22 @@ session = manager.create_payment_session(
 )
 SESSION_ID = session["paymentSessionId"]
 print("SESSION_ID:", SESSION_ID)
+```
+
+Wallet creation is asynchronous. If the address or Coinbase URL is not ready,
+wait a few seconds and refresh the same instrument instead of creating another:
+
+```python
+instrument = manager.get_payment_instrument(
+    payment_instrument_id=INSTRUMENT_ID,
+    payment_connector_id=PAYMENT_CONNECTOR_ID,
+    user_id=USER_ID,
+)
+wallet = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]
+WALLET_ADDRESS = wallet.get("walletAddress")
+REDIRECT_URL = wallet.get("redirectUrl")
+print("WALLET_ADDRESS:", WALLET_ADDRESS)
+print("REDIRECT_URL:", REDIRECT_URL)
 ```
 
 Write `INSTRUMENT_ID`, the wallet address (`WALLET_ADDRESS`), and `SESSION_ID` (the
@@ -291,8 +316,9 @@ IDs. Downstream tutorials read them all via `utils.load_tutorial_env()`.
 Until delegated signing is granted, payment attempts report
 `Delegated signing grant is not active for the end user wallet.`
 
-The session budget is only a spending ceiling; it does not fund the wallet. The wallet needs
-testnet USDC, but no real money is required and the testnet tokens have no monetary value.
+The session budget is only a spending ceiling; it does not fund the wallet.
+Testnet tokens have no monetary value. AWS and wallet-provider usage charges
+can still apply separately.
 
 For Coinbase, use the guide's
 [Base Sepolia funding and balance checks](coinbase-cdp-setup/#5-fund-base-sepolia).

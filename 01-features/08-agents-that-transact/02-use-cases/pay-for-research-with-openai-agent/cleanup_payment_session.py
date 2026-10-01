@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections.abc import Sequence
 from pathlib import Path
 
 from dotenv import load_dotenv
 from payment import create_payment_manager
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main() -> None:
     load_dotenv(Path(__file__).with_name(".env"))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -19,7 +18,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=os.getenv("PAYMENT_SESSION_ID"),
         help="Exact session to delete; defaults to PAYMENT_SESSION_ID",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
     manager_arn = os.getenv("PAYMENT_MANAGER_ARN", "").strip()
     user_id = os.getenv("PAYMENT_USER_ID", "").strip()
     if not manager_arn or not user_id or not args.session_id:

@@ -60,6 +60,7 @@ end-to-end payment flows for local and AgentCore Runtime-hosted agents.
 ## Resources
 
 - [AgentCore payments documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html)
+- [AgentCore Payments security best practices](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-security-best-practices.html)
 - [Launch blog post](https://aws.amazon.com/blogs/machine-learning/agents-that-transact-introducing-amazon-bedrock-agentcore-payments-built-with-coinbase-and-stripe/)
 - [Coinbase announcement](https://www.coinbase.com/en-ca/blog/introducing-amazon-bedrock-agentcore-payments-powered-by-x402-and-coinbase)
 - [Stripe announcement](https://stripe.com/newsroom/news/aws-stripe-agentcore-privy)

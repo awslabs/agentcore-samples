@@ -8,8 +8,6 @@ import os
 import socket
 import threading
 import uuid
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -26,8 +24,6 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError
 
 MAX_BODY_CHARS = 100_000
-GetRequest = Callable[[httpx.URL, str, dict[str, str] | None], Any]
-Resolver = Callable[[str, int], Sequence[str]]
 
 
 def _http_get(url: httpx.URL, address: str, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -40,8 +36,11 @@ def _http_get(url: httpx.URL, address: str, headers: dict[str, str] | None = Non
         )
 
 
-def _resolve(hostname: str, port: int) -> Sequence[str]:
-    return [entry[4][0] for entry in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)]
+def _required_setting(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"Set {name} in .env before using payments")
+    return value
 
 
 def payment_region(manager_arn: str) -> str:
@@ -71,77 +70,36 @@ def create_payment_manager(manager_arn: str) -> PaymentManager:
     )
 
 
-@dataclass(frozen=True)
-class PaymentConfig:
-    manager_arn: str
-    instrument_id: str
-    session_id: str
-    user_id: str
-    allowed_hosts: frozenset[str]
-    region: str = "us-east-1"
+class X402PaymentClient:
+    """Fetch one application-bound source through a budget-bounded session."""
 
-    @classmethod
-    def from_env(cls) -> PaymentConfig:
-        env_names = {
-            "manager_arn": "PAYMENT_MANAGER_ARN",
-            "instrument_id": "PAYMENT_INSTRUMENT_ID",
-            "session_id": "PAYMENT_SESSION_ID",
-            "user_id": "PAYMENT_USER_ID",
-        }
-        values = {field: os.getenv(name, "").strip() for field, name in env_names.items()}
-        missing = [env_names[field] for field, value in values.items() if not value]
-        if missing:
-            raise ValueError("Missing payment configuration: " + ", ".join(missing))
-
-        allowed_hosts = frozenset(
+    def __init__(self, url: str) -> None:
+        self.url = url
+        manager_arn = _required_setting("PAYMENT_MANAGER_ARN")
+        self.instrument_id = _required_setting("PAYMENT_INSTRUMENT_ID")
+        self.session_id = _required_setting("PAYMENT_SESSION_ID")
+        self.user_id = _required_setting("PAYMENT_USER_ID")
+        self.allowed_hosts = {
             host.strip().lower().rstrip(".")
             for host in os.getenv("PAID_RESEARCH_ALLOWED_HOSTS", "").split(",")
             if host.strip()
-        )
-        if not allowed_hosts:
+        }
+        if not self.allowed_hosts:
             raise ValueError("PAID_RESEARCH_ALLOWED_HOSTS must contain an exact host")
 
-        return cls(
-            **values,
-            allowed_hosts=allowed_hosts,
-            region=payment_region(values["manager_arn"]),
-        )
-
-
-class X402PaymentClient:
-    """Fetch one approved source through a budget-bounded payment session."""
-
-    def __init__(
-        self,
-        config: PaymentConfig,
-        payment_manager: Any,
-        *,
-        get: GetRequest = _http_get,
-        resolver: Resolver = _resolve,
-        token_factory: Callable[[], str] | None = None,
-    ) -> None:
-        self.config = config
-        self.payment_manager = payment_manager
-        self.get = get
-        self.resolver = resolver
-        self.token_factory = token_factory or (lambda: str(uuid.uuid4()))
-        self._results: dict[str, str] = {}
+        self.payment_manager = create_payment_manager(manager_arn)
+        self._result: str | None = None
         # PaymentManager is not thread-safe. Also prevent repeated tool calls
         # from signing for the same source twice during one research run.
         self._lock = threading.Lock()
-
-    @classmethod
-    def from_env(cls) -> X402PaymentClient:
-        config = PaymentConfig.from_env()
-        return cls(config, create_payment_manager(config.manager_arn))
 
     @staticmethod
     def _json(**values: Any) -> str:
         return json.dumps(values, default=str, sort_keys=True)
 
-    def _validate_url(self, url: str) -> tuple[httpx.URL, str]:
+    def _validate_url(self) -> tuple[httpx.URL, str]:
         try:
-            parsed = httpx.URL(url)
+            parsed = httpx.URL(self.url)
         except httpx.InvalidURL as error:
             raise ValueError("Invalid payment URL") from error
         if parsed.scheme != "https" or not parsed.host:
@@ -153,11 +111,11 @@ class X402PaymentClient:
             raise ValueError("URL port must be between 1 and 65535")
 
         hostname = parsed.host.lower().rstrip(".")
-        if hostname not in self.config.allowed_hosts:
+        if hostname not in self.allowed_hosts:
             raise ValueError(f"Host is not approved for paid research: {hostname}")
 
         try:
-            addresses = self.resolver(hostname, port)
+            addresses = [entry[4][0] for entry in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)]
         except OSError as error:
             raise ValueError("Could not resolve the merchant hostname") from error
         if not addresses:
@@ -174,22 +132,23 @@ class X402PaymentClient:
         address = next((address for address in addresses if ipaddress.ip_address(address).version == 4), addresses[0])
         return parsed, address
 
-    def fetch(self, url: str) -> str:
-        """Fetch once per source per run, retaining successes and terminal failures."""
+    def fetch(self) -> str:
+        """Fetch the bound source once, retaining successes and terminal failures."""
         with self._lock:
-            if url not in self._results:
-                self._results[url] = self._fetch_once(url)
-            return self._results[url]
+            if self._result is None:
+                self._result = self._fetch_once()
+            return self._result
 
-    def _fetch_once(self, url: str) -> str:
+    def _fetch_once(self) -> str:
         """Make at most one signing attempt and one GET with the resulting proof."""
+        url = self.url
         try:
-            parsed, address = self._validate_url(url)
+            parsed, address = self._validate_url()
         except ValueError as error:
             return self._json(ok=False, source_url=url, error=str(error), payment_made=False, payment_attempts=0)
 
         try:
-            response = self.get(parsed, address, None)
+            response = _http_get(parsed, address)
         except httpx.RequestError:
             return self._json(
                 ok=False,
@@ -211,10 +170,10 @@ class X402PaymentClient:
 
         try:
             payment_header = self.payment_manager.generate_payment_header(
-                payment_instrument_id=self.config.instrument_id,
-                payment_session_id=self.config.session_id,
-                user_id=self.config.user_id,
-                client_token=self.token_factory(),
+                payment_instrument_id=self.instrument_id,
+                payment_session_id=self.session_id,
+                user_id=self.user_id,
+                client_token=str(uuid.uuid4()),
                 payment_required_request={
                     "statusCode": response.status_code,
                     "headers": dict(response.headers),
@@ -248,7 +207,7 @@ class X402PaymentClient:
             )
 
         try:
-            response = self.get(parsed, address, payment_header)
+            response = _http_get(parsed, address, payment_header)
         except httpx.RequestError:
             return self._json(
                 ok=False,
@@ -278,8 +237,8 @@ class X402PaymentClient:
         """Return budget status without exposing wallet or session identifiers."""
         with self._lock:
             session = self.payment_manager.get_payment_session(
-                payment_session_id=self.config.session_id,
-                user_id=self.config.user_id,
+                payment_session_id=self.session_id,
+                user_id=self.user_id,
             )
         maximum = session.get("limits", {}).get("maxSpendAmount", {})
         available = session.get("availableLimits", {}).get("availableSpendAmount", {})
