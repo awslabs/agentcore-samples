@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Human review application</title>
+  <style>
+    :root {
+      --ink: #16191f;
+      --muted: #545b64;
+      --line: #aab7b8;
+      --soft: #f2f3f3;
+      --navy: #232f3e;
+      --teal: #01a88d;
+      --teal-dark: #067f68;
+      --red: #d13212;
+      --focus: #ff9900;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+      font: 15px/1.45 Helvetica, Arial, sans-serif;
+    }
+
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button, label, select { cursor: pointer; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+    header.page {
+      padding: 22px 28px 10px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .title h1 { margin: 0; font-size: 26px; }
+    .title p { margin: 4px 0 0; color: var(--muted); }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .button, .select, .field, .textarea {
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      background: #fff;
+    }
+
+    .button { min-height: 36px; padding: 6px 12px; font-weight: 700; }
+    .button:hover { background: var(--soft); }
+    .button.primary { border-color: var(--navy); background: var(--navy); color: #fff; }
+    .select, .field { height: 36px; padding: 5px 9px; }
+    .field, .textarea { width: 100%; }
+    .textarea { min-height: 110px; padding: 9px; resize: vertical; }
+    .progress { color: var(--muted); font-size: 13px; min-width: 120px; text-align: right; }
+
+    main {
+      padding: 12px 28px 20px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(300px, 0.9fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .column { border: 1px solid var(--line); min-width: 0; }
+    .column > h2 {
+      margin: 0;
+      padding: 14px 18px;
+      color: #fff;
+      background: var(--navy);
+      font-size: 18px;
+    }
+    .column-body { padding: 18px; }
+
+    .case-title { margin: 0; font-size: 21px; }
+    .risk { color: var(--muted); }
+    .risk.high { color: var(--red); font-weight: 700; }
+    .ids {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .section-label {
+      margin: 20px 0 8px;
+      color: #3a3f46;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .message { margin-bottom: 10px; padding: 10px 14px; }
+    .message.user { background: var(--soft); }
+    .message.assistant { border: 1px solid var(--line); }
+    .message-role { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    .message-text { white-space: pre-wrap; }
+
+    .tool { border: 1px solid var(--line); margin-bottom: 12px; }
+    .tool-head {
+      padding: 9px 14px;
+      background: var(--soft);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 700;
+    }
+    .tool-status { color: var(--muted); font-weight: 400; font-size: 13px; }
+    .tool-status.error { color: var(--red); }
+    .tool-body { padding: 4px 14px 12px; }
+    .tool-body strong { display: block; margin-top: 8px; font-size: 14px; }
+    pre {
+      margin: 4px 0 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .locked {
+      margin: 0 0 6px;
+      padding-bottom: 6px;
+      border-bottom: 3px solid var(--teal);
+      color: var(--teal-dark);
+      font-weight: 700;
+    }
+    ol.tools { margin: 0; padding-left: 22px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+    ul.assertions { margin: 0; padding-left: 18px; }
+    ul.assertions li { margin-bottom: 10px; }
+
+    .rating {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border: 1px solid var(--line);
+    }
+    .rating button {
+      height: 46px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: #fff;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .rating button:last-child { border-right: 0; }
+    .rating button:hover { background: var(--soft); }
+    .rating button[aria-checked="true"] { background: var(--navy); color: #fff; }
+    .rating-help { margin-top: 6px; color: var(--muted); font-size: 14px; min-height: 20px; }
+
+    .check { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0; }
+    .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--navy); }
+    .check .hint { display: block; color: var(--muted); font-size: 13px; }
+
+    .inline { display: flex; align-items: center; gap: 12px; }
+    .inline .section-label { margin: 0; }
+
+    .note {
+      margin: 0 28px 28px;
+      padding: 12px 16px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+    }
+
+    .empty { padding: 40px; color: var(--muted); text-align: center; }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      padding: 10px 14px;
+      color: #fff;
+      background: var(--navy);
+      opacity: 0;
+      transition: opacity 150ms ease;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .hidden { display: none; }
+
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <div class="title">
+      <h1>Human review application</h1>
+      <p>One stored AgentCore session at a time, as seen by an SME reviewer. LLM judge scores are not shown.</p>
+    </div>
+    <div class="toolbar">
+      <button class="button" id="prevButton" type="button" aria-label="Previous case">&lsaquo;</button>
+      <select class="select" id="caseSelect" aria-label="Calibration case"></select>
+      <button class="button" id="nextButton" type="button" aria-label="Next case">&rsaquo;</button>
+      <span class="progress" id="progress">0 of 0 reviewed</span>
+      <button class="button" id="importButton" type="button">Import review</button>
+      <button class="button primary" id="exportButton" type="button">Export review</button>
+      <input class="hidden" id="importFile" type="file" accept="application/json">
+    </div>
+  </header>
+
+  <main id="workspace">
+    <section class="column" aria-labelledby="traceHeading">
+      <h2 id="traceHeading">Stored AgentCore trace</h2>
+      <div class="column-body" id="tracePanel"></div>
+    </section>
+
+    <section class="column" aria-labelledby="truthHeading">
+      <h2 id="truthHeading">SME-approved task ground truth</h2>
+      <div class="column-body" id="truthPanel"></div>
+    </section>
+
+    <section class="column" aria-labelledby="reviewHeading">
+      <h2 id="reviewHeading">Independent review</h2>
+      <form class="column-body" id="reviewForm" autocomplete="off">
+        <label class="section-label" for="reviewerId" style="display:block;margin-top:0">Reviewer ID</label>
+        <input class="field" id="reviewerId" placeholder="sme-a">
+
+        <div class="section-label">Overall rating</div>
+        <div class="rating" id="rating" role="radiogroup" aria-label="Overall rating from 1 to 5"></div>
+        <div class="rating-help" id="ratingHelp">Select a rating from 1 to 5.</div>
+
+        <div class="inline" style="margin-top:14px">
+          <label class="section-label" for="confidence">Confidence</label>
+          <select class="select" id="confidence">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="criticalFailure">
+          <span><strong>Critical failure</strong><span class="hint">Material business, safety, privacy, or transaction risk.</span></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="insufficientEvidence">
+          <span><strong>Insufficient evidence</strong><span class="hint">The trace or ground truth is not enough to score this case.</span></span>
+        </label>
+
+        <div class="section-label">Failed rubric dimensions</div>
+        <div id="dimensions"></div>
+
+        <label class="section-label" for="rationale" style="display:block">Rationale</label>
+        <textarea class="textarea" id="rationale" placeholder="Explain the evidence behind the rating."></textarea>
+      </form>
+    </section>
+  </main>
+
+  <p class="note">LLM judge scores stay hidden until every reviewer submits, so they cannot anchor the human rating.</p>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const RATINGS = {
+      1: "Critical failure",
+      2: "Major issues",
+      3: "Partially correct",
+      4: "Mostly correct",
+      5: "Fully correct"
+    };
+
+    const DIMENSIONS = [
+      ["policy_accuracy", "Policy accuracy"],
+      ["outcome_accuracy", "Outcome accuracy"],
+      ["explanation_accuracy", "Explanation accuracy"],
+      ["escalation", "Escalation"],
+      ["tool_parameters", "Tool parameters"],
+      ["completeness", "Completeness"],
+      ["privacy", "Privacy"],
+      ["safety", "Safety"]
+    ];
+
+    const SOURCES = ["output/review_cases.json", "data/demo/review_cases.json"];
+
+    const state = { cases: [], index: 0, reviewerId: "", ratings: {} };
+    const $ = id => document.getElementById(id);
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function pretty(value) {
+      return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    function storageKey() {
+      return `judge-review:${state.reviewerId || "anonymous"}`;
+    }
+
+    function loadRatings() {
+      try {
+        state.ratings = JSON.parse(localStorage.getItem(storageKey()) || "{}");
+      } catch {
+        state.ratings = {};
+      }
+    }
+
+    function persist() {
+      localStorage.setItem(storageKey(), JSON.stringify(state.ratings));
+      localStorage.setItem("judge-review:last-reviewer", state.reviewerId);
+      renderProgress();
+    }
+
+    function toast(message) {
+      $("toast").textContent = message;
+      $("toast").classList.add("show");
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => $("toast").classList.remove("show"), 1800);
+    }
+
+    function current() {
+      return state.cases[state.index];
+    }
+
+    function renderCaseSelect() {
+      $("caseSelect").innerHTML = state.cases.map((item, index) => {
+        const done = state.ratings[item.case_id]?.rating ? "✓ " : "";
+        return `<option value="${index}">${done}${escapeHtml(item.case_id)} - ${escapeHtml(item.title)}</option>`;
+      }).join("");
+      $("caseSelect").value = String(state.index);
+    }
+
+    function renderTrace(item) {
+      const turns = (item.turns || []).map(turn => `
+        <div class="message ${escapeHtml(turn.role)}">
+          <div class="message-role">${turn.role === "user" ? "User" : "Assistant"}</div>
+          <div class="message-text">${escapeHtml(turn.content)}</div>
+        </div>`).join("");
+      const tools = (item.tools || []).map(tool => `
+        <div class="tool">
+          <div class="tool-head"><span>${escapeHtml(tool.name)}</span><span class="tool-status ${tool.status === "error" ? "error" : ""}">${escapeHtml(tool.status)}</span></div>
+          <div class="tool-body">
+            <strong>Input</strong><pre>${escapeHtml(pretty(tool.input))}</pre>
+            <strong>Output</strong><pre>${escapeHtml(pretty(tool.output))}</pre>
+          </div>
+        </div>`).join("");
+      $("tracePanel").innerHTML = `
+        <h3 class="case-title">${escapeHtml(item.title)}</h3>
+        <div class="risk ${escapeHtml(item.risk)}">${escapeHtml(item.risk.charAt(0).toUpperCase() + item.risk.slice(1))} risk</div>
+        <div class="ids">session: ${escapeHtml(item.session_id)}<br>trace: ${escapeHtml((item.trace_ids || []).join(", "))}</div>
+        <div class="section-label">Conversation</div>
+        ${turns}
+        <div class="section-label">Tool evidence</div>
+        ${tools || '<p class="risk">No tool calls recorded in this session.</p>'}`;
+    }
+
+    function renderTruth(item) {
+      const truth = item.ground_truth || {};
+      const toolCalls = (truth.expected_tool_calls || []).map(name => `<li>${escapeHtml(name)}</li>`).join("");
+      const assertions = (truth.assertions || []).map(text => `<li>${escapeHtml(text)}</li>`).join("");
+      $("truthPanel").innerHTML = `
+        <p class="locked">Locked before review</p>
+        <div class="section-label">Expected business outcome</div>
+        <div>${escapeHtml(truth.expected_business_outcome || "Not provided.")}</div>
+        <div class="section-label">Required action or referral</div>
+        <div>${escapeHtml(truth.required_action || "Not provided.")}</div>
+        <div class="section-label">Unacceptable outcome</div>
+        <div>${escapeHtml(truth.unacceptable_outcome || "Not provided.")}</div>
+        <div class="section-label">Expected tool calls, in order</div>
+        ${toolCalls ? `<ol class="tools">${toolCalls}</ol>` : "<div>None.</div>"}
+        <div class="section-label">Session assertions</div>
+        <ul class="assertions">${assertions}</ul>`;
+    }
+
+    function renderForm() {
+      const review = state.ratings[current().case_id] || {};
+      $("rating").innerHTML = Object.keys(RATINGS).map(score => `
+        <button type="button" role="radio" aria-checked="${Number(score) === review.rating}" data-score="${score}" title="${RATINGS[score]}">${score}</button>`).join("");
+      $("rating").querySelectorAll("button").forEach(button => button.addEventListener("click", () => {
+        update({ rating: Number(button.dataset.score) });
+        renderForm();
+      }));
+      $("ratingHelp").textContent = review.rating ? `${review.rating}: ${RATINGS[review.rating]}` : "Select a rating from 1 to 5.";
+      $("confidence").value = review.confidence || "medium";
+      $("criticalFailure").checked = Boolean(review.critical_failure);
+      $("insufficientEvidence").checked = Boolean(review.insufficient_evidence);
+      $("rationale").value = review.rationale || "";
+      const failed = review.failed_dimensions || [];
+      $("dimensions").innerHTML = DIMENSIONS.map(([value, label]) => `
+        <label class="check"><input type="checkbox" value="${value}" ${failed.includes(value) ? "checked" : ""}><span>${label}</span></label>`).join("");
+    }
+
+    function readForm() {
+      return {
+        confidence: $("confidence").value,
+        critical_failure: $("criticalFailure").checked,
+        insufficient_evidence: $("insufficientEvidence").checked,
+        failed_dimensions: [...$("dimensions").querySelectorAll("input:checked")].map(input => input.value),
+        rationale: $("rationale").value.trim()
+      };
+    }
+
+    function update(patch) {
+      const caseId = current().case_id;
+      state.ratings[caseId] = { rating: null, ...state.ratings[caseId], ...readForm(), ...patch };
+      persist();
+      renderCaseSelect();
+    }
+
+    function renderProgress() {
+      const done = state.cases.filter(item => state.ratings[item.case_id]?.rating).length;
+      $("progress").textContent = `${done} of ${state.cases.length} reviewed`;
+    }
+
+    function show(index) {
+      state.index = (index + state.cases.length) % state.cases.length;
+      const item = current();
+      renderCaseSelect();
+      renderTrace(item);
+      renderTruth(item);
+      renderForm();
+      renderProgress();
+      window.scrollTo({ top: 0 });
+    }
+
+    function exportReview() {
+      if (!state.reviewerId) {
+        $("reviewerId").focus();
+        toast("Enter a reviewer ID before exporting.");
+        return;
+      }
+      const missing = state.cases.filter(item => !state.ratings[item.case_id]?.rating);
+      if (missing.length && !confirm(`${missing.length} case(s) have no rating. Export anyway?`)) return;
+      const payload = {
+        schema_version: "1.0",
+        reviewer_id: state.reviewerId,
+        submitted_at: new Date().toISOString(),
+        ground_truth_version: state.groundTruthVersion,
+        ratings: state.ratings
+      };
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }));
+      link.download = `review-${state.reviewerId}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast("Review exported. Save it to output/reviews/.");
+    }
+
+    function importReview(file) {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        try {
+          const payload = JSON.parse(reader.result);
+          if (!payload.reviewer_id || !payload.ratings) throw new Error("not a review export");
+          state.reviewerId = payload.reviewer_id;
+          $("reviewerId").value = state.reviewerId;
+          state.ratings = payload.ratings;
+          persist();
+          show(state.index);
+          toast("Review imported.");
+        } catch (error) {
+          toast(`Import failed: ${error.message}`);
+        }
+      });
+      reader.readAsText(file);
+    }
+
+    function bindEvents() {
+      $("reviewForm").addEventListener("input", event => {
+        if (event.target.id !== "reviewerId") update({});
+      });
+      $("reviewerId").addEventListener("change", event => {
+        state.reviewerId = event.target.value.trim();
+        loadRatings();
+        persist();
+        show(state.index);
+      });
+      $("caseSelect").addEventListener("change", event => show(Number(event.target.value)));
+      $("prevButton").addEventListener("click", () => show(state.index - 1));
+      $("nextButton").addEventListener("click", () => show(state.index + 1));
+      $("exportButton").addEventListener("click", exportReview);
+      $("importButton").addEventListener("click", () => $("importFile").click());
+      $("importFile").addEventListener("change", event => {
+        if (event.target.files[0]) importReview(event.target.files[0]);
+        event.target.value = "";
+      });
+    }
+
+    async function loadBundle() {
+      const requested = new URLSearchParams(location.search).get("cases");
+      for (const source of requested ? [requested] : SOURCES) {
+        const response = await fetch(source).catch(() => null);
+        if (response?.ok) return response.json();
+      }
+      throw new Error(`Could not load ${requested || SOURCES.join(" or ")}.`);
+    }
+
+    async function initialize() {
+      try {
+        const bundle = await loadBundle();
+        state.cases = bundle.cases;
+        state.groundTruthVersion = bundle.ground_truth_version;
+        state.reviewerId = localStorage.getItem("judge-review:last-reviewer") || "";
+        $("reviewerId").value = state.reviewerId;
+        loadRatings();
+        bindEvents();
+        show(0);
+      } catch (error) {
+        $("workspace").innerHTML = `<div class="empty" style="grid-column:1/-1">
+          <strong>${escapeHtml(error.message)}</strong><br><br>
+          Serve this folder over HTTP, then reopen the page:<br><br>
+          <code>python -m http.server 8765</code> and browse to <code>http://localhost:8765/review_app.html</code></div>`;
+      }
+    }
+
+    initialize();
+  </script>
+</body>
+</html>
