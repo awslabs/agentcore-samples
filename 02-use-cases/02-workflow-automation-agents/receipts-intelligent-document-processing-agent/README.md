@@ -317,6 +317,40 @@ uv venv --python 3.12 && uv pip install --python .venv/bin/python -r ../app/rece
 
 See [evals/README.md](evals/README.md).
 
+### Where the results are
+
+**Live results** go to one CloudWatch log group per live configuration:
+`/aws/bedrock-agentcore/evaluations/results/ReceiptsAgent_ReceiptsLive-<id>` for the
+pipeline and `.../ReceiptsAgent_ChatLive-<id>` for chat. Each event is one evaluator's
+verdict on one session: `gen_ai.evaluation.name`, `session.id`, the score, the label and the
+explanation. The same scores are published as CloudWatch metrics in the
+`Bedrock-AgentCore/Evaluations` namespace, by evaluator and label, for dashboards and alarms.
+To read the latest results:
+
+```bash
+aws logs describe-log-groups --region us-west-2 \
+    --log-group-name-prefix /aws/bedrock-agentcore/evaluations/results/ \
+    --query "logGroups[].logGroupName" --output text
+aws logs filter-log-events --region us-west-2 \
+    --log-group-name /aws/bedrock-agentcore/evaluations/results/ReceiptsAgent_ReceiptsLive-<id> \
+    --query "events[].message" --output text
+```
+
+A session appears a few minutes after it goes idle (5 minutes for chat).
+
+**Labelled results** are written under `evals/out/`, which git ignores:
+
+| File | Contents |
+|---|---|
+| `deployed-<id>/results.json` | Per receipt: expected and actual status, extraction accuracy, threshold control, session id |
+| `deployed-<id>/scored.json` | The same rows plus routing, right reason and invented values, with each judge's explanation |
+| `deployed-<id>/cross_receipt.json` | The duplicate and split findings |
+| `deployed-chat-<id>/scored.json` | Per conversation: completeness, retention, and a correctness verdict per turn |
+| `*/<case>/adot.json` | The trace each score was computed from |
+
+The scoring scripts also print summaries, such as review-queue precision, that are not saved
+to a file.
+
 ## Clean up
 
 ```bash

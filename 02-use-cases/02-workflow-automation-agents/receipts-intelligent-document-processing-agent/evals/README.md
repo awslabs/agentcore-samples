@@ -32,6 +32,9 @@ that exist only between receipts, a duplicate overwriting the first copy and a b
 under the Cedar limit. It also seeds the conversation user and runs each conversation as
 one chat Runtime session. `--only receipts` or `--only chat` runs one workload.
 
+Everything is written under `out/`. The files, and where the live results land, are listed in
+"Where the results are" in the [main README](../README.md#where-the-results-are).
+
 Keep the machine awake for the whole run (`caffeinate -i` on macOS): each chat turn carries
 an identity token that expires after 15 minutes, and a request sent after a sleep is
 rejected.
