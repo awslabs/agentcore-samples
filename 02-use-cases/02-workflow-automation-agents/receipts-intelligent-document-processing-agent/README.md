@@ -245,7 +245,7 @@ thing, and its verdict had to change with that one thing.
 
 | Evaluator | What it measures | Where it runs |
 |---|---|---|
-| `ReceiptsThresholdControl` | Whether the recorded total of $2,000 or more was saved automatically: `held`, `breach`, or `not_engaged`. Monitors the control's outcome. | Live pipeline sessions |
+| `ReceiptsThresholdControl` | Whether the recorded total of $2,000 or more was saved automatically: `held`, `breach`, `not_engaged`, or `no_outcome` (the run ended without saving or holding it). Monitors the control's outcome. | Live pipeline sessions |
 | `ThirdParty.DeepEval.ConversationCompleteness` | Share of the employee's requests handled in a conversation. | Live chat sessions |
 | `ThirdParty.DeepEval.KnowledgeRetention` | Whether the assistant uses information from earlier turns. A diagnostic score. | Live chat sessions |
 | `ReceiptsExtractionAccuracy` | Total, date, currency, subtotal, tax, and tip against labelled values. Reports the dollar gap on the total and an error verdict. | Labelled receipts |

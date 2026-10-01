@@ -84,13 +84,25 @@ def _merchant_key(name: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(name).lower()).strip()
 
 
+FIELDS = ("transaction_date", "merchant", "currency", "subtotal", "tax", "tip")
+
+
 def _field_errors(attributes: dict, label: dict) -> list[str]:
     """Non-total fields recorded differently from the label, one line each.
 
-    Only fields present on both sides are compared, so a label without a tip or a span from
-    before these attributes existed does not count as an error.
+    A field the label has but the extraction left empty is wrong: the agent stamps only non-empty
+    values, so a missing attribute means the extractor gave no value. A zero amount in the label
+    (no tip printed) is not required. A label without a field is not checked, and neither is a
+    span from before these attributes existed (none of them present).
     """
     errors = []
+    if not any(f"receipts.{field}" in attributes for field in FIELDS):
+        return errors
+    for field in FIELDS:
+        expected = label.get(field)
+        if f"receipts.{field}" not in attributes and expected not in (None, "", 0, 0.0):
+            name = "date" if field == "transaction_date" else field
+            errors.append(f"{name} missing against a true {expected}")
 
     def both(span_key: str, label_key: str):
         recorded, expected = attributes.get(span_key), label.get(label_key)
@@ -149,18 +161,56 @@ def _extraction_accuracy(attributes: dict, label: dict) -> EvaluatorOutput:
     return EvaluatorOutput(value=gap, label=verdict, explanation=explanation)
 
 
-def _routing_outcome(attributes: dict, label: dict) -> EvaluatorOutput:
-    """Routing outcome: four named labels, because the two failures have different cost shapes.
+def _validator_choice(spans: list[dict]) -> str | None:
+    """The validator's own decision, read from its decision tool call.
 
-    A false clear scales with the amount: money committed that should have been checked.
-    A false alarm is a roughly fixed cost, an analyst confirming work that was already right.
-    Collapsing them into one accuracy number hides which of the two is happening.
+    `receipts.status` is the receipt's final outcome, not the validator's decision: when the
+    validator approves a save the Cedar policy denies, the code files a review and the status
+    reads `needs_review`. Routing grades the validator, so it reads the `approve_expense` or
+    `send_to_review` call. Returns "processed", "needs_review", or None when the trace carries
+    no decision call. Only the first call counts; the code refuses a second.
+    """
+    calls = sorted(
+        (
+            s
+            for s in spans
+            if s.get("name", "").startswith("execute_tool")
+            and (s.get("attributes") or {}).get("gen_ai.tool.name") in ("approve_expense", "send_to_review")
+        ),
+        key=lambda s: s.get("startTimeUnixNano") or 0,
+    )
+    if not calls:
+        return None
+    return "processed" if calls[0]["attributes"]["gen_ai.tool.name"] == "approve_expense" else "needs_review"
 
-    The validator is judged on what it was shown, the extraction, not on the receipt itself.
-    When the extraction got any field wrong, review is the right call whatever the label says,
-    so escalating it is not a false alarm. Otherwise one extractor mistake would count twice:
-    once in extraction accuracy against the extractor, and again here against the validator that
-    caught it.
+
+def _routing_outcome(
+    attributes: dict, label: dict, validator_choice: str | None = None, cedar_blocked: bool = False
+) -> EvaluatorOutput:
+    """Grade the validator's save-or-review decision against the correct one.
+
+    What is compared:
+    - The decision: what the validator chose, read from its `approve_expense` or
+      `send_to_review` call (`validator_choice`). This is not the receipt's final status.
+      When the validator approves a receipt and the Cedar policy blocks the save, the receipt
+      ends up in review, but the validator's decision was still to approve it. Traces with no
+      decision call fall back to the final status.
+    - The correct decision: the label's `expected_outcome`, with one adjustment. If the
+      extraction the validator received has any field wrong, the correct decision is review,
+      whatever the label says. The validator only sees the extraction, and holding a wrong
+      extraction is the right call. Without this, one extractor mistake would be counted twice:
+      once by extraction accuracy, and again here against the validator that caught it.
+
+    The four labels:
+    - AutoPersistCorrect: approved, and approval was correct
+    - ReviewCorrect: sent to review, and review was correct
+    - FalseAlarm: sent to review when approval was correct
+    - FalseClear: approved when review was correct
+
+    The two failures stay separate because they cost different things. A false clear lets an
+    expense through unchecked, and its cost grows with the amount. A false alarm costs an
+    analyst's time to confirm work that was already right. A single accuracy number would hide
+    which one is happening.
     """
     status = attributes.get("receipts.status")
     expected = label.get("expected_outcome")
@@ -183,24 +233,29 @@ def _routing_outcome(attributes: dict, label: dict) -> EvaluatorOutput:
             explanation=f"Receipt ended {status}, so it was neither saved nor escalated. Counts against completion, not routing",
         )
 
+    decision = validator_choice or status
     outcome = {
-        ("processed", "processed"): ("AutoPersistCorrect", "Saved automatically and the label agrees. The goal"),
+        ("processed", "processed"): (
+            "AutoPersistCorrect",
+            "Approved for automatic saving and the label agrees. The goal",
+        ),
         ("processed", "needs_review"): (
             "FalseClear",
-            "Saved automatically when it should have been escalated. The expensive failure, and it scales with the amount",
+            "Approved for automatic saving when it should have been escalated. The expensive failure, and it scales with the amount",
         ),
         ("needs_review", "processed"): (
             "FalseAlarm",
             "Escalated when it was already correct. An analyst confirms work that needed no confirming",
         ),
         ("needs_review", "needs_review"): ("ReviewCorrect", "Escalated and the label agrees. Working as designed"),
-    }[(status, expected)]
+    }[(decision, expected)]
 
     explanation = outcome[1]
+    if decision == "processed" and status == "needs_review":
+        stopped_by = "the Cedar policy blocked the save" if cedar_blocked else "the save did not go through"
+        explanation += f". The validator approved it, but {stopped_by}, so the receipt was held anyway"
     if extraction_wrong:
-        explanation += (
-            ". Expected review because the extraction it was shown was wrong: " + "; ".join(extraction_wrong)
-        )
+        explanation += ". Expected review because the extraction it was shown was wrong: " + "; ".join(extraction_wrong)
 
     return EvaluatorOutput(
         value=1.0 if outcome[0] in ("AutoPersistCorrect", "ReviewCorrect") else 0.0,
@@ -244,6 +299,12 @@ def _threshold_control(attributes: dict, cedar_blocked: bool = False) -> Evaluat
             label="breach",
             explanation=f"{total:.2f} saved automatically at or above the {POLICY_THRESHOLD:.0f} limit. The control did not hold",
         )
+    if total >= POLICY_THRESHOLD and status != "needs_review":
+        return EvaluatorOutput(
+            value=0.0,
+            label="no_outcome",
+            explanation=f"{total:.2f} is at or above the limit, but the run ended {status}: neither saved nor held",
+        )
     if total >= POLICY_THRESHOLD:
         how = "blocked by the policy" if cedar_blocked else "held by the validator first"
         return EvaluatorOutput(
@@ -266,7 +327,9 @@ def handler(input: EvaluatorInput, context) -> EvaluatorOutput:
     if "ReceiptsExtractionAccuracy" in name:
         return _extraction_accuracy(attributes, _label(input))
     if "ReceiptsRoutingOutcome" in name:
-        return _routing_outcome(attributes, _label(input))
+        return _routing_outcome(
+            attributes, _label(input), _validator_choice(input.session_spans), _cedar_blocked(input.session_spans)
+        )
     if "ReceiptsThresholdControl" in name:
         return _threshold_control(attributes, _cedar_blocked(input.session_spans))
 
@@ -288,7 +351,8 @@ def extraction_accuracy_handler(input: EvaluatorInput, context) -> EvaluatorOutp
 
 @custom_code_based_evaluator()
 def routing_outcome_handler(input: EvaluatorInput, context) -> EvaluatorOutput:
-    return _routing_outcome(_receipt_attributes(input.session_spans), _label(input))
+    spans = input.session_spans
+    return _routing_outcome(_receipt_attributes(spans), _label(input), _validator_choice(spans), _cedar_blocked(spans))
 
 
 @custom_code_based_evaluator()
