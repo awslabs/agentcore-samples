@@ -8,14 +8,15 @@ The experiments run live tests with `pytest`. The commands below get it, and the
 
 ## The guided run
 
-**1. Confirm the agent responds.** Upload the sample receipt and invoke directly:
+**1. Confirm the agent responds.** Run the pipeline once on the sample receipt:
 
 ```bash
-python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
-python3 scripts/test_invoke.py --region us-west-2 \
-    --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/sample-receipt.png \
-    --user-id user-001
+python3 scripts/test_invoke.py --region us-west-2 --user-id user-001
 ```
+
+The script uploads the sample receipt under `samples/` in the inbox bucket, then invokes the
+Runtime directly. `samples/` is outside `receipts/`, so the front door stays out of it;
+Experiment 1 uses the front door instead.
 
 The response is a structured result: `{status, rung, needs_review, model, extractor_confidence, validator, expense, ...}`. On a healthy account `rung` is `L0` and `status` is `processed` or `needs_review`.
 

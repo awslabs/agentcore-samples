@@ -20,13 +20,23 @@ One command deploys everything as a single CloudFormation stack ([ADR-0001](deci
 
 This runs `agentcore deploy`: CDK synth + deploy of the combined stack `AgentCore-ReceiptsAgent-dev`, then applies the chat live-evaluation config with `scripts/chat_online_eval.py` (it uses managed third-party evaluators, which the CloudFormation schema does not accept yet), then seeds a sample user. It also enables CloudWatch **Transaction Search** (needed once per account for span search; online evaluation reads spans from the `aws/spans` log group it creates; takes ~10 min to become active). The slowest stage is the two Runtime image builds in CodeBuild.
 
-Confirm: upload the sample receipt, then invoke the pipeline Runtime with it:
+Confirm: run the pipeline once on the sample receipt:
 
 ```bash
-python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
-python3 scripts/test_invoke.py --region us-west-2 \
-    --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/sample-receipt.png
+python3 scripts/test_invoke.py --region us-west-2
 ```
+
+The script uploads `tests/fixtures/sample-receipt.png` to
+`s3://receipts-inbox-<account>-<region>/samples/`, invokes the pipeline Runtime with that
+address, and prints the result. The upload is needed because the pipeline's input is an S3
+address: Textract reads the image from the bucket. The key is outside `receipts/`, the
+prefix the front door watches, so the upload doesn't start a second run in the background.
+Pass `--file` for another local receipt, or `--s3-uri` to rerun one already in the bucket.
+
+Rerunning a receipt doesn't duplicate it. An Expenses row is keyed by user, merchant, date
+and total, and a ledger row by the receipt's S3 address, so a rerun overwrites both. The
+exception is a rerun where the model reads the merchant, date or total differently, which
+writes a second Expenses row.
 
 ## Tear down
 

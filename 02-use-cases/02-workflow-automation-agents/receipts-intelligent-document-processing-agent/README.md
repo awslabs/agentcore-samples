@@ -15,8 +15,7 @@ The sample includes **evaluators** that measure whether the agents' decisions ar
 whether the extracted values match the receipt, whether each receipt was saved or held
 correctly and for the right reason, and whether chat answers are correct and complete.
 Three of them score live traffic in AgentCore; the rest score a labelled set of receipts
-and conversations sent through the deployed stack. Each one was checked on pairs of cases
-that differ in exactly one thing, to confirm its verdict changes when it should.
+and conversations sent through the deployed stack.
 
 ## Overview
 
@@ -101,41 +100,78 @@ The detailed checks are in [docs/deployment.md](docs/deployment.md).
 
 ## Deploy
 
+Run from this sample's root directory:
+
 ```bash
-./deploy.sh us-west-2       # the whole stack, then the chat live-evaluation config
-python3 scripts/upload_sample_receipt.py --region us-west-2      # prints the s3:// URI
-python3 scripts/test_invoke.py --region us-west-2 \
-    --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/sample-receipt.png
+./deploy.sh us-west-2
 ```
 
+The script installs dependencies, validates the configuration, and deploys the AgentCore
+resources and supporting AWS infrastructure through CDK. It then applies the chat live
+evaluation configuration through the AgentCore API and seeds the sample user `user-001`
+in DynamoDB.
 
+### Verify the deployment
+
+Run the pipeline on the included sample receipt:
+
+```bash
+python3 scripts/test_invoke.py --region us-west-2
+```
+
+Textract reads receipts from the inbox bucket, so this command first uploads
+`tests/fixtures/sample-receipt.png` there under `samples/`. It then invokes the pipeline
+for `user-001` and prints the response in your terminal. Only uploads under `receipts/`
+start the pipeline on their own, so the `samples/` upload doesn't also run it in the
+background ([ADR-0006](docs/decisions/0006-s3-eventbridge-over-direct-invoke.md)).
+
+To test another local receipt or one already in S3:
+
+```bash
+python3 scripts/test_invoke.py --region us-west-2 --file /path/to/receipt.png
+python3 scripts/test_invoke.py --region us-west-2 \
+    --s3-uri s3://receipts-inbox-<account>-us-west-2/samples/receipt.png
+```
+
+Use `--user-id` to select a different user.
 
 ## Usage
 
 
 
-### Event-driven front door
+### Process receipts automatically
 
-Drop a receipt in the inbox bucket and the pipeline runs. This one's totals don't add
-up, so the validator should hold it for review:
+Upload a receipt to the inbox bucket under `receipts/<user_id>/` to start the pipeline
+automatically. Replace `<account>` with your AWS account ID and use your deployment region.
+For example, this receipt has totals that do not add up, so the validator should route it
+to human review:
 
 ```bash
 aws s3 cp evals/fixtures/non_reconciling.png \
-    s3://receipts-inbox-<account>-<region>/receipts/user-001/non_reconciling.png
+    s3://receipts-inbox-<account>-us-west-2/receipts/user-001/non_reconciling.png
 ```
 
-The user id comes from the key (`receipts/<user_id>/<file>`) and defaults to `user-001`. A
-dead-letter queue and retries make a failed trigger visible instead of losing the receipt.
+The pipeline gets the user ID from the object key. A key without a user segment, such as
+`receipts/receipt.png`, falls back to the default user, `user-001`. Retries and a
+dead-letter queue handle failed trigger attempts.
 
 ### Run ledger
 
 Every run emits one event, and a writer Lambda records one row per receipt in the
 `ProcessingRuns` table. A run that ends in `error` notifies an SNS topic
 ([ADR-0015](docs/decisions/0015-processing-runs-ledger.md)).
-About a minute after the upload above, the held receipt is in the review queue:
+Automatic processing runs in the background. After it finishes and the ledger is updated,
+check the receipt from the upload above:
 
 ```bash
-python3 scripts/receipt_status.py --status needs_review
+python3 scripts/receipt_status.py --region us-west-2 \
+    --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/user-001/non_reconciling.png
+```
+
+To list runs routed to human review:
+
+```bash
+python3 scripts/receipt_status.py --region us-west-2 --status needs_review
 ```
 
 
@@ -147,9 +183,9 @@ is clean and reconciles, so the validator chooses to save it, and the policy ove
 
 ```bash
 aws s3 cp evals/fixtures/over_threshold.png \
-    s3://receipts-inbox-<account>-<region>/receipts/user-001/over_threshold.png
-python3 scripts/receipt_status.py \
-    --s3-uri s3://receipts-inbox-<account>-<region>/receipts/user-001/over_threshold.png
+    s3://receipts-inbox-<account>-us-west-2/receipts/user-001/over_threshold.png
+python3 scripts/receipt_status.py --region us-west-2 \
+    --s3-uri s3://receipts-inbox-<account>-us-west-2/receipts/user-001/over_threshold.png
 ```
 
 The ledger row shows `validatorRouting: AUTO_PERSIST`, `cedarBlocked: true` and
@@ -330,4 +366,3 @@ CDK app (`cdk/lib/cdk-stack.ts`, `cdk/lib/infra-construct.ts`).
 > concepts and techniques but is not intended for direct use in production. Make sure to
 > have Amazon Bedrock Guardrails in place to protect against
 > [prompt injection](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-injection.html).
-
