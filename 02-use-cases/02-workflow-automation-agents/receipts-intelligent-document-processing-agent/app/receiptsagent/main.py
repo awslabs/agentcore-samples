@@ -57,12 +57,11 @@ log = app.logger
 
 EXTRACTOR_PROMPT = """You are a receipts extraction agent for an expense system.
 
-You are given OCR output (Amazon Textract AnalyzeExpense) for one receipt, the
-user's expense profile, and PRE-PARSED line items from a deterministic table
-parser. Your job:
+You are given OCR output (Amazon Textract AnalyzeExpense) for one receipt and
+PRE-PARSED line items from a deterministic table parser. Your job:
 1. Read the OCR summary fields. Trust the pre-parsed line items when provided;
    only re-derive line items yourself if the parser returned few/none.
-2. Infer the expense category from the user's default category and history.
+2. Infer the expense category from the merchant and the items purchased.
 3. Produce a clean structured expense by calling submit_expense ONCE.
 
 Rules:
@@ -79,7 +78,7 @@ VALIDATOR_PROMPT = """You are an independent validation agent for an expense sys
 You receive the ORIGINAL OCR output and the extractor's structured expense. You did
 NOT do the extraction — review it skeptically and independently. Check:
 - Do subtotal + tax + tip reconcile to total?
-- Is the category plausible for this merchant and the user's profile?
+- Is the category plausible for this merchant and these items?
 - Is the merchant specific (not vague/empty)? Is the date plausible?
 - Is the extractor's confidence justified?
 
