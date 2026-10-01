@@ -224,7 +224,7 @@ CloudWatch under `/aws/bedrock-agentcore/evaluations/results/`.
 
 ```bash
 cd evals
-uv venv --python 3.12 && uv pip install -r ../app/receiptsagent/requirements.txt "bedrock-agentcore>=1.22" pillow
+uv venv --python 3.12 && uv pip install --python .venv/bin/python -r ../app/receiptsagent/requirements.txt "bedrock-agentcore>=1.22" pillow
 .venv/bin/python run_deployed.py              # uploads the receipts, runs the chat conversations
 .venv/bin/python score_saved.py --run out/deployed-<id>        # routing, right reason, invented values
 .venv/bin/python score_chat.py  --run out/deployed-chat-<id>   # completeness, retention, correctness

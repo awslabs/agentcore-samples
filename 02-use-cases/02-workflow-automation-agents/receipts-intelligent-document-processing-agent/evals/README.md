@@ -10,7 +10,7 @@ Why each evaluator exists, and what the contrast tests found, is in
 ```bash
 cd evals
 uv venv --python 3.12
-uv pip install -r ../app/receiptsagent/requirements.txt "bedrock-agentcore>=1.22" pillow
+uv pip install --python .venv/bin/python -r ../app/receiptsagent/requirements.txt "bedrock-agentcore>=1.22" pillow
 ```
 
 AWS credentials with AgentCore, CloudWatch Logs, S3 and DynamoDB access are needed, and the
