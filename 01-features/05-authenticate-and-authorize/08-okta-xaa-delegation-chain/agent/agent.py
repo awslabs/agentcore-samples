@@ -79,8 +79,9 @@ def obo_token() -> str:
     request header. The SDK lifts that header into context, so the agent just reads it:
     one less API call, one less IAM action, and no workload identity name to keep in sync.
 
-    The trade-off is real but narrow -- see "Why the agent does not fetch its own workload
-    access token" in README.md.
+    Code running outside Runtime -- a script, a Lambda, a CI job -- gets no such header and
+    so has no token here; that is why this sample has no off-Runtime tooling for the
+    exchange.
     """
     workload = BedrockAgentCoreContext.get_workload_access_token()
     if not workload:

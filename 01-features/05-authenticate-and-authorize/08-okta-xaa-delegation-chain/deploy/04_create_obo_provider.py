@@ -94,9 +94,8 @@ def main() -> None:
 
     print(f"region {region()}\nprovider {name}\n")
     # No workload identity is created here. Runtime creates and manages one for the agent
-    # and delivers its workload access token to the agent as a request header, so a named
-    # identity of our own would be unused -- see README "Why the agent does not fetch its
-    # own workload access token".
+    # and delivers its workload access token as a request header, so a named identity of
+    # our own would simply go unused.
     print("[1/1] Credential provider")
     existing = None
     try:

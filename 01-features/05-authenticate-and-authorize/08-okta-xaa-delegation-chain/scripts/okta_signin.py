@@ -5,7 +5,7 @@ AI Agent's linked app has no client secret, so the code exchange presents a clie
 assertion signed with the same key the interceptor uses for the ID-JAG legs.
 
 Returns the raw token response, so callers get BOTH the access token (invokes the
-agent) and the ID token (the subject of ID-JAG leg 1).
+agent) and the ID token (needed only on the XAA_LEG1_SUBJECT=id_token path).
 """
 
 from __future__ import annotations

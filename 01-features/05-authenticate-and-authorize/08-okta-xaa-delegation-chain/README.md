@@ -83,8 +83,7 @@ sequenceDiagram
     RT->>RT: CUSTOM_JWT validates aud + scp=agent.access
 
     Note over RT,GW: C · OBO — the platform's native exchange
-    RT->>ID: GetWorkloadAccessTokenForJWT(T_user)
-    ID-->>RT: workload access token
+    RT->>RT: read the workload access token<br/>Runtime delivered in the request header
     RT->>ID: GetResourceOauth2Token(ON_BEHALF_OF_TOKEN_EXCHANGE,<br/>scopes=tools.access)
     ID->>AS1: RFC 8693 exchange as the Agent app
     AS1-->>ID: T_gateway
@@ -194,12 +193,11 @@ user is **and** *which agent* acted for them, and can require both.
 Note what is *not* on any wire: `T_id` never leaves the BFF, the agent never receives
 `T_tool`, and no token is ever placed in the model's prompt.
 
-> **This used to need two tokens.** Leg 1 originally accepted only an ID token, so the BFF
-> forwarded `T_id` in the invoke payload and the agent sent it on as `X-Okta-Id-Token`.
-> Okta's **Machine access** configuration lets leg 1 exchange an *access* token, so the
-> interceptor now uses the bearer the gateway has already validated and that whole path is
-> gone. `XAA_LEG1_SUBJECT=id_token` restores it for orgs without Machine access — see
-> [IDP_SETUP_OKTA.md](IDP_SETUP_OKTA.md) step 6.
+> **One credential reaches the gateway, not two.** Leg 1 exchanges the bearer the gateway
+> has already validated, which Okta's **Machine access** configuration authorises — so no ID
+> token travels with the request and the agent never handles one. On an org without Machine
+> access, `XAA_LEG1_SUBJECT=id_token` makes leg 1 use an ID token instead, which the BFF then
+> has to forward; see [IDP_SETUP_OKTA.md](IDP_SETUP_OKTA.md) step 6.
 
 ### Where the `act` claim appears, and where it does not
 
@@ -420,104 +418,6 @@ Inspect what is deployed at any point with:
 ```bash
 python deploy/03_create_policies.py --list
 ```
-
-## Does ID-JAG take an access token or an ID token?
-
-Asked often enough to deserve its own heading. **Both — and which one you can use is a
-question of Okta configuration, not of the protocol.**
-
-| `subject_token` at leg 1 | Needs | Result |
-| --- | --- | --- |
-| **access token** whose `cid` is a registered caller | **Machine access** on the AI Agent | ✅ ID-JAG minted, `act` nested |
-| **ID token** from the app bound under *User access* | the **User access** binding | ✅ ID-JAG minted, `act` single-level |
-| access token with **no** matching delegation link | — | ❌ `'subject_token' is invalid: no delegation policy authorizes this token` |
-| access token whose `cid` is the **agent itself** | — | ❌ same error — an agent cannot be its own caller |
-| the caller app has no **user assignment** | — | ❌ `'subject_token' is invalid: the user is not assigned to the client application` |
-| `subject_token_type: jwt` | — | ❌ `'subject_token_type' is invalid or not supported` |
-
-Okta logs the delegation failure as `invalid_subject_token_no_delegation_link`.
-
-The underlying rule is that leg 1 needs a **delegation link** covering the token it is
-given. Two tabs create those links, and for a long time only one of them was obvious:
-
-- **User access** creates the link for the bound app's **ID token**.
-- **Machine access** creates *non-user* delegation links, which is what authorises an
-  **access token** — see [IDP_SETUP_OKTA.md](IDP_SETUP_OKTA.md) step 6. Its UI copy talks
-  about callers reaching *into* the agent, which reads like the opposite of leg 1; Okta's
-  own guide confirms these are the links that used to live under *Delegations*.
-
-**This sample uses the access token**, because that is the credential the gateway has
-already validated and handed to the interceptor. The consequences are worth stating, since
-earlier versions of this README argued the opposite:
-
-- **Nothing extra travels with the request.** No ID token in the invoke payload, no second
-  header, and the agent never handles an ID token.
-- **The provenance is richer.** The ID-JAG's `act` nests the Agent app inside the AI Agent
-  inside the user, where the ID-token path records one level. See
-  [Where the `act` claim appears, and where it does not](#where-the-act-claim-appears-and-where-it-does-not).
-- **It costs an https audience.** Machine access rejects `api://` schemes and an Okta custom
-  AS allows exactly one audience, so `AGENTCORE_AUDIENCE` must be an https URL.
-- **It needs the Okta for AI Agents subscription.** Without it, run
-  `XAA_LEG1_SUBJECT=id_token` and `SEND_ID_TOKEN=true`; that path is still tested.
-
-See [Tokens: what each one is, and where it travels](#tokens-what-each-one-is-and-where-it-travels)
-for the full inventory, including which token is on the wire at every hop and the error
-each mix-up produces.
-
-## Why the agent does not fetch its own workload access token
-
-A reasonable question, and one the field asked: the agent calls `GetResourceOauth2Token`
-but never `GetWorkloadAccessTokenForJWT`. The
-[docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/get-workload-access-token.html)
-explain why — Runtime does it for you:
-
-> When an agent is invoked through AgentCore Runtime or Gateway with inbound
-> authentication, the service automatically handles workload access token generation […]
-> Runtime passes the workload access token to agent code as part of the invocation payload
-> header.
-
-So the agent reads it from context:
-
-```python
-from bedrock_agentcore.runtime.context import BedrockAgentCoreContext
-
-workload = BedrockAgentCoreContext.get_workload_access_token()
-```
-
-In `bedrock-agentcore` the runtime reads `X-Amz-Bedrock-AgentCore-Identity-WAT` or
-`WorkloadAccessToken` off the request and stores it for you. That removes an API call, an
-IAM action, and a workload identity name to keep in sync.
-
-**The security boundary is unchanged**, which is the part worth being precise about. Per
-the [scoping guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/scope-credential-provider-access.html):
-
-> The IAM role you assign to an agent controls which credential providers the agent can
-> call. The service does not enforce additional binding between workload identities and
-> credential providers in the same account.
-
-So protection comes from the execution role's policy naming the provider ARN — identical
-whether the token was delivered or fetched. `deploy/06_grant_iam.py` scopes to the
-Runtime-managed identity **and** the single provider ARN, discovering the identity from the
-deployed runtime because its name embeds the runtime id.
-
-### When you would fetch it yourself
-
-Create your own named workload identity and call `GetWorkloadAccessTokenForJWT` when:
-
-- **Code outside Runtime needs the same exchange** — a script, a Lambda, a CI job. There is
-  no request header there, so there is no token in context. This is the concrete cost of the
-  switch: earlier versions of this sample shipped `scripts/test_chain.py` and
-  `scripts/show_token_claims.py`, which drove hop D and decoded every token from a laptop.
-  Both became impossible and were removed.
-- **One identity must span several callers**, so the same user-agent pair is used from more
-  than one place.
-
-And note the asymmetry: a Runtime-managed identity **cannot** fetch its own token —
-
-> Runtime-managed and Gateway-managed workload identities cannot retrieve tokens directly.
-
-— so the two approaches are not interchangeable. If you need the off-Runtime tooling, you
-need your own identity; if you do not, the delivered token is strictly simpler.
 
 ## Tracing a request
 
