@@ -4,6 +4,21 @@ Real-world use cases that demonstrate **Amazon Bedrock AgentCore payments** in a
 
 ## Available Use Cases
 
+### [Policy-Enforced Payment Buyer](policy-enforced-payment-buyer/)
+
+A focused AgentCore Runtime buyer that sends the exact x402 payment requirement
+to an AgentCore Policy Gateway before AgentCore Payments may generate a payment
+header. It exposes one bounded purchase tool, includes Cedar policy templates,
+and uses an in-memory seller for no-side-effect local validation.
+
+**Highlights**
+- Policy authorizes the seller resource, recipient, network, asset, and amount before payment processing
+- Rejects redirects, non-HTTPS seller URLs, and seller origins outside the approved context
+- Quick Create with Coinbase setup guidance without storing Coinbase credentials
+- Local allow and deny tests create no payment proof or settlement
+
+---
+
 ### [Pay for Content (Browser Use)](pay-for-content-browser-use/)
 
 An AI agent built with **Strands Agents** and **AgentCoreBrowser** autonomously navigates a paywalled website, reads the x402 payment requirement from the page DOM, processes a payment via AgentCore payments, and returns the unlocked content. No private keys held by the agent, no human involvement in the payment step.
