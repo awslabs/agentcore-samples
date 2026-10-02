@@ -17,7 +17,10 @@ and was established against a live gateway:
     what lets the interceptor's header reach the upstream.
   * The gateway role needs GetPolicyEngine, AuthorizeAction AND
     PartiallyAuthorizeActions before CreateGateway will even succeed -- the create
-    call probes the policy engine using this role.
+    call probes the policy engine using this role. They are scoped to the policy-engine
+    and gateway ARNs rather than "*"; on the very first run the gateway does not exist
+    yet, so a gateway pattern scoped to this account and region is used, and a re-run
+    tightens it to the exact ARN.
   * `passRequestHeaders: True` is required, or the interceptor never sees the
     headers it needs.
   * exceptionLevel DEBUG makes authorizer and policy denials state a reason.
@@ -190,6 +193,23 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
     # CreateGateway probes the policy engine using this role, so all three
     # policy-engine actions must exist up front. Each missing one fails the create
     # with its own AccessDenied.
+    #
+    # Scoped, not "*". Per the AWS service reference, AuthorizeAction and
+    # PartiallyAuthorizeActions accept BOTH gateway and policy-engine resources, and
+    # GetPolicyEngine/GetGateway accept their own. The policy-engine ARN is known here
+    # because [3/5] runs first. The gateway ARN is not -- CreateGateway needs this role,
+    # so the gateway does not exist yet -- hence a gateway pattern narrowed to this
+    # account and region on the first run. Re-running this script after the gateway
+    # exists replaces the pattern with the exact ARN, which is why it is worth re-running
+    # once at the end of a deploy.
+    reg, acct = region(), account_id()
+    pe_arn = f"arn:aws:bedrock-agentcore:{reg}:{acct}:policy-engine/{pe_id}"
+    known_gw = env("GATEWAY_ID")
+    gw_res = (
+        f"arn:aws:bedrock-agentcore:{reg}:{acct}:gateway/{known_gw}"
+        if known_gw
+        else f"arn:aws:bedrock-agentcore:{reg}:{acct}:gateway/*"
+    )
     role = ensure_role(
         aws["iam"],
         gateway_role_name(),
@@ -199,14 +219,20 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
             "Statement": [
                 {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": icept_arn},
                 {
+                    "Sid": "PolicyEngineEvaluation",
                     "Effect": "Allow",
                     "Action": [
                         "bedrock-agentcore:GetPolicyEngine",
                         "bedrock-agentcore:AuthorizeAction",
                         "bedrock-agentcore:PartiallyAuthorizeActions",
-                        "bedrock-agentcore:GetGateway",
                     ],
-                    "Resource": "*",
+                    "Resource": [pe_arn, gw_res],
+                },
+                {
+                    "Sid": "ReadOwnGateway",
+                    "Effect": "Allow",
+                    "Action": "bedrock-agentcore:GetGateway",
+                    "Resource": gw_res,
                 },
             ],
         },
