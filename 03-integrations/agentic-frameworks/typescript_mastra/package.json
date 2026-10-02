@@ -17,7 +17,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-agentcore": "^3.930.0",
     "@aws-sdk/client-ssm": "^3.930.0",
-    "@mastra/core": "^0.24.0",
+    "@mastra/core": "^1.63.2",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "zod": "^3.25.76"
