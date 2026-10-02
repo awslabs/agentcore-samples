@@ -215,7 +215,7 @@ def delete(aws, args) -> None:
             pass
 
     if args.include_runtime:
-        delete_runtime_stack(aws)
+        delete_runtime_stack()
 
 
 def runtime_stack_name() -> str:
@@ -223,7 +223,7 @@ def runtime_stack_name() -> str:
     return env("AGENT_RUNTIME_STACK", f"AgentCore-{env('AGENT_RUNTIME_NAME', 'xaatodoagent').lower()}-default")
 
 
-def delete_runtime_stack(aws) -> None:
+def delete_runtime_stack() -> None:
     """Delete the runtime by deleting its CloudFormation stack.
 
     Not `agentcore destroy` -- that subcommand does not exist. The CLI (0.25.0) has no

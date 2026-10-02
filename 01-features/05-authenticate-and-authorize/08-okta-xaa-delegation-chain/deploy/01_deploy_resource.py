@@ -33,13 +33,12 @@ from _common import (
     resource_role_name,
     save_env,
     set_log_retention,
-    zip_files,
 )
 
 APP_DIR = SAMPLE_ROOT / "resource-app"
 
 
-def build_bundle(aws) -> bytes:
+def build_bundle() -> bytes:
     """Zip main.py + lambda_handler.py with their pure-Python dependencies.
 
     mangum, fastapi, pydantic and pyjwt all ship wheels that work on the Lambda
@@ -127,7 +126,7 @@ def main() -> None:
     )
 
     print("\n[2/3] Lambda")
-    code = build_bundle(aws)
+    code = build_bundle()
     fn_arn = ensure_lambda(
         aws["lam"],
         fn_name,

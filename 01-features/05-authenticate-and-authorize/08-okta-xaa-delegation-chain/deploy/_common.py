@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import urllib.error
 import urllib.parse
@@ -203,10 +202,6 @@ def activate_as_policy(okta: OktaAdmin, as_id: str, policy_id: str, label: str =
     return ok
 
 
-def slug(value: str) -> str:
-    return re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
-
-
 # ── Derived resource names (override in .env only if you must) ───────────────
 
 
@@ -253,6 +248,11 @@ def region() -> str:
 
 
 def clients() -> dict:
+    # Enforce the minimum boto3 here rather than in each script: every AWS-touching step
+    # goes through clients(), and an older model fails later with a confusing
+    # ParamValidationError about an unknown parameter instead of a clear version message.
+    check_boto3()
+
     import boto3
 
     r = region()
@@ -271,20 +271,6 @@ def account_id() -> str:
     import boto3
 
     return boto3.client("sts", region_name=region()).get_caller_identity()["Account"]
-
-
-def zip_files(paths: dict[str, Path]) -> bytes:
-    """Zip {name_in_archive: source_path} with predictable permissions."""
-    import io
-    import zipfile
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for arcname, src in paths.items():
-            info = zipfile.ZipInfo(arcname)
-            info.external_attr = 0o644 << 16
-            z.writestr(info, src.read_text())
-    return buf.getvalue()
 
 
 def ensure_role(iam, name: str, service: str, inline: dict | None, managed: str | None) -> str:

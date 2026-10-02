@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import SAMPLE_ROOT, account_id, clients, env, load_env, must_env, region, save_env
+from _common import account_id, clients, env, load_env, must_env, region, save_env
 
 POLICY_NAME = "XaaAgentOboAccess"
 

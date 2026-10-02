@@ -34,7 +34,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
     clients,
     discovery_url,
-    env,
     load_env,
     must_env,
     obo_provider_name,

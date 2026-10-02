@@ -59,7 +59,6 @@ from _common import (
     save_env,
     set_log_retention,
     wait_status,
-    zip_files,
 )
 
 TARGET_NAME = "todo"
