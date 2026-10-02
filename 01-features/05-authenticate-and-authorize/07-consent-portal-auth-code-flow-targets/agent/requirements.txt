@@ -1,0 +1,16 @@
+# Documentation of what agent.py needs, NOT a file you copy into the project.
+#
+# The AgentCore CLI scaffold (verified on 0.25.0) manages the runtime's
+# dependencies in app/<name>/pyproject.toml with a uv.lock, and it already
+# declares every package listed here. Only agent.py is copied into the
+# scaffold. If you deploy the agent some other way, this is the dependency set
+# to reproduce.
+#
+# Kept minimal on purpose: the agent forwards the caller's token to the gateway
+# and drives an LLM, so it makes no AgentCore Identity calls of its own.
+
+bedrock-agentcore>=0.1.0
+
+# Strands + the MCP client used to talk to AgentCore Gateway.
+strands-agents>=0.4.0
+mcp>=1.2.0

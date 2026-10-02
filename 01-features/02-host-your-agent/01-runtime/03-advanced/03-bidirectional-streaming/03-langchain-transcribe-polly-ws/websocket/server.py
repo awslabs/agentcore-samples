@@ -5,21 +5,19 @@ FastAPI server with IMDS credential management and WebSocket endpoint.
 Agent logic lives in agent.py (following the strands pattern).
 """
 
-import logging
-import uvicorn
-import os
-import json
 import asyncio
+import json
+import logging
+import os
 import time
 from datetime import datetime
 
 import requests
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-
+import uvicorn
 from agent import handle_websocket_session
-
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,8 +59,8 @@ def get_imdsv2_token():
         )
         if resp.status_code == 200:
             return resp.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -112,6 +110,27 @@ def get_credentials_from_imds():
     except Exception as e:
         result["error"] = str(e)
     return result
+
+
+def refresh_credentials_now():
+    """Re-fetch IMDS credentials before starting a session.
+
+    AgentCore Runtime V2 snapshots the container at deploy time and restores that
+    snapshot for later sessions, so credentials captured at application startup are
+    frozen and will have expired. Without this, AWS calls in a restored session fail
+    with an expired token error.
+    """
+    imds_result = get_credentials_from_imds()
+    if not imds_result["success"]:
+        logger.error(f"Could not refresh credentials from IMDS: {imds_result.get('error')}")
+        return False
+
+    creds = imds_result["credentials"]
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
+    logger.info(f"Credentials refreshed for session (expire {creds.get('Expiration')})")
+    return True
 
 
 async def refresh_credentials_from_imds():
@@ -191,7 +210,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global _credential_refresh_task
     logger.info("🛑 Shutting down...")
     if _credential_refresh_task and not _credential_refresh_task.done():
         _credential_refresh_task.cancel()
@@ -230,6 +248,11 @@ async def invocations(request: dict):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+
+    # Under Runtime V2 the container may have been restored from a deploy-time
+    # snapshot, so refresh credentials before doing any AWS work in this session.
+    refresh_credentials_now()
+
     await handle_websocket_session(websocket, default_gateway_arns=gateway_arns)
 
 

@@ -2,13 +2,14 @@ import asyncio
 import json
 import logging
 import os
-import uvicorn
-import requests
-from requests.exceptions import RequestException
 from datetime import datetime
+
+import requests
+import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from requests.exceptions import RequestException
 from s2s_session_manager import S2sSessionManager
 
 # Configure logging
@@ -36,8 +37,8 @@ def get_imdsv2_token():
         )
         if response.status_code == 200:
             return response.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"IMDSv2 token request failed: {e}")
     return None
 
 
@@ -110,11 +111,41 @@ def get_credentials_from_imds():
         }
 
     except RequestException as e:
-        result["error"] = f"Request exception: {str(e)}"
+        result["error"] = f"Request exception: {e!s}"
     except Exception as e:
-        result["error"] = f"Unexpected error: {str(e)}"
+        result["error"] = f"Unexpected error: {e!s}"
 
     return result
+
+
+def refresh_credentials_now():
+    """Re-fetch IMDS credentials into the environment before starting a session.
+
+    Credentials must not be relied on from application startup. AgentCore Runtime
+    V2 snapshots the container during deployment and restores that snapshot for
+    later sessions, so anything captured at startup -- including credentials and
+    the refresh timer -- is frozen at deploy time. A session restored hours later
+    would otherwise sign requests with expired credentials and Bedrock returns
+    403 ExpiredTokenException.
+
+    Called at the start of every session so each one begins with valid credentials.
+    """
+    # Static credentials supplied by the operator take precedence (local mode).
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SESSION_TOKEN") is None:
+        logger.info("Using static credentials from environment, skipping IMDS refresh")
+        return True
+
+    imds_result = get_credentials_from_imds()
+    if not imds_result["success"]:
+        logger.error(f"Could not refresh credentials from IMDS: {imds_result['error']}")
+        return False
+
+    creds = imds_result["credentials"]
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
+    logger.info(f"Credentials refreshed for session (expire {creds.get('Expiration')})")
+    return True
 
 
 async def refresh_credentials_from_imds():
@@ -164,7 +195,7 @@ async def refresh_credentials_from_imds():
             logger.info("Credential refresh task cancelled")
             break
         except Exception as e:
-            logger.error(f"Error in credential refresh task: {e}", exc_info=True)
+            logger.exception("Error in credential refresh task")
             # Retry in 5 minutes on error
             await asyncio.sleep(300)
 
@@ -220,7 +251,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global credential_refresh_task
 
     logger.info("🛑 Application shutting down...")
 
@@ -303,7 +333,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         logger.warning("Received message without event field")
                         continue
 
-                    event_type = list(data["event"].keys())[0]
+                    event_type = next(iter(data["event"].keys()))
 
                     # Handle session start - create new stream manager
                     if event_type == "sessionStart":
@@ -319,6 +349,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await forward_task
                             except asyncio.CancelledError:
                                 pass
+
+                        # Refresh credentials before each session. Under Runtime V2
+                        # the container may have been restored from a snapshot taken
+                        # at deploy time, so startup credentials are likely expired.
+                        refresh_credentials_now()
 
                         # Create a new stream manager for this connection
                         stream_manager = S2sSessionManager(model_id="amazon.nova-2-sonic-v1:0", region=aws_region)
@@ -382,13 +417,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     try:
                         await websocket.send_json({"type": "error", "message": "Invalid JSON format"})
                     except Exception:
-                        pass
+                        logger.debug("Could not notify client of invalid JSON; connection likely closed")
                 except Exception as exp:
-                    logger.error(f"Error processing WebSocket message: {exp}", exc_info=True)
+                    logger.exception("Error processing WebSocket message")
                     try:
                         await websocket.send_json({"type": "error", "message": str(exp)})
                     except Exception:
-                        pass
+                        logger.debug("Could not notify client of processing error; connection likely closed")
 
             except WebSocketDisconnect as e:
                 logger.info(f"WebSocket disconnected: {websocket.client}")
@@ -399,15 +434,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info("Bedrock stream was still active when WebSocket disconnected")
                 break
             except Exception as e:
-                logger.error(f"WebSocket error: {e}", exc_info=True)
+                logger.exception("WebSocket error")
                 break
 
     except Exception as e:
-        logger.error(f"WebSocket handler error: {e}", exc_info=True)
+        logger.exception("WebSocket handler error")
         try:
             await websocket.send_json({"type": "error", "message": "WebSocket handler error"})
         except Exception:
-            pass
+            logger.debug("Could not notify client of handler error; connection likely closed")
     finally:
         # Clean up resources
         logger.info("Cleaning up WebSocket connection resources")
@@ -446,7 +481,7 @@ def split_large_event(response, max_size=16000):
     if "event" not in response:
         return [response]
 
-    event_type = list(response["event"].keys())[0]
+    event_type = next(iter(response["event"].keys()))
     event_data = response["event"][event_type]
 
     # Only split events that have a 'content' field (audioOutput, textOutput, etc.)
@@ -518,7 +553,7 @@ async def forward_responses(websocket: WebSocket, stream_manager):
                 event_size = len(event.encode("utf-8"))
 
                 # Get event type for logging
-                event_type = list(response.get("event", {}).keys())[0] if "event" in response else "unknown"
+                event_type = next(iter(response.get("event", {}).keys())) if "event" in response else "unknown"
 
                 # Split large events
                 if event_size > 10000:
@@ -542,7 +577,7 @@ async def forward_responses(websocket: WebSocket, stream_manager):
                         logger.info(f"Forwarded {event_type} to client (size: {chunk_size} bytes)")
 
             except Exception as e:
-                logger.error(f"Error sending response to client: {e}", exc_info=True)
+                logger.exception("Error sending response to client")
                 # Check if it's a connection error that should break the loop
                 error_str = str(e).lower()
                 if "closed" in error_str or "disconnect" in error_str:
@@ -553,7 +588,7 @@ async def forward_responses(websocket: WebSocket, stream_manager):
     except asyncio.CancelledError:
         logger.debug("Forward responses task cancelled")
     except Exception as e:
-        logger.error(f"Error forwarding responses: {e}", exc_info=True)
+        logger.exception("Error forwarding responses")
     finally:
         logger.info("Forward responses task ended")
 

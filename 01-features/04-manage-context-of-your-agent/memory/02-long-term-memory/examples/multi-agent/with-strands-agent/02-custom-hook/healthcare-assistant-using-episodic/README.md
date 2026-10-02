@@ -193,7 +193,7 @@ def get_patient_allergies(patient_id: str = PATIENT_ID) -> dict:
     return query_healthlake('AllergyIntolerance', {'patient': patient_id})
 
 allergy_agent = Agent(
-    model="global.anthropic.claude-sonnet-4-20250514-v1:0",
+    model="global.anthropic.claude-opus-4-6-v1",
     system_prompt="You handle patient allergies. Use get_patient_allergies tool.",
     tools=[get_patient_allergies]
 )
@@ -230,7 +230,7 @@ If you see "MemorySession.add_turns() got an unexpected keyword argument 'branch
 
 ### Model Not Available
 If you see "serviceUnavailableException", ensure:
-- Using global inference profile: `global.anthropic.claude-sonnet-4-20250514-v1:0`
+- Using global inference profile: `global.anthropic.claude-opus-4-6-v1`
 - Or region-specific profile for your region
 
 ### HealthLake Access Denied
@@ -279,7 +279,11 @@ aws healthlake delete-fhir-datastore --datastore-id "<your-datastore-id>" --regi
 Add episodic memory to a multi-agent runtime project with the CLI:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name healthcareassistant --model-provider bedrock
 
 # Add episodic memory for cross-session patient interaction tracking

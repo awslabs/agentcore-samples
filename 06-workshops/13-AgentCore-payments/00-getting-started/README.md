@@ -96,7 +96,7 @@ This creates IAM roles, the payment stack, and writes resource IDs to `.env`. Al
 
 | Tool | Tutorials | Install |
 |------|-----------|---------|
-| AgentCore CLI | 02, 04, 07 | `npm install -g @aws/agentcore` (requires Node.js 20+) |
+| AgentCore CLI | 02, 04, 07 | `npm install -g @aws/agentcore@0.30.0` (requires Node.js 20+) |
 | Docker | 02, 07 | Required for `agentcore deploy` container builds |
 | Playwright | 05 | `pip install playwright && python -m playwright install chromium` |
 

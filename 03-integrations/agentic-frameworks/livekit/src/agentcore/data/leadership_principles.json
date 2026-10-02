@@ -1,0 +1,54 @@
+[
+  {
+    "id": "teamwork",
+    "name": "Teamwork",
+    "description": "Great leaders foster collaboration, build trust within teams, and leverage diverse perspectives to achieve shared goals.",
+    "questions": [
+      "Tell me about a time when you worked with a cross-functional team to deliver a project. What was your role and how did you contribute?",
+      "Describe a situation where you had a disagreement with a teammate. How did you resolve it?",
+      "Give me an example of when you helped a colleague who was struggling with their workload. What did you do?",
+      "Tell me about a time when you had to build consensus among team members with different opinions.",
+      "Describe a project where effective teamwork led to a better outcome than any individual could have achieved alone."
+    ],
+    "difficulty_level": "mid"
+  },
+  {
+    "id": "problem_solving",
+    "name": "Problem Solving",
+    "description": "Effective problem solvers analyze situations thoroughly, consider multiple approaches, and implement creative solutions under constraints.",
+    "questions": [
+      "Tell me about a complex problem you solved at work. What was your approach?",
+      "Describe a time when you had to make a decision with incomplete information. What did you do?",
+      "Give me an example of when you identified a problem before it became critical. How did you address it?",
+      "Tell me about a time when your first solution to a problem didn't work. What did you do next?",
+      "Describe a situation where you had to balance multiple constraints to find a workable solution."
+    ],
+    "difficulty_level": "mid"
+  },
+  {
+    "id": "communication",
+    "name": "Communication",
+    "description": "Strong communicators convey ideas clearly, listen actively, and adapt their message to different audiences.",
+    "questions": [
+      "Tell me about a time when you had to explain a complex technical concept to a non-technical audience.",
+      "Describe a situation where miscommunication led to a problem. How did you fix it?",
+      "Give me an example of when you had to deliver difficult feedback to someone. How did you approach it?",
+      "Tell me about a time when you had to persuade stakeholders to support your idea.",
+      "Describe a situation where active listening helped you understand a problem better."
+    ],
+    "difficulty_level": "mid"
+  },
+  {
+    "id": "adaptability",
+    "name": "Adaptability",
+    "description": "Adaptable professionals embrace change, learn quickly from new situations, and maintain effectiveness when priorities shift.",
+    "questions": [
+      "Tell me about a time when project requirements changed significantly midway through. How did you adapt?",
+      "Describe a situation where you had to learn a new skill or technology quickly to complete a task.",
+      "Give me an example of when you had to adjust your working style to collaborate with someone different from you.",
+      "Tell me about a time when you faced an unexpected setback. How did you recover?",
+      "Describe a situation where you had to reprioritize your work on short notice. What was the impact?"
+    ],
+    "difficulty_level": "mid"
+  }
+]

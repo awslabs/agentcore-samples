@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Result{% endblock %}
+{% block content %}
+  <h1>Result</h1>
+  <p class="muted">You asked: <em>{{ prompt }}</em></p>
+
+  {% if error %}
+    <div class="box err">
+      <h2>Something went wrong</h2>
+      <pre>{{ error }}</pre>
+    </div>
+  {% elif needs_consent %}
+    <div class="box cta">
+      <h2>GitHub is not connected yet</h2>
+      <p style="white-space: pre-wrap;">{{ result.answer }}</p>
+      {% if portal_link %}
+        <p><a href="{{ portal_link }}" target="_blank" rel="noopener"><button type="button">Open the consent portal</button></a></p>
+      {% endif %}
+      <p class="muted" style="font-size: 0.85rem;">The gateway returned a URL-mode elicitation
+        (JSON-RPC <code>-32042</code>) because it has no stored GitHub authorization for you.
+        The agent replaced the raw authorization URL with the portal's, so your consent is
+        bound to your session.</p>
+    </div>
+  {% else %}
+    <div class="box ok">
+      <h2>The agent answered</h2>
+      {% if result.answer %}
+        <p style="font-size: 1.05rem; white-space: pre-wrap;">{{ result.answer }}</p>
+      {% else %}
+        <pre>{{ result | tojson(indent=2) }}</pre>
+      {% endif %}
+      <details style="margin-top: 1rem;">
+        <summary class="muted" style="cursor: pointer; font-size: 0.85rem;">Show raw response</summary>
+        <pre style="margin-top: 0.5rem;">{{ result | tojson(indent=2) }}</pre>
+      </details>
+    </div>
+  {% endif %}
+
+  <p><a href="/">&larr; back</a></p>
+{% endblock %}

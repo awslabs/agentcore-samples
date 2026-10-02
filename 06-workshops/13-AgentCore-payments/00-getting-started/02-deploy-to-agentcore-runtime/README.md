@@ -50,7 +50,7 @@ agentcore create → agentcore dev → agentcore deploy → agentcore invoke
 
 | Step | Command | What it does |
 |------|---------|-------------|
-| Install CLI | `npm install -g @aws/agentcore` | Install the AgentCore CLI |
+| Install CLI | `npm install -g @aws/agentcore@0.30.0` | Install the AgentCore CLI |
 | Scaffold | `agentcore create --name PaymentAgent` | Generate project structure |
 | Test locally | `agentcore dev` | Start local dev server on :8080 |
 | Deploy | `agentcore deploy` | Package + deploy to AWS via CDK |
@@ -87,7 +87,11 @@ App Backend (ManagementRole)              AgentCore Runtime (Execution Role)
 
 ```bash
 # Install CLI (requires Node.js 20+)
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 # Scaffold project
 agentcore create --name PaymentAgent --framework Strands --protocol HTTP --model-provider Bedrock --memory none

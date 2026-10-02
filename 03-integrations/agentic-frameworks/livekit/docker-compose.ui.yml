@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  token-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.token-api
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - PUBLIC_IP=${PUBLIC_IP}
+    networks:
+      - interview-network
+
+  interview-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    environment:
+      - REACT_APP_LIVEKIT_SERVER_URL=${LIVEKIT_URL}
+      - REACT_APP_API_URL=https://${PUBLIC_IP}:8443/api
+    depends_on:
+      - token-api
+    networks:
+      - interview-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - interview-ui
+      - token-api
+    networks:
+      - interview-network
+
+networks:
+  interview-network:
+    driver: bridge

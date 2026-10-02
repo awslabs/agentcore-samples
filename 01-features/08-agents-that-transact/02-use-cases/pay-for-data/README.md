@@ -97,7 +97,7 @@ SESSION + INVOKE  (pay_for_data.py Step 6, ManagementRole)
 - Node.js 20+ (for AgentCore CLI)
 - AWS CLI v2 configured
 - AWS CDK v2 installed
-- AgentCore CLI: `npm install -g @aws/agentcore`
+- AgentCore CLI: `npm install -g @aws/agentcore@0.30.0`
 - Coinbase CDP account — `CDP_API_KEY_NAME`, `CDP_API_KEY_PRIVATE_KEY`, `CDP_WALLET_SECRET`
   - **Enable Delegated Signing**: project → Wallet → Embedded Wallets → Policies
 - IAM roles created (see `.env.sample` for required role ARNs)

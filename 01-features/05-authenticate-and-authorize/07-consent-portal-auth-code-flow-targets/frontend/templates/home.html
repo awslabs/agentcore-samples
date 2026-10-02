@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>AgentCore consent portal &mdash; GitHub MCP</h1>
+  <p class="muted">You &rarr; this app &rarr; agent on AgentCore Runtime &rarr; AgentCore Gateway &rarr; GitHub MCP server</p>
+  <p class="chain">signed in with {{ idp }} &middot; GitHub access granted out of band on the hosted consent portal</p>
+
+  <div class="box" style="background: #fff;">
+    <svg class="diagram" viewBox="0 0 700 380" role="img"
+         aria-labelledby="dgm-title dgm-desc">
+      <title id="dgm-title">How this demo works</title>
+      <desc id="dgm-desc">Consent happens once on an AWS-hosted portal, which stores your
+        GitHub token in the AgentCore token vault. Every later request goes from you through
+        this app to an agent, then a gateway, which reads that stored consent to call GitHub
+        as you.</desc>
+
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#57606a"/>
+        </marker>
+      </defs>
+
+      <!-- band 1: consent, once -->
+      <rect x="8" y="8" width="684" height="96" rx="8" fill="#f0fdf4" stroke="#4ac26b"/>
+      <text x="24" y="30" font-size="12" font-weight="600" fill="#1a7f37">
+        1 &#8212; Consent, once. On a page AWS hosts; this app is not involved.
+      </text>
+      <rect x="24"  y="48" width="80"  height="38" rx="6" fill="#fff" stroke="#8c959f"/>
+      <text x="64"  y="72" font-size="12" text-anchor="middle" fill="#1f2328">You</text>
+      <rect x="170" y="48" width="240" height="38" rx="6" fill="#dafbe1" stroke="#4ac26b"/>
+      <text x="290" y="66" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2328">Consent portal</text>
+      <text x="290" y="80" font-size="10" text-anchor="middle" fill="#57606a">AWS-managed and hosted</text>
+      <rect x="476" y="48" width="124" height="38" rx="6" fill="#f6f8fa" stroke="#8c959f"/>
+      <text x="538" y="72" font-size="12" text-anchor="middle" fill="#1f2328">GitHub</text>
+      <line x1="104" y1="67" x2="164" y2="67" stroke="#57606a" marker-end="url(#ah)"/>
+      <text x="134" y="61" font-size="10" text-anchor="middle" fill="#57606a">sign in</text>
+      <line x1="410" y1="67" x2="470" y2="67" stroke="#57606a" marker-end="url(#ah)"/>
+      <text x="440" y="61" font-size="10" text-anchor="middle" fill="#57606a">approve</text>
+
+      <!-- the vault: where the two flows meet -->
+      <rect x="248" y="138" width="204" height="38" rx="19" fill="#ecfdf5" stroke="#4ac26b"/>
+      <text x="350" y="156" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2328">Token vault</text>
+      <text x="350" y="169" font-size="10" text-anchor="middle" fill="#57606a">AgentCore Identity</text>
+      <line x1="300" y1="104" x2="300" y2="136" stroke="#57606a" marker-end="url(#ah)"/>
+      <text x="292" y="126" font-size="10" text-anchor="end" fill="#57606a">stores your token</text>
+      <line x1="400" y1="210" x2="400" y2="178" stroke="#57606a" marker-end="url(#ah)"/>
+      <text x="408" y="126" font-size="10" fill="#57606a">reads it back</text>
+
+      <!-- band 2: every request -->
+      <rect x="8" y="210" width="684" height="160" rx="8" fill="#f0f6ff" stroke="#54aeff"/>
+      <text x="24" y="232" font-size="12" font-weight="600" fill="#0969da">
+        2 &#8212; Every request afterwards. No prompting; your consent is reused.
+      </text>
+      <text x="24" y="249" font-size="10" fill="#57606a">
+        one sign-in token is forwarded unchanged along this path
+      </text>
+      <rect x="24"  y="266" width="80"  height="38" rx="6" fill="#fff" stroke="#8c959f"/>
+      <text x="64"  y="290" font-size="12" text-anchor="middle" fill="#1f2328">You</text>
+      <rect x="130" y="266" width="114" height="38" rx="6" fill="#ddf4ff" stroke="#54aeff"/>
+      <text x="187" y="290" font-size="12" text-anchor="middle" fill="#1f2328">This app</text>
+      <rect x="270" y="266" width="120" height="38" rx="6" fill="#ddf4ff" stroke="#54aeff"/>
+      <text x="330" y="284" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2328">Agent</text>
+      <text x="330" y="297" font-size="10" text-anchor="middle" fill="#57606a">AgentCore Runtime</text>
+      <rect x="416" y="266" width="120" height="38" rx="6" fill="#dafbe1" stroke="#4ac26b"/>
+      <text x="476" y="284" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2328">Gateway</text>
+      <text x="476" y="297" font-size="10" text-anchor="middle" fill="#57606a">AgentCore</text>
+      <rect x="562" y="266" width="106" height="38" rx="6" fill="#f6f8fa" stroke="#8c959f"/>
+      <text x="615" y="290" font-size="12" text-anchor="middle" fill="#1f2328">GitHub</text>
+      <line x1="104" y1="285" x2="126" y2="285" stroke="#57606a" marker-end="url(#ah)"/>
+      <line x1="244" y1="285" x2="266" y2="285" stroke="#57606a" marker-end="url(#ah)"/>
+      <line x1="390" y1="285" x2="412" y2="285" stroke="#57606a" marker-end="url(#ah)"/>
+      <line x1="536" y1="285" x2="558" y2="285" stroke="#57606a" marker-end="url(#ah)"/>
+
+      <!-- the model: chooses which tool, never sees a credential -->
+      <rect x="270" y="326" width="120" height="34" rx="6" fill="#f6f8fa" stroke="#8c959f"/>
+      <text x="330" y="347" font-size="11" text-anchor="middle" fill="#1f2328">Bedrock model</text>
+      <line x1="330" y1="304" x2="330" y2="324" stroke="#57606a" marker-end="url(#ah)"/>
+      <text x="400" y="341" font-size="10" fill="#57606a">picks which tool to call &#8212;</text>
+      <text x="400" y="354" font-size="10" fill="#57606a">never sees a GitHub credential</text>
+    </svg>
+    <p class="muted" style="font-size: 0.85rem; margin-bottom: 0;">
+      Your GitHub credential never reaches this app or the agent &mdash; only the gateway
+      uses it, and only because you granted it on the portal. Consent is per user, so it
+      covers you and nobody else; you can withdraw it from
+      <a href="https://github.com/settings/applications" target="_blank" rel="noopener">your
+      GitHub authorized&nbsp;apps</a>.
+    </p>
+  </div>
+
+  {% if session_dropped %}
+    <div class="box warn">
+      <strong>Signed you out.</strong> Your previous session belonged to a different
+      deployment of this sample (a different identity provider or gateway), so the token
+      in it would have been rejected. Sign in again below.
+    </div>
+  {% endif %}
+
+  {% if not agent_configured %}
+    <div class="box warn">
+      <strong>Agent not deployed yet.</strong>
+      Deploy it with <code>agentcore deploy -y -v</code>, take the invoke URL from
+      <code>agentcore status</code>, append <code>?qualifier=DEFAULT</code>, set it in
+      <code>.env</code> as <code>AGENT_RUNTIME_INVOKE_URL</code>, and restart this app.
+    </div>
+  {% endif %}
+
+  {% if user %}
+    <div class="box">
+      <p>Signed in as <strong>{{ user.name or user.username }}</strong>{% if user.username %} ({{ user.username }}){% endif %}</p>
+      {% if user.subject %}
+        <p class="muted"><code>{{ user.subject_label }}</code>: <code>{{ user.subject }}</code> &mdash;
+          the consent portal binds your GitHub consent under this identity, and the gateway
+          resolves the same one from the token this app sends.</p>
+      {% endif %}
+      <p><a href="/auth/logout">Sign out</a> &middot; <a href="/debug/token">Inspect my token</a></p>
+    </div>
+
+    <div class="box cta">
+      <h2>Step 1 &mdash; connect GitHub on the consent portal</h2>
+      <p>The portal is hosted and managed by AWS. It authenticates you against the same
+        identity provider, then walks you through GitHub's authorization and binds that
+        consent to you. Nothing here handles your GitHub token.</p>
+      {% if portal_link %}
+        <p><a href="{{ portal_link }}" target="_blank" rel="noopener"><button type="button">Open the consent portal</button></a></p>
+        <p class="muted" style="font-size: 0.85rem;">A newly created connection can take up to
+          5 minutes to appear on that page.</p>
+      {% else %}
+        <p class="muted">Set <code>PORTAL_URL</code> in <code>.env</code> (written by
+          <code>deploy/02_create_portal.py</code>) to get a link here.</p>
+      {% endif %}
+    </div>
+
+    <div class="box">
+      <h2>Step 2 &mdash; ask the agent about GitHub</h2>
+      <p class="muted">This app sends the agent your access token. The agent forwards it to
+        the gateway, which calls the GitHub MCP server with the authorization <em>you</em>
+        granted. If you have not connected yet, the agent points you back to the portal
+        instead of failing.</p>
+      <form method="post" action="/ask">
+        <p><input type="text" name="prompt" value="{{ default_prompt }}" /></p>
+        <p><input type="submit" value="Ask the agent" {% if not agent_configured %}disabled{% endif %} /></p>
+      </form>
+    </div>
+  {% else %}
+    <div class="box">
+      <p>Sign in to try the flow. Use an account that exists in the identity provider you
+        configured, and sign in to the consent portal with the same one.</p>
+      <p><a href="/auth/login"><button type="button">{{ signin_label }}</button></a></p>
+    </div>
+  {% endif %}
+{% endblock %}

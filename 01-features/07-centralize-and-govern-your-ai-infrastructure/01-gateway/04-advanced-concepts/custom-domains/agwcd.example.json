@@ -1,0 +1,24 @@
+{
+  "domain_name": "mcp.example.com",
+  "geo_allowlist": ["US", "CA"],
+  "routes": [
+    {
+      "path": "/hr",
+      "gateway_url": "https://gwhr.gateway.bedrock-agentcore.us-east-1.amazonaws.com",
+      "origin_verify": true,
+      "endpoints": [
+        { "type": "mcp" }
+      ]
+    },
+    {
+      "path": "/sales",
+      "gateway_url": "https://gwsales.gateway.bedrock-agentcore.us-east-1.amazonaws.com",
+      "origin_verify": false,
+      "endpoints": [
+        { "type": "mcp" },
+        { "type": "http_mcp", "target_name": "catalog" },
+        { "type": "http_a2a", "target_name": "planner" }
+      ]
+    }
+  ]
+}

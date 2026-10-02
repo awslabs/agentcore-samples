@@ -4,3 +4,4 @@ bedrock_agentcore
 langgraph 
 langgraph-checkpoint-aws 
 langchain-aws
+langchain>=1.0

@@ -2,16 +2,17 @@
 
 Three AI agents collaborate on one music track, inside one long-lived session, on
 **one GPU instance**. They generate real audio with a model running locally on the
-instance's GPU, master it with real signal processing, and screen it against a
-back-catalogue, then fix and re-check their own work when the screen objects.
+instance's GPU, prepare it for delivery with real signal processing, and screen it
+against a back-catalogue, then fix and re-check their own work when the screen
+objects.
 
-Final result is a `.wav` you can listen to, its mastered version, and three
+Final result is a `.wav` you can listen to, its delivery version, and three
 markdown reports explaining every decision. All files are downloaded to your machine.
 
 | Agent | Role | Artifact | Compute | Produces |
 |---|---|---|---|---|
 | `composition_agent.py` | Writes a brief, then renders audio with ACE-Step | container (ECR) | **GPU** (NVIDIA L4) | `composition.wav`, `composition.md` |
-| `mastering_agent.py` | Measures the mix, picks a chain, applies it, measures again | container (ECR) | CPU | `master.wav`, `mastering.md` |
+| `delivery_agent.py` | Measures the mix, picks a chain, applies it, measures again | container (ECR) | CPU | `delivery.wav`, `delivery.md` |
 | `compliance_agent.py` | Re-measures, screens for similarity, computes a verdict | **zip on S3** | CPU | `compliance.md`, `compliance.json` |
 
 All three run `global.anthropic.claude-sonnet-4-6` on Amazon Bedrock for reasoning.
@@ -45,7 +46,7 @@ instance GPU, not by a hosted service.
 The three agents model **three teams that
 ship independently**, and they differ in every way that matters operationally.
 
-| | composition | mastering | compliance |
+| | composition | delivery | compliance |
 |---|---|---|---|
 | Needs | **an L4 GPU** | CPU | CPU |
 | Packaged as | container image (ECR) | container image (ECR) | **zip on S3** |
@@ -60,14 +61,14 @@ on the L4. It also owns two things nobody else does: **building the ML stack** o
 volume (`mode=prepare`), and **creating each track directory**, the other two
 deliberately refuse to create it, so a mis-ordered pipeline fails loudly.
 
-**`mastering_agent.py`**: decides, then verifies.
+**`delivery_agent.py`**: decides, then verifies.
 Opens `composition.wav` off the shared volume, measures it, and hands **the
 measurements** (not the audio) to Sonnet, which returns an EQ / compressor /
 limiter chain. `audio_dsp.py` applies it and the output is measured again. The
 model never touches a sample, and its plan is checked rather than trusted.
 
 **`compliance_agent.py`**: the auditor, which computes rather than asks.
-Re-measures the audio independently, checks delivery QC against what the mastering
+Re-measures the audio independently, checks technical QC against what the delivery
 agent *claimed*, and screens against the back-catalogue using chroma features and
 subsequence DTW across all twelve transpositions. The verdict is arithmetic (`cleared` / `review_required` / `not_cleared`) and the model only writes the
 explanation. If the screen objects, it calls back into the composition runtime for a
@@ -86,20 +87,20 @@ No agent ever receives audio in a request. Each writes files to `/mnt/tracks/<tr
    [2] composition   mode=catalogue  ─▶ catalogue/*.wav   (the references)
    [3] composition   mode=compose    ─▶ composition.wav ──┐
                                                           │
-   [4] mastering     reads ◀──────────────────────────────┘
+   [4] delivery      reads ◀──────────────────────────────┘
                      measure ─▶ Sonnet picks a chain ─▶ apply ─▶ measure
-                                                     ─▶ master.wav ──┐
+                                                   ─▶ delivery.wav ──┐
                                                                      │
    [5] compliance    reads ◀─────────────────────────────────────────┘
-                     re-measure ─▶ delivery QC ─▶ chroma/DTW screen
+                     re-measure ─▶ technical QC ─▶ chroma/DTW screen
                      ─▶ verdict, computed in code
                               │
                               │  flagged, or in the review band?
                               ▼
    [6] composition   mode=remediate  ◀── invoked BY compliance,
                      ─▶ composition_remediated.wav      same session id
-                                 │
-   [7] mastering     re-master ◀─┘ ─▶ master.wav
+                                  │
+   [7] delivery      re-prepare ◀─┘ ─▶ delivery.wav
        compliance    re-screen     ─▶ compliance.md / compliance.json
 ```
 
@@ -108,12 +109,12 @@ No agent ever receives audio in a request. Each writes files to `/mnt/tracks/<tr
 | 1 · prepare | Provisions the GPU instance and builds a 14.6 GB ML stack onto `/mnt/models` a venv with CUDA torch, ACE-Step from a pinned commit, and the weights from HuggingFace. Nothing musical yet | 
 | 2 · catalogue | Renders two short reference tracks, the fictional back-catalogue the screen compares against, generated by the same model so no third-party recording ships with the sample |
 | 3 · compose | Sonnet writes the brief; ACE-Step renders on the L4. With `--with-catalogue` this render is deliberately conditioned on a catalogue track, so the screen has something real to catch | 
-| 4 · master | Measure → Sonnet picks the chain → DSP applies it → measure again | 
-| 5 · compliance | Re-measure, delivery QC, similarity screen, computed verdict |
-| 6–7 · remediate | Only if step 5 objects: a replacement is rendered, re-mastered and re-screened 
+| 4 · deliver | Measure → Sonnet picks the chain → DSP applies it → measure again | 
+| 5 · compliance | Re-measure, technical QC, similarity screen, computed verdict |
+| 6–7 · remediate | Only if step 5 objects: a replacement is rendered, re-prepared and re-screened 
 
-Steps 6–7 exist because a remediation leaves `master.wav` describing audio that no
-longer exists. Without them a run ends holding a polished master of the **rejected**
+Steps 6–7 exist because a remediation leaves `delivery.wav` describing audio that no
+longer exists. Without them a run ends holding a polished delivery of the **rejected**
 material, the one artifact a producer would actually ship.
 
 ## The one idea everything rests on
@@ -125,7 +126,7 @@ mounted.
 
 That is the whole coordination mechanism. There is no queue, no database, no
 orchestrator. `invoke.py` generates one session id and passes it to all three
-runtimes, so the mastering agent can open a file the composition agent wrote minutes
+runtimes, so the delivery agent can open a file the composition agent wrote minutes
 earlier. Change the session id and it gets a different instance with an empty volume.
 
 | Mount | Size | Holds | Lifetime |
@@ -223,7 +224,7 @@ session mid-run and the collocation demonstration did not happen.
 Other useful invocations:
 
 ```bash
-python scripts/invoke.py                      # no catalogue: compose, master, comply only
+python scripts/invoke.py                      # no catalogue: compose, deliver, comply only
 python scripts/invoke.py --duration 60        # 60 s of audio instead of 30
 python scripts/invoke.py --track my-song      # name the track directory
 python scripts/invoke.py --resume             # stop the session, resume it, re-screen
@@ -242,13 +243,13 @@ Audio is downloaded automatically into `runs/<track>/`:
 ```bash
 ls -la runs/*/
 afplay runs/*/composition.wav     # the raw render      (macOS; use aplay on Linux)
-afplay runs/*/master.wav          # after mastering
-open  runs/*/mastering.md         # why that chain was chosen
+afplay runs/*/delivery.wav        # after delivery prep
+open  runs/*/delivery.md          # why that chain was chosen
 open  runs/*/compliance.md        # the verdict and the screen
 ```
 
-`composition.wav` should sound noticeably hotter and flatter than `master.wav`; the
-mastered file is the one at −14 LUFS with a −1 dBTP ceiling.
+`composition.wav` should sound noticeably hotter and flatter than `delivery.wav`; the
+delivery file is the one at −14 LUFS with a −1 dBTP ceiling.
 
 ## 4. Tear it down
 
@@ -294,7 +295,7 @@ steps, with `--with-catalogue`. Trimmed to the interesting lines:
     rendered : NVIDIA L4 in 5.9s (peak VRAM 7.63 GiB)
     audio     20.062s  48000Hz  2ch  -7.56 LUFS  peak 0.01 dBTP  LRA 1.45 LU
 
-  4. master (real DSP, verified by measurement)
+  4. delivery (real DSP, verified by measurement)
     read     : composition.wav  <- written by another agent
     before    20.062s  48000Hz  2ch  -7.56 LUFS  peak 0.01 dBTP  LRA 1.45 LU
     after     20.062s  48000Hz  2ch  -14.0 LUFS  peak -2.9 dBTP  LRA 1.45 LU
@@ -305,18 +306,18 @@ steps, with `--with-catalogue`. Trimmed to the interesting lines:
     verdict  : REVIEW REQUIRED
     screen   : 2 reference(s), closest catalogue_00.wav distance 0.0892 (review)
     standout : 0.8479x the next-closest (flag below 0.6)
-    stale    : master.wav predates the screened render - re-run mastering
+    stale    : delivery.wav predates the screened render - re-run delivery
                remediation was requested from the composition agent
 
-  -- remediation happened, so the master is stale: re-mastering --
+  -- remediation happened, so the delivery is stale: re-preparing --
 
-  6. re-master the replacement
+  6. re-prepare the delivery for the replacement
     before    29.907s  48000Hz  2ch  -10.94 LUFS  peak -0.12 dBTP  LRA 4.78 LU
     after     29.907s  48000Hz  2ch  -14.0 LUFS  peak -1.0 dBTP   LRA 5.41 LU
     targets  : loudness met, true peak held
 
-  7. re-screen the new master
-    read     : master.wav  <- written by another agent
+  7. re-screen the new delivery
+    read     : delivery.wav  <- written by another agent
     verdict  : REVIEW REQUIRED
     screen   : 2 reference(s), closest catalogue_00.wav distance 0.0896 (review)
 
@@ -329,7 +330,7 @@ Four things in that output are the whole sample:
 * **One hostname for seven invocations across three runtimes.** That only works
   because they shared a `runtimeSessionId` on one capacity provider.
 * **`-7.56 → -14.0 LUFS` and `+0.01 → -2.9 dBTP` are measured after processing**, not
-  a plan a model asserted. The mix arrived a hair over full scale; the master lands
+  a plan a model asserted. The mix arrived a hair over full scale; the delivery lands
   1.9 dB below the ceiling.
 * **The screen caught a deliberate derivative, asked for a replacement, and
   re-screened it.** `read` shows `composition_remediated.wav`, so the verdict is for
@@ -339,7 +340,7 @@ Four things in that output are the whole sample:
   that ends on an honest amber is the point — see
   [the compliance screen](#the-compliance-screen).
 
-The mastering agent's reasoning is worth reading in `runs/<track>/mastering.md`. On
+The delivery agent's reasoning is worth reading in `runs/<track>/delivery.md`. On
 step 6 it placed a 22 Hz highpass to remove a DC offset **it had measured at
 0.002227**, cut 2 dB at 250 Hz, added a 1.5 dB air shelf, applied −2.14 dB of
 broadband gain, and **bypassed the compressor entirely** — recording why:
@@ -350,7 +351,7 @@ broadband gain, and **bypassed the compressor entirely** — recording why:
 
 Every number it reasons from is a measurement of the actual file, and the report has a
 **Deliberately left alone** section — the decisions a plausible-looking generated
-mastering plan never contains.
+delivery plan never contains.
 
 ---
 
@@ -372,8 +373,8 @@ Three locations, with different lifetimes:
 runs/<track>/
   composition.wav      the raw render
   composition.md       the brief, plus the render stats
-  master.wav           after mastering  (or after re-mastering, if remediation fired)
-  mastering.md         the chain, and what was deliberately left alone
+  delivery.wav         after delivery prep (or after re-preparing, if remediation fired)
+  delivery.md          the chain, and what was deliberately left alone
   compliance.md        the verdict, QC table and similarity screen
   compliance.json      the same thing as data
 ```
@@ -396,15 +397,15 @@ credentials it vends to agents.
   composition.wav                 S3  [3] composition   read by [4]
   composition.md                  S3  [3] composition
   composition_input_params.json       [3] ACE-Step's own dump of its render args
-  master.wav                      S3  [4] mastering     read by [5]
-  mastering.md                    S3  [4] mastering
-  mastering.json                      [4] mastering     read by [5] for its targets
+  delivery.wav                    S3  [4] delivery      read by [5]
+  delivery.md                     S3  [4] delivery
+  delivery.json                       [4] delivery      read by [5] for its targets
   composition_remediated.wav      S3  [6] composition   read by [7]
   composition_remediated.md       S3  [6] composition
   compliance.md                   S3  [5] compliance
   compliance.json                 S3  [5] compliance
   .sessions-composition/              Strands history, per agent (mode 0700)
-  .sessions-mastering/
+  .sessions-delivery/
   .sessions-compliance/
 ```
 
@@ -415,8 +416,8 @@ Three things worth knowing before you go hunting for a file:
 * **`composition_remediated.wav` is in S3, but `invoke.py` will not download it.**
   Remediation happens *inside* the compliance invocation, so the composition agent's
   artifact list is returned to the compliance agent, not to the script.
-* **`master.wav` is overwritten.** Step 7 re-masters the replacement to the same
-  filename. What you keep is the master of the replacement, which is the correct
+* **`delivery.wav` is overwritten.** Step 7 re-prepares the replacement to the same
+  filename. What you keep is the delivery of the replacement, which is the correct
   deliverable but not the only render that existed.
 
 ## Downloading by hand
@@ -432,11 +433,11 @@ aws s3 sync "s3://$BUCKET/tracks/$TRACK/" "./runs/$TRACK/" --region "$AWS_REGION
 To share one render with someone who has no AWS access, mint a link yourself:
 
 ```bash
-aws s3 presign "s3://$BUCKET/tracks/$TRACK/master.wav" --expires-in 3600 \
+aws s3 presign "s3://$BUCKET/tracks/$TRACK/delivery.wav" --expires-in 3600 \
   --region "$AWS_REGION"
 ```
 
-**Files that were never published** — the catalogue audio, `mastering.json` — are
+**Files that were never published** — the catalogue audio, `delivery.json` — are
 harder to reach. The instance has no shell you can write from: a command shell reports
 `groups=0(root)` and gets `EACCES` on the mount, and there is no scp. Either add a
 `publish()` call to the agent and redeploy, or
@@ -457,10 +458,10 @@ editing it or [invoking a runtime directly](#invoking-a-runtime-directly).
 |---|---|---|
 | compose | `Create an upbeat electronic track with heavy bass and synth melodies.` | [323](scripts/invoke.py#L323) |
 | compose, with `--with-catalogue` | `Create a melodic techno track with analog bass and warm pads, close to our catalogue sound.` | [329](scripts/invoke.py#L329) |
-| master | `Master this for streaming.` | [340](scripts/invoke.py#L340) |
-| compliance | `Screen this master for release.` | [347](scripts/invoke.py#L347) |
-| re-master | `Master the replacement for streaming.` | [360](scripts/invoke.py#L360) |
-| re-screen | `Screen the re-mastered replacement.` | [369](scripts/invoke.py#L369) |
+| delivery | `Prepare this for streaming delivery.` | [340](scripts/invoke.py#L340) |
+| compliance | `Screen this delivery for release.` | [347](scripts/invoke.py#L347) |
+| re-delivery | `Prepare the replacement for streaming delivery.` | [360](scripts/invoke.py#L360) |
+| re-screen | `Screen the re-prepared replacement.` | [369](scripts/invoke.py#L369) |
 | catalogue styles | `melodic techno, analog bass, warm pads, 124 bpm` and `lo-fi hip hop, dusty piano, vinyl crackle, 82 bpm` | [composition_agent.py:460](composition_agent.py#L460) |
 
 **Important:** the composition prompt does not control the render directly. It goes to
@@ -551,13 +552,13 @@ Every field below is real; nothing else is read.
 | `issue` | *unset* | `remediate` mode: what the screen objected to |
 | `avoid` | `{}` | `remediate` mode: `{title, reference, style_tags, other_references}` — the evidence that makes a rewrite informed rather than blind |
 
-**Mastering runtime**
+**Delivery runtime**
 
 | Field | Default | Meaning |
 |---|---|---|
 | `track_id` | `demo-track` | Must already hold a render |
 | `platform` | `spotify` | `spotify` −14/−1 · `apple` −16/−1 · `youtube` −14/−1 · `amazon` −14/−2 · `broadcast` −23/−1 (LUFS / dBTP) |
-| `prompt` | `Master this for <platform>.` | Steers the engineer's judgement, not the targets |
+| `prompt` | `Prepare this for <platform> delivery.` | Steers the engineer's judgement, not the targets |
 
 **Compliance runtime**
 
@@ -596,7 +597,7 @@ python scripts/deploy.py
 | `PREPARE_TIMEOUT_S` / `RENDER_TIMEOUT_S` | `1500` / `900` | Subprocess ceilings. `RENDER_TIMEOUT_S` must stay under the service's 900 s synchronous request limit |
 | `SIMILARITY_FAIL_DISTANCE` / `SIMILARITY_REVIEW_DISTANCE` | `0.045` / `0.10` | Absolute screening thresholds. **Recalibrate against your own catalogue** — see [the compliance screen](#the-compliance-screen) |
 | `SIMILARITY_STANDOUT_RATIO` | `0.6` | Relative test: flag when the closest match is this much closer than the next |
-| `COMPOSITION_MODEL_ID` / `MASTERING_MODEL_ID` / `COMPLIANCE_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Prefer a `global.` or Region-matched profile: a `us.` profile will not resolve outside US Regions |
+| `COMPOSITION_MODEL_ID` / `DELIVERY_MODEL_ID` / `COMPLIANCE_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Prefer a `global.` or Region-matched profile: a `us.` profile will not resolve outside US Regions |
 
 `deploy.py` also injects `ARTIFACT_BUCKET`, `COMPOSITION_RUNTIME_ARN`,
 `COMPOSITION_QUALIFIER`, `WORKSPACE_DIR` and `MODELS_DIR`. Those are
@@ -639,7 +640,7 @@ Every item here is a failure this sample actually hit.
 | `ImportError: TorchCodec is required for save_with_torchcodec` (or `load_`) | Recent torchaudio delegates file I/O to TorchCodec, which nothing installs. `generate.py` redirects both `save` and `load` to soundfile |
 | `pip install ace-step` fails at metadata generation | The PyPI sdist omits the `requirements.txt` its own `setup.py` reads. Install from a pinned GitHub tarball |
 | 403 `SignatureDoesNotMatch` on a presigned S3 URL | botocore presigned against the global host `bucket.s3.amazonaws.com` while scoping the signature to the Region. Pass `endpoint_url=https://s3.<region>.amazonaws.com` |
-| A 24 s clip fails a "dynamics retained" check | Loudness range needs enough 3 s blocks to mean anything, and a uniform *source* is not mastering's fault. The check is skipped under 30 s and otherwise compared against the pre-master measurement |
+| A 24 s clip fails a "dynamics retained" check | Loudness range needs enough 3 s blocks to mean anything, and a uniform *source* is not the delivery chain's fault. The check is skipped under 30 s and otherwise compared against the pre-delivery measurement |
 | Base image CVEs | `python:3.12-slim` carries the usual base-image findings. Rebuild regularly; under the shared responsibility model, container image currency is yours |
 
 ## Finding the logs
@@ -688,14 +689,14 @@ enough:
 ```
 gpu-music-production-agent/
 ├── composition_agent.py       577  GPU agent   ─┐
-├── mastering_agent.py         470  CPU agent    ├─ the three agents
+├── delivery_agent.py          470  CPU agent    ├─ the three agents
 ├── compliance_agent.py        719  CPU agent   ─┘
 ├── audio_dsp.py               519  shared DSP + measurement library
 ├── model_stack/
 │   ├── prepare.py             208  builds the venv + weights onto /mnt/models
 │   └── generate.py            179  runs ACE-Step inside that venv
 ├── Dockerfile.composition      53  → the composition image
-├── Dockerfile.mastering        24  → the mastering image
+├── Dockerfile.delivery         24  → the delivery image
 ├── requirements.txt            20  agent-side deps only, never the ML stack
 ├── scripts/
 │   ├── deploy.py              653  stand everything up
@@ -709,13 +710,13 @@ gpu-music-production-agent/
 | File | Role |
 |---|---|
 | `composition_agent.py` | Five modes — `prepare` (build the ML stack), `status`, `catalogue`, `compose`, `remediate`. Owns creation of each track directory. The only agent that uses the GPU, via a subprocess in a separate interpreter |
-| `mastering_agent.py` | Measures the render, asks Sonnet for an EQ/compressor/limiter chain from those numbers, applies it, measures again. Holds the per-platform delivery targets |
-| `compliance_agent.py` | Re-measures independently, runs delivery QC against `mastering.json`'s claims, screens against the catalogue, **computes** the three-state verdict, and calls back into the composition runtime when the screen objects. `findings_brief()` is what withholds figures from the model |
+| `delivery_agent.py` | Measures the render, asks Sonnet for an EQ/compressor/limiter chain from those numbers, applies it, measures again. Holds the per-platform delivery targets |
+| `compliance_agent.py` | Re-measures independently, runs technical QC against `delivery.json`'s claims, screens against the catalogue, **computes** the three-state verdict, and calls back into the composition runtime when the screen objects. `findings_brief()` is what withholds figures from the model |
 | `audio_dsp.py` | Everything numeric, implemented from the specs to avoid GPL and unlicensed dependencies: ITU-R BS.1770-4 loudness, EBU 3342 loudness range, true peak with 4× oversampling, RBJ biquads, a compressor, a look-ahead limiter, chroma features and subsequence DTW. Validated against EBU Tech 3341 |
 | `model_stack/prepare.py` | Creates the venv on `/mnt/models`, installs CUDA torch and ACE-Step from a pinned GitHub tarball, downloads the weights, copies `generate.py` in beside them. Idempotent — stamps each stage so a resumed session skips finished work |
 | `model_stack/generate.py` | The renderer. Runs under `/mnt/models/venv/bin/python`, not the agent's interpreter, because ACE-Step pins `transformers==4.50.0` and drags in gradio and spacy. Patches `torchaudio.save`/`load` to soundfile, and prints its result as a `__RENDER_RESULT__` JSON line the agent parses |
 | `Dockerfile.composition` | `python:3.12-slim`, zero `RUN` steps. Sets `LD_LIBRARY_PATH=/usr/lib64` — without it torch silently runs on the CPU on a GPU fleet |
-| `Dockerfile.mastering` | The same, minus the GPU concerns and `model_stack/` |
+| `Dockerfile.delivery` | The same, minus the GPU concerns and `model_stack/` |
 | `requirements.txt` | Agent-side only: Strands, the AgentCore SDK, boto3, numpy, scipy, soundfile. **Never** torch — that lives on the volume |
 | `scripts/deploy.py` | IAM roles → S3 bucket → vendor wheels → build and push both images → build and upload the zip → capacity provider → three runtimes. Writes `deployment_state.json`. Creates **no instances** |
 | `scripts/invoke.py` | Generates one session id, drives all seven steps through it, retries capacity failures on a fresh id, prints the collocation proof, downloads artifacts |
@@ -737,8 +738,8 @@ two kinds of artifact, and this sample ships both onto **one** capacity provider
   model_stack/         ─┤        + LD_LIBRARY_PATH=/usr/lib64
   build/agentdeps      ─┘          (the CUDA trap)
 
-  mastering_agent.py   ─┐
-  audio_dsp.py         ─┼─▶ Dockerfile.mastering ───▶ ECR image ─▶ CPU runtime
+  delivery_agent.py    ─┐
+  audio_dsp.py         ─┼─▶ Dockerfile.delivery ────▶ ECR image ─▶ CPU runtime
   build/agentdeps      ─┘
 
   compliance_agent.py  ─┐
@@ -773,9 +774,9 @@ transcribe ITU-R BS.1770 three times.
 
 Two checks, both on the audio.
 
-**Delivery QC** re-measures integrated loudness (ITU-R BS.1770-4), loudness range
+**Technical QC** re-measures integrated loudness (ITU-R BS.1770-4), loudness range
 (EBU Tech 3342), true peak with 4× oversampling, clipping runs, DC offset and mono
-compatibility, and compares them against the targets `mastering.json` claims.
+compatibility, and compares them against the targets `delivery.json` claims.
 
 **Similarity screening** compares chroma features with subsequence DTW over all twelve
 transpositions, so a copy shifted to another key still matches — which a plain

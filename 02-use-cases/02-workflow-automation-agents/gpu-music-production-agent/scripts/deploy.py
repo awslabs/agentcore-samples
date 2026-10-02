@@ -105,7 +105,7 @@ DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-4-6"
 
 MODELS = {
     "composition": os.environ.get("COMPOSITION_MODEL_ID", DEFAULT_MODEL_ID),
-    "mastering": os.environ.get("MASTERING_MODEL_ID", DEFAULT_MODEL_ID),
+    "delivery": os.environ.get("DELIVERY_MODEL_ID", DEFAULT_MODEL_ID),
     "compliance": os.environ.get("COMPLIANCE_MODEL_ID", DEFAULT_MODEL_ID),
 }
 
@@ -645,7 +645,7 @@ def create_runtime(
         # Binds the runtime to the fleet. Mutually exclusive with
         # networkConfiguration: the VPC belongs to the capacity provider.
         capacityProviderConfiguration={"capacityProviderArn": cp_arn},
-        # Only the volumes a runtime declares are mounted for it, so the mastering
+        # Only the volumes a runtime declares are mounted for it, so the delivery
         # and compliance agents never see the model stack.
         filesystemConfigurations=[{"capacityProviderVolume": {"volumeName": v, "mountPath": m}} for v, m in volumes],
         lifecycleConfiguration={"idleRuntimeSessionTimeout": IDLE_SESSION_TIMEOUT, "maxLifetime": MAX_LIFETIME},
@@ -673,7 +673,7 @@ def main() -> None:
     vendor_agent_deps()
 
     composition_image = build_and_push_image("composition", account, cli, f"v1-{suffix}")
-    mastering_image = build_and_push_image("mastering", account, cli, f"v1-{suffix}")
+    delivery_image = build_and_push_image("delivery", account, cli, f"v1-{suffix}")
     _, key = build_and_upload_zip(account, bucket, f"compliance/{suffix}/compliance_agent.zip")
 
     cp_id, cp_arn = create_capacity_provider(control, f"music_production_capacity_{suffix}", operator_arn)
@@ -697,13 +697,13 @@ def main() -> None:
     put_execution_policy(account, composition_arn=composition["arn"])
     log(f"scoped CrossAgentInvoke to {composition['arn']}")
 
-    mastering = create_runtime(
+    delivery = create_runtime(
         control,
-        f"music_production_mastering_{suffix}",
-        {"containerConfiguration": {"containerUri": mastering_image}},
+        f"music_production_delivery_{suffix}",
+        {"containerConfiguration": {"containerUri": delivery_image}},
         execution_arn,
         cp_arn,
-        {**base_env, "MODEL_ID": MODELS["mastering"]},
+        {**base_env, "MODEL_ID": MODELS["delivery"]},
         [(TRACKS_VOLUME, TRACKS_MOUNT)],
     )
 
@@ -734,8 +734,8 @@ def main() -> None:
         "suffix": suffix,
         "instance_type": CP_INSTANCE_TYPE,
         "capacity_provider": {"id": cp_id, "arn": cp_arn},
-        "runtimes": {"composition": composition, "mastering": mastering, "compliance": compliance},
-        "ecr_repositories": ["music-production/composition-agent", "music-production/mastering-agent"],
+        "runtimes": {"composition": composition, "delivery": delivery, "compliance": compliance},
+        "ecr_repositories": ["music-production/composition-agent", "music-production/delivery-agent"],
         "s3": {"bucket": bucket, "key": key},
         "iam_roles": [OPERATOR_ROLE_NAME, EXECUTION_ROLE_NAME],
         "volumes": {TRACKS_VOLUME: TRACKS_MOUNT, MODELS_VOLUME: MODELS_MOUNT},

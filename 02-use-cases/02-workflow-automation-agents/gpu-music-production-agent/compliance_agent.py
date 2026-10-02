@@ -1,14 +1,14 @@
 """Compliance agent.
 
-Screens the finished master before release. Two independent checks, both on the
+Screens the finished delivery before release. Two independent checks, both on the
 actual audio:
 
-1. **Delivery QC.** Re-measures loudness, true peak, clipping, DC offset and mono
-   compatibility, and compares them against the targets the mastering agent said
-   it was hitting. The mastering agent grading its own homework is not a control;
+1. **Technical QC.** Re-measures loudness, true peak, clipping, DC offset and mono
+   compatibility, and compares them against the targets the delivery agent said
+   it was hitting. The delivery agent grading its own homework is not a control;
    this is.
 
-2. **Similarity screening.** Compares the master's harmonic content against
+2. **Similarity screening.** Compares the delivery's harmonic content against
    the reference catalogue using chroma features and subsequence DTW over
    all twelve transpositions, so a copy that was shifted to another key still
    matches. An acoustic fingerprint would only catch a byte-level duplicate.
@@ -93,7 +93,7 @@ STANDOUT_RATIO = float(os.environ.get("SIMILARITY_STANDOUT_RATIO", "0.6"))
 
 SYSTEM_PROMPT = """You are a music copyright and delivery compliance analyst.
 
-You are given measurements of a finished master and the output of a similarity
+You are given measurements of a finished delivery and the output of a similarity
 screen against the reference catalogue. Explain what the numbers mean for
 release readiness, in plain language, for a producer who is not an engineer.
 
@@ -185,16 +185,16 @@ def list_artifacts(track_id: str) -> list[str]:
 
 
 def subject_audio(track_id: str) -> tuple[str, Path, bool]:
-    """What is actually under review, and whether the master is stale.
+    """What is actually under review, and whether the delivery is stale.
 
-    The master is the right subject only while it is newer than the newest render.
+    The delivery is the right subject only while it is newer than the newest render.
     After a remediation the composition agent has written a fresh
-    composition_remediated.wav and nothing has re-mastered it, so screening
-    master.wav again would re-judge the very material that was just replaced --
-    measured: a remediated track stayed NOT CLEARED because the stale master was
+    composition_remediated.wav and nothing has re-prepared it, so screening
+    delivery.wav again would re-judge the very material that was just replaced --
+    measured: a remediated track stayed NOT CLEARED because the stale delivery was
     screened a second time.
 
-    Returns (name, path, master_is_stale).
+    Returns (name, path, delivery_is_stale).
     """
     directory = track_path(track_id)
     renders = [
@@ -202,23 +202,23 @@ def subject_audio(track_id: str) -> tuple[str, Path, bool]:
         for p in (directory / "composition_remediated.wav", directory / "composition.wav")
         if p.exists() and p.stat().st_size > 0
     ]
-    master = directory / "master.wav"
-    has_master = master.exists() and master.stat().st_size > 0
+    delivery = directory / "delivery.wav"
+    has_delivery = delivery.exists() and delivery.stat().st_size > 0
 
-    if has_master and renders:
+    if has_delivery and renders:
         newest_render = max(renders, key=lambda p: p.stat().st_mtime)
-        if newest_render.stat().st_mtime > master.stat().st_mtime:
-            # The master predates the current render: screen the render and say so.
+        if newest_render.stat().st_mtime > delivery.stat().st_mtime:
+            # The delivery predates the current render: screen the render and say so.
             return newest_render.name, newest_render, True
-        return master.name, master, False
-    if has_master:
-        return master.name, master, False
+        return delivery.name, delivery, False
+    if has_delivery:
+        return delivery.name, delivery, False
     if renders:
         newest = max(renders, key=lambda p: p.stat().st_mtime)
         return newest.name, newest, False
     raise WorkflowError(
         "No audio to review in the shared workspace. Invoke the composition and "
-        "mastering agents first, with the same runtimeSessionId."
+        "delivery agents first, with the same runtimeSessionId."
     )
 
 
@@ -260,26 +260,27 @@ def host_info() -> dict:
 # -------------------------------------------------------------------- the checks
 
 
-def delivery_qc(path: Path, track_id: str, is_master: bool = True) -> dict:
-    """Re-measure the subject and check it against what mastering claimed.
+def technical_qc(path: Path, track_id: str, is_delivery: bool = True) -> dict:
+    """Re-measure the subject and check it against what the delivery agent claimed.
 
-    ``is_master`` matters. Delivery targets only apply to a master; asserting them
+    ``is_delivery`` matters. The platform targets only apply to a finished delivery;
+    asserting them
     against a raw render makes the verdict guaranteed-fail after any remediation,
-    because an unmastered file is of course not at -14 LUFS. Measured case: a
+    because an unprepared file is of course not at -14 LUFS. Measured case: a
     freshly remediated render was failed for being -16.88 LUFS against a target it
-    had never been through mastering to meet. Those two checks become
-    informational when the subject is not the master.
+    had never been through delivery preparation to meet. Those two checks become
+    informational when the subject is not the delivery.
     """
     m = audio.measure(str(path)).to_dict()
     claimed: dict = {}
     source_lra: float | None = None
-    raw = read_text(track_id, "mastering.json")
+    raw = read_text(track_id, "delivery.json")
     if raw:
         try:
             result = json.loads(raw).get("result") or {}
             claimed = result.get("targets") or {}
-            # What the mix measured BEFORE mastering, so the dynamics check can
-            # ask whether mastering crushed the material rather than whether the
+            # What the mix measured BEFORE the delivery chain, so the dynamics check can
+            # ask whether the delivery chain crushed the material rather than whether the
             # material had dynamics in the first place.
             source_lra = (result.get("before") or {}).get("loudness_range_lu")
         except json.JSONDecodeError:
@@ -295,26 +296,26 @@ def delivery_qc(path: Path, track_id: str, is_master: bool = True) -> dict:
     if target_lufs is not None and m["integrated_lufs"] is not None:
         err = abs(m["integrated_lufs"] - target_lufs)
         detail = f"{m['integrated_lufs']} LUFS against a {target_lufs} LUFS target (error {err:.2f} LU, tolerance 1.0)"
-        if is_master:
+        if is_delivery:
             check("integrated_loudness", err <= 1.0, detail)
         else:
             checks.append(
                 {
                     "check": "integrated_loudness",
                     "pass": True,
-                    "detail": f"not applicable to an unmastered render: {detail}",
+                    "detail": f"not applicable to an unprepared render: {detail}",
                 }
             )
     if target_peak is not None and m["true_peak_dbtp"] is not None:
         detail = f"{m['true_peak_dbtp']} dBTP against a {target_peak} dBTP ceiling"
-        if is_master:
+        if is_delivery:
             check("true_peak_ceiling", m["true_peak_dbtp"] <= target_peak + 0.1, detail)
         else:
             checks.append(
                 {
                     "check": "true_peak_ceiling",
                     "pass": True,
-                    "detail": f"not applicable to an unmastered render: {detail}",
+                    "detail": f"not applicable to an unprepared render: {detail}",
                 }
             )
     check("no_clipping", m["clipped_runs"] == 0, f"{m['clipped_runs']} run(s) of consecutive full-scale samples")
@@ -323,10 +324,10 @@ def delivery_qc(path: Path, track_id: str, is_master: bool = True) -> dict:
     if m["stereo_correlation"] is not None:
         check("mono_compatible", m["stereo_correlation"] > -0.2, f"inter-channel correlation {m['stereo_correlation']}")
     # Loudness range needs enough 3-second blocks to mean anything, and this
-    # agent's job is to catch a master that destroyed the mix, not to fail a mix
+    # agent's job is to catch a delivery chain that destroyed the mix, not to fail a mix
     # that was uniform to begin with. Measured case that got this wrong: a 24 s
     # generated loop came in at 0.47 LU and went out at 0.6 LU, and an absolute
-    # 1.0 LU floor blamed mastering for the source's own uniformity.
+    # 1.0 LU floor blamed the delivery chain for the source's own uniformity.
     if m["loudness_range_lu"] is None or (m["duration_s"] or 0) < 30:
         checks.append(
             {
@@ -346,7 +347,7 @@ def delivery_qc(path: Path, track_id: str, is_master: bool = True) -> dict:
         check(
             "dynamics_retained",
             m["loudness_range_lu"] >= 1.0,
-            f"loudness range {m['loudness_range_lu']} LU (no pre-master measurement available to compare against)",
+            f"loudness range {m['loudness_range_lu']} LU (no pre-delivery measurement available to compare against)",
         )
 
     return {
@@ -513,8 +514,8 @@ def build_agent(session_id: str, track_id: str) -> Agent:
 
 def screen(track_id: str) -> dict:
     """Run both checks and compute the verdict from them."""
-    name, subject, master_stale = subject_audio(track_id)
-    qc = delivery_qc(subject, track_id, is_master=(name == "master.wav"))
+    name, subject, delivery_stale = subject_audio(track_id)
+    qc = technical_qc(subject, track_id, is_delivery=(name == "delivery.wav"))
     sim = similarity_screen(subject, track_id)
     # Three outcomes, not two. Auto-clearing anything the screen wanted a human to
     # look at is the one thing a compliance tool must not do -- measured: a track
@@ -529,11 +530,11 @@ def screen(track_id: str) -> dict:
 
     return {
         "subject": name,
-        "master_is_stale": master_stale,
-        "delivery_qc": qc,
+        "delivery_is_stale": delivery_stale,
+        "technical_qc": qc,
         "similarity": sim,
         # The verdict is arithmetic on the measurements, never the model's call.
-        # A stale master is not a release blocker; it is a "re-master this" signal,
+        # A stale delivery is not a release blocker; it is a "re-prepare this" signal,
         # so it does not fail the verdict on its own.
         "outcome": outcome,
         "passed": outcome == "cleared",
@@ -556,7 +557,7 @@ def findings_brief(result: dict) -> str:
     the figures are withheld here -- render_review prints them from the same dict,
     straight out of the measurements, where no model can restate them wrongly.
     """
-    qc, sim = result["delivery_qc"], result["similarity"]
+    qc, sim = result["technical_qc"], result["similarity"]
     lines = [
         f"Subject file: {result['subject']}",
         (
@@ -564,7 +565,7 @@ def findings_brief(result: dict) -> str:
             "measurements. Explain it; do not re-derive it."
         ),
         "",
-        f"Delivery QC: {'passed' if qc['passed'] else 'FAILED'}.",
+        f"Technical QC: {'passed' if qc['passed'] else 'FAILED'}.",
     ]
     lines += [f"  - {c['check']}: {'pass' if c['pass'] else 'FAIL'} -- {c['detail']}" for c in qc.get("checks", [])]
 
@@ -606,7 +607,7 @@ def findings_brief(result: dict) -> str:
 
 
 def render_review(result: dict, review: Review, remediated: bool) -> str:
-    qc, sim = result["delivery_qc"], result["similarity"]
+    qc, sim = result["technical_qc"], result["similarity"]
     label = {"cleared": "CLEARED", "review_required": "REVIEW REQUIRED", "not_cleared": "NOT CLEARED"}[
         result.get("outcome", "not_cleared")
     ]
@@ -617,7 +618,7 @@ def render_review(result: dict, review: Review, remediated: bool) -> str:
         "",
         review.summary,
         "",
-        "## Delivery QC",
+        "## Technical QC",
         "",
         "| check | result | detail |",
         "|---|---|---|",
@@ -654,12 +655,12 @@ def render_review(result: dict, review: Review, remediated: bool) -> str:
                 "re-screened; the verdict above is for the replacement._"
             ),
         ]
-    if result.get("master_is_stale"):
+    if result.get("delivery_is_stale"):
         lines += [
             "",
             (
-                "_Note: `master.wav` predates the render screened above, so it "
-                "is stale. Re-run the mastering agent before release._"
+                "_Note: `delivery.wav` predates the render screened above, so it "
+                "is stale. Re-run the delivery agent before release._"
             ),
         ]
     lines += [
@@ -762,8 +763,8 @@ def invoke(payload, context):
                 "remediation_requested": remediated,
             },
             "subject": result["subject"],
-            "master_is_stale": result.get("master_is_stale", False),
-            "delivery_qc": result["delivery_qc"],
+            "delivery_is_stale": result.get("delivery_is_stale", False),
+            "technical_qc": result["technical_qc"],
             "similarity": result["similarity"],
             "review": review.model_dump(),
             "reviewed_files": list_artifacts(track_id),
@@ -782,11 +783,11 @@ def invoke(payload, context):
             "track_id": track_id,
             "session_id": session_id,
             "read_from": result["subject"],
-            "master_is_stale": result.get("master_is_stale", False),
+            "delivery_is_stale": result.get("delivery_is_stale", False),
             "validation_passed": result["passed"],
             "outcome": result.get("outcome"),
             "verdict": report["verdict"],
-            "delivery_qc": result["delivery_qc"],
+            "technical_qc": result["technical_qc"],
             "similarity": result["similarity"],
             "result": markdown,
             "artifacts": artifacts,

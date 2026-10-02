@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/claude-a2a-executor"
+    },
+    {
+      "path": "../../packages/aws-sigv4-fetch"
+    }
+  ]
+}

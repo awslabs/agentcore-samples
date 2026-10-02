@@ -96,6 +96,7 @@ control.create_agent_runtime(
     roleArn=role_arn,
     networkConfiguration={"networkMode": "PUBLIC"},
     protocolConfiguration={"serverProtocol": "MCP"},  # ← MCP protocol
+    platformVersion="V2",  # ← AgentCore Runtime V2
 )
 ```
 
@@ -103,7 +104,53 @@ No `create_agent_runtime_endpoint` call is needed: AgentCore provisions a `DEFAU
 
 > **Verify the deployment, don't assume it.** AgentCore does not execute your entry point when it creates the runtime, so a server that crashes on import still reports `READY`. `deploy.py` therefore ends with a `tools/list` smoke test — without one, a broken server looks like a successful deploy and only fails later, at invoke time.
 
-> **IAM note**: MCP tool servers don't call Bedrock models, so no `bedrock:InvokeModel` is needed. The role still needs the runtime's observability permissions (CloudWatch Logs, X-Ray, and `cloudwatch:PutMetricData`) — with logging alone the runtime serves traffic but silently emits no traces and no metrics. If your tools call AWS services (DynamoDB, S3, etc.), add those permissions too.
+> **IAM note**: MCP tool servers don't call Bedrock models, so no `bedrock:InvokeModel` is needed. The role still needs the runtime's observability permissions (CloudWatch Logs, X-Ray, and `cloudwatch:PutMetricData`) — with logging alone the runtime serves traffic but silently emits no traces and no metrics. If your tools call AWS services (DynamoDB, S3, etc.), add those permissions too. `platformVersion` introduces no new IAM actions — the same execution role is sufficient on Runtime V2.
+
+### What Runtime V2 gives you
+
+`deploy.py` sets `platformVersion="V2"` on `create_agent_runtime`. AgentCore prepares
+the execution environment once, snapshots it, and every new environment **resumes
+from that snapshot** instead of loading the server's code and dependencies from
+scratch. That gives every session a consistently fast, predictable start instead of
+paying the code-load cost on each one — the main source of cold-start variance for a
+zip-deployed server like this one.
+
+```python
+platformVersion="V2",
+```
+
+**This field must be set explicitly.** Omitting it does not give you Runtime V2 —
+nothing in the create response tells you which platform version you got, so
+`deploy.py` confirms it with `get_agent_runtime` after the runtime reaches `READY`.
+
+A few things worth knowing about how it works:
+
+- **`GetAgentRuntime` is the only operation that returns `platformVersion`.** Neither
+  `CreateAgentRuntime` nor `UpdateAgentRuntime` echoes it back, which is why
+  `deploy.py` reads it back explicitly rather than assuming the create call's input
+  was honored.
+- **`platformVersion` is create/update-only input.** `UpdateAgentRuntime` rejects
+  `agentRuntimeName` (it only ever fires on a redeploy, so first-run testing alone
+  will not catch this).
+- **The snapshot is prepared during the create call**, so `create_agent_runtime` and
+  endpoint creation both take a few minutes rather than seconds — that time buys the
+  consistently fast starts every session gets afterwards. `CREATING` for several
+  minutes is expected, not a hang; budget for it if you script around this sample.
+- **Anything captured at startup is frozen into the snapshot** and restored later,
+  possibly hours after create. `mcp_server.py` in this sample has no startup-captured
+  state to worry about — no cached credentials, timers, or native handles at import —
+  so it needs no code change for Runtime V2. If you extend it: resolve credentials
+  per request via the SDK's normal chain rather than caching them at import time, and
+  avoid the `random` module for anything that must be unique per session (its
+  module-level state is captured in the snapshot and repeats across environments
+  resumed from it) — use `uuid.uuid4()` or `secrets` instead.
+- **Requires `boto3>=1.43.95`.** Older SDKs have no `platformVersion` field in the
+  service model at all.
+- **Runtime V2 is available in a subset of AgentCore's regions.** At GA, that's
+  `us-east-1`, `us-east-2`, `us-west-2`, `eu-west-1`, and `ap-northeast-1` — a
+  narrower list than AgentCore Runtime's own region coverage, and one that is
+  expected to expand over time, so check current availability before picking a
+  region.
 
 ## Step 3: Invoke with MCP JSON-RPC Messages
 

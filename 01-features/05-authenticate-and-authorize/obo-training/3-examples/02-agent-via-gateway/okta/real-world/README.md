@@ -30,7 +30,7 @@ A production-shaped deployment of Use Case 2 (Okta flavor): **two OBO exchanges 
 | **Node.js** | 20+ | `brew install node` / nvm / mise |
 | **AWS CLI v2** | 2.x | [docs](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | **AWS CDK CLI** | 2.1129.0+ | `npm install -g aws-cdk@2.1129.0` |
-| **AgentCore CLI** (`@aws/agentcore`) | 0.21.1+ | `npm install -g @aws/agentcore@latest` |
+| **AgentCore CLI** (`@aws/agentcore`) | 0.21.1+ | `npm install -g @aws/agentcore@0.30.0` |
 
 > If you have the deprecated `bedrock-agentcore-starter-toolkit` Python CLI installed, uninstall it first — it shadows the new Node CLI and `agentcore validate` will fail with "No such command".
 
@@ -124,7 +124,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Node.js CLIs — pin the versions we verified against
-npm install -g aws-cdk@2.1129.0 @aws/agentcore@latest
+npm install -g aws-cdk@2.1129.0 @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 Pre-flight — every line should pass before you move on:

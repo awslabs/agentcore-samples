@@ -69,8 +69,7 @@ The harness is auto-instrumented exactly like a Converse harness — no ADOT, no
 
 ## Prerequisites
 
-- **AgentCore CLI (preview):** `npm install -g @aws/agentcore@preview` (preview.13+ — that is when
-  `--api-format` shipped in the CLI).
+- **AgentCore CLI:** `npm install -g @aws/agentcore@0.30.0`.
 - **AWS CLI v2** with credentials for a harness preview region
   (`us-east-1`, `us-west-2`, `ap-southeast-2`, `eu-central-1`).
 - Amazon Bedrock access to `openai.gpt-oss-120b` in that region.

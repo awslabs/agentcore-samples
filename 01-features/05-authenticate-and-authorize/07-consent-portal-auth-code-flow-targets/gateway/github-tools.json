@@ -1,0 +1,222 @@
+{
+  "tools": [
+    {
+      "name": "get_me",
+      "description": "Get details of the authenticated GitHub user. Use this when a request is about the user's own profile for GitHub. Or when information is missing to build other tool calls.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_team_members",
+      "description": "Get member usernames of a specific team in an organization. Limited to organizations accessible with current credentials",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization login (owner) that contains the team."
+          },
+          "team_slug": {
+            "type": "string",
+            "description": "Team slug"
+          }
+        },
+        "required": [
+          "org",
+          "team_slug"
+        ]
+      }
+    },
+    {
+      "name": "get_teams",
+      "description": "Get details of the teams the user is a member of. Limited to organizations accessible with current credentials",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username to get teams for. If not provided, uses the authenticated user."
+          }
+        }
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "Fast and precise code search across ALL GitHub repositories using GitHub's native search engine. Best for finding exact symbols, functions, classes, or specific code patterns.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort order for results",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "number",
+            "description": "Results per page for pagination (min 1, max 100)",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query (GitHub code search REST). Implicit AND between terms; supports `OR`, `NOT`, and `\"quoted phrase\"` for exact match. Qualifiers: `repo:owner/repo`, `org:`, `user:`, `language:`, `path:dir` (prefix match), `filename:exact.ext`, `extension:`, `in:file`, `in:path`, `size:`, `is:archived`, `is:fork`. Max 256 chars. Examples: `WithContext language:go org:github`; `\"package main\" repo:o/r`; `func extension:go path:cmd repo:o/r`; `NOT TODO language:go repo:o/r`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field ('indexed' only)"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "search_commits",
+      "description": "Search for commits across GitHub repositories using GitHub's commit search syntax. Useful for finding specific changes, authors, or messages across one or many repositories. Searches the default branch only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort order",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "number",
+            "description": "Results per page for pagination (min 1, max 100)",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "query": {
+            "type": "string",
+            "description": "Commit search query (GitHub commit search REST). Searches commit messages on the default branch only. Scope the search with `repo:owner/repo`, `org:`, or `user:` (queries without a scope qualifier match across all of GitHub and are usually not what you want). Other qualifiers: `author:`, `committer:`, `author-name:`, `committer-name:`, `author-email:`, `committer-email:`, `author-date:`, `committer-date:` (supports `>`, `<`, `>=`, `<=`, and `YYYY-MM-DD..YYYY-MM-DD` ranges), `merge:true|false`, `hash:`, `tree:`, `parent:`, `is:public`. Examples: `repo:owner/repo fix panic`; `org:github author:defunkt committer-date:>=2024-01-01`; `\"refactor cache\" repo:o/r`; `hash:abc1234 repo:o/r`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by author or committer date (defaults to best match)",
+            "enum": [
+              "author-date",
+              "committer-date"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "search_repositories",
+      "description": "Find GitHub repositories by name, description, readme, topics, or other metadata. Perfect for discovering projects, finding examples, or locating specific repositories across GitHub.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "minimal_output": {
+            "type": "boolean",
+            "description": "Return minimal repository information (default: true). When false, returns full GitHub API repository objects.",
+            "default": true
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "number",
+            "description": "Results per page for pagination (min 1, max 100)",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "query": {
+            "type": "string",
+            "description": "Repository search query. Examples: 'machine learning in:name stars:>1000 language:python', 'topic:react', 'user:facebook'. Supports advanced search syntax for precise filtering."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort repositories by field, defaults to best match",
+            "enum": [
+              "stars",
+              "forks",
+              "help-wanted-issues",
+              "updated"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "search_users",
+      "description": "Find GitHub users by username, real name, or other profile information. Useful for locating developers, contributors, or team members.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort order",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "number",
+            "description": "Results per page for pagination (min 1, max 100)",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "query": {
+            "type": "string",
+            "description": "User search query. Examples: 'john smith', 'location:seattle', 'followers:>100'. Search is automatically scoped to type:user."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort users by number of followers or repositories, or when the person joined GitHub.",
+            "enum": [
+              "followers",
+              "repositories",
+              "joined"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ]
+}

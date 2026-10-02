@@ -51,7 +51,7 @@ export GOOGLE_API_KEY="your-key"
 2. **Bedrock model access** enabled for:
    - `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (agent model via LiteLLM)
    - `us.amazon.nova-lite-v1:0` (judge model for evaluation)
-3. **AgentCore CLI** installed: `npm install -g @aws/agentcore`
+3. **AgentCore CLI** installed: `npm install -g @aws/agentcore@0.30.0`
 4. **Python 3.12+** with pip
 
 ## Example trace

@@ -4,3 +4,4 @@ bedrock-agentcore
 requests
 PyJWT
 cryptography
+certifi

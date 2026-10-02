@@ -1,5 +1,10 @@
 # Databricks Per-User Delegation with AgentCore Gateway Interceptor
 
+> **AgentCore Gateway now supports the `TOKEN_EXCHANGE` grant type natively**, which reaches the same
+> outcome without an interceptor Lambda. Where the native path is available to your AWS account and
+> Region, prefer [`databricks-dbsql-native-obo`](../databricks-dbsql-native-obo). This sample remains
+> the working approach where it is not.
+
 Per-user identity propagation from Entra ID to Databricks via AgentCore Gateway REQUEST interceptor and RFC 8693 OAuth Token Exchange.
 
 ## Overview
@@ -8,7 +13,7 @@ The [existing Databricks DBSQL sample](../databricks-dbsql-agentcore-gateway) de
 
 ### The Problem
 
-AgentCore Gateway supports `CLIENT_CREDENTIALS` (M2M) and `AUTHORIZATION_CODE` for outbound auth. Databricks on AWS requires [RFC 8693 Token Exchange](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-federation-exchange) to convert an external JWT into a Databricks user token — a grant type Gateway doesn't support natively.
+Databricks on AWS requires [RFC 8693 Token Exchange](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-federation-exchange) to convert an external JWT into a Databricks user token. When this sample was written, Gateway supported only `CLIENT_CREDENTIALS` (M2M) and `AUTHORIZATION_CODE` for outbound auth, so the exchange had to happen outside it. Gateway now also supports `TOKEN_EXCHANGE` natively — see the note above.
 
 ### The Solution
 

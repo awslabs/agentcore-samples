@@ -10,7 +10,7 @@ on a **Google Gemini** model, built entirely with the AgentCore CLI.
 | Type              | Feature sample                                               |
 | Agent             | General-purpose assistant (Harness — no orchestration code)  |
 | Model provider    | Google Gemini (`gemini-2.5-flash`)                           |
-| CLI               | `@aws/agentcore@preview` (tested on `1.0.0-preview.12`)      |
+| CLI               | `@aws/agentcore@0.30.0`      |
 | Complexity        | Beginner                                                     |
 
 A harness is a config-based managed agent loop: you declare the model and the
@@ -20,10 +20,14 @@ it by ARN — the key never sits in the harness config.
 
 ## Prerequisites
 
-- **Node.js 20+** and the preview CLI:
+- **Node.js 20+** and the CLI:
   ```bash
-  npm install -g @aws/agentcore@preview
-  agentcore --version          # 1.0.0-preview.12 or later
+  npm install -g @aws/agentcore@0.30.0
+  node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+    || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+  agentcore --version | grep -q '^0\.' \
+    || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
+  agentcore --version          # 0.30.0
   ```
 - **AWS credentials** for a harness preview region: `us-east-1`, `us-west-2`,
   `ap-southeast-2`, or `eu-central-1`.
@@ -127,7 +131,7 @@ STEP_PAUSE=2 ./demo.sh    # slower, for recording
 
 ## Notes
 
-- Verified end-to-end on `1.0.0-preview.12` (deploy + live Gemini invoke).
+- Last verified end-to-end on `1.0.0-preview.12`; not yet re-verified on `0.30.0` (deploy + live Gemini invoke).
 - Step 4 (writing the `default` target) is a manual step because no
   non-interactive flag sets it; interactive `agentcore create` prompts for it.
   May change in a later CLI release.

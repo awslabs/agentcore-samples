@@ -71,7 +71,7 @@ Because interceptors are attached at the **gateway layer**, they protect data fr
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Node.js >= 22.7.5
-- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore`
+- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md) for Lambda, IAM, Cognito, Bedrock AgentCore, and Bedrock Guardrails
 

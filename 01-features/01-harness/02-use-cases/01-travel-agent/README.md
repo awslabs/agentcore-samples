@@ -93,10 +93,14 @@ Navigate to **CloudWatch → X-Ray → Traces** to see the full agent loop break
 
 ## AgentCore CLI
 
-Create and deploy a travel agent harness via the CLI (preview channel):
+Create and deploy a travel agent harness via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name travelguideagent --model-provider bedrock
 agentcore deploy
 ```

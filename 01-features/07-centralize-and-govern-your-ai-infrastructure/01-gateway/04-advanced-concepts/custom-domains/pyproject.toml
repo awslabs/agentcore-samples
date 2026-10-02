@@ -1,0 +1,25 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agwcd"
+version = "0.1.0"
+description = "AgentCore Gateway Custom Domain CLI — front Bedrock AgentCore Gateways behind a custom domain via AWS CDK."
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12,<1.0",
+    "aws-cdk-lib>=2.238.0,<3.0.0",
+    "constructs>=10.0.0,<11.0.0",
+    "cdk-nag>=2.35.0,<3.0.0",
+]
+
+[project.scripts]
+agwcd = "agwcd.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2"]
+
+[tool.setuptools]
+packages = ["agwcd", "custom_domains", "custom_domains.targets"]

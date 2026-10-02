@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+venvagentcore/
+ENV/
+env/
+.venv
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# AgentCore
+.bedrock_agentcore/
+.bedrock_agentcore.yaml
+.room_name
+
+# SSL certificates and private keys
+ssl/*.key
+ssl/*.pem
+ssl/*.crt
+
+# Docker
+*.tar.gz
+
+# Lambda layers (third-party dependencies)
+src/lambda/python/PIL/
+src/lambda/python/pillow*/
+src/lambda/python/fontTools/
+src/lambda/python/fonttools*/
+src/lambda/python/fpdf/
+src/lambda/python/fpdf2*/
+src/lambda/python/defusedxml/
+src/lambda/python/defusedxml*/
+src/lambda/*.zip
+
+# Lint reports
+src/ui/eslint-report.*
+
+# Draft docs
+docs/blog-draft-*
+docs/mentor-*
+*.docx
+DEPENDENCY_FIXES.md

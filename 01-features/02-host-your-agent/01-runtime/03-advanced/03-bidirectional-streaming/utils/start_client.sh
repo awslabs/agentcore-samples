@@ -45,7 +45,7 @@ if [ ! -d "$BASE_DIR/$WEBSOCKET_FOLDER" ]; then
     echo -e "${RED}❌ Error: Folder not found: $BASE_DIR/$WEBSOCKET_FOLDER${NC}"
     echo ""
     echo "Available folders:"
-    for dir in 01-bedrock-sonic-ws 02-strands-ws 03-langchain-transcribe-polly-ws 04-pipecat-sonic-ws webrtc-kvs; do
+    for dir in 01-bedrock-sonic-ws 02-strands-ws 03-langchain-transcribe-polly-ws 04-pipecat-sonic-ws; do
         if [ -d "$BASE_DIR/$dir" ]; then
             echo "  - $dir"
         fi
@@ -63,8 +63,8 @@ CONFIG_FILE="$BASE_DIR/$WEBSOCKET_FOLDER/setup_config.json"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}❌ Error: Configuration file not found: $CONFIG_FILE${NC}"
     echo ""
-    echo "Please run setup first:"
-    echo "  ./setup.sh $WEBSOCKET_FOLDER"
+    echo "Please deploy the agent first:"
+    echo "  python utils/deploy.py $WEBSOCKET_FOLDER --region <region> --account-id <account-id>"
     echo ""
     exit 1
 fi
@@ -124,11 +124,6 @@ echo ""
 
 # Different clients have different interfaces
 case "$WEBSOCKET_FOLDER" in
-    "echo")
-        echo -e "${YELLOW}Starting Echo client...${NC}"
-        echo ""
-        python "$BASE_DIR/$WEBSOCKET_FOLDER/client/client.py" --runtime-arn "$AGENT_ARN"
-        ;;
     "04-pipecat-sonic-ws")
         echo -e "${YELLOW}Starting Pipecat client (signing server + Vite)...${NC}"
         echo ""
@@ -162,14 +157,10 @@ case "$WEBSOCKET_FOLDER" in
         echo ""
         python "$BASE_DIR/$WEBSOCKET_FOLDER/client/client.py" --runtime-arn "$AGENT_ARN"
         ;;
-    "webrtc-kvs")
-        echo -e "${YELLOW}Starting WebRTC KVS client...${NC}"
-        echo -e "${YELLOW}The browser will open automatically${NC}"
-        echo ""
-        python "$BASE_DIR/$WEBSOCKET_FOLDER/client/client.py" --runtime-arn "$AGENT_ARN"
-        ;;
     *)
         echo -e "${RED}❌ Error: Unknown folder type: $WEBSOCKET_FOLDER${NC}"
+        echo -e "${YELLOW}Note: 05-bidirectional-streaming-webrtc has its own client.${NC}"
+        echo -e "${YELLOW}See 05-bidirectional-streaming-webrtc/README.md${NC}"
         exit 1
         ;;
 esac

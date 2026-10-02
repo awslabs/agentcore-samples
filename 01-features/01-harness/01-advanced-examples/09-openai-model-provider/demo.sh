@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Demo: OpenAI (GPT-OSS) harness on Amazon Bedrock AgentCore via the AgentCore CLI (preview).
+# Demo: OpenAI (GPT-OSS) harness on Amazon Bedrock AgentCore via the AgentCore CLI.
 # OpenAI models are served THROUGH Amazon Bedrock, so the harness uses the `bedrock` provider
 # and the execution role (IAM) handles auth — no API key, no credential resource.
 # Prints each command, runs it, shows real output. The AWS account ID is masked as <ACCOUNT>
 # everywhere, in commands and output (including inside ARNs).
 #
 # Prereqs:
-#   - agentcore preview CLI on PATH         (npm install -g @aws/agentcore@preview)
+#   - agentcore CLI on PATH         (npm install -g @aws/agentcore@0.30.0)
 #   - AWS credentials for a preview region  (us-east-1 | us-west-2 | ap-southeast-2 | eu-central-1)
 #   - Bedrock model access enabled for the OpenAI GPT-OSS model in your account
 #
@@ -51,6 +51,11 @@ pause() { [ "${STEP_PAUSE:-0}" != "0" ] && sleep "${STEP_PAUSE}"; return 0; }
 TS="$(date +%H%M%S)"
 PROJECT="openaidemo${TS}"        # project name: alphanumeric only
 HARNESS="openai_${TS}"          # harness name: letter + alphanumeric/underscore
+
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 note "AgentCore CLI version"
 run "agentcore --version"

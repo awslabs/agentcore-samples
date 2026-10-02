@@ -136,7 +136,11 @@ The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-
 The AgentCore CLI supports evaluation workflows. Install it:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### On-demand evaluation — single session

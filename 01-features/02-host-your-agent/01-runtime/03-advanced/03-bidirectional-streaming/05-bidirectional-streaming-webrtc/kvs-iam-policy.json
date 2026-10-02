@@ -9,7 +9,7 @@
                 "kinesisvideo:GetSignalingChannelEndpoint",
                 "kinesisvideo:GetIceServerConfig"
             ],
-            "Resource": "arn:aws:kinesisvideo:us-west-2:ACCOUNT_ID:channel/voice-agent-minimal/*"
+            "Resource": "arn:aws:kinesisvideo:AWS_REGION:ACCOUNT_ID:channel/KVS_CHANNEL_NAME/*"
         }
     ]
 }

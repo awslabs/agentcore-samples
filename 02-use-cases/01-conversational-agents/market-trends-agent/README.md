@@ -403,7 +403,11 @@ The [agentcore CLI](https://github.com/aws/agentcore-cli) provides a convenient 
 
 **Install the CLI:**
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 > See the [AgentCore CLI repository](https://github.com/aws/agentcore-cli) for alternative install methods and latest version info.
 

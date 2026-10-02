@@ -108,7 +108,8 @@ def run_with_sdk() -> None:
 
 
 def main() -> None:
-    surface = sys.argv[1] if len(sys.argv) > 1 else "boto3"
+    args = [a for a in sys.argv[1:] if a != "--cleanup"]
+    surface = args[0] if args else "boto3"
     if surface == "boto3":
         run_with_boto3()
     elif surface == "sdk":

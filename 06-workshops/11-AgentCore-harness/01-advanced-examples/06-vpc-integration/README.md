@@ -12,7 +12,7 @@ To get started, you will need:
 Then, **install agentcore-cli**:
 
 ```Bash
-npm i -g @aws/agentcore@preview
+npm i -g @aws/agentcore@0.30.0
 
 # Verify
 agentcore --version

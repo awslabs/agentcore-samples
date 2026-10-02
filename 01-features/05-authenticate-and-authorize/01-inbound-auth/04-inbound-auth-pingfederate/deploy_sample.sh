@@ -49,9 +49,13 @@ echo "  AWS CDK installed"
 
 if ! command -v agentcore &> /dev/null; then
     echo "Error: agentcore CLI is not installed"
-    echo "   Install: npm install -g @aws/agentcore"
+    echo "   Install: npm install -g @aws/agentcore@0.30.0"
     exit 1
 fi
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 echo "  agentcore CLI installed ($(agentcore --version))"
 
 if ! command -v aws &> /dev/null; then
