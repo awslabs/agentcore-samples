@@ -318,8 +318,6 @@ plan/
 **/lambda_config.json
 
 # Architecture diagram generator (local tool, not needed in repo)
-02-use-cases/video-games-sales-assistant/generate_architecture.py
-02-use-cases/video-games-sales-assistant/images/icons/
 02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline_results.json
 02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline_results.md
 02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/scripts/perf_baseline.py
@@ -327,6 +325,7 @@ plan/
 02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/agentcore.json.deployed.bak
 
 # Blog post drafts
+02-use-cases/01-conversational-agents/data-analyst-conversational-assistant/blog-*
 02-use-cases/data-analyst-conversational-assistant/blog-*
 
 # Consent Portal pen-test working document (internal; upstream source for

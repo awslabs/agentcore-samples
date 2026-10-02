@@ -1,6 +1,6 @@
 version: 1
 applications:
-  - appRoot: 02-use-cases/data-analyst-conversational-assistant/amplify-data-analyst-conversational-assistant-agentcore-strands
+  - appRoot: 02-use-cases/01-conversational-agents/data-analyst-conversational-assistant/amplify-data-analyst-conversational-assistant-agentcore-strands
     frontend:
       phases:
         preBuild:
