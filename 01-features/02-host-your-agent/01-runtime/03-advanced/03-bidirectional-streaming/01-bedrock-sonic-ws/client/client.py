@@ -157,7 +157,7 @@ Examples:
   # Local WebSocket server (no authentication)
   python web_service.py --ws-url ws://localhost:8081/ws
   
-  # AWS Bedrock with presigned URL
+  # Amazon Bedrock with presigned URL
   python web_service.py --runtime-arn arn:aws:bedrock:us-west-2:123456789012:agent/AGENTID
   
   # Specify custom port
@@ -171,7 +171,7 @@ Examples:
 
     parser.add_argument(
         "--runtime-arn",
-        help="Runtime ARN for AWS Bedrock connection (e.g., arn:aws:bedrock:region:account:agent/id)",
+        help="Runtime ARN for Amazon Bedrock connection (e.g., arn:aws:bedrock:region:account:agent/id)",
     )
 
     parser.add_argument(
@@ -213,7 +213,7 @@ Examples:
     if args.runtime_arn and args.ws_url:
         parser.error("Cannot specify both --runtime-arn and --ws-url")
 
-    # Validate required parameters for AWS Bedrock connection
+    # Validate required parameters for Amazon Bedrock connection
     if args.runtime_arn:
         if not args.region:
             parser.error("--region or AWS_REGION env var is required when using --runtime-arn")
@@ -227,7 +227,7 @@ Examples:
     is_presigned = False
 
     try:
-        # Generate presigned URL for AWS Bedrock
+        # Generate presigned URL for Amazon Bedrock
         if args.runtime_arn:
             base_url = f"wss://bedrock-agentcore.{args.region}.amazonaws.com/runtimes/{args.runtime_arn}/ws?qualifier={args.qualifier}"
 

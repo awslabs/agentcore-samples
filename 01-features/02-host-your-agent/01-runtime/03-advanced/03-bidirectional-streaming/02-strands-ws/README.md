@@ -41,7 +41,7 @@ The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.9
 
 The FAQ KB gateway requires a Bedrock Knowledge Base:
 
-1. Go to AWS Bedrock Console → Knowledge Bases → Create
+1. Go to Amazon Bedrock Console → Knowledge Bases → Create
 2. Upload `assets/anybank-faq.md` as the data source
 3. Note the Knowledge Base ID
 
