@@ -38,9 +38,9 @@ written to the shared `../.env` so downstream tutorials pick them up unchanged.
 > **Testnet only.** Base Sepolia (`NETWORK=ETHEREUM`) or Solana Devnet (`NETWORK=SOLANA`), with free
 > USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no monetary value.
 
-> **Supported regions:** 
-Set `AWS_REGION`
-> in `../.env` to one of these.
+> **Supported regions.** Run this in a region where AgentCore payments is available—see
+> [AgentCore supported regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html).
+> Set `AWS_REGION` in `../.env` to one of these regions.
 
 ## Architecture
 
@@ -105,9 +105,11 @@ session, then fund the wallet.
 ### Step 1 — Capture wallet-provider credentials (pick ONE provider)
 
 These scripts walk you through the provider portal and write the credential keys into `../.env`.
+For Coinbase, the helper uses the portal-downloaded files and the official CDP CLI, so secret
+values are never pasted into the terminal or printed.
 
 ```bash
-python providers/coinbase_cdp_account_setup.py     # Coinbase CDP
+python providers/coinbase_cdp_account_setup.py --open-portal  # Coinbase CDP
 #   or
 python providers/stripe_privy_account_setup.py     # Stripe (Privy)
 ```
@@ -115,6 +117,13 @@ python providers/stripe_privy_account_setup.py     # Stripe (Privy)
 > **Using Coinbase Quick create?** You can skip `coinbase_cdp_account_setup.py` — Quick create provisions
 > the CDP API key and Wallet secret for you in Step 2, so there are no keys to generate or paste. Still set
 > the `.env` values below.
+
+If you use an existing Coinbase configuration, follow the dedicated
+[Coinbase CDP setup guide](coinbase-cdp-setup/) for every portal setting,
+screenshot, Base Sepolia funding step, balance check, and troubleshooting
+message. This path requires separate project-level and wallet-level
+delegated-signing steps. The helper imports the downloaded files locally and
+never handles your Coinbase password or MFA code.
 
 Then set `AWS_REGION`, `CREDENTIAL_PROVIDER_TYPE` (`CoinbaseCDP` or `StripePrivy`), `USER_ID`,
 `LINKED_EMAIL` (a real inbox — used for the wallet and provider OTP), and `NETWORK`
@@ -142,6 +151,11 @@ agentcore add payment-manager --name MyPaymentManager --auto-payment true --defa
 > than relying on the $10 default.
 
 Add a payment connector for the provider you chose in Step 1 — run **one** of these:
+
+Both Coinbase modes require an active
+[Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html)
+in the deployment account. Review its pricing and terms before subscribing;
+provider usage charges are separate from testnet tokens.
 
 ```bash
 # Coinbase CDP — Quick create (recommended): no keys, you authorize through Coinbase at deploy time
@@ -192,8 +206,11 @@ agentcore status --type payment
 > and prints an `authorizationUrl`. Open it, sign in to Coinbase, and grant access — the connector then
 > moves to `READY`. The link is single-use and short-lived; if it expires before you finish, re-run
 > `agentcore deploy` to issue a fresh one. Re-run `agentcore status --type payment` and confirm `READY` before continuing to Step 3.
-> Quick create requires an active [Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html);
-> without it, deploy fails with `SubscriptionRequiredException` (HTTP 403) and the error message includes the listing URL to subscribe.
+
+Confirm the connector is `READY` before proceeding. A missing Coinbase
+subscription can cause `SubscriptionRequiredException` or connector status
+`AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED`, even when an existing wallet is active
+and funded.
 
 From the `agentcore status --type payment` output, copy the **Payment Manager ARN** and **Payment
 Connector ID** and export them (you'll pass them to the commands in Step 3):
@@ -247,8 +264,9 @@ instrument = manager.create_payment_instrument(
     client_token=str(uuid.uuid4()),
 )
 INSTRUMENT_ID = instrument["paymentInstrumentId"]
-WALLET_ADDRESS = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]["walletAddress"]
-REDIRECT_URL = instrument.get("redirectUrl")   # WalletHub link used in Step 4 (Coinbase)
+wallet = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]
+WALLET_ADDRESS = wallet.get("walletAddress")
+REDIRECT_URL = wallet.get("redirectUrl")   # WalletHub link used in Step 4 (Coinbase)
 print("INSTRUMENT_ID:", INSTRUMENT_ID)
 print("WALLET_ADDRESS:", WALLET_ADDRESS)
 print("REDIRECT_URL:", REDIRECT_URL)
@@ -263,6 +281,22 @@ SESSION_ID = session["paymentSessionId"]
 print("SESSION_ID:", SESSION_ID)
 ```
 
+Wallet creation is asynchronous. If the address or Coinbase URL is not ready,
+wait a few seconds and refresh the same instrument instead of creating another:
+
+```python
+instrument = manager.get_payment_instrument(
+    payment_instrument_id=INSTRUMENT_ID,
+    payment_connector_id=PAYMENT_CONNECTOR_ID,
+    user_id=USER_ID,
+)
+wallet = instrument["paymentInstrumentDetails"]["embeddedCryptoWallet"]
+WALLET_ADDRESS = wallet.get("walletAddress")
+REDIRECT_URL = wallet.get("redirectUrl")
+print("WALLET_ADDRESS:", WALLET_ADDRESS)
+print("REDIRECT_URL:", REDIRECT_URL)
+```
+
 Write `INSTRUMENT_ID`, the wallet address (`WALLET_ADDRESS`), and `SESSION_ID` (the
 `paymentSessionId` from the session response) into `../.env` alongside the manager and connector
 IDs. Downstream tutorials read them all via `utils.load_tutorial_env()`.
@@ -274,12 +308,21 @@ IDs. Downstream tutorials read them all via `utils.load_tutorial_env()`.
    `https://sepolia.basescan.org/address/<WALLET_ADDRESS>` for Ethereum.
 2. Grant delegated signing so the agent can pay on the user's behalf:
    - **Coinbase** — open the WalletHub `REDIRECT_URL` printed in Step 3, sign in as
-     `LINKED_EMAIL`, and grant signing.
+     `LINKED_EMAIL`, then complete
+     [the wallet-permission step](coinbase-cdp-setup/#4-grant-permission-for-the-embedded-wallet).
    - **Stripe/Privy** — open the Privy reference frontend (`http://localhost:3000`), log in as
      `LINKED_EMAIL`, and choose **Connect agent → Give access**.
 
 Until delegated signing is granted, payment attempts report
 `Delegated signing grant is not active for the end user wallet.`
+
+The session budget is only a spending ceiling; it does not fund the wallet.
+Testnet tokens have no monetary value. AWS and wallet-provider usage charges
+can still apply separately.
+
+For Coinbase, use the guide's
+[Base Sepolia funding and balance checks](coinbase-cdp-setup/#5-fund-base-sepolia).
+WalletHub's Base-mainnet balance is not the authoritative testnet balance.
 
 ## What this setup does
 
@@ -346,7 +389,9 @@ print(f"balance: {micro / 1_000_000:.2f} USDC")
 | `add payment-connector` fails on a missing credential | Required provider flag not provided | Re-check the credential keys in `../.env`; re-run with all flags |
 | Payment Manager stuck in `CREATING` | IAM propagation | Wait ~2 min; if `CREATE_FAILED`, check the service role |
 | Instrument status stays `CREATING` | Wallet provisioning is async | Ensure `LINKED_EMAIL` is a real address; keep polling |
-| `Delegated signing grant is not active` | Consent step not completed | Do Step 4 (funding + signing) |
+| `Delegated signing grant is not active` | The Coinbase wallet has not granted consent | Complete the [WalletHub permission step](coinbase-cdp-setup/#4-grant-permission-for-the-embedded-wallet) |
+| `Delegated signing is not enabled for your Coinbase project` | Project-level CDP switch is off | Complete the [delegated-signing setup](coinbase-cdp-setup/#2-generate-the-wallet-secret-and-enable-delegated-signing) |
+| WalletHub shows `0 USDC` after funding | WalletHub shows Base mainnet, or the faucet used Arc Testnet | Follow the [Base Sepolia diagnosis](coinbase-cdp-setup/#5-fund-base-sepolia) |
 | Deploy fails with CDK bootstrap error | Account/region not bootstrapped | `cdk bootstrap aws://<account-id>/<region>` |
 
 ## Clean Up
