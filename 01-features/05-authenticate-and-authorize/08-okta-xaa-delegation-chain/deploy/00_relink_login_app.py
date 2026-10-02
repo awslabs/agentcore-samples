@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import OktaAdmin, env, load_env, must_env, okta_org_url, save_env
+from _common import OktaAdmin, activate_as_policy, env, load_env, must_env, okta_org_url, save_env
 
 DEFAULT_LABEL = "XAA Todo Agent"
 LOGIN_POLICY = "XAA sample - Login app"
@@ -130,7 +130,10 @@ def main() -> None:
             "conditions": {"clients": {"include": [client_id]}},
         }
         okta.put(f"/authorizationServers/{as1}/policies/{policy['id']}", body)
-        print(f"  ✓ policy {LOGIN_POLICY!r} now scoped to the linked app")
+        # A PUT can leave the policy INACTIVE, and an inactive sign-in policy fails
+        # /authorize with access_denied: Policy evaluation failed.
+        activate_as_policy(okta, as1, policy["id"], policy["name"])
+        print(f"  ✓ policy {LOGIN_POLICY!r} now scoped to the linked app and ACTIVE")
         moved = True
     if not moved:
         print(f"  ⚠ policy {LOGIN_POLICY!r} not found on AS 1 -- re-run 00_create_okta_apps.py")

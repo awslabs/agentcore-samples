@@ -1,6 +1,6 @@
 """Interactive Okta sign-in: authorization code + PKCE, with private_key_jwt.
 
-Shared by scripts/test_chain.py and anything else that needs a real user token. The
+Used by anything that needs a real user token outside the BFF. The
 AI Agent's linked app has no client secret, so the code exchange presents a client
 assertion signed with the same key the interceptor uses for the ID-JAG legs.
 

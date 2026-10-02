@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import OktaAdmin, env, load_env, must_env, okta_org_url
+from _common import OktaAdmin, activate_as_policy, env, load_env, must_env, okta_org_url
 
 POLICY_NAME = "XAA sample - Resource jwt-bearer"
 
@@ -54,7 +54,7 @@ def assign_user_to_agent_app(okta: OktaAdmin, email: str) -> None:
     # assignment has in fact taken effect, so do not report success from the response. A
     # working leg 1 is the only reliable confirmation.
     print(f"  ✓ requested assignment of {email} to the Agent app ({app})")
-    print("    verify with scripts/test_chain.py -- Okta's response here is unreliable")
+    print("    verify by asking a question at the BFF -- Okta's response here is unreliable")
 
 
 def main() -> None:
@@ -116,6 +116,9 @@ def main() -> None:
             },
         )
         print(f"  ✓ clients after: {include}")
+    # A PUT can leave the policy INACTIVE; "status" in the body is not honoured.
+    if activate_as_policy(okta, as2, policy["id"], policy["name"]):
+        print("  ✓ policy ACTIVE")
 
     # The rule carries the grant types and scopes; confirm it survived and is ACTIVE,
     # because an inactive rule is silently skipped during evaluation.

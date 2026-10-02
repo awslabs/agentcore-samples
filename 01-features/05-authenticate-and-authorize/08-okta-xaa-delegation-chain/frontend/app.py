@@ -10,9 +10,22 @@ Two things make this more than boilerplate:
      carries one credential rather than two. Set `SEND_ID_TOKEN=true` only if the
      interceptor runs in `XAA_LEG1_SUBJECT=id_token` mode.
 
-Tokens never reach the browser. The session cookie is signed, HttpOnly and
-SameSite=Lax; it is deliberately not Secure so this works on http://localhost, which
-means adding `https_only=True` before serving it anywhere else.
+**Where the tokens actually live, stated precisely.** Starlette's SessionMiddleware
+serialises the session as base64 JSON and SIGNS it with FRONTEND_SESSION_SECRET -- it does
+not encrypt it. Because this BFF keeps the access and ID tokens in the session, they ride
+in the cookie and anyone who can read that cookie can base64-decode both. The signature
+stops tampering, not reading.
+
+That is acceptable for a localhost sample and not acceptable in production. The cookie is
+HttpOnly and SameSite=Lax (so script and cross-site reads are blocked) but deliberately NOT
+Secure, so it works over http://localhost. Before serving this anywhere real:
+
+  * set `https_only=True` on SessionMiddleware, and
+  * keep the tokens OUT of the cookie -- hold them server-side (cache, database, or a
+    secrets store) keyed by an opaque session id, which is the usual BFF pattern.
+
+Earlier versions of this file claimed "tokens never reach the browser". That was wrong, and
+worth correcting in a sample about token handling.
 
     python frontend/app.py        # http://localhost:8000
 """
@@ -157,7 +170,8 @@ async def callback(request: Request):
         return HTMLResponse(f"<h3>Token exchange failed</h3><pre>{resp.text[:600]}</pre>", 400)
     tokens = resp.json()
 
-    # Both tokens stay server-side. T_user invokes the agent; the ID token is what the
+    # Both tokens go into the signed session cookie -- see the module docstring. T_user
+    # invokes the agent; the ID token is kept only for the id_token fallback mode and the
     # interceptor needs for ID-JAG leg 1.
     request.session["access_token"] = tokens["access_token"]
     request.session["id_token"] = tokens["id_token"]

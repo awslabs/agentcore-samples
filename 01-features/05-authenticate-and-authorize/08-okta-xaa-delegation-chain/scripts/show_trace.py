@@ -100,7 +100,7 @@ def main() -> None:
     if not icept:
         print(f"No interceptor activity in the last {args.since}.")
         print(f"  group: /aws/lambda/{interceptor_name()}")
-        print("  Make a request first: python scripts/test_chain.py")
+        print("  Make a request first: ask something at the BFF (python frontend/app.py)")
         return
 
     traces: dict[str, list[dict]] = {}

@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Token claims</h1>
-<p class="muted">Signed in as <strong>{{ user }}</strong>. Debug view &mdash; the tokens
-  themselves are never sent to the browser.</p>
+<p class="muted">Signed in as <strong>{{ user }}</strong>. Debug view &mdash; this page
+  renders claims only, never token material. The tokens themselves <em>are</em> in your
+  session cookie, which is signed but <strong>not encrypted</strong>: fine for localhost,
+  not for production. See the note in <code>frontend/app.py</code>.</p>
 
 <h3>Access token (<code>T_user</code>) &mdash; invokes the agent</h3>
 <table>

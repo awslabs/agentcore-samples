@@ -290,7 +290,8 @@ So AS 1 cannot keep `api://agentcore` *and* gain an https audience — the https
 
 > **The audience cannot be changed after saving.** The authorization server can, but only
 > after removing every caller. Get the audience right the first time: mint a token and
-> check its `aud` with `scripts/show_token_claims.py` before you save.
+> confirm it against a real token before you save — the BFF's `/debug/token` page shows
+> the claims of the tokens in your session.
 
 #### 6c. Add caller
 
@@ -327,7 +328,7 @@ python deploy/00_authorize_agent.py --assign-user you@example.com
 By hand instead: **Applications → XAA Todo Agent App → Assignments → Assign to People**.
 
 > Okta may return `200` on that assignment while the app still reports zero assigned
-> users. Do not trust either signal — run `scripts/test_chain.py`; a successful leg 1 is
+> users. Do not trust either signal — ask a question at the BFF; a successful tool call is
 > the only proof that matters.
 
 #### 6e. What success looks like

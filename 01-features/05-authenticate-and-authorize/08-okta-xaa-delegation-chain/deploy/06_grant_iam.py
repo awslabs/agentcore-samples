@@ -5,8 +5,13 @@ Identity, so the two token operations the agent calls must be added afterwards.
 
 Scoped deliberately:
 
-  * `GetWorkloadAccessTokenForJWT` and friends are limited to this account's
-    workload-identity directory, not "*".
+  * `GetWorkloadAccessToken*` is NOT granted at all. Runtime obtains the workload access
+    token itself and hands it to the agent in a request header, so the agent never calls
+    those APIs -- and for a Runtime-managed identity the call is refused regardless.
+    Granting them would be permission the code cannot use.
+  * The workload identity named in the resource list is the one Runtime manages for this
+    agent, discovered from the deployed runtime rather than hardcoded -- its name embeds
+    the runtime id, which changes when the runtime is recreated.
   * `GetResourceOauth2Token` is limited to the single OBO provider ARN, so a
     compromised agent cannot mint tokens through any other provider in the vault.
   * The Secrets Manager read is limited to the identity service's own OAuth secret
@@ -56,6 +61,43 @@ def discover_role(project_dir: str) -> str | None:
     return None
 
 
+def runtime_workload_identity(reg: str, acct: str) -> str | None:
+    """ARN of the workload identity Runtime manages for this agent.
+
+    Matched on the runtime id from AGENT_RUNTIME_ARN, not on a name prefix: a sibling
+    runtime whose name merely starts with the same string would otherwise win, and the
+    resulting policy would name the wrong identity. That fails closed -- the service
+    authorizes GetResourceOauth2Token against all four resources at once, so a wrong ARN
+    denies rather than over-grants -- but it surfaces as a confusing "not authorized"
+    at runtime, so it is worth getting right.
+
+    Returns None when the runtime is not deployed yet, in which case the caller falls back
+    to a directory wildcard rather than failing -- 06 is sometimes run before the first
+    deploy finishes, and that fallback is no wider than the policy used to be.
+    """
+    import boto3
+
+    # The ARN ends .../runtime/<name>-<id>; that whole trailing segment is the identity name.
+    arn = env("AGENT_RUNTIME_ARN")
+    wanted = arn.rsplit("/", 1)[-1].lower() if arn else ""
+    runtime_name = env("AGENT_RUNTIME_NAME", "xaatodoagent").lower()
+    acc = boto3.client("bedrock-agentcore-control", region_name=reg)
+    token = None
+    while True:
+        page = acc.list_workload_identities(**({"nextToken": token} if token else {}))
+        for wi in page.get("workloadIdentities", []):
+            name = wi.get("name", "").lower()
+            # Exact match on the runtime id when we know it; prefix only as a last resort.
+            if (wanted and name == wanted) or (not wanted and name.startswith(runtime_name)):
+                return (
+                    f"arn:aws:bedrock-agentcore:{reg}:{acct}:workload-identity-directory/default"
+                    f"/workload-identity/{wi['name']}"
+                )
+        token = page.get("nextToken")
+        if not token:
+            return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--role-name", help="Execution role name, if discovery fails.")
@@ -80,21 +122,16 @@ def main() -> None:
     provider_arn = must_env("AGENT_OBO_PROVIDER_ARN", "Run deploy/04_create_obo_provider.py first.")
     directory = f"arn:aws:bedrock-agentcore:{reg}:{acct}:workload-identity-directory/default"
     token_vault = f"arn:aws:bedrock-agentcore:{reg}:{acct}:token-vault/default"
+    workload_identity = runtime_workload_identity(reg, acct)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
-            {
-                "Sid": "WorkloadIdentity",
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock-agentcore:GetWorkloadAccessToken",
-                    "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
-                    "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
-                ],
-                # A wildcard on the directory id covers the workload identities beneath
-                # it: an IAM wildcard spans "/".
-                "Resource": [directory, f"{directory}/*"],
-            },
+            # No GetWorkloadAccessToken* statement. Runtime obtains the workload access
+            # token itself and delivers it to the agent as a request header, so the agent
+            # never calls those APIs. Granting them anyway would be permission the code
+            # cannot use -- and for a Runtime-managed identity the call is refused regardless
+            # ("WorkloadIdentity is linked to a service and cannot retrieve an access token
+            # by the caller"), so the grant would be doubly meaningless.
             {
                 "Sid": "OboExchange",
                 "Effect": "Allow",
@@ -111,7 +148,11 @@ def main() -> None:
                 # the vault as a path prefix and reads like it should be sufficient.
                 "Resource": [
                     directory,
-                    f"{directory}/*",
+                    # The identity Runtime manages for this agent. Named explicitly rather
+                    # than wildcarded, per the service's own least-privilege guidance; the
+                    # service does not bind identities to providers, so this IAM policy is
+                    # the whole of the boundary.
+                    workload_identity or f"{directory}/*",
                     token_vault,
                     provider_arn,
                 ],

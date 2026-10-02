@@ -219,7 +219,7 @@ def ensure_gateway(aws, icept_arn: str, pe_id: str, mode: str, allow_user_scope:
     tools_scope = env("SCOPE_TOOLS_ACCESS", "tools.access")
     allowed_scopes = [tools_scope]
     if allow_user_scope:
-        # Pre-agent testing only: lets scripts/test_chain.py drive the gateway with a
+        # Debugging only: lets you drive the gateway with a
         # T_user straight from sign-in, before the Runtime and OBO hop exist.
         allowed_scopes.append(env("SCOPE_AGENT_ACCESS", "agent.access"))
     print(f"  allowedScopes: {allowed_scopes}")
@@ -322,10 +322,9 @@ def main() -> None:
         "--allow-user-scope",
         action="store_true",
         help=(
-            "Also accept agent.access at the gateway. No longer needed by "
-            "scripts/test_chain.py, which now performs the OBO exchange itself and sends "
-            "a tools.access token. Kept for debugging a T_user directly against the "
-            "gateway; leave it off so a replayed T_user is refused."
+            "Also accept agent.access at the gateway. Only for debugging a T_user "
+            "directly against the gateway -- the agent always presents a tools.access "
+            "token. Leave it off so a replayed T_user is refused."
         ),
     )
     args = ap.parse_args()

@@ -42,7 +42,6 @@ from _common import (
     region,
     resource_lambda_name,
     resource_role_name,
-    workload_name,
 )
 
 AGENT_KEY_SM_ID = "agentcore/xaa-ai-agent-key"
@@ -93,9 +92,6 @@ def plan(aws, args_keep_secret: bool = False, args_include_runtime: bool = False
     # The workload identity 04_create_obo_provider.py creates. Easy to miss because
     # nothing fails without it being cleaned up -- it just accumulates, and a later run
     # that reuses the name inherits whatever it already had.
-    if find_workload_identity(aws["acc"]):
-        items.append(("workload identity", workload_name()))
-
     # Log groups outlive the functions that wrote them, so deleting the Lambdas alone
     # leaves the logs (and any retention cost) behind.
     for group in log_groups(aws):
@@ -126,23 +122,6 @@ def runtime_stack_exists() -> bool:
         if "does not exist" in str(exc):
             return False
         raise
-
-
-def find_workload_identity(acc) -> bool:
-    """Is this sample's workload identity present?
-
-    ListWorkloadIdentities is paginated and an account that has run a few samples
-    accumulates dozens, so a single unpaged call can miss the one we created.
-    """
-    token = None
-    while True:
-        kwargs = {"nextToken": token} if token else {}
-        page = acc.list_workload_identities(**kwargs)
-        if any(w.get("name") == workload_name() for w in page.get("workloadIdentities", [])):
-            return True
-        token = page.get("nextToken")
-        if not token:
-            return False
 
 
 def log_groups(aws) -> list[str]:
@@ -219,10 +198,6 @@ def delete(aws, args) -> None:
             print(f"  deleted role {role}")
         except aws["iam"].exceptions.NoSuchEntityException:
             pass
-
-    if find_workload_identity(acc):
-        acc.delete_workload_identity(name=workload_name())
-        print(f"  deleted workload identity {workload_name()}")
 
     # After the Lambdas are gone, so nothing recreates a group on its way out.
     for group in log_groups(aws):

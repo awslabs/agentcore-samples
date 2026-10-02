@@ -107,7 +107,6 @@ def main() -> None:
         "AGENT_OBO_PROVIDER_NAME": obo_provider_name(),
         "AGENTCORE_AUDIENCE": env("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com"),
         "SCOPE_TOOLS_ACCESS": env("SCOPE_TOOLS_ACCESS", "tools.access"),
-        "AGENT_WORKLOAD_NAME": env("AGENT_WORKLOAD_NAME", "xaa-todo-agent"),
         # The agent only forwards this header when a caller supplies an ID token, which
         # happens on the id_token fallback path. XAA_LEG1_SUBJECT is deliberately NOT set
         # here: the interceptor decides the mode, not the runtime.

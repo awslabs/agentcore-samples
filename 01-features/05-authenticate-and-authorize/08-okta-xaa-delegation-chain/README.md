@@ -8,7 +8,9 @@ signed-in user**, and the **gateway** — not the agent — performs the Okta
 
 - **Front end** — a small FastAPI **BFF** (`frontend/app.py`) that signs the user in and
   invokes the agent. It exists so the browser never holds a token: it keeps them
-  server-side and hands the browser a signed, `HttpOnly` session cookie.
+  out of the page and hands the browser a signed, `HttpOnly` session cookie. (That cookie
+  is signed, not encrypted, and the tokens are inside it — fine for localhost, not for
+  production; `frontend/app.py` explains what to change.)
 - **Requesting app** — a [Strands](https://strandsagents.com) agent on **AgentCore
   Runtime**, behind an inbound JWT authorizer. It calls an **AgentCore Gateway** over
   MCP and never holds a credential that can reach the API.
@@ -50,9 +52,8 @@ flowchart LR
 ```
 
 *The API receives a token whose `sub` is the **human** and whose `act.sub` is the
-**agent** — no static API keys, and no tool credential inside the agent. Note where the
-tokens live: the browser holds only a signed session cookie, and every credential stays
-server-side in the BFF or beyond.*
+**agent** — no static API keys, and no tool credential inside the agent. The resource
+credential never leaves the interceptor, and the agent never holds one that opens the API.*
 
 ## How it works
 
@@ -74,7 +75,7 @@ sequenceDiagram
     U->>BFF: GET /
     BFF->>AS1: authorization code + PKCE<br/>client_assertion = AI Agent key
     AS1-->>BFF: T_id + T_user<br/>T_id stays in the BFF session
-    BFF-->>U: session cookie — tokens stay server-side
+    BFF-->>U: signed session cookie<br/>(signed, not encrypted)
 
     Note over BFF,RT: B · invoke
     U->>BFF: "what is on my todo list?"
@@ -275,7 +276,7 @@ their exact text rather than paraphrased.
 ├─ gateway/todo-tools.json    OpenAPI for the todo target
 ├─ policies/*.cedar       per-user, per-tool authorization
 ├─ deploy/                numbered, idempotent; each writes state back to .env
-└─ scripts/               keypair, verification, the chain test, tracing
+└─ scripts/               keypair, verification, tracing
 ```
 
 ## Prerequisites
@@ -336,17 +337,6 @@ python deploy/02_create_gateway.py           # gateway, interceptor, policy engi
 python deploy/03_create_policies.py                      # Cedar
 python deploy/04_create_obo_provider.py                  # AgentCore Identity provider for hop C
 ```
-
-### Milestone: prove hop D without the agent
-
-```bash
-python scripts/test_chain.py
-```
-
-Signs you in, runs the same OBO exchange the agent runs, and calls the gateway with
-exactly what the agent sends — a single `Authorization: Bearer T_gateway`.
-A pass means the interceptor, both ID-JAG legs, the injection, Cedar and the API all
-work. `whoami` should return your email as `user` and the AI Agent as `acting_agent`.
 
 ### Deploy the agent and the BFF
 
@@ -461,8 +451,7 @@ already validated and handed to the interceptor. The consequences are worth stat
 earlier versions of this README argued the opposite:
 
 - **Nothing extra travels with the request.** No ID token in the invoke payload, no second
-  header, and the agent never handles an ID token. `scripts/test_chain.py --no-id-token`
-  proves the chain works with the header absent entirely.
+  header, and the agent never handles an ID token.
 - **The provenance is richer.** The ID-JAG's `act` nests the Agent app inside the AI Agent
   inside the user, where the ID-token path records one level. See
   [Where the `act` claim appears, and where it does not](#where-the-act-claim-appears-and-where-it-does-not).
@@ -474,6 +463,61 @@ earlier versions of this README argued the opposite:
 See [Tokens: what each one is, and where it travels](#tokens-what-each-one-is-and-where-it-travels)
 for the full inventory, including which token is on the wire at every hop and the error
 each mix-up produces.
+
+## Why the agent does not fetch its own workload access token
+
+A reasonable question, and one the field asked: the agent calls `GetResourceOauth2Token`
+but never `GetWorkloadAccessTokenForJWT`. The
+[docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/get-workload-access-token.html)
+explain why — Runtime does it for you:
+
+> When an agent is invoked through AgentCore Runtime or Gateway with inbound
+> authentication, the service automatically handles workload access token generation […]
+> Runtime passes the workload access token to agent code as part of the invocation payload
+> header.
+
+So the agent reads it from context:
+
+```python
+from bedrock_agentcore.runtime.context import BedrockAgentCoreContext
+
+workload = BedrockAgentCoreContext.get_workload_access_token()
+```
+
+In `bedrock-agentcore` the runtime reads `X-Amz-Bedrock-AgentCore-Identity-WAT` or
+`WorkloadAccessToken` off the request and stores it for you. That removes an API call, an
+IAM action, and a workload identity name to keep in sync.
+
+**The security boundary is unchanged**, which is the part worth being precise about. Per
+the [scoping guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/scope-credential-provider-access.html):
+
+> The IAM role you assign to an agent controls which credential providers the agent can
+> call. The service does not enforce additional binding between workload identities and
+> credential providers in the same account.
+
+So protection comes from the execution role's policy naming the provider ARN — identical
+whether the token was delivered or fetched. `deploy/06_grant_iam.py` scopes to the
+Runtime-managed identity **and** the single provider ARN, discovering the identity from the
+deployed runtime because its name embeds the runtime id.
+
+### When you would fetch it yourself
+
+Create your own named workload identity and call `GetWorkloadAccessTokenForJWT` when:
+
+- **Code outside Runtime needs the same exchange** — a script, a Lambda, a CI job. There is
+  no request header there, so there is no token in context. This is the concrete cost of the
+  switch: earlier versions of this sample shipped `scripts/test_chain.py` and
+  `scripts/show_token_claims.py`, which drove hop D and decoded every token from a laptop.
+  Both became impossible and were removed.
+- **One identity must span several callers**, so the same user-agent pair is used from more
+  than one place.
+
+And note the asymmetry: a Runtime-managed identity **cannot** fetch its own token —
+
+> Runtime-managed and Gateway-managed workload identities cannot retrieve tokens directly.
+
+— so the two approaches are not interchangeable. If you need the off-Runtime tooling, you
+need your own identity; if you do not, the delivered token is strictly simpler.
 
 ## Tracing a request
 
@@ -499,7 +543,8 @@ that it is a cache hit of a few milliseconds.
 | `access_denied: Policy evaluation failed` | the agent is not in the AS 2 policy | `python deploy/00_authorize_agent.py` |
 | `invalid_client` on every call | the AI Agent is **STAGED**, or the key is staged not ACTIVE | Actions → Activate; check the ACTIVE badge on Public/private key |
 | `invalid_grant: id-jag already used` | ID-JAGs are single-use | mint one per exchange; never cache the ID-JAG (only `T_tool`) |
-| `Workload Identity does not belong to caller account` | the workload identity named in `AGENT_WORKLOAD_NAME` does not exist — the AgentCore CLI does not create it, and the message reads like a cross-account problem | `python deploy/04_create_obo_provider.py` creates it |
+| `No workload access token in context` | the agent ran outside Runtime, or the runtime has no inbound auth configured | Runtime supplies the token only with `CUSTOM_JWT` inbound. Re-run `deploy/05_patch_agentcore_json.py` and redeploy |
+| `WorkloadIdentity is linked to a service and cannot retrieve an access token by the caller` | something called `GetWorkloadAccessTokenForJWT` for a Runtime-managed identity | that call is refused by design; read the token from context instead |
 | `not authorized to perform GetResourceOauth2Token on resource: …/token-vault/default` | that action is authorized against **four** resources; naming only the credential provider is not enough, even though its ARN contains the vault as a prefix | `python deploy/06_grant_iam.py` lists all four |
 | the agent starts but has no configuration | `agentcore.json` uses **`envVars`**, an ARRAY of `{name, value}`. An `environment` map is **silently ignored** — validate passes, deploy succeeds, the runtime comes up with no variables | `python deploy/05_patch_agentcore_json.py` writes the right shape |
 | `authorizerConfiguration with customJwtAuthorizer is required` | the CLI schema spells it **`customJwtAuthorizer`**; boto3 uses `customJWTAuthorizer` | same script handles the casing |

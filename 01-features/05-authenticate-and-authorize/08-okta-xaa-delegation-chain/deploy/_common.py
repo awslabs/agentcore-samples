@@ -175,6 +175,34 @@ class OktaAdmin:
         return self._call("DELETE", path)
 
 
+def activate_as_policy(okta: OktaAdmin, as_id: str, policy_id: str, label: str = "") -> bool:
+    """Activate an authorization-server access policy and its rules, and verify.
+
+    Sending `"status": "ACTIVE"` in the create/update body does NOT work -- Okta accepts
+    the field and leaves the policy INACTIVE. Activation is a separate lifecycle call, and
+    an inactive policy is skipped silently during evaluation, so the only symptom is
+    `access_denied: Policy evaluation failed` from whichever endpoint needed it. That reads
+    like a misconfigured client or scope, which is where the time goes.
+
+    Returns True if the policy and every rule ended up ACTIVE.
+    """
+    base = f"/authorizationServers/{as_id}/policies/{policy_id}"
+    policy = okta.get(base)
+    if policy.get("status") != "ACTIVE":
+        okta.post(f"{base}/lifecycle/activate", {})
+    for rule in okta.get(f"{base}/rules"):
+        if rule.get("status") != "ACTIVE":
+            okta.post(f"{base}/rules/{rule['id']}/lifecycle/activate", {})
+    policy = okta.get(base)
+    rules = okta.get(f"{base}/rules")
+    ok = policy.get("status") == "ACTIVE" and all(r.get("status") == "ACTIVE" for r in rules)
+    if not ok:
+        print(
+            f"        ⚠ {label or policy_id} is not fully ACTIVE: policy={policy.get('status')} rules={[r.get('status') for r in rules]}"
+        )
+    return ok
+
+
 def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
 
@@ -208,11 +236,6 @@ def resource_role_name() -> str:
 
 def obo_provider_name() -> str:
     return env("AGENT_OBO_PROVIDER_NAME", "xaa-agent-obo-provider")
-
-
-def workload_name() -> str:
-    """The agent's workload identity. Must match AGENT_WORKLOAD_NAME in the runtime."""
-    return env("AGENT_WORKLOAD_NAME", "xaa-todo-agent")
 
 
 def policy_engine_name() -> str:

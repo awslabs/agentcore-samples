@@ -41,6 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (
     OktaAdmin,
+    activate_as_policy,
     env,
     load_env,
     must_env,
@@ -147,10 +148,13 @@ def ensure_policy(okta: OktaAdmin, as_id: str, name: str, client_id: str, grants
             f"/authorizationServers/{as_id}/policies/{policy['id']}/rules/{existing_rule['id']}",
             rule_body,
         )
-        print("        • rule updated (ACTIVE)")
+        print("        • rule updated")
     else:
         okta.post(f"/authorizationServers/{as_id}/policies/{policy['id']}/rules", rule_body)
-        print("        ✓ rule created (ACTIVE)")
+        print("        ✓ rule created")
+    # Must be a separate lifecycle call -- "status" in the body above is ignored.
+    if activate_as_policy(okta, as_id, policy["id"], name):
+        print("        ✓ policy and rule ACTIVE")
 
 
 # ── apps ─────────────────────────────────────────────────────────────────────
@@ -368,19 +372,26 @@ def main() -> None:
 
     print(
         "\n"
-        "Next, the one manual step -- register the AI Agent (wlp...):\n"
+        "Next, the one manual step -- register the AI Agent (wlp...).\n"
+        "IDP_SETUP_OKTA.md has the full walkthrough; in outline:\n"
         "  1. python scripts/gen_keypair.py\n"
         "  2. Okta Admin -> Directory -> AI Agents -> Register AI Agent -> manually\n"
-        "     - Credentials: Public key / Private key; paste scripts/keys/okta_public_jwk.json\n"
-        "     - Delegations -> Add caller: caller = '" + LOGIN_LABEL + "',\n"
-        "       on behalf of = User, authorization server = the ORG server\n"
-        "       (NOT a custom AS -- only the org server mints an ID-JAG)\n"
+        "     - Client registration: Public key / Private key; paste\n"
+        "       scripts/keys/okta_public_jwk.json, then Activate it\n"
+        "     - User access: accept the OIDC app Okta creates for the agent. You cannot\n"
+        "       bind an existing app -- the picker lists SAML apps only\n"
         f"     - Resource connections -> Add: Authorization server = '{AS2_NAME}',\n"
-        f"       scope {resource_scope}\n"
+        f"       scope {resource_scope}   (authorises ID-JAG leg 2)\n"
+        "     - Machine access: Configure the custom AS = this AS 1 with the https\n"
+        f"       audience ({agentcore_aud}), then\n"
+        "       Add caller -> Application or service -> the Agent app. This authorises\n"
+        "       ID-JAG leg 1 to take an ACCESS token. An agent cannot be its own caller\n"
         "     - Actions -> Activate  (a STAGED agent fails every call: invalid_client)\n"
-        "  3. Add the agent's wlp... client id to the 'XAA sample - Resource jwt-bearer'\n"
-        f"     policy on '{AS2_NAME}' (its client allowlist)\n"
-        "  4. Put the wlp... id in AI_AGENT_CLIENT_ID and the key's kid in AI_AGENT_KEY_KID\n"
+        "  3. Put the wlp... id in AI_AGENT_CLIENT_ID and the key's kid in AI_AGENT_KEY_KID\n"
+        "  4. python deploy/00_relink_login_app.py\n"
+        "  5. python deploy/00_authorize_agent.py --assign-user you@example.com\n"
+        "     (fixes the AS 2 policy AND assigns the user to the Agent app, which\n"
+        "      leg 1 requires -- it is a different app from the sign-in one)\n"
         "\nThen: python scripts/verify_ai_agent.py"
     )
 

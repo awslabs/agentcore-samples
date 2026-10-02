@@ -146,7 +146,7 @@ def main() -> None:
     print("  Not checkable via the Management API -- Okta does not expose these:")
     print("    - Delegation (caller = Login app, on behalf of = User, authz server = ORG)")
     print("    - Resource connection (Authorization server = XAA Todo Resource, todos.read)")
-    print("  Prove them by running: python scripts/test_chain.py")
+    print("  Prove them end to end: python frontend/app.py, then ask a question")
 
     if failures:
         print(f"\n{BAD} {failures} problem(s) above must be fixed before the flow will work.")

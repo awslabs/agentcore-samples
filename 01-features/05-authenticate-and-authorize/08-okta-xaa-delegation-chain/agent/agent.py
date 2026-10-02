@@ -23,7 +23,6 @@ Environment (written by deploy/05_patch_agentcore_json.py):
   AGENT_OBO_PROVIDER_NAME  the AgentCore Identity provider for the OBO exchange
   AGENTCORE_AUDIENCE       the audience to request for T_gateway
   SCOPE_TOOLS_ACCESS       the scope to request for T_gateway
-  AGENT_WORKLOAD_NAME      workload identity name for the token exchange
   MODEL_ID                 optional Bedrock model override
 """
 
@@ -37,6 +36,7 @@ from typing import Any
 
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from bedrock_agentcore.runtime.context import BedrockAgentCoreContext
 from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.tools.mcp.mcp_client import MCPClient
@@ -48,7 +48,6 @@ GATEWAY_MCP_URL = os.environ.get("GATEWAY_MCP_URL", "")
 OBO_PROVIDER = os.environ.get("AGENT_OBO_PROVIDER_NAME", "xaa-agent-obo-provider")
 AUDIENCE = os.environ.get("AGENTCORE_AUDIENCE", "https://xaa-agentcore.example.com")
 TOOLS_SCOPE = os.environ.get("SCOPE_TOOLS_ACCESS", "tools.access")
-WORKLOAD_NAME = os.environ.get("AGENT_WORKLOAD_NAME", "xaa-todo-agent")
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ID_TOKEN_HEADER = os.environ.get("ID_TOKEN_HEADER", "X-Okta-Id-Token")
 
@@ -67,16 +66,30 @@ Rules:
 """
 
 
-def obo_token(user_jwt: str) -> str:
+def obo_token() -> str:
     """Exchange the caller's token for one scoped to the gateway.
 
     AgentCore Identity performs the RFC 8693 exchange at Okta as the Agent app, so the
     agent needs no client secret. `subject_token_type` must be set explicitly: the
     service defaults it to `jwt` while Okta requires `access_token`.
+
+    The workload access token is NOT fetched here. Runtime already obtained one -- it
+    validated the inbound JWT, took its `iss`/`sub`, looked up the agent's workload
+    identity, called GetWorkloadAccessTokenForJWT itself, and delivered the result as a
+    request header. The SDK lifts that header into context, so the agent just reads it:
+    one less API call, one less IAM action, and no workload identity name to keep in sync.
+
+    The trade-off is real but narrow -- see "Why the agent does not fetch its own workload
+    access token" in README.md.
     """
-    workload = _identity.get_workload_access_token_for_jwt(workloadName=WORKLOAD_NAME, userToken=user_jwt)[
-        "workloadAccessToken"
-    ]
+    workload = BedrockAgentCoreContext.get_workload_access_token()
+    if not workload:
+        raise RuntimeError(
+            "No workload access token in context. Runtime supplies one only when the "
+            "runtime has inbound auth configured (CUSTOM_JWT) and the caller presented a "
+            "valid token -- check deploy/05_patch_agentcore_json.py ran and the runtime "
+            "was redeployed. Code running outside Runtime never receives one."
+        )
     return _identity.get_resource_oauth2_token(
         workloadIdentityToken=workload,
         resourceCredentialProviderName=OBO_PROVIDER,
@@ -127,11 +140,14 @@ def all_tools(client: MCPClient) -> list:
 
 @app.entrypoint
 async def invoke(payload: dict[str, Any], context: Any):
+    # The token itself is no longer read here -- Runtime validated it, derived the user
+    # identity from it, and already exchanged it for a workload access token. The check
+    # stays because its absence means inbound auth is misconfigured, and failing here is
+    # clearer than failing inside the exchange.
     auth = (context.request_headers or {}).get("Authorization", "")
     if not auth.lower().startswith("bearer "):
         yield "ERROR: missing or malformed Authorization header."
         return
-    t_user = auth.split(" ", 1)[1]
 
     # Optional. Leg 1 normally exchanges T_gateway, which we are about to mint, so a
     # second token does not need to travel with the request at all. A BFF running the
@@ -141,7 +157,7 @@ async def invoke(payload: dict[str, Any], context: Any):
     prompt = payload.get("prompt") or "What is on my todo list?"
 
     try:
-        t_gateway = obo_token(t_user)
+        t_gateway = obo_token()
         log.info("obo exchange ok; calling the gateway")
     except Exception as exc:
         log.exception("obo exchange failed")
