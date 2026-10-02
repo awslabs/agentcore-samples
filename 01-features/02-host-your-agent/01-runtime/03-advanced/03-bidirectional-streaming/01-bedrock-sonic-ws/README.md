@@ -1,6 +1,6 @@
 # Nova Sonic Direct Agent (Low-Level S2S)
 
-A bidirectional voice agent using the **Nova Sonic S2S API directly** via the AWS Bedrock runtime SDK. Unlike the Strands agent (which uses the `BidiAgent` abstraction) or the LangChain agent (sandwich pipeline), this agent manages the raw bidirectional stream, event protocol, and session lifecycle manually.
+A bidirectional voice agent using the **Nova Sonic S2S API directly** via the Amazon Bedrock runtime SDK. Unlike the Strands agent (which uses the `BidiAgent` abstraction) or the LangChain agent (sandwich pipeline), this agent manages the raw bidirectional stream, event protocol, and session lifecycle manually.
 
 ## Deploy to AgentCore
 
