@@ -167,14 +167,14 @@ Examples:
   # Local WebSocket server (no authentication)
   python client.py --ws-url ws://localhost:8080/ws
 
-  # AWS Bedrock with presigned URL
+  # Amazon Bedrock with presigned URL
   python client.py --runtime-arn arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/RUNTIMEID
 
   # Custom port
   python client.py --ws-url ws://localhost:8080/ws --port 8000
 """,
     )
-    parser.add_argument("--runtime-arn", help="Runtime ARN for AWS Bedrock connection")
+    parser.add_argument("--runtime-arn", help="Runtime ARN for Amazon Bedrock connection")
     parser.add_argument(
         "--ws-url",
         help="WebSocket server URL for local connections (e.g., ws://localhost:8080/ws)",
