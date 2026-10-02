@@ -1,0 +1,47 @@
+{
+  "1001": {
+    "orderId": "1001",
+    "customer": "Ana Souza",
+    "email": "ana.souza@example.com",
+    "item": "Wireless Earbuds",
+    "total": 49.99,
+    "status": "delivered",
+    "refunded": false
+  },
+  "1002": {
+    "orderId": "1002",
+    "customer": "Ben Carter",
+    "email": "ben.carter@example.com",
+    "item": "32-inch 4K Monitor",
+    "total": 899.00,
+    "status": "delivered",
+    "refunded": false
+  },
+  "1003": {
+    "orderId": "1003",
+    "customer": "Chloe Martin",
+    "email": "chloe.martin@example.com",
+    "item": "Standing Desk",
+    "total": 329.00,
+    "status": "in_transit",
+    "refunded": false
+  },
+  "1004": {
+    "orderId": "1004",
+    "customer": "Diego Ramos",
+    "email": "diego.ramos@example.com",
+    "item": "Burr Coffee Grinder",
+    "total": 89.00,
+    "status": "delivered",
+    "refunded": true
+  },
+  "1005": {
+    "orderId": "1005",
+    "customer": "Emma Wilson",
+    "email": "emma.wilson@example.com",
+    "item": "Laptop Backpack",
+    "total": 120.00,
+    "status": "delivered",
+    "refunded": false
+  }
+}
