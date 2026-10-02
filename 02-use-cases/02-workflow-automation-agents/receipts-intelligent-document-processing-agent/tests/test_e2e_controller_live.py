@@ -1,6 +1,6 @@
-"""Phase 6 sub-step 3 end-to-end: the account-level control loop (spec §6.3 path 2).
+"""End-to-end: the account-level control loop (ADR-0010, path 2).
 
-UNLIKE the deferred 503-step-down sim (sub-step 2), this loop is faithfully
+UNLIKE the skipped 503 step-down test (test_e2e_stepdown_live.py), this loop is faithfully
 live-testable WITHOUT a real Bedrock outage. Two real, no-mock paths together cover
 the whole loop:
 
@@ -20,11 +20,12 @@ the whole loop:
      proven EventBridge hop is bypassed for the two auto-reverting branches.
 
 Always restores L0 in `finally` so it never poisons shared AppConfig state
-(the test-isolation lesson from sub-step 1).
+(the same isolation test_e2e_ladder_live.py uses).
 
 Requires a deployed stack (run via `make e2e`); skips cleanly otherwise.
 """
 
+import contextlib
 import json
 import os
 import time
@@ -209,10 +210,8 @@ def test_control_loop_full_wiring_steps_down_via_eventbridge():
         assert rung == "L1", f"alarm->EventBridge->controller should step L0->L1, got {rung}"
     finally:
         _set_rung_l0(ac, app_id, env_id, prof_id, strat_id)
-        try:
+        with contextlib.suppress(Exception):
             _force_alarm("OK")
-        except Exception:
-            pass
 
 
 def test_controller_respects_cooldown_then_steps_up():

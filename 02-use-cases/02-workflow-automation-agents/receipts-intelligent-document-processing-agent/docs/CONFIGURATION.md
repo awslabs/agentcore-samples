@@ -4,15 +4,14 @@ Everything the agent reads comes through one seam — `app/receiptsagent/config.
 
 ## Environment variables (the seam)
 
-All set by the CDK stack at deploy time; `.env.example` mirrors them for local `agentcore dev`.
+All set by the CDK stack at deploy time; `.env.example` mirrors them for running the agent locally.
 
 | Variable | Purpose | Set by |
 |----------|---------|--------|
 | `AGENT_MODEL_ID` | The L0 default model + the local-dev fallback when AppConfig is unreachable. **Not** the live model in a deployed stack — that comes from the active rung. | `agentcore.json` envVars |
 | `APPCONFIG_APPLICATION` / `_ENVIRONMENT` / `_PROFILE` | AppConfig coordinates for the degradation ladder. Unset (local dev) ⇒ run on `AGENT_MODEL_ID`, all features on. | CDK (parent stack) |
 | `AGENTCORE_GATEWAY_URL` | The MCP Gateway endpoint. | CDK (from the Gateway resource) |
-| `AGENTCORE_GATEWAY_TOKEN_ENDPOINT` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_OAUTH_SCOPES` | Cognito M2M `client_credentials` for agent-as-principal auth ([ADR-0004](decisions/0004-agent-as-principal-m2m-over-per-user-jwt.md), [ADR-0014](decisions/0014-cognito-secret-via-cdk-injection.md)). | CDK (from Cognito) |
-| `MEMORY_ID` | AgentCore Memory id. Optional — the agent runs without it. | CDK |
+| `AGENTCORE_GATEWAY_CLIENT_ID` / `_CLIENT_SECRET` / `_OAUTH_SCOPES` | Cognito M2M `client_credentials` for agent-as-principal auth. Strands' `MCPClient(auth=...)` runs the grant and discovers the token endpoint from the Gateway's OAuth metadata ([ADR-0004](decisions/0004-agent-as-principal-m2m-over-per-user-jwt.md), [ADR-0014](decisions/0014-cognito-secret-via-cdk-injection.md)). | CDK (from Cognito) |
 | `DEFER_QUEUE_URL` | The L4 SQS defer queue ([ADR-0011](decisions/0011-l4-sqs-jittered-drain.md)). | CDK |
 | `RUN_EVENT_BUS` | The run-ledger EventBridge bus ([ADR-0015](decisions/0015-processing-runs-ledger.md)). Unset (local dev) ⇒ no ledger emit, agent runs normally. | CDK |
 | `IDENTITY_KEY_ID` | KMS HMAC key for conversational-query identity ([ADR-0016](decisions/0016-conversational-identity-no-idor.md)). The agent verifies the signed token to derive `user_id` (never from the request body). | CDK |
@@ -54,11 +53,11 @@ To change a rung's model: edit the profile, create a new hosted config version, 
 Two policies on the Gateway's policy engine (`agentcore.json` → `policyEngines`), both `IGNORE_ALL_FINDINGS` ([ADR-0013](decisions/0013-ignore-all-findings-policy-validation.md)):
 
 - **`AllowAllTools`** — `permit(principal, action, resource is AgentCore::Gateway)`. Allow-all baseline.
-- **`BlockExcessiveExpense`** — forbids a `save_expense` with `total >= 2000`, routing it to review instead ([ADR-0012](decisions/0012-cedar-on-tool-input.md)). To change the threshold, edit the `>= 2000` in the policy statement. To add a category block, add another `forbid` keyed on `context.input.category` (guard `context has input` first).
+- **`BlockExcessiveExpense`** — forbids a `save_expense` of $2,000 or more, routing it to review instead ([ADR-0012](decisions/0012-cedar-on-tool-input.md)). It compares `total_cents`, an integer the orchestrator sends with every save, and denies a save without it. Cedar will not compare a decimal with a whole number, and the Gateway passes totals such as `15.9` or `1250.0` as decimals. To change the threshold, edit the `>= 200000` (cents) in the policy statement. To add a category block, add another `forbid` keyed on `context.input.category` (guard `context has input` first).
 
 ## Tuning knobs
 
-The *shapes* are settled; these *values* are tuned against your account's real Bedrock quotas (spec §12).
+The *shapes* are settled; these *values* are tuned against your account's real Bedrock quotas ([ADR-0011](decisions/0011-l4-sqs-jittered-drain.md)).
 
 | Knob | Where | Default | Notes |
 |------|-------|---------|-------|
@@ -67,4 +66,4 @@ The *shapes* are settled; these *values* are tuned against your account's real B
 | Drain pacing | `infra-construct.ts` → `DRAIN_MIN/MAX_SECONDS` | `1`–`3` s | Jittered sleep per replayed receipt; concurrency=1 + batch=1 bound the rate. |
 | Drain timeout / queue visibility | `infra-construct.ts` | `4` min / `6` min | Visibility must exceed the drain timeout so an in-flight replay holds its message. |
 | AppConfig deployment strategy | `infra-construct.ts` → `LadderStrategy` | all-at-once, no bake | A production deploy adds a bake window + an alarm rollback. |
-| Cedar threshold | `agentcore.json` → `BlockExcessiveExpense` | `2000` | The auto-persist ceiling. |
+| Cedar threshold | `agentcore.json` → `BlockExcessiveExpense` | `200000` cents | The auto-persist ceiling ($2,000). |

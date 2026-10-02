@@ -2,7 +2,7 @@
 
 Best-effort: returns the catalog entry if the normalized key matches, else a
 passthrough with the cleaned name so the agent always gets a usable answer. The
-Merchants table is optional (spec §8); a missing table/entry is not an error.
+Merchants table is optional; a missing table/entry is not an error.
 """
 
 import json
@@ -28,8 +28,8 @@ def handler(event, context):
     key = _normalize(name)
     try:
         item = table.get_item(Key={"merchantKey": key}).get("Item")
-    except Exception:
-        item = None  # catalog optional — degrade to passthrough
+    except Exception:  # noqa: BLE001 — the catalog is optional
+        item = None  # degrade to passthrough
 
     if item:
         return json.dumps({"matched": True, "merchant": item}, default=str)

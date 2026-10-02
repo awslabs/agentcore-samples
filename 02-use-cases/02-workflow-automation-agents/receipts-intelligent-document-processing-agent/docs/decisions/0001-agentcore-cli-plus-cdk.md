@@ -36,3 +36,7 @@ The point of this sample is to show how to build a workflow-automation agent wit
 Two configuration surfaces must stay in sync: `agentcore.json` (with `PLACEHOLDER_<TOOL>` ARNs) and `cdk-stack.ts` (which patches the real ARNs at synth time). Adding a tool means touching both. See [tutorial.md](../tutorial.md) for the step-by-step.
 
 > **Hard-won note.** The CLI version used here (`0.19.0-preview`) has no `destroy` command — tear down with `aws cloudformation delete-stack`. And `cdk synth` / `cdk destroy` can silently no-op in some sandboxes, so the build runs the CDK app directly (`CDK_OUTDIR=cdk.out node dist/bin/cdk.js`), which is what `make synth` does.
+
+## Update (2026-09-23)
+
+The stack source (`agentcore/cdk/lib/`) is committed through a folder-level `.gitignore` exception; it had been swallowed by the repository's root `lib/` rule, so the stack could not be deployed from the repository.

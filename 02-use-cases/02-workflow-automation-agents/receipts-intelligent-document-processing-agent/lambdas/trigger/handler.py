@@ -1,10 +1,10 @@
-"""Trigger Lambda: S3 receipt upload -> EventBridge -> invoke the Runtime (spec §13).
+"""Trigger Lambda: S3 receipt upload -> EventBridge -> invoke the Runtime (ADR-0006).
 
 The event-driven front door. A receipt lands in the inbox bucket; S3 emits an
 "Object Created" event; an EventBridge rule fires this Lambda, which builds the
 agent payload ({s3_uri, user_id}) and invokes the Runtime. There is NO logged-in
-user at this point — the agent authenticates as itself (agent-as-principal, spec
-§10), and this Lambda invokes the Runtime with its own IAM credentials
+user at this point — the agent authenticates as itself (agent-as-principal,
+ADR-0004), and this Lambda invokes the Runtime with its own IAM credentials
 (bedrock-agentcore:InvokeAgentRuntime, granted by CDK).
 
 Invoke path: boto3 `invoke_agent_runtime` (the same call the L4 drain consumer uses
