@@ -186,6 +186,6 @@ carry no infrastructure identifiers.
   zero-configuration path. To restrict which models callers can use, switch to an
   explicit provider configuration; see the
   [llm-inference tutorials](../../../../07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/llm-inference).
-- `setup.py` uses boto3 rather than CloudFormation because
-  `AWS::BedrockAgentCore::GatewayTarget` does not yet support `Inference` target
-  configurations.
+- The scripts use boto3 so that each step is easy to follow. AWS CloudFormation also
+  supports inference targets through `AWS::BedrockAgentCore::GatewayTarget`, so the
+  gateway and its target can be managed as infrastructure as code.

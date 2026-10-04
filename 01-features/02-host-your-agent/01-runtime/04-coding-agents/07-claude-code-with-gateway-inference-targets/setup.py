@@ -9,9 +9,10 @@ bedrock-agentcore.amazonaws.com, a gateway with a CUSTOM_JWT authorizer, and one
 inference target using the bedrock-mantle connector. Prints the resulting Claude Code
 environment when done.
 
-Uses boto3 rather than CloudFormation because AWS::BedrockAgentCore::GatewayTarget
-accepts only Mcp and Http target configurations, not Inference. Needs a boto3 recent
-enough to know bedrock-agentcore-control inference targets.
+Uses boto3 so that each step is easy to follow. AWS::BedrockAgentCore::GatewayTarget
+also supports Inference target configurations, so the gateway and its target can be
+managed in CloudFormation. Needs a boto3 recent enough to know
+bedrock-agentcore-control inference targets.
 
 Every created resource id is written to .provision-state.json as it is created, so
 cleanup.py never guesses and a half-finished run is still cleanable. Re-running setup
