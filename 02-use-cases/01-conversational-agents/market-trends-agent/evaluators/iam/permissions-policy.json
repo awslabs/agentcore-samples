@@ -8,7 +8,7 @@
         "lambda:InvokeFunction",
         "lambda:GetFunction"
       ],
-      "Resource": "arn:aws:lambda:*:*:function:market-trends-eval-*"
+      "Resource": "arn:aws:lambda:*:<ACCOUNT_ID>:function:market-trends-eval-*"
     },
     {
       "Sid": "ReadAgentSpansFromCloudWatch",
@@ -21,7 +21,22 @@
         "logs:StartQuery",
         "logs:GetQueryResults"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:logs:*:<ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/*",
+        "arn:aws:logs:*:<ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/*:*"
+      ]
+    },
+    {
+      "Sid": "InvokeJudgeModels",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:*:<ACCOUNT_ID>:inference-profile/*"
+      ]
     },
     {
       "Sid": "WriteEvaluationResults",
@@ -31,7 +46,7 @@
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:*:*:log-group:/aws/bedrock-agentcore/evaluations/results/*"
+      "Resource": "arn:aws:logs:*:<ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/evaluations/results/*"
     }
   ]
 }

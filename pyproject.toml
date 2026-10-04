@@ -4,6 +4,11 @@
 line-length = 120
 
 [tool.ruff.lint]
+# Ruff 0.16 expanded its default rule set from ~59 to 413 rules. Pin back to
+# the narrow set (pyflakes + a slice of pycodestyle) this config's ignore list
+# below was written against, so newer ruff versions don't silently start
+# flagging hundreds of new findings across the whole repo.
+select = ["E4", "E7", "E9", "F"]
 ignore = [
     # E402: Module level import not at top of file — common in tutorial scripts
     #        that configure environment (os.environ, dotenv) before importing modules
