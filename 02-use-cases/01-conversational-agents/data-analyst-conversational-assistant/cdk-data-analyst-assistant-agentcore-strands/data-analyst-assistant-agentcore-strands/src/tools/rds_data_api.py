@@ -6,11 +6,12 @@ Configuration is read directly from environment variables:
 - READONLY_SECRET_ARN, AURORA_RESOURCE_ARN, DATABASE_NAME, MAX_RESPONSE_SIZE_BYTES
 """
 
-import os
-import boto3
 import json
-from botocore.exceptions import ClientError
+import os
 from decimal import Decimal
+
+import boto3
+from botocore.exceptions import ClientError
 
 
 def get_rds_data_client():
@@ -93,4 +94,4 @@ def run_sql_query(sql_query: str) -> str:
         return json.dumps({"result": records_to_return})
 
     except Exception as e:
-        return json.dumps({"error": f"Unexpected error: {str(e)}"})
+        return json.dumps({"error": f"Unexpected error: {e!s}"})

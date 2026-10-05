@@ -4,10 +4,11 @@ Utility Functions for Data Analyst Conversational Assistant
 Provides functions for storing analysis query results to DynamoDB.
 """
 
-import os
-import boto3
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timezone
+
+import boto3
 
 
 def save_raw_query_result(user_prompt_uuid, user_prompt, sql_query, sql_query_description, result, message):
@@ -36,8 +37,8 @@ def save_raw_query_result(user_prompt_uuid, user_prompt, sql_query, sql_query_de
             TableName=question_answers_table,
             Item={
                 "id": {"S": user_prompt_uuid},
-                "my_timestamp": {"N": str(int(datetime.now().timestamp()))},
-                "datetime": {"S": str(datetime.now())},
+                "my_timestamp": {"N": str(int(datetime.now(timezone.utc).timestamp()))},
+                "datetime": {"S": str(datetime.now(timezone.utc))},
                 "user_prompt": {"S": user_prompt},
                 "sql_query": {"S": sql_query},
                 "sql_query_description": {"S": sql_query_description},
@@ -50,5 +51,5 @@ def save_raw_query_result(user_prompt_uuid, user_prompt, sql_query, sql_query_de
         return {"success": True, "response": response}
 
     except Exception as e:
-        print(f"❌ DynamoDB save error: {str(e)}")
+        print(f"❌ DynamoDB save error: {e!s}")
         return {"success": False, "error": str(e)}

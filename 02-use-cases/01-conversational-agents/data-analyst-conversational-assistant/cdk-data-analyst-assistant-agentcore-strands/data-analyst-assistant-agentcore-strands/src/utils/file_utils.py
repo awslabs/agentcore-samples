@@ -1,4 +1,4 @@
-def load_file_content(file_path: str, default_content: str = None) -> str:
+def load_file_content(file_path: str, default_content: str | None = None) -> str:
     """
     Load file content with optional fallback and comprehensive error handling.
 
@@ -11,7 +11,7 @@ def load_file_content(file_path: str, default_content: str = None) -> str:
 
     Raises:
         FileNotFoundError: If file not found and no default provided
-        Exception: For other file reading errors with detailed message
+        OSError: For other file reading errors with detailed message
     """
     try:
         with open(file_path, "r") as file:
@@ -19,7 +19,6 @@ def load_file_content(file_path: str, default_content: str = None) -> str:
     except FileNotFoundError:
         if default_content is not None:
             return default_content
-        else:
-            raise FileNotFoundError(f"File not found: {file_path}")
-    except Exception as e:
-        raise Exception(f"Error reading file {file_path}: {str(e)}")
+        raise FileNotFoundError(f"File not found: {file_path}") from None
+    except OSError as e:
+        raise OSError(f"Error reading file {file_path}: {e!s}") from e

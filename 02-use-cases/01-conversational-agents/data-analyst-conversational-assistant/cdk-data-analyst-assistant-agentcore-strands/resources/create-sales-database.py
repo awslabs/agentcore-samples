@@ -11,8 +11,9 @@ Required environment variables:
   - DATABASE_NAME: Target database name (from CDK stack parameter DatabaseName)
 """
 
-import boto3
 import os
+
+import boto3
 
 session = boto3.session.Session()
 region = session.region_name

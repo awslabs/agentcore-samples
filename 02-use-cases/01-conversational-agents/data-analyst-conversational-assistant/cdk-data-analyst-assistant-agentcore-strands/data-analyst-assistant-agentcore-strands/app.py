@@ -20,18 +20,13 @@ from uuid import uuid4
 
 # OpenTelemetry — ADOT auto-instruments Bedrock calls; we add custom spans for
 # tool execution, memory operations, and request-level context.
-from opentelemetry import trace, context, baggage
+from opentelemetry import baggage, context, trace
 from opentelemetry.trace import StatusCode
 
 tracer = trace.get_tracer("strands.telemetry.tracer", "1.0.0")
 
 # Bedrock Agent Core imports
 from bedrock_agentcore import BedrockAgentCoreApp
-from strands import Agent
-from strands_tools import current_time
-from strands.models import BedrockModel
-from strands.tools.mcp import MCPClient
-from mcp.client.streamable_http import streamablehttp_client
 from bedrock_agentcore.memory.integrations.strands.config import (
     AgentCoreMemoryConfig,
     RetrievalConfig,
@@ -39,9 +34,14 @@ from bedrock_agentcore.memory.integrations.strands.config import (
 from bedrock_agentcore.memory.integrations.strands.session_manager import (
     AgentCoreMemorySessionManager,
 )
+from mcp.client.streamable_http import streamablehttp_client
 
 # Custom module imports
 from src.utils import load_file_content
+from strands import Agent
+from strands.models import BedrockModel
+from strands.tools.mcp import MCPClient
+from strands_tools import current_time
 
 # Retrieve AgentCore Memory ID
 memory_id = os.environ.get("MEMORY_ID")
@@ -81,7 +81,7 @@ def load_system_prompt():
         print("=" * 50 + "\n")
         return prompt
     except Exception as e:
-        print(f"❌ Error loading system prompt: {str(e)}")
+        print(f"❌ Error loading system prompt: {e!s}")
         print("=" * 50 + "\n")
         return fallback_prompt
 
@@ -234,7 +234,7 @@ async def agent_invocation(payload):
         print("\n" + "=" * 80)
         print("DATA ANALYSIS ERROR")
         print("=" * 80)
-        print(f"Error: {str(e)}")
+        print(f"Error: {e!s}")
         print(f"Location: Line {line_number} in {filename}")
         print(f"Function: {function_name}")
         if text:

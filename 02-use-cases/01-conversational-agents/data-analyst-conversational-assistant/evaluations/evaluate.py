@@ -29,6 +29,7 @@ Prerequisites:
 """
 
 import argparse
+import contextlib
 import json
 import logging
 import time
@@ -190,10 +191,8 @@ def invoke_agent(agentcore_client, agent_runtime_arn: str, prompt: str, session_
     for line in raw.splitlines():
         if line.startswith("data: "):
             chunk = line[len("data: ") :]
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 chunk = json.loads(chunk)
-            except Exception:
-                pass
             parts.append(str(chunk))
     return "".join(parts) if parts else raw
 
@@ -300,10 +299,8 @@ def run_batch_evaluation(
         for line in raw.splitlines():
             if line.startswith("data: "):
                 chunk = line[len("data: ") :]
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     chunk = json.loads(chunk)
-                except Exception:
-                    pass
                 parts.append(str(chunk))
         return AgentInvokerOutput(agent_output="".join(parts) if parts else raw)
 

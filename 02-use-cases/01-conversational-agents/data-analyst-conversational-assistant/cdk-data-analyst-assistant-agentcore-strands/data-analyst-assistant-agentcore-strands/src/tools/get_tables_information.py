@@ -1,5 +1,5 @@
-from strands import tool
 from src.utils import load_file_content
+from strands import tool
 
 
 @tool
@@ -28,5 +28,5 @@ def get_tables_information() -> dict:
     except Exception as e:
         return {
             "toolUsed": "get_tables_information",
-            "information": f"Error reading tables information: {str(e)}",
+            "information": f"Error reading tables information: {e!s}",
         }

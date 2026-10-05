@@ -10,10 +10,11 @@ Usage:
     python3 memory_manager.py list
 """
 
-import sys
 import logging
+import sys
+from typing import Any
+
 import boto3
-from typing import Dict, Any, Optional, List
 from bedrock_agentcore.memory import MemoryClient
 from botocore.exceptions import ClientError
 
@@ -29,8 +30,8 @@ DEFAULT_EXPIRY_DAYS = 7
 def create_memory(
     memory_name: str = DEFAULT_MEMORY_NAME,
     expiry_days: int = DEFAULT_EXPIRY_DAYS,
-    parameter_store_name: Optional[str] = None,
-) -> Optional[str]:
+    parameter_store_name: str | None = None,
+) -> str | None:
     """
     Create a new memory resource for the agent and store the memory ID in parameter store
 
@@ -83,7 +84,7 @@ def create_memory(
         return None
 
 
-def list_memories() -> List[Dict[str, Any]]:
+def list_memories() -> list[dict[str, Any]]:
     """
     List all available memory resources
 

@@ -122,7 +122,7 @@ def handle_execute_sql_query(event):
             includeResultMetadata=True,
         )
     except ClientError as e:
-        return {"error": f"Query execution failed: {str(e)}"}
+        return {"error": f"Query execution failed: {e!s}"}
 
     if "error" in response:
         return {"error": f"Query execution failed: {response['error']}"}
