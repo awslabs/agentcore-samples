@@ -3,7 +3,6 @@ feature). Pure functions, no AWS. The live emit->writer->table path is covered b
 tests/test_e2e_runledger_live.py."""
 
 import pytest
-
 from parsing import build_run_event, receipt_id
 
 pytestmark = pytest.mark.unit

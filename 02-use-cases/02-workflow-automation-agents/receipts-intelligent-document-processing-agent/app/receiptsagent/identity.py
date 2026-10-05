@@ -63,20 +63,6 @@ def claim_is_valid(claim_bytes: bytes, now: int) -> dict[str, Any]:
     return claim
 
 
-def sign_identity(
-    user_id: str, key_id: str, region: str, ttl: int = DEFAULT_TTL_SECONDS, now: int | None = None
-) -> str:
-    """Mint a signed identity token (the trusted invoker / chat client side)."""
-    import boto3
-
-    now = int(now if now is not None else time.time())
-    claim = encode_claim(user_id, now + ttl)
-    mac = boto3.client("kms", region_name=region).generate_mac(KeyId=key_id, MacAlgorithm=MAC_ALGORITHM, Message=claim)[
-        "Mac"
-    ]
-    return assemble_token(claim, mac)
-
-
 def verify_identity(token: str, key_id: str, region: str, now: int | None = None) -> str:
     """Verify a token and return the bound user_id — the ONLY trusted source of the
     caller's identity in query mode. Raises on any tamper/expiry/verification failure

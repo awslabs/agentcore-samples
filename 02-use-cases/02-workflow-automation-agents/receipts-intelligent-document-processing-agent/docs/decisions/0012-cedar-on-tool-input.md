@@ -39,3 +39,9 @@ The guardrail must be independent of the agents. Gating on the input means the `
 ## Consequences
 
 The `$2,000` rule is enforced at the Gateway, before any write, independent of the agents. A denied `save_expense` surfaces as `cedar_blocked` and the agent routes to `human_review`. The policy uses `IGNORE_ALL_FINDINGS` because it references runtime-resolved input — see [ADR-0013](0013-ignore-all-findings-policy-validation.md). A failed policy *create* leaves a `ROLLBACK_COMPLETE` stack that blocks the next deploy, so a deploy-time policy error needs a manual `delete-stack`.
+
+## Update (2026-09-23): compare integer cents
+
+Deployed, the original `context.input.total >= 2000` denied **every** save. The Gateway passes a JSON total such as `15.9` or `1250.0` as a Cedar decimal. Cedar will not compare a decimal with the whole number `2000`, so the policy errored ("type error: expected long, got decimal"), and a forbid that errors denies. Nothing saved automatically, and the $2,000 rule only appeared to hold, because the error blocked the large receipts too. The local stand-in compared plain numbers, so only a live boundary test exposed it.
+
+The orchestrator now sends `total_cents` (an integer, `to_cents` in `parsing.py`) with every save. The policy compares `total_cents >= 200000` and denies a save that omits it, so it fails closed. A decimal-only comparison was rejected, because the Gateway passes `2000` as a whole number and `2000.0` as a decimal, and a policy cannot accept both.

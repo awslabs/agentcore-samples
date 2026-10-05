@@ -1,6 +1,6 @@
-"""Phase 6 sub-step 1 end-to-end: config-driven model swap with NO redeploy.
+"""End-to-end: config-driven model swap with NO redeploy.
 
-Proves the degradation ladder's core promise (spec §6): the agent's model is set
+Proves the degradation ladder's core promise (ADR-0007): the agent's model is set
 by `activeRung` in AppConfig, and flipping it changes the model on the next
 invocation without touching the stack. No mocks — real AppConfig + real Runtime.
 
@@ -25,7 +25,7 @@ def _runtime_arn():
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip(f"stack {STACK} not deployed")
     for o in outs:
         if o["OutputKey"].startswith("RuntimeArn"):
