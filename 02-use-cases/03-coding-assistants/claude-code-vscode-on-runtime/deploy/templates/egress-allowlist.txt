@@ -1,0 +1,48 @@
+# Where the dev box subnet may connect in `enforce` mode, and which names it may look up.
+# Two firewalls read this file: AWS Network Firewall (TLS SNI, and HTTP Host in learn mode) and
+# Route 53 Resolver DNS Firewall (the DNS names; the VPC resolver is on the local route, so DNS never
+# passes Network Firewall). Without the DNS Firewall, a lookup of <data>.attacker.example is a way out.
+#
+# One domain per line. `name.example.com` matches exactly that name; `.example.com` matches
+# example.com and every subdomain. devbox.py fills in the placeholders (the account id, the
+# devbox-tools gateway's host, the EFS file system's id, and IDC_REGION from devbox.env). Everything not listed is dropped
+# (and alerted), and its DNS lookup answers NXDOMAIN. In enforce mode only TCP 443 leaves the subnet
+# (security group devbox-box); learn mode also opens 80, so plain-HTTP names show up in the alert log.
+# The SNI a client sends isn't checked against the address it connects to, so a listed name can be
+# forged: this list limits the box's ordinary traffic, not a determined exfiltration (deploy/README).
+# After editing: `uv run deploy/devbox.py network enforce` (it updates the rule groups in place).
+
+# ---- The person's own AWS session: IAM Identity Center device-code sign-in (aws sso login)
+oidc.{{IDC_REGION}}.amazonaws.com
+portal.sso.{{IDC_REGION}}.amazonaws.com
+sts.us-east-1.amazonaws.com
+
+# ---- Claude Code on Amazon Bedrock (signed with the person's ClaudeCode-<tier> session)
+bedrock-runtime.us-east-1.amazonaws.com
+bedrock.us-east-1.amazonaws.com
+
+# ---- Web search: mcp-proxy-for-aws → the devbox-tools gateway
+{{TOOLS_GATEWAY_HOST}}
+
+# ---- The box's workspace: AgentCore resolves the EFS mount target's name when it mounts /mnt/workspace
+# (<az-id>.<file system id>.efs.us-east-1.amazonaws.com). NFS itself (TCP 2049) never leaves the VPC: the
+# mount target is in the box subnet, so only DNS Firewall needs this name (Network Firewall never sees NFS).
+.{{EFS_FILE_SYSTEM_ID}}.efs.us-east-1.amazonaws.com
+
+# ---- The AgentCore microVM, through this VPC: pulling the box image, shipping logs
+# The image layers normally take the S3 gateway endpoint (devbox-s3, only ECR's layer bucket) and never reach the
+# firewall; the two starport names stay listed for a box route table without that endpoint.
+api.ecr.us-east-1.amazonaws.com
+{{ACCOUNT_ID}}.dkr.ecr.us-east-1.amazonaws.com
+prod-us-east-1-starport-layer-bucket.s3.us-east-1.amazonaws.com
+prod-us-east-1-starport-layer-bucket.s3.amazonaws.com
+logs.us-east-1.amazonaws.com
+
+# ==== FOUND IN LEARN MODE ======================================================================
+# The AgentCore microVM's own egress through the VPC is undocumented. Run the box in `network learn` first;
+# then `network enforce` lists every name the alert log saw that this file doesn't allow yet. Add what
+# the microVM needs below, each with a note of when you saw it, then run `network enforce` again.
+#
+# Candidates to confirm (not active until uncommented):
+# bedrock-agentcore.us-east-1.amazonaws.com      AgentCore's own calls, if any leave through the VPC
+# .ec2.internal                                  the VPC's own names (the VPC resolver answers them itself; DNS only)

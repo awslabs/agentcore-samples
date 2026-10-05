@@ -1,0 +1,12 @@
+# Only the Dockerfile's inputs go into the build context.
+*
+!Dockerfile
+!keys
+!requirements-mcp-proxy.txt
+!rootfs
+!proxy/package.json
+!proxy/package-lock.json
+!proxy/server.mjs
+!proxy/lib
+**/__pycache__
+**/.DS_Store

@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TheOwnersBrowserMayUseTheBoxAndItsTerminal",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": [
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream",
+        "bedrock-agentcore:InvokeAgentRuntimeCommandShell"
+      ],
+      "Resource": "{{RUNTIME_ARN}}"
+    },
+    {
+      "Sid": "NoCommandApiNoStopNoActingAsSomeoneElse",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": [
+        "bedrock-agentcore:InvokeAgentRuntimeCommand",
+        "bedrock-agentcore:StopRuntimeSession",
+        "bedrock-agentcore:InvokeAgentRuntimeForUser",
+        "bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStreamForUser"
+      ],
+      "Resource": "{{RUNTIME_ARN}}"
+    }
+  ]
+}

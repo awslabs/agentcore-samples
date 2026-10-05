@@ -1,0 +1,110 @@
+# The whole remote stack on the laptop, no AWS. Start it with ./run.sh up (it renders generated/ first).
+# Host ports default to 9400-9403; run.sh sets OKTA_PORT etc. when one of them is taken.
+# Every published port binds 127.0.0.1 only. The box is on an internal network that only fake AgentCore
+# joins, so the browser (and anything else) can reach it only through fake AgentCore, as in AWS.
+name: devbox-local
+
+x-node-image: &node-image public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+
+services:
+  okta:
+    image: devbox-fake-okta:dev
+    build: ./fake-okta
+    platform: linux/arm64
+    environment:
+      FAKE_OKTA_ISSUER: http://localhost:${OKTA_PORT:-9400}/oauth2/default
+      FAKE_OKTA_WORKBENCH_ORIGIN: http://localhost:${WORKBENCH_PORT:-9402}
+      FAKE_OKTA_USER: ${FAKE_OKTA_USER:-ada}
+      FAKE_OKTA_ACCESS_TTL_SECONDS: ${FAKE_OKTA_ACCESS_TTL_SECONDS:-3600}
+    ports: ["127.0.0.1:${OKTA_PORT:-9400}:9400"]
+    networks: [idp]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9400/_fake/health"]
+      interval: 2s
+      retries: 30
+
+  agentcore:
+    image: devbox-fake-agentcore:dev
+    build: ./fake-agentcore
+    platform: linux/arm64
+    environment:
+      FAKE_AC_CONFIG: /config/runtimes.json
+      FAKE_AC_PUBLIC_BASE: http://localhost:${AGENTCORE_PORT:-9401}
+      FAKE_AC_COLD_SECONDS: ${FAKE_AC_COLD_SECONDS:-8}
+      FAKE_AC_WS_MAX_SECONDS: ${FAKE_AC_WS_MAX_SECONDS:-3600}
+      FAKE_AC_PING_SECONDS: ${FAKE_AC_PING_SECONDS:-5}
+      FAKE_AC_RESOURCE_POLICY: ${FAKE_AC_RESOURCE_POLICY:-config}
+    volumes:
+      - ./generated/runtimes.json:/config/runtimes.json:ro
+    ports: ["127.0.0.1:${AGENTCORE_PORT:-9401}:9401"]
+    networks: [idp, boxnet]
+    depends_on:
+      okta: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9401/_fake/health"]
+      interval: 2s
+      retries: 30
+
+  # The capacity-provider volume is mounted 2775 root:<agentcore-runtime-user>; gid 2000 stands in for that group.
+  volume-init:
+    image: *node-image
+    platform: linux/arm64
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c", "chown 0:2000 /mnt/workspace && chmod 2775 /mnt/workspace"]
+    volumes:
+      - workspace:/mnt/workspace
+    restart: "no"
+
+  box:
+    image: devbox-box:dev
+    build:
+      context: ../box
+    platform: linux/arm64
+    env_file: ./generated/box.env
+    # As on AgentCore Instances (seen live): the agent process holds the volume's group as a
+    # supplementary group, and runs as uid 0 with no capabilities and no_new_privs.
+    group_add: ["2000"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - workspace:/mnt/workspace
+    networks: [boxnet]
+    depends_on:
+      volume-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/ping"]
+      interval: 2s
+      retries: 60
+
+  edge:
+    image: *node-image
+    platform: linux/arm64
+    user: node
+    working_dir: /remote/local-test/edge-local
+    command: ["node", "edge-local.mjs"]
+    environment:
+      EDGE_LOCAL_HOST: 0.0.0.0
+      EDGE_LOCAL_MODE: ${EDGE_LOCAL_MODE:-auto}
+      EDGE_LOCAL_CONFIG: /remote/local-test/generated/devbox-config.json
+      WORKBENCH_ORIGIN: http://localhost:${WORKBENCH_PORT:-9402}
+      WEBVIEW_ORIGIN: http://localhost:${WEBVIEW_PORT:-9403}
+    volumes:
+      - ../edge:/remote/edge:ro
+      - ./edge-local:/remote/local-test/edge-local:ro
+      - ./generated:/remote/local-test/generated:ro
+    ports: ["127.0.0.1:${WORKBENCH_PORT:-9402}:9402", "127.0.0.1:${WEBVIEW_PORT:-9403}:9403"]
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:9402/devbox-config.json"]
+      interval: 2s
+      retries: 30
+
+networks:
+  idp: {}
+  edge: {}
+  boxnet:
+    internal: true
+
+volumes:
+  workspace: {}
