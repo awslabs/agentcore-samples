@@ -77,6 +77,7 @@ def _mint_installation_token() -> tuple[str, int]:
     # Parse expiry from GitHub response; fall back to now+3600 if absent
     if "expires_at" in data:
         from datetime import datetime, timezone
+
         expires_at = int(datetime.fromisoformat(data["expires_at"].replace("Z", "+00:00")).timestamp())
     else:
         expires_at = now + 3600

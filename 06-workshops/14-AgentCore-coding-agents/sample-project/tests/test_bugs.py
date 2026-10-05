@@ -14,6 +14,7 @@ from app import app as flask_app
 def reset_state():
     """Reset in-memory state between tests."""
     import app as m
+
     m.tasks.clear()
     m.next_id = 1
     yield
@@ -74,9 +75,7 @@ def test_update_refreshes_updated_at(client):
     client.put(f"/tasks/{task_id}", json={"title": "Renamed"})
     new_ts = client.get(f"/tasks/{task_id}").get_json()["updated_at"]
 
-    assert new_ts != original_ts, (
-        f"updated_at was not refreshed after PUT (still {new_ts!r})"
-    )
+    assert new_ts != original_ts, f"updated_at was not refreshed after PUT (still {new_ts!r})"
 
 
 # ── Bug 5: GET /tasks?status= filter is case-sensitive ───────────────────────
@@ -86,10 +85,6 @@ def test_status_filter_is_case_insensitive(client):
 
     # Querying with different casing should still return the task
     results = client.get("/tasks?status=Done").get_json()
-    assert len(results) == 1, (
-        f"Expected 1 result for status=Done, got {len(results)}"
-    )
+    assert len(results) == 1, f"Expected 1 result for status=Done, got {len(results)}"
     results_upper = client.get("/tasks?status=DONE").get_json()
-    assert len(results_upper) == 1, (
-        f"Expected 1 result for status=DONE, got {len(results_upper)}"
-    )
+    assert len(results_upper) == 1, f"Expected 1 result for status=DONE, got {len(results_upper)}"

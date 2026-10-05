@@ -1,4 +1,5 @@
 """pytest configuration — ensures backend/ is on sys.path."""
+
 import os
 import sys
 
