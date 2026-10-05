@@ -25,6 +25,6 @@
   },
   "overrides": {
     "handlebars": ">=4.7.9",
-    "brace-expansion": ">=1.1.13"
+    "brace-expansion": ">=5.0.12"
   }
 }
