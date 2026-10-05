@@ -7,7 +7,7 @@ A complete travel guide agent demonstrating all core Harness features:
   Part 3: Save HTML output to file (replaces notebook iframe rendering)
   Part 4: Add AgentCore Memory — multi-turn conversation with persistence
   Part 5: Browser tool — live weather data from real websites
-  Part 6: MCP (Exa search) + Code Interpreter — data analysis & chart generation
+  Part 6: MCP (Exa search) + Code Interpreter — sandboxed analysis, HTML chart
 
 Usage:
     python travel_agent.py
@@ -25,13 +25,13 @@ Prerequisites:
 """
 
 import argparse
-import base64
 import sys
 import time
 import uuid
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -65,8 +65,27 @@ print(f"Account: {account_id}")
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 
+# The three error members the InvokeHarness event stream can carry (per the
+# boto3 model). The original loop checked only internalServerException, so a
+# validationException (bad request) or runtimeClientError (e.g. the model hit its
+# token limit mid-turn) streamed by silently and the run carried on as if it had
+# succeeded — producing empty or fabricated output downstream. Errors on the call
+# itself (throttling, service unavailable) surface as ClientError instead and are
+# caught separately below.
+STREAM_ERROR_KEYS = (
+    "internalServerException",
+    "validationException",
+    "runtimeClientError",
+)
+
+
 def stream_response(harness_arn, session_id, message, tools=None):
-    """Invoke harness and stream the response. Returns accumulated text."""
+    """Invoke harness and stream the response. Returns accumulated text.
+
+    Raises RuntimeError if the stream reports an error event, and lets a
+    BotoCoreError/ClientError from the call itself propagate, so a failed turn
+    stops the demo loudly instead of leaving a later step to act on nothing.
+    """
     kwargs = {
         "harnessArn": harness_arn,
         "runtimeSessionId": session_id,
@@ -76,29 +95,40 @@ def stream_response(harness_arn, session_id, message, tools=None):
     if tools:
         kwargs["tools"] = tools
 
-    response = client.invoke_harness(**kwargs)
-    full_text = ""
-    for event in response["stream"]:
-        if "contentBlockStart" in event:
-            start = event["contentBlockStart"].get("start", {})
-            if "toolUse" in start:
-                print(f"\n[Tool: {start['toolUse'].get('name', '?')}]", flush=True)
-        elif "contentBlockDelta" in event:
-            delta = event["contentBlockDelta"].get("delta", {})
-            if "text" in delta:
-                print(delta["text"], end="", flush=True)
-                full_text += delta["text"]
-        elif "messageStop" in event:
-            print()
-        elif "internalServerException" in event:
-            print(f"\nError: {event['internalServerException']}")
+    try:
+        response = client.invoke_harness(**kwargs)
+        full_text = ""
+        for event in response["stream"]:
+            if "contentBlockStart" in event:
+                start = event["contentBlockStart"].get("start", {})
+                if "toolUse" in start:
+                    print(f"\n[Tool: {start['toolUse'].get('name', '?')}]", flush=True)
+            elif "contentBlockDelta" in event:
+                delta = event["contentBlockDelta"].get("delta", {})
+                if "text" in delta:
+                    print(delta["text"], end="", flush=True)
+                    full_text += delta["text"]
+            elif "messageStop" in event:
+                print()
+            else:
+                err = next((event[k] for k in STREAM_ERROR_KEYS if k in event), None)
+                if err is not None:
+                    raise RuntimeError(f"Harness stream error: {err}")
+    except (BotoCoreError, ClientError) as e:
+        raise RuntimeError(f"invoke_harness failed: {e}") from e
     return full_text
 
 
 def run_command(harness_arn, session_id, cmd):
-    """Run a shell command on the agent's remote microVM."""
+    """Run a shell command on the agent's remote microVM.
+
+    Returns (stdout, exit_code). Earlier this dropped the exit code on the floor,
+    so a command that failed looked identical to one that succeeded; callers can
+    now check the code and stop treating a failed step as a pass.
+    """
     print(f"$ {cmd}")
     output = ""
+    exit_code = None
     resp = client.invoke_agent_runtime_command(
         agentRuntimeArn=harness_arn,
         runtimeSessionId=session_id,
@@ -115,14 +145,21 @@ def run_command(harness_arn, session_id, cmd):
                 if "stderr" in d:
                     print(d["stderr"], end="", flush=True)
             elif "contentStop" in chunk:
-                print(f"\n[exit: {chunk['contentStop']['exitCode']}]")
+                exit_code = chunk["contentStop"].get("exitCode")
+                print(f"\n[exit: {exit_code}]")
     print()
-    return output
+    return output, exit_code
 
 
 def fetch_file(harness_arn, session_id, remote_path):
-    """Fetch a text file from the agent's VM."""
+    """Fetch a text file from the agent's VM. Returns "" if it is missing.
+
+    Reads the exit code of `cat` rather than papering over a missing file with a
+    shell fallback, so the caller can tell "empty file" from "no file" and report
+    which one actually happened.
+    """
     content = ""
+    exit_code = None
     resp = client.invoke_agent_runtime_command(
         agentRuntimeArn=harness_arn,
         runtimeSessionId=session_id,
@@ -133,6 +170,10 @@ def fetch_file(harness_arn, session_id, remote_path):
             chunk = event["chunk"]
             if "contentDelta" in chunk and "stdout" in chunk["contentDelta"]:
                 content += chunk["contentDelta"]["stdout"]
+            elif "contentStop" in chunk:
+                exit_code = chunk["contentStop"].get("exitCode")
+    if exit_code not in (0, None):
+        return ""
     return content
 
 
@@ -311,47 +352,52 @@ try:
         ],
     )
 
-    print("\n--- Step 2: Generate chart with Code Interpreter ---")
+    print("\n--- Step 2: Analyse with Code Interpreter, render chart on the VM ---")
+    # The code_interpreter tool runs in its OWN sandbox: it cannot read the VM's
+    # /tmp, and anything it writes there never appears on the VM. So the sandbox
+    # does what it is uniquely good for — running Python on data passed inline and
+    # returning *text* (the only thing that crosses the boundary) — and the chart
+    # is rendered on the VM as a self-contained HTML page, the same way Parts 2
+    # and 5 produce their HTML. Nothing large (like a PNG's base64) is pushed back
+    # through the model, which would overflow the turn's token limit.
     stream_response(
         harness_arn,
         research_session,
-        "Read the tourism data from /tmp/tourism_data.json and create a visualization "
-        "using matplotlib. Make a bar chart or line chart showing the most interesting trends. "
-        "Use a dark theme with vibrant colors. "
-        "Save the chart as /tmp/amsterdam_tourism.png and a summary as /tmp/tourism_report.md.",
+        "The code_interpreter tool runs in a SEPARATE sandbox with its own filesystem: "
+        "it cannot read this VM's files, and any file it writes there does not appear "
+        "on this VM — only the text it prints comes back. So do NOT ask it to open "
+        "/tmp/tourism_data.json or to save an image.\n\n"
+        "1. Read /tmp/tourism_data.json from THIS VM.\n"
+        "2. Call code_interpreter with the numbers EMBEDDED INLINE in the Python source. "
+        "Compute the interesting trends (year-over-year change, peak/trough years, "
+        "recovery vs the earliest year) and print the results as plain text.\n"
+        "3. Back on THIS VM, using the sandbox's numbers, write two files:\n"
+        "   - /tmp/tourism_report.md — a short markdown summary of the analysis.\n"
+        "   - /tmp/tourism_chart.html — a single self-contained dark-themed page that "
+        "draws the visitors-by-year bar chart with pure HTML/CSS (no matplotlib, no "
+        "external scripts or images).\n"
+        "Confirm both files exist with ls -la.",
         tools=[{"type": "agentcore_code_interpreter", "name": "code_interpreter"}],
     )
 
-    report = fetch_file(
-        harness_arn,
-        research_session,
-        "/tmp/tourism_report.md 2>/dev/null || echo 'No report'",  # nosec B108
-    )
-    print("\nTourism report:")
-    print(report)
-
-    # Fetch and save the chart
-    b64_data = b""
-    resp = client.invoke_agent_runtime_command(
-        agentRuntimeArn=harness_arn,
-        runtimeSessionId=research_session,
-        body={"command": "base64 /tmp/amsterdam_tourism.png 2>/dev/null || echo 'NO_CHART'"},
-    )
-    for event in resp["stream"]:
-        if "chunk" in event:
-            chunk = event["chunk"]
-            if "contentDelta" in chunk and "stdout" in chunk["contentDelta"]:
-                b64_data += chunk["contentDelta"]["stdout"].encode()
-
-    chart_str = b64_data.decode().strip()
-    if chart_str and chart_str != "NO_CHART":
-        chart_bytes = base64.b64decode(chart_str.replace("\n", ""))
-        chart_path = "/tmp/amsterdam_tourism.png"  # nosec B108
-        with open(chart_path, "wb") as f:
-            f.write(chart_bytes)
-        print(f"✅ Chart saved to {chart_path} ({len(chart_bytes):,} bytes)")
+    report = fetch_file(harness_arn, research_session, "/tmp/tourism_report.md")  # nosec B108
+    if report:
+        print("\nTourism report:")
+        print(report)
     else:
-        print("No chart found — agent may have saved in a different format")
+        print("⚠️  No tourism_report.md generated")
+
+    # Save the chart the same way Parts 3 and 5 save their HTML — the artifact is
+    # already a complete page on the VM, so it just needs fetching, not decoding.
+    chart_html = fetch_file(harness_arn, research_session, "/tmp/tourism_chart.html")  # nosec B108
+    if chart_html:
+        chart_path = "/tmp/amsterdam_tourism.html"  # nosec B108
+        with open(chart_path, "w") as f:
+            f.write(chart_html)
+        print(f"✅ Chart saved to {chart_path} ({len(chart_html):,} chars)")
+        print(f"   Open with: open {chart_path}")
+    else:
+        print("⚠️  No chart generated — listing what the agent left on the VM:")
         run_command(
             harness_arn,
             research_session,
