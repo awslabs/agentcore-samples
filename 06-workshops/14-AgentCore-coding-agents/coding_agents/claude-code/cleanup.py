@@ -13,7 +13,6 @@ import time
 
 import boto3
 
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -50,7 +49,7 @@ def main():
         control.delete_agent_runtime(agentRuntimeId=runtime_id)
         print("  Waiting for deletion...")
         time.sleep(30)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Warning: {e}")
 
     # Delete IAM role
@@ -63,7 +62,7 @@ def main():
         print(f"  Deleted IAM role: {role_name}")
     except iam.exceptions.NoSuchEntityException:
         print(f"  IAM role not found: {role_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Warning: {e}")
 
     # Remove local config

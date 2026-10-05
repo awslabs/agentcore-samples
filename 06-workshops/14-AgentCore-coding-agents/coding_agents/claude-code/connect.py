@@ -30,7 +30,6 @@ import uuid
 from bedrock_agentcore.runtime import AgentCoreRuntimeClient
 from bedrock_agentcore.runtime.shell import ShellChannel, ShellSession
 
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 
@@ -75,9 +74,7 @@ async def interactive_pty(shell: ShellSession, initial_cmd: str | None = None):
                     os.write(sys.stdout.fileno(), frame.payload)
                 elif frame.channel == ShellChannel.STDERR:
                     os.write(sys.stderr.fileno(), frame.payload)
-                elif frame.channel == ShellChannel.STATUS:
-                    break
-                elif frame.channel == ShellChannel.CLOSE:
+                elif frame.channel in (ShellChannel.STATUS, ShellChannel.CLOSE):
                     break
         finally:
             stdin_task.cancel()
@@ -100,9 +97,7 @@ async def stream_output(shell: ShellSession, initial_cmd: str):
             print(frame.text, end="", flush=True)
         elif frame.channel == ShellChannel.STDERR:
             print(frame.text, end="", file=sys.stderr, flush=True)
-        elif frame.channel == ShellChannel.STATUS:
-            break
-        elif frame.channel == ShellChannel.CLOSE:
+        elif frame.channel in (ShellChannel.STATUS, ShellChannel.CLOSE):
             break
 
 

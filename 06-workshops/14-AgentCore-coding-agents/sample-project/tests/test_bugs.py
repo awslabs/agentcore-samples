@@ -5,6 +5,7 @@ Run with: pytest tests/test_bugs.py -v
 """
 
 import time
+
 import pytest
 from app import app as flask_app
 

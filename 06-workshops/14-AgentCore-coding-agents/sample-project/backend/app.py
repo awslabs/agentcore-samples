@@ -1,8 +1,9 @@
 """Task Manager API — a simple CRUD backend with intentional bugs."""
 
+from datetime import datetime, timezone
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -26,7 +27,7 @@ def list_tasks():
 @app.route("/tasks", methods=["POST"])
 def create_task():
     """Create a new task."""
-    global next_id
+    global next_id  # noqa: PLW0602
     data = request.get_json()
 
     if not data or not data.get("title"):
@@ -38,8 +39,8 @@ def create_task():
         "description": data.get("description", ""),
         "status": "todo",
         "priority": data.get("priority", "medium"),
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     # BUG: next_id is never incremented — all tasks get id=1

@@ -14,7 +14,6 @@ import base64
 import json
 import os
 import time
-from typing import List, Optional
 
 import boto3
 import httpx
@@ -33,7 +32,7 @@ GITHUB_APP_SECRET_ARN = os.environ.get("GITHUB_APP_SECRET_ARN", "")
 _secret_region = GITHUB_APP_SECRET_ARN.split(":")[3] if GITHUB_APP_SECRET_ARN else AWS_REGION
 _secrets_client = boto3.client("secretsmanager", region_name=_secret_region)
 
-GITHUB_TOKEN: Optional[str] = None
+GITHUB_TOKEN: str | None = None
 GITHUB_TOKEN_EXP: int = 0
 
 
@@ -126,9 +125,9 @@ mcp.add_middleware(TokenMiddleware())
 class Issue(BaseModel):
     number: int
     title: str
-    body: Optional[str] = None
+    body: str | None = None
     state: str
-    labels: List[str] = []
+    labels: list[str] = []
     url: str
 
 
@@ -163,7 +162,7 @@ def get_issue(owner: str, repo: str, issue_number: int) -> Issue:
 
 
 @mcp.tool()
-def list_issue_comments(owner: str, repo: str, issue_number: int) -> List[Comment]:
+def list_issue_comments(owner: str, repo: str, issue_number: int) -> list[Comment]:
     """List all comments on an issue in chronological order."""
     with httpx.Client(timeout=30) as c:
         r = c.get(
@@ -214,7 +213,7 @@ def update_comment(owner: str, repo: str, comment_id: int, body: str) -> str:
 
 
 @mcp.tool()
-def assign_issue(owner: str, repo: str, issue_number: int, assignees: List[str]) -> List[str]:
+def assign_issue(owner: str, repo: str, issue_number: int, assignees: list[str]) -> list[str]:
     """Add assignees to an issue. Returns the final list of assignee logins."""
     with httpx.Client(timeout=30) as c:
         r = c.post(
@@ -230,7 +229,7 @@ def assign_issue(owner: str, repo: str, issue_number: int, assignees: List[str])
 
 
 @mcp.tool()
-def set_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> List[str]:
+def set_labels(owner: str, repo: str, issue_number: int, labels: list[str]) -> list[str]:
     """Replace an issue's labels with the given set. Returns the final labels."""
     with httpx.Client(timeout=30) as c:
         r = c.put(
@@ -243,7 +242,7 @@ def set_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> L
 
 
 @mcp.tool()
-def add_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> List[str]:
+def add_labels(owner: str, repo: str, issue_number: int, labels: list[str]) -> list[str]:
     """Add labels to an issue without removing existing ones."""
     with httpx.Client(timeout=30) as c:
         r = c.post(
@@ -285,7 +284,7 @@ def get_file(owner: str, repo: str, path: str, ref: str = "main") -> str:
 
 
 @mcp.tool()
-def list_files(owner: str, repo: str, path: str = "", ref: str = "main") -> List[str]:
+def list_files(owner: str, repo: str, path: str = "", ref: str = "main") -> list[str]:
     """List files and directories at a given path in the repository."""
     with httpx.Client(timeout=30) as c:
         r = c.get(
