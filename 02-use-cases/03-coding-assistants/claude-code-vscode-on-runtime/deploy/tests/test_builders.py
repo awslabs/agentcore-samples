@@ -125,7 +125,6 @@ def test_settings_errors(devbox, env):
         DEVBOX_TIER_GROUPS="Gold=x Power=ai-claude-power Standard=ai-claude-power",
         REGION="eu-west-1",
         DEVBOX_IDLE_SECONDS="10",
-        DEVBOX_EGRESS_MODE="open",
         EDGE_INVOKE_MODE="RESPONSE_STREAM",
     )
     errs = " | ".join(devbox.load_settings(env).errors)
@@ -134,7 +133,6 @@ def test_settings_errors(devbox, env):
         "names Standard or ai-claude-power twice",
         "REGION=eu-west-1",
         "DEVBOX_IDLE_SECONDS=10",
-        "DEVBOX_EGRESS_MODE",
         "EDGE_INVOKE_MODE=RESPONSE_STREAM",
     ):
         assert bit in errs, bit
@@ -697,12 +695,11 @@ def test_network_requests_validate(devbox):
     for name in devbox.SUBNETS:
         validate("ec2", "CreateSubnet", devbox.subnet_request("vpc-0123456789abcdef0", name, "us-east-1a"))
     validate("ec2", "CreateVpc", {"CidrBlock": devbox.VPC_CIDR, "TagSpecifications": devbox.tag_spec("vpc", "devbox")})
-    for mode in ("learn", "enforce"):
-        validate(
-            "ec2",
-            "AuthorizeSecurityGroupEgress",
-            {"GroupId": BOX_SG, "IpPermissions": devbox.sg_egress_wanted(mode, EFS_SG)},
-        )
+    validate(
+        "ec2",
+        "AuthorizeSecurityGroupEgress",
+        {"GroupId": BOX_SG, "IpPermissions": devbox.sg_egress_wanted(EFS_SG)},
+    )
     validate("ec2", "RevokeSecurityGroupEgress", {"GroupId": BOX_SG, "IpPermissions": devbox.DEFAULT_EGRESS})
     validate(
         "ec2",
@@ -733,17 +730,9 @@ def test_cidrs_match_spec(devbox):
 def test_security_group_rules(devbox):
     dns = {("udp", 53, 53, "10.40.0.2/32"), ("tcp", 53, 53, "10.40.0.2/32")}
     nfs = {("tcp", 2049, 2049, EFS_SG)}
-    learn = {devbox.rule_key(r) for r in devbox.sg_egress_wanted("learn", EFS_SG)}
-    assert learn == {("tcp", 443, 443, "0.0.0.0/0"), ("tcp", 80, 80, "0.0.0.0/0")} | dns | nfs
-    # enforce: no port 80 (a Host header is a string anyone can set; nothing on the allowlist needs plain HTTP)
-    assert {devbox.rule_key(r) for r in devbox.sg_egress_wanted("enforce", EFS_SG)} == {
-        ("tcp", 443, 443, "0.0.0.0/0")
-    } | dns | nfs
-    assert not [r for r in devbox.sg_egress_wanted("enforce") if r["FromPort"] == 2049], (
-        "no NFS rule until devbox-efs exists"
-    )
-    with pytest.raises(ValueError):
-        devbox.sg_egress_wanted("open")
+    # no port 80 (a Host header is a string anyone can set; nothing on the allowlist needs plain HTTP)
+    assert {devbox.rule_key(r) for r in devbox.sg_egress_wanted(EFS_SG)} == {("tcp", 443, 443, "0.0.0.0/0")} | dns | nfs
+    assert not [r for r in devbox.sg_egress_wanted() if r["FromPort"] == 2049], "no NFS rule until devbox-efs exists"
     # the mount target's group: NFS in from the boxes' group, and nothing else
     assert [devbox.rule_key(r) for r in devbox.efs_sg_ingress_wanted(BOX_SG)] == [("tcp", 2049, 2049, BOX_SG)]
     # a describe_security_group_rules row keys the same way as the IpPermission that made it
@@ -808,7 +797,7 @@ def test_allowlist(devbox, settings):
         assert d in domains
     assert not [d for d in domains if "{" in d]
     text = (devbox.TEMPLATES / "egress-allowlist.txt").read_text()
-    assert "FOUND IN LEARN MODE" in text
+    assert "FOUND IN USE" in text
     validate("network-firewall", "CreateRuleGroup", devbox.allowlist_rule_group_request(domains))
     with pytest.raises(ValueError):
         devbox.parse_allowlist("{{MISSING}}\n", {})
@@ -853,9 +842,8 @@ def test_dns_firewall_requests(devbox):
         "UpdateFirewallDomains",
         {"FirewallDomainListId": "rslvr-fdl-1", "Operation": "REPLACE", "Domains": domains},
     )
-    learn = devbox.dns_rules_wanted("learn", "rslvr-fdl-1", "rslvr-fdl-2")
-    enforce = devbox.dns_rules_wanted("enforce", "rslvr-fdl-1", "rslvr-fdl-2")
-    for want in learn + enforce:
+    rules = devbox.dns_rules_wanted("rslvr-fdl-1", "rslvr-fdl-2")
+    for want in rules:
         validate(
             "route53resolver",
             "CreateFirewallRule",
@@ -863,17 +851,15 @@ def test_dns_firewall_requests(devbox):
         )
         validate("route53resolver", "UpdateFirewallRule", {"FirewallRuleGroupId": "rslvr-frg-1", **want})
     # 100: the allowlist, trusting the CNAME chain (AWS names are aliases); 200: everything else
-    assert learn[0] == enforce[0] and learn[0]["Action"] == "ALLOW" and learn[0]["Priority"] == 100
-    assert learn[0]["FirewallDomainRedirectionAction"] == "TRUST_REDIRECTION_DOMAIN"
-    assert (learn[1]["Action"], learn[1]["Priority"], "BlockResponse" in learn[1]) == ("ALERT", 200, False)
-    assert (enforce[1]["Action"], enforce[1]["BlockResponse"]) == ("BLOCK", "NXDOMAIN")
-    assert (
-        devbox.dns_mode([{**learn[1]}], "rslvr-fdl-2") == "learn"
-        and devbox.dns_mode([{**enforce[1]}], "rslvr-fdl-2") == "enforce"
-    )
-    assert devbox.dns_rule_matches({**enforce[1]}, enforce[1]) and not devbox.dns_rule_matches({**learn[1]}, enforce[1])
+    assert rules[0]["Action"] == "ALLOW" and rules[0]["Priority"] == 100
+    assert rules[0]["FirewallDomainRedirectionAction"] == "TRUST_REDIRECTION_DOMAIN"
+    assert (rules[1]["Action"], rules[1]["Priority"], rules[1]["BlockResponse"]) == ("BLOCK", 200, "NXDOMAIN")
+    assert devbox.dns_blocks_the_rest([{**rules[1]}], "rslvr-fdl-2")
+    assert not devbox.dns_blocks_the_rest([{**rules[1], "Action": "ALERT"}], "rslvr-fdl-2")
+    assert devbox.dns_rule_matches({**rules[1]}, rules[1])
+    assert not devbox.dns_rule_matches({**rules[1], "Action": "ALERT"}, rules[1])
     assert not devbox.dns_rule_matches(
-        {**learn[0], "FirewallDomainRedirectionAction": "INSPECT_REDIRECTION_DOMAIN"}, learn[0]
+        {**rules[0], "FirewallDomainRedirectionAction": "INSPECT_REDIRECTION_DOMAIN"}, rules[0]
     )
     validate(
         "route53resolver",
@@ -902,8 +888,6 @@ def test_dns_firewall_requests(devbox):
     )
     with pytest.raises(ValueError):
         devbox.dns_domains([f"h{i}.example.com" for i in range(1001)])
-    with pytest.raises(ValueError):
-        devbox.dns_rules_wanted("open", "a", "b")
 
 
 def test_the_shipped_allowlist_fits_dns_firewall(devbox, settings):
@@ -928,39 +912,17 @@ def test_domain_matching(devbox):
 
 
 def test_firewall_policies(devbox):
-    learn_arn = f"arn:aws:network-firewall:us-east-1:{ACCOUNT}:stateful-rulegroup/devbox-learn"
     allow_arn = f"arn:aws:network-firewall:us-east-1:{ACCOUNT}:stateful-rulegroup/devbox-allowlist"
-    learn = devbox.firewall_policy_doc(
-        "learn",
-        learn_arn=learn_arn,
-        allow_arn=allow_arn,
-        enforce_defaults=["aws:drop_established", "aws:alert_established"],
+    other_arn = f"arn:aws:network-firewall:us-east-1:{ACCOUNT}:stateful-rulegroup/other"
+    doc = devbox.firewall_policy_doc(allow_arn, ["aws:drop_established", "aws:alert_established"])
+    validate("network-firewall", "CreateFirewallPolicy", devbox.firewall_policy_request(doc))
+    assert doc["StatefulEngineOptions"] == {"RuleOrder": "STRICT_ORDER"}
+    assert [r["ResourceArn"] for r in doc["StatefulRuleGroupReferences"]] == [allow_arn]
+    assert any("drop" in a for a in doc["StatefulDefaultActions"]) and any(
+        "alert" in a for a in doc["StatefulDefaultActions"]
     )
-    enforce = devbox.firewall_policy_doc(
-        "enforce",
-        learn_arn=learn_arn,
-        allow_arn=allow_arn,
-        enforce_defaults=["aws:drop_established", "aws:alert_established"],
-    )
-    for doc in (learn, enforce):
-        validate("network-firewall", "CreateFirewallPolicy", devbox.firewall_policy_request(doc))
-        assert doc["StatefulEngineOptions"] == {"RuleOrder": "STRICT_ORDER"}
-    assert learn["StatefulDefaultActions"] == [], (
-        "learn lets everything through, and logs names only (no per-packet alerts)"
-    )
-    assert [r["ResourceArn"] for r in learn["StatefulRuleGroupReferences"]] == [learn_arn]
-    assert [r["ResourceArn"] for r in enforce["StatefulRuleGroupReferences"]] == [allow_arn]
-    assert any("drop" in a for a in enforce["StatefulDefaultActions"]) and any(
-        "alert" in a for a in enforce["StatefulDefaultActions"]
-    )
-    assert (
-        devbox.policy_mode(learn, learn_arn, allow_arn) == "learn"
-        and devbox.policy_mode(enforce, learn_arn, allow_arn) == "enforce"
-    )
-    lr = devbox.learn_rule_group_request()
-    validate("network-firewall", "CreateRuleGroup", lr)
-    rules = lr["RuleGroup"]["RulesSource"]["RulesString"]
-    assert "#" not in rules and "sid:9400001" in rules and "sid:9400002" in rules and " pass " not in f" {rules} "
+    assert devbox.policy_uses(doc, allow_arn) and not devbox.policy_uses(doc, other_arn)
+    assert not devbox.policy_uses(doc, None)
     ag = devbox.allowlist_rule_group(["a.example.com"])["RulesSource"]["RulesSourceList"]
     assert ag["TargetTypes"] == ["TLS_SNI", "HTTP_HOST"] and ag["GeneratedRulesType"] == "ALLOWLIST"
     validate(
@@ -1486,7 +1448,7 @@ def test_guides(devbox, settings):
         "op: diag",
         "/commands",
         "stopruntimesession",
-        "network enforce",
+        "network allowlist",
         "2 GB",
         "/mnt/workspace",
         "MMDSv2",
@@ -1556,7 +1518,7 @@ def test_the_readme_documents_every_subcommand(devbox):
     for cmd in (
         "check",
         "deploy",
-        "network learn|enforce",
+        "network allowlist",
         "network pause|resume",
         "status",
         "reset-box <user>",

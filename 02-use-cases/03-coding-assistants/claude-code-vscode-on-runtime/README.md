@@ -101,6 +101,16 @@ From this folder:
    uv run deploy/devbox.py deploy
    ```
 
+6. **Check the network controls.** Deploy sets up Network Firewall and DNS Firewall to allow only the domains in
+   [deploy/templates/egress-allowlist.txt](deploy/templates/egress-allowlist.txt). After one full working session
+   (sign in, an AWS sign-in, a few Claude turns, a web search), list what they blocked:
+
+   ```bash
+   uv run deploy/devbox.py network allowlist
+   ```
+
+   It lists every blocked domain the allowlist lacks. Add the ones the box needs to the file, then run it again.
+
 [deploy/README.md](deploy/README.md) has every command, what deploy creates, and troubleshooting.
 
 ## Execution instructions
@@ -126,12 +136,6 @@ From this folder:
 The explainer's *Using it* page has seven step-by-step checks, with the expected result for each: leaving a
 question waiting overnight, a long task in auto mode, and moving someone from Standard to Power.
 
-4. After a full working session, switch the egress firewall from logging to enforcing its allowlist:
-
-   ```bash
-   uv run deploy/devbox.py network enforce
-   ```
-
 ## Clean up instructions
 
 ```bash
@@ -145,9 +149,8 @@ Identity Center permission sets aren't created by deploy: remove them by hand if
 
 ## Known gaps
 
-The owner's AgentCore shell (used by `/terminal`) starts as root (gap G1), and egress starts in learn mode, which
-logs but blocks nothing (gap G2). All seven known gaps, with their impact and fixes, are in
-[OVERVIEW.md › Known gaps](OVERVIEW.md#known-gaps).
+The owner's AgentCore shell (used by `/terminal`) starts as root (gap G1). All six known gaps, with their impact and
+fixes, are in [OVERVIEW.md › Known gaps](OVERVIEW.md#known-gaps).
 
 ## The repository
 

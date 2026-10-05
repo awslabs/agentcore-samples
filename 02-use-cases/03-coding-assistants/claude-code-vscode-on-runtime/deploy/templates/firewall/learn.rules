@@ -1,6 +1,0 @@
-# Learn mode: alert on the name of every outbound HTTPS (TLS SNI) and HTTP (Host) request and
-# block nothing. The sticky buffers make each rule fire once per handshake/request, not per packet.
-# There's deliberately no `pass` rule: a pass on the first packet would end inspection before the
-# name is seen. The policy has no default action in learn mode, so everything goes through.
-alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"devbox learn: TLS"; tls.sni; content:"."; flow:to_server,established; sid:9400001; rev:1;)
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"devbox learn: HTTP"; http.host; content:"."; flow:to_server,established; sid:9400002; rev:1;)

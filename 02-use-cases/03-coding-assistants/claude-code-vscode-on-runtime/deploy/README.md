@@ -11,7 +11,7 @@ provisioner Lambda. Deploy builds everything shared, and keeps the existing boxe
 ```
 uv run deploy/devbox.py check                        read-only: prerequisites, and what deploy would change
 uv run deploy/devbox.py deploy                       create or update everything (safe to re-run)
-uv run deploy/devbox.py network learn|enforce        egress: log every name / allow only the allowlist
+uv run deploy/devbox.py network allowlist            egress: apply templates/egress-allowlist.txt, list what was blocked
 uv run deploy/devbox.py network pause|resume         delete / recreate the firewall, NAT and its IP (the hourly cost)
 uv run deploy/devbox.py status                       what is deployed (read-only)
 uv run deploy/devbox.py reset-box <user>             a fresh microVM at that person's next visit; their files stay
@@ -39,7 +39,8 @@ Output marks: ✓ already right, + changed, → would change (check), ! worth kn
 3. Do the Okta steps: the Dev Box app, its URLs, the Trusted Origin, the `devbox` scope and claims, the access
    policy ([../IDENTITY-SETUP.md](../IDENTITY-SETUP.md) › 4). Copy the app's client id into `devbox.env`.
 4. `deploy` again: sign-in now works. Each person's box is made on their first visit.
-5. Use a box for a whole session in learn mode, then run `network enforce` (see the Spike checklist, item 4).
+5. Use a box for a whole session, then run `network allowlist`: it lists any name the firewalls blocked that the
+   allowlist lacks (see the Spike checklist, item 4).
 
 ## What it makes
 
@@ -112,7 +113,7 @@ What only the live account can tell. Deploy prints these at the end of every run
 1. **op: diag.** The headers AgentCore forwards, and whether the box runs multi-user or single-user.
 2. **The resource policy.** With the owner's own token, `/commands` and `stopruntimesession` are refused; another person's token is refused on everything.
 3. **EFS mount works.** No 424 on a new session; `/mnt/workspace` is the person's folder only.
-4. **Learn-mode domains.** After a full session, `network enforce` lists what the allowlist lacks.
+4. **Blocked domains.** After a full session, `network allowlist` lists what the firewalls blocked that the allowlist lacks.
 5. **Image size.** The box image stays under AgentCore's 2 GB limit.
 6. **Terminal opens.** `uv run deploy/shell-probe.py <user>` shows the shell, then `id`.
 7. **MMDSv2.** Whether `requireMMDSV2` is accepted for a microVM runtime.
@@ -123,6 +124,6 @@ What only the live account can tell. Deploy prints these at the end of every run
 12. **Cold start.** How long the page waits on a new session, and any 409, 424 or timeout.
 13. **undeploy, then deploy.** A marker file in `~/` is still there.
 14. **Web search.** After the AWS sign-in, the web-search MCP server connects on its own.
-15. **DNS Firewall.** In enforce mode an unlisted name doesn't resolve; an allowlisted one does.
-16. **Port 80.** In enforce mode, plain HTTP can't leave the box.
+15. **DNS Firewall.** An unlisted name doesn't resolve; an allowlisted one does.
+16. **Port 80.** Plain HTTP can't leave the box.
 17. **Sign-out.** Sign out, reload twice: the Okta sign-in page appears.

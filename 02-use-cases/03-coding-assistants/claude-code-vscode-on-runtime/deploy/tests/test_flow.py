@@ -1,6 +1,6 @@
 """Whole commands against the in-memory AWS (tests/fake_aws.py): deploy from nothing (microVM boxes on EFS),
 re-deploy, check mode, the old Instances boxes (left alone by deploy, deleted by retire-instances),
-network pause/resume/enforce, reset-box, status and both undeploys."""
+network pause/resume/allowlist, reset-box, status and both undeploys."""
 
 import json
 
@@ -667,9 +667,16 @@ def dns_any_rule(world):
     return next(r for r in world.dns_rules.values() if r["FirewallDomainListId"] == any_id)
 
 
-def test_network_enforce_lists_names_it_would_drop(devbox, settings, world, sandbox, capsys):
+def test_network_allowlist_lists_what_was_blocked(devbox, settings, world, sandbox, capsys):
     deploy(devbox, settings, world)
     fs_id = next(iter(world.efs_fs))
+    pol = world.fw_policies["devbox-egress"]["FirewallPolicy"]
+    allow = world.rule_groups["devbox-allowlist"]["RuleGroupResponse"]["RuleGroupArn"]
+    # deploy sets up both firewalls with the allowlist: drop everything else, port 80 closed, NXDOMAIN for other names
+    assert [r["ResourceArn"] for r in pol["StatefulRuleGroupReferences"]] == [allow]
+    assert pol["StatefulDefaultActions"] == ["aws:drop_established", "aws:alert_established"]
+    assert egress_ports(world) == [443] and nfs_rules(world)[0][0][1] == 2049
+    assert (dns_any_rule(world)["Action"], dns_any_rule(world)["BlockResponse"]) == ("BLOCK", "NXDOMAIN")
     world.query_names = ["bedrock-runtime.us-east-1.amazonaws.com", "registry.npmjs.org", "github.com"]
     world.query_http_names = ["example.org"]
     world.dns_query_names = [
@@ -680,70 +687,31 @@ def test_network_enforce_lists_names_it_would_drop(devbox, settings, world, sand
     ]
     devbox.Report.reset()
     capsys.readouterr()
-    nfs_before = nfs_rules(world)
-    assert devbox.cmd_network(make_ctx(devbox, settings, world), "enforce") == 0
+    n = len(world.log)
+    assert devbox.cmd_network(make_ctx(devbox, settings, world), "allowlist") == 0
     out = capsys.readouterr().out
-    dropped = out.split("will be dropped")[1]
+    blocked = out.split("aren't on the allowlist")[1]
     assert (
-        "registry.npmjs.org  (DNS, TLS)" in dropped
-        and "github.com  (TLS)" in dropped
-        and "example.org  (HTTP)" in dropped
+        "registry.npmjs.org  (DNS, TLS)" in blocked
+        and "github.com  (TLS)" in blocked
+        and "example.org  (HTTP)" in blocked
     )
-    assert "c2hlbgxv.exfil.example  (DNS)" in dropped and "ip-10-40-1-5.ec2.internal  (DNS)" in dropped
-    assert "bedrock-runtime.us-east-1.amazonaws.com" not in dropped
-    assert ".efs." not in dropped, "the mount target's name stays resolvable, so a new session still mounts EFS"
-    pol = world.fw_policies["devbox-egress"]["FirewallPolicy"]
-    allow = world.rule_groups["devbox-allowlist"]["RuleGroupResponse"]["RuleGroupArn"]
-    assert [r["ResourceArn"] for r in pol["StatefulRuleGroupReferences"]] == [allow]
-    assert pol["StatefulDefaultActions"] == ["aws:drop_established", "aws:alert_established"]
-    # enforce also closes port 80 and makes DNS Firewall answer NXDOMAIN for every other name; NFS to EFS stays
-    assert egress_ports(world) == [443] and nfs_rules(world) == nfs_before and nfs_before[0][0][1] == 2049
-    assert (dns_any_rule(world)["Action"], dns_any_rule(world)["BlockResponse"]) == ("BLOCK", "NXDOMAIN")
-    # a later deploy keeps enforce mode, all three parts of it
+    assert "c2hlbgxv.exfil.example  (DNS)" in blocked and "ip-10-40-1-5.ec2.internal  (DNS)" in blocked
+    assert "bedrock-runtime.us-east-1.amazonaws.com" not in blocked
+    assert ".efs." not in blocked, "the mount target's name stays resolvable, so a new session still mounts EFS"
+    assert mutations(world.log[n:]) == [], "nothing to change: the allowlist file is what deploy applied"
+    # a later deploy is steady state too
     n = len(world.log)
     deploy(devbox, settings, world)
-    assert (
-        world.fw_policies["devbox-egress"]["FirewallPolicy"]["StatefulRuleGroupReferences"][0]["ResourceArn"] == allow
-    )
-    assert egress_ports(world) == [443] and dns_any_rule(world)["Action"] == "BLOCK"
-    assert mutations(world.log[n:]) == [], "enforce mode is steady state for deploy"
-    devbox.Report.reset()
-    devbox.cmd_network(make_ctx(devbox, settings, world), "learn")
-    assert (
-        "learn" in world.fw_policies["devbox-egress"]["FirewallPolicy"]["StatefulRuleGroupReferences"][0]["ResourceArn"]
-    )
-    assert (
-        egress_ports(world) == [80, 443] and dns_any_rule(world)["Action"] == "ALERT" and nfs_rules(world) == nfs_before
-    )
+    assert mutations(world.log[n:]) == []
 
 
-def test_network_mode_before_the_efs_group_exists_doesnt_make_it(devbox, settings, world, sandbox, capsys):
-    """network learn|enforce keeps devbox-efs's rules but never makes the group (that's deploy's job)."""
+def test_network_allowlist_with_nothing_blocked(devbox, settings, world, sandbox, capsys):
     deploy(devbox, settings, world)
-    efs_sg = group_id(world, "devbox-efs")
-    for m in list(world.efs_mts):
-        del world.efs_mts[m]
-    world.sg_rules = {
-        k: v
-        for k, v in world.sg_rules.items()
-        if v["GroupId"] != efs_sg and (v.get("ReferencedGroupInfo") or {}).get("GroupId") != efs_sg
-    }
-    del world.sgs[efs_sg]
-    devbox.Report.reset()
-    n = len(world.log)
-    devbox.cmd_network(make_ctx(devbox, settings, world), "enforce")
-    assert "CreateSecurityGroup" not in [c[1] for c in world.log[n:]]
-    assert egress_ports(world) == [443] and not [r for r in world.sg_rules.values() if r.get("FromPort") == 2049]
-
-
-def test_enforce_warns_about_plain_http_on_the_allowlist(devbox, settings, world, sandbox, capsys):
-    deploy(devbox, settings, world)
-    world.query_http_names = ["logs.us-east-1.amazonaws.com"]  # listed, but seen over port 80
     devbox.Report.reset()
     capsys.readouterr()
-    devbox.cmd_network(make_ctx(devbox, settings, world), "enforce")
-    out = capsys.readouterr().out
-    assert "seen over plain HTTP, which enforce mode closes" in out and "logs.us-east-1.amazonaws.com" in out
+    assert devbox.cmd_network(make_ctx(devbox, settings, world), "allowlist") == 0
+    assert "nothing blocked in the last 24 h is missing from the allowlist" in capsys.readouterr().out
 
 
 def test_allowlist_edit_updates_the_rule_group(devbox, settings, world, sandbox, monkeypatch, tmp_path):
@@ -1167,9 +1135,9 @@ def test_status_is_read_only(devbox, settings, world, sandbox, visit, capsys):
         "use1-az1",
         "file system policy: TLS only, no root",
         "S3 gateway endpoint devbox-s3: vpce-",
-        "egress mode learn",
+        "egress allowlist on",
         "workbench: https://d",
-        "DNS Firewall devbox-dns: learn mode, on the VPC's resolver",
+        "DNS Firewall devbox-dns: NXDOMAIN for names off the allowlist, on the VPC's resolver",
         "Lambda devbox-provisioner: Active",
         "HTTP API devbox-api: https://",
         "Old Instances boxes",
@@ -1497,7 +1465,6 @@ def test_a_new_security_group_never_keeps_allow_all(devbox, settings, world, san
     egress = sorted((r["IpProtocol"], r["FromPort"]) for r in world.sg_rules.values() if r["IsEgress"])
     assert ("-1", -1) not in egress and egress == [
         ("tcp", 53),
-        ("tcp", 80),
         ("tcp", 443),
         ("tcp", 2049),
         ("udp", 53),

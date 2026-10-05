@@ -517,7 +517,7 @@ const OV_DETAIL = {
     rows: [["A session", "One microVM (2 vCPU / 8 GB), started when you open the page. It stops after an idle hour, and after 8 hours at most."],
            ["Two ways in", "<code>/</code> through the box's proxy (to VS Code); <code>/terminal</code> through AgentCore's own shell (straight to Claude Code)."],
            ["Inside", "VS Code server, Claude Code, and your folder at <code>/mnt/workspace</code>."],
-           ["Network", "Out only through the network firewall. In enforce mode only allowlisted domains get out; in learn mode it logs every domain and blocks nothing."],
+           ["Network", "Out only through the network firewall: only allowlisted domains get out."],
            ["Billed", "Only while a session runs."]] },
   proxy: { kicker: "In your box · for /", tip: "The box's own front door for /: AgentCore hands it VS Code's connection, and it relays it to the VS Code server.",
     what: "A small Node program on port 8080: the box's own front door for <code>/</code>. AgentCore hands it VS Code's connection, images and status checks, and it relays them to the VS Code server inside.",
@@ -909,7 +909,7 @@ const LOCK_STEPS = [   // icon, color, title, who it stops, bullets (each: text,
     ["Every session starts from the image.", "Only /mnt/workspace persists, and no control file lives there."]]],
   ["cloud", "#7c3aed", "And wouldn't get far", "any change", [
     ["IAM decides which models you can use.", "Your tier's permission set, ClaudeCode-Power or ClaudeCode-Standard."],
-    ["The gateway decides the tools; the firewall, the network.", "The tools gateway's Cedar policy, and the Network Firewall (in learn mode today: gap G2)."]]],
+    ["The gateway decides the tools; the firewall, the network.", "The tools gateway's Cedar policy, and the Network Firewall's domain allowlist."]]],
 ];
 function buildLocks(){
   const el = document.querySelector('[data-pane="locks"]');
@@ -979,8 +979,8 @@ function buildSimpleDeploy(){
       ${c ? `<div class="mt-3">${cmd(c, false)}</div>` : `<div class="mt-3 text-[13px] text-indigo-700 font-medium">Okta admin console</div>`}
     </div>`).join(`<i data-lucide="arrow-right" class="w-4 h-4 text-zinc-300 shrink-0 self-center"></i>`);
   const after = [
-    ["shield-check", "Turn on the allowlist", "Today the firewall only logs (learn mode). After one full session, switch it to enforce.", "uv run deploy/devbox.py network enforce",
-      "It lists every domain seen that the allowlist lacks; add the ones the box needs, then run it again."],
+    ["shield-check", "Check the allowlist", "Both firewalls allow only the domains in the allowlist. After one full session, list what they blocked.", "uv run deploy/devbox.py network allowlist",
+      "It lists every blocked domain the allowlist lacks; add the ones the box needs, then run it again."],
     ["pause", "When nobody's using it", "Pause removes the firewall and NAT, which bill by the hour (see the AWS Network Firewall pricing page). Resume takes 10 to 15 minutes, so resume before people start work.", "uv run deploy/devbox.py network pause\nuv run deploy/devbox.py network resume",
       "While paused, a box can't start, and a running one loses Bedrock and its sign-in."],
     ["trash-2", "Remove it", "Removes everything but everyone's files. Add --delete-volumes to delete those too.", "uv run deploy/devbox.py undeploy",
@@ -1095,7 +1095,7 @@ const RT_MORE = [   // check, how, expected
   ["Someone else's box", "Admin: <code>uv run deploy/shell-probe.py ada</code> with Grace's token", "403: a runtime takes only its owner's token."],
   ["The owner's denied APIs", "The curl lines deploy prints, with your own token", "<code>/commands</code> and <code>StopRuntimeSession</code> are refused."],
   ["An AWS caller on a runtime", "A signed InvokeAgentRuntime from an admin profile", "Refused: a runtime takes only Okta tokens."],
-  ["The allowlist", "<code>uv run deploy/devbox.py network enforce</code>, then <code>curl https://example.com</code> in the box", "Unlisted names don't resolve, and port 80 is closed. Bedrock, web search and the folder still work."],
+  ["The allowlist", "<code>curl https://example.com</code> in the box", "Unlisted names don't resolve, and port 80 is closed. Bedrock, web search and the folder still work."],
   ["Removing someone", "Take them out of <code>devbox-users</code>", "Once their current Okta token runs out (60 minutes at most): the page says they're not in the group, and their box refuses them."],
   ["Files outlive a redeploy", "A marker file in <code>~/</code>, then <code>undeploy</code> and <code>deploy</code>", "The file is still there."],
   ["Sign-out", "Sign out, then reload twice", "The Okta sign-in page."],

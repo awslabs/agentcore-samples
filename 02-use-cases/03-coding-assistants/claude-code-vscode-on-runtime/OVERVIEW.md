@@ -111,11 +111,10 @@ Run everything from `server/`.
    "Setting up your dev box" while the provisioner makes their folder, role and microVM runtime
    (a few minutes, once), then the cold start. Someone outside the group, or in none or two tier groups,
    is told why and gets nothing.
-8. **One full session in `network learn`** (the default): the cold start, `aws sso login` in the box,
-   a Claude turn, a web search, a reconnect. Learn mode logs every name the box reaches and blocks nothing.
-9. **`uv run deploy/devbox.py network enforce`.** It lists every name learn mode saw that the
-   allowlist (`deploy/templates/egress-allowlist.txt`) doesn't have. Add the ones the box needs,
-   then run it again.
+8. **One full session**: the cold start, `aws sso login` in the box, a Claude turn, a web search, a
+   reconnect. Both firewalls allow only the names in `deploy/templates/egress-allowlist.txt`.
+9. **`uv run deploy/devbox.py network allowlist`.** It lists every name the firewalls blocked that the
+   allowlist doesn't have. Add the ones the box needs, then run it again.
 10. **Work through the [spike checklist](#spike-checklist).**
 11. **`uv run deploy/devbox.py network pause`** whenever nobody is demoing (see [Costs](#costs)).
 
@@ -166,22 +165,20 @@ the admin profiles.
 | `REGION`, `DEVBOX_AZ` | no | `us-east-1`, `us-east-1a` | the region is fixed; the zone's id must be `use1-az1`, `use1-az2` or `use1-az4` (the box subnet and the EFS mount target live there) |
 | `DEVBOX_COMPUTE` | no | `microvm` | the only value: deploy no longer makes Instances boxes |
 | `DEVBOX_IDLE_SECONDS` | no | `3600` | a session ends after this long idle; at most 28800 (a microVM lives 8 hours) |
-| `DEVBOX_EGRESS_MODE` | no | `learn` | `learn` or `enforce`; `network learn` and `network enforce` switch it later |
-| `FIREWALL_ENFORCE_DEFAULTS` | no | `aws:drop_established aws:alert_established` | spike switch: enforce mode's default actions |
+| `FIREWALL_ENFORCE_DEFAULTS` | no | `aws:drop_established aws:alert_established` | spike switch: the firewall policy's default actions |
 
 ## Known gaps
 
-What the design doesn't close today. The explainer's *Locking the files* page shows G1; G2 is the egress mode.
+What the design doesn't close today. The explainer's *Locking the files* page shows G1.
 
 | # | Gap | Impact | Fix | Status |
 |---|---|---|---|---|
 | G1 | **The owner's root AgentCore shell.** The resource policy allows `InvokeAgentRuntimeCommandShell` so that `/terminal` works. The page immediately runs `exec /usr/local/bin/devbox-claude`, but the owner, with their own token, can open the shell API with their own client (`deploy/shell-probe.py` does) and get a root bash with `CAP_SYS_ADMIN`. | They can rewrite `/etc/claude-code` and `/etc/devbox` (all the in-box controls) for that microVM's life, read the execution role's credentials and the token the proxy sees. The AWS-side controls still hold: IAM on their own session, the SCP, the gateway, the firewalls, their own EFS folder only. The owner's Okta access token is now worth a root shell on their own box. | Deny `InvokeAgentRuntimeCommandShell` in `deploy/templates/iam/runtime-resource-policy.json`. `/terminal` goes away; Claude then runs only in VS Code's terminal, as `dev`. | Open, a deliberate trade-off. |
-| G2 | **Egress is in `learn` mode.** | Alerts only; the box can reach any name. | One full session in learn mode, then `uv run deploy/devbox.py network enforce` (add what it lists that the box needs, run it again). | Open. |
-| G3 | **The in-box controls govern the agent, not the human.** In VS Code's terminal `dev` can run `curl`, `aws` or `psql`, or fetch another tool. | The managed settings and the hook don't apply to a human's shell. | By design: the AWS-side controls are what limit the human (IAM/SCP on models, the gateway, the firewall once enforced). | Accepted. |
-| G4 | **Claude's bash sandbox is off** on the microVM (the boot probe logs `sandbox: off (no bwrap or no user namespaces)`; bubblewrap isn't in the image). | Claude's commands run with `dev`'s full rights inside the box. | Add bubblewrap + socat to the image; the supervisor already writes `30-sandbox.json` when its probe passes. Whether the microVM allows the user namespaces bwrap needs is **VERIFY**. | Open. |
-| G5 | **Hook and deny rules are pattern-based.** | A determined agent can phrase around them. | They're guard rails that explain; the hard limits are Unix permissions and the AWS-side controls. | Accepted. |
-| G6 | **The Identity Center sign-in isn't matched to the box owner**. | A person who has someone else's Okta credentials can sign in to AWS as them from their own box, and their Claude runs on that person's tier. | A box-side check: compare the Identity Center session's user with `DEVBOX_OWNER` after sign-in (for example in an `awsAuthRefresh` wrapper), and refuse otherwise. Today Okta MFA and sign-on policy are the control. | Not built. |
-| G7 | **openvscode-server 1.109.5 is the newest release, but old** (Feb 2026), and bundles older versions of some packages. | The box image swaps in newer releases of six of them (shell-quote, undici, lodash-es, picomatch, and socks with ip-address 10.x; `OVS_NODE_FIXES` in `box/Dockerfile`). | Bump the box and the edge together from one tarball (the server refuses a renderer from another commit), then re-run the CSP and browser tests. | Open. |
+| G2 | **The in-box controls govern the agent, not the human.** In VS Code's terminal `dev` can run `curl`, `aws` or `psql`, or fetch another tool. | The managed settings and the hook don't apply to a human's shell. | By design: the AWS-side controls are what limit the human (IAM/SCP on models, the gateway, the firewall once enforced). | Accepted. |
+| G3 | **Claude's bash sandbox is off** on the microVM (the boot probe logs `sandbox: off (no bwrap or no user namespaces)`; bubblewrap isn't in the image). | Claude's commands run with `dev`'s full rights inside the box. | Add bubblewrap + socat to the image; the supervisor already writes `30-sandbox.json` when its probe passes. Whether the microVM allows the user namespaces bwrap needs is **VERIFY**. | Open. |
+| G4 | **Hook and deny rules are pattern-based.** | A determined agent can phrase around them. | They're guard rails that explain; the hard limits are Unix permissions and the AWS-side controls. | Accepted. |
+| G5 | **The Identity Center sign-in isn't matched to the box owner**. | A person who has someone else's Okta credentials can sign in to AWS as them from their own box, and their Claude runs on that person's tier. | A box-side check: compare the Identity Center session's user with `DEVBOX_OWNER` after sign-in (for example in an `awsAuthRefresh` wrapper), and refuse otherwise. Today Okta MFA and sign-on policy are the control. | Not built. |
+| G6 | **openvscode-server 1.109.5 is the newest release, but old** (Feb 2026), and bundles older versions of some packages. | The box image swaps in newer releases of six of them (shell-quote, undici, lodash-es, picomatch, and socks with ip-address 10.x; `OVS_NODE_FIXES` in `box/Dockerfile`). | Bump the box and the edge together from one tarball (the server refuses a renderer from another commit), then re-run the CSP and browser tests. | Open. |
 
 Also worth knowing: the egress allowlist can be forged by SNI and doesn't cover DNS-over-HTTPS; all webviews share one origin; the SCP applies only outside the management account (see the explainer's *Before you start* page).
 
@@ -194,7 +191,7 @@ says why each item matters.
 1. **op: diag.** The header names AgentCore forwards on `/invocations` and the `/ws` upgrade, and, new on microVM, the uid, the capabilities and user namespaces: multi-user or single-user?
 2. **The resource policy.** With the owner's own token, `/commands` and `stopruntimesession` are refused while the workbench and the terminal work; another person's token is refused on all of them.
 3. **EFS mount works.** The first invoke of a new session doesn't end in a 424; `/mnt/workspace` is 1000:1000, mode 0750; `dev` writes `home/` and `projects/`, and nothing of anyone else's is visible.
-4. **Learn-mode domains.** A full session in learn mode, then `network enforce` lists what the allowlist lacks.
+4. **Blocked domains.** After a full session, `network allowlist` lists what the firewalls blocked that the allowlist lacks.
 5. **Image size.** The box image stays under AgentCore's 2 GB limit.
 6. **Terminal opens.** `uv run deploy/shell-probe.py <user>`: a STATUS frame with the shell id, then `id`. Record the shell's uid.
 7. **MMDSv2.** Whether `requireMMDSV2` is accepted for a microVM runtime.
@@ -205,8 +202,8 @@ says why each item matters.
 12. **Cold start.** How long the page waits (the EFS mount is part of it), and any 409 / 424 / timeout.
 13. **undeploy, then deploy.** A marker file in `~/` is still there.
 14. **Web search.** After `aws sso login`, the web-search MCP server connects without `/mcp`.
-15. **DNS Firewall.** In enforce mode an unlisted name doesn't resolve; an allowlisted one does, and a new session still mounts EFS.
-16. **Port 80.** In enforce mode plain HTTP can't leave the box.
+15. **DNS Firewall.** An unlisted name doesn't resolve; an allowlisted one does, and a new session still mounts EFS.
+16. **Port 80.** Plain HTTP can't leave the box.
 17. **Sign-out.** Sign out, reload twice: the Okta sign-in page appears (the org accepted the POST to `/v1/logout`).
 
 ## Costs
@@ -239,8 +236,8 @@ and a running one loses Bedrock, STS and SSO.
    and forth). It's the same Claude Code session as VS Code's terminal, in the same tmux.
 5. Show the controls: the managed settings under `/etc/claude-code` can be read but not changed by
    `dev` (there's no sudo; this holds in two-user mode only, which spike item 1 tells you), Claude Code
-   uses only the managed web-search server, and in enforce mode `curl -m 5 http://example.com` in a
-   terminal can't connect.
+   uses only the managed web-search server, and `curl -m 5 http://example.com` in a terminal can't
+   connect.
 6. Afterwards: close the tabs and run `uv run deploy/devbox.py network pause`.
 
 Lifecycle facts to know:

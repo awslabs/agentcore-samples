@@ -9,7 +9,7 @@ static edge (CloudFront in front of a Lambda).
 
   uv run deploy/devbox.py check                       read-only: prerequisites, and what deploy would change
   uv run deploy/devbox.py deploy                      create or update everything (safe to re-run)
-  uv run deploy/devbox.py network learn|enforce       egress: log every name / allow only the allowlist
+  uv run deploy/devbox.py network allowlist           egress: apply templates/egress-allowlist.txt, list what was blocked
   uv run deploy/devbox.py network pause|resume        delete / recreate the firewall, NAT and its IP (the hourly cost)
   uv run deploy/devbox.py status                      what is deployed (read-only)
   uv run deploy/devbox.py reset-box <user>            move a person's box to a new session (a fresh microVM; files stay)
@@ -112,10 +112,8 @@ ROUTE_TABLES = {
     "devbox-rt-public": "devbox-public",
 }
 FIREWALL, FIREWALL_POLICY = "devbox-fw", "devbox-egress"
-RG_LEARN, RG_ALLOW = "devbox-learn", "devbox-allowlist"
-RG_LEARN_CAPACITY, RG_ALLOW_CAPACITY = 100, 1000
+RG_ALLOW, RG_ALLOW_CAPACITY = "devbox-allowlist", 1000
 FIREWALL_LOG_GROUP = "/devbox/network-firewall"
-LEARN_SIDS = (9400001, 9400002)
 
 # Route 53 Resolver DNS Firewall: the VPC resolver is on the local route, so DNS never passes Network Firewall.
 DNS_ALLOW_LIST, DNS_ANY_LIST = "devbox-dns-allow", "devbox-dns-any"  # the allowlist as DNS names; "*"
@@ -284,7 +282,6 @@ class Settings:
     az: str
     compute: str
     idle_seconds: int
-    egress_mode: str
     tier_groups: dict[str, str]  # tier → the Okta group (pushed to Identity Center) whose members get that tier
     okta_domain: str
     okta_auth_server: str
@@ -372,7 +369,6 @@ def load_settings(env: dict[str, str]) -> Settings:
         az=g("DEVBOX_AZ", f"{REGION}a"),
         compute=g("DEVBOX_COMPUTE", COMPUTE).lower(),
         idle_seconds=num("DEVBOX_IDLE_SECONDS", 3600, 60, INSTANCES_MAX_LIFETIME),
-        egress_mode=g("DEVBOX_EGRESS_MODE", "learn"),
         tier_groups=tier_groups,
         okta_domain=g("OKTA_DOMAIN"),
         okta_auth_server=g("OKTA_AUTH_SERVER", "default"),
@@ -406,8 +402,6 @@ def load_settings(env: dict[str, str]) -> Settings:
         errors.append(f"REGION={s.region}: the box, its allowlist and the browser config are built for {REGION}")
     if not s.az.startswith(s.region):
         errors.append(f"DEVBOX_AZ={s.az} isn't in {s.region}")
-    if s.egress_mode not in ("learn", "enforce"):
-        errors.append("DEVBOX_EGRESS_MODE must be learn or enforce")
     if g("EDGE_INVOKE_MODE") not in ("", EDGE_INVOKE_MODE):
         errors.append(
             f"EDGE_INVOKE_MODE={g('EDGE_INVOKE_MODE')}: the edge handler only returns {EDGE_INVOKE_MODE} responses "
@@ -1222,22 +1216,11 @@ def subnet_request(vpc_id: str, name: str, az: str) -> dict:
     }
 
 
-def sg_egress_wanted(mode: str, efs_sg_id: str | None = None) -> list[dict]:
-    """HTTPS out (Network Firewall decides where). Plain HTTP only in learn mode, so HTTP Host names show up
-    in the alert log: in enforce mode a Host header is just a string anyone can set, and nothing on the
-    allowlist needs port 80. The two DNS rules are documentation: security groups don't filter traffic to
-    the Amazon DNS server at all. What limits DNS is the DNS Firewall on the VPC resolver (and no other
-    port 53 leaves). NFS goes only to the EFS mount target's security group (it stays in the box subnet)."""
-    if mode not in ("learn", "enforce"):
-        raise ValueError(mode)
-    http = [
-        {
-            "IpProtocol": "tcp",
-            "FromPort": 80,
-            "ToPort": 80,
-            "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTP, learn mode only, through the firewall"}],
-        }
-    ]
+def sg_egress_wanted(efs_sg_id: str | None = None) -> list[dict]:
+    """HTTPS out (Network Firewall decides where). No plain HTTP: a Host header is just a string anyone can
+    set, and nothing on the allowlist needs port 80. The two DNS rules are documentation: security groups don't
+    filter traffic to the Amazon DNS server at all. What limits DNS is the DNS Firewall on the VPC resolver (and
+    no other port 53 leaves). NFS goes only to the EFS mount target's security group (it stays in the box subnet)."""
     nfs = [
         {
             "IpProtocol": "tcp",
@@ -1255,7 +1238,6 @@ def sg_egress_wanted(mode: str, efs_sg_id: str | None = None) -> list[dict]:
             "ToPort": 443,
             "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS, through the firewall"}],
         },
-        *(http if mode == "learn" else []),
         {
             "IpProtocol": "udp",
             "FromPort": 53,
@@ -1358,28 +1340,8 @@ def unlisted(seen: list[str], allowlist: list[str]) -> list[str]:
     return sorted({n.lower() for n in seen if n and not domain_allowed(n, allowlist)})
 
 
-def learn_rules_string() -> str:
-    lines = (TEMPLATES / "firewall/learn.rules").read_text().splitlines()
-    return "\n".join(l for l in lines if l.strip() and not l.lstrip().startswith("#")) + "\n"
-
-
 def home_net() -> dict:
     return {"IPSets": {"HOME_NET": {"Definition": [VPC_CIDR]}}}
-
-
-def learn_rule_group_request() -> dict:
-    return {
-        "RuleGroupName": RG_LEARN,
-        "Type": "STATEFUL",
-        "Capacity": RG_LEARN_CAPACITY,
-        "Description": "Dev box learn mode: alert on every outbound TLS SNI and HTTP Host, block nothing",
-        "RuleGroup": {
-            "RuleVariables": home_net(),
-            "RulesSource": {"RulesString": learn_rules_string()},
-            "StatefulRuleOptions": {"RuleOrder": "STRICT_ORDER"},
-        },
-        "Tags": tag_list(RG_LEARN),
-    }
 
 
 def allowlist_rule_group(domains: list[str]) -> dict:
@@ -1403,27 +1365,19 @@ def allowlist_rule_group_request(domains: list[str]) -> dict:
         "RuleGroupName": RG_ALLOW,
         "Type": "STATEFUL",
         "Capacity": RG_ALLOW_CAPACITY,
-        "Description": "Dev box enforce mode: the egress allowlist (templates/egress-allowlist.txt)",
+        "Description": "Dev box egress allowlist (templates/egress-allowlist.txt)",
         "RuleGroup": allowlist_rule_group(domains),
         "Tags": tag_list(RG_ALLOW),
     }
 
 
-def firewall_policy_doc(mode: str, *, learn_arn: str, allow_arn: str, enforce_defaults: list[str]) -> dict:
-    """Strict order. learn: the alert-only rules and no default action, so everything passes and each
-    name is logged once per connection (flow logs show the rest). enforce: the allowlist, then drop
-    (and alert on) everything else."""
-    if mode == "learn":
-        groups, defaults = [{"ResourceArn": learn_arn, "Priority": 1}], []
-    elif mode == "enforce":
-        groups, defaults = [{"ResourceArn": allow_arn, "Priority": 1}], list(enforce_defaults)
-    else:
-        raise ValueError(mode)
+def firewall_policy_doc(allow_arn: str, default_actions: list[str]) -> dict:
+    """Strict order: the allowlist, then drop (and alert on) everything else."""
     return {
         "StatelessDefaultActions": ["aws:forward_to_sfe"],
         "StatelessFragmentDefaultActions": ["aws:forward_to_sfe"],
-        "StatefulRuleGroupReferences": groups,
-        "StatefulDefaultActions": defaults,
+        "StatefulRuleGroupReferences": [{"ResourceArn": allow_arn, "Priority": 1}],
+        "StatefulDefaultActions": list(default_actions),
         "StatefulEngineOptions": {"RuleOrder": "STRICT_ORDER"},
     }
 
@@ -1432,18 +1386,15 @@ def firewall_policy_request(doc: dict) -> dict:
     return {
         "FirewallPolicyName": FIREWALL_POLICY,
         "FirewallPolicy": doc,
-        "Description": "Dev box egress (mode switched by devbox.py network learn|enforce)",
+        "Description": "Dev box egress: the domain allowlist, then drop everything else",
         "Tags": tag_list(FIREWALL_POLICY),
     }
 
 
-def policy_mode(doc: dict, learn_arn: str | None, allow_arn: str | None) -> str | None:
-    arns = {r.get("ResourceArn") for r in doc.get("StatefulRuleGroupReferences", [])}
-    if allow_arn and allow_arn in arns:
-        return "enforce"
-    if learn_arn and learn_arn in arns:
-        return "learn"
-    return None
+def policy_uses(doc: dict, rule_group_arn: str | None) -> bool:
+    return bool(rule_group_arn) and rule_group_arn in {
+        r.get("ResourceArn") for r in doc.get("StatefulRuleGroupReferences", [])
+    }
 
 
 def firewall_request(policy_arn: str, vpc_id: str, subnet_id: str) -> dict:
@@ -1485,7 +1436,7 @@ def logging_steps(current: list[dict]) -> list[list[dict]]:
 
 
 def seen_names_query() -> str:
-    """Logs Insights: every TLS SNI and HTTP Host the firewall alerted on (http_host says it was plain HTTP)."""
+    """Logs Insights: every TLS SNI and HTTP Host the firewall dropped and alerted on (http_host: plain HTTP)."""
     return (
         "fields coalesce(event.tls.sni, event.http.hostname) as name, event.http.hostname as http_host"
         " | filter event.event_type = 'alert' and ispresent(name)"
@@ -1507,15 +1458,9 @@ def dns_domains(allowlist: list[str]) -> list[str]:
     return out
 
 
-def dns_rules_wanted(mode: str, allow_list_id: str | None, any_list_id: str | None) -> list[dict]:
+def dns_rules_wanted(allow_list_id: str | None, any_list_id: str | None) -> list[dict]:
     """Rule 100 answers the allowlist (and trusts the CNAME chain from there, so AWS's aliases resolve).
-    Rule 200 is every other name: learn alerts on it (logged, still answered), enforce answers NXDOMAIN."""
-    if mode == "learn":
-        rest = {"Action": "ALERT"}
-    elif mode == "enforce":
-        rest = {"Action": "BLOCK", "BlockResponse": "NXDOMAIN"}
-    else:
-        raise ValueError(mode)
+    Rule 200 answers NXDOMAIN for every other name."""
     return [
         {
             "FirewallDomainListId": allow_list_id,
@@ -1524,7 +1469,13 @@ def dns_rules_wanted(mode: str, allow_list_id: str | None, any_list_id: str | No
             "Action": "ALLOW",
             "FirewallDomainRedirectionAction": "TRUST_REDIRECTION_DOMAIN",
         },
-        {"FirewallDomainListId": any_list_id, "Name": DNS_RULE_ANY, "Priority": 200, **rest},
+        {
+            "FirewallDomainListId": any_list_id,
+            "Name": DNS_RULE_ANY,
+            "Priority": 200,
+            "Action": "BLOCK",
+            "BlockResponse": "NXDOMAIN",
+        },
     ]
 
 
@@ -1540,9 +1491,9 @@ def dns_rule_matches(have: dict, want: dict) -> bool:
     )
 
 
-def dns_mode(rules: list[dict], any_list_id: str | None) -> str | None:
+def dns_blocks_the_rest(rules: list[dict], any_list_id: str | None) -> bool:
     rule = next((r for r in rules if any_list_id and r.get("FirewallDomainListId") == any_list_id), None)
-    return {"ALERT": "learn", "BLOCK": "enforce"}.get((rule or {}).get("Action"))
+    return (rule or {}).get("Action") == "BLOCK"
 
 
 def dns_query_log_destination(account: str, region: str) -> str:
@@ -1550,11 +1501,8 @@ def dns_query_log_destination(account: str, region: str) -> str:
 
 
 def dns_seen_query() -> str:
-    """Logs Insights over the Resolver query log: every name DNS Firewall alerted on or blocked."""
-    return (
-        "filter firewall_rule_action = 'ALERT' or firewall_rule_action = 'BLOCK'"
-        " | stats count(*) as hits by query_name | sort hits desc | limit 500"
-    )
+    """Logs Insights over the Resolver query log: every name DNS Firewall blocked."""
+    return "filter firewall_rule_action = 'BLOCK' | stats count(*) as hits by query_name | sort hits desc | limit 500"
 
 
 def request_id(what: str) -> str:
@@ -2151,10 +2099,10 @@ In the signed-in page's console: T = __devbox.getToken() (the owner's Okta acces
  3. EFS mount works. The first invoke of a new session must not end in a 424 (a failed mount; each mount has 30 s). op: diag's
     stat of {MOUNT_PATH}: 1000:1000, mode 0750 (the access point {EFS_ROOT}/<name>); dev must write home/ and projects/, and
     `ls -la {MOUNT_PATH}/..` shows only this person's folder. A 424: security groups (TCP {NFS_PORT} devbox-box → devbox-efs),
-    the mount target `available` in the box subnet, in enforce mode the mount target's name on the allowlist
+    the mount target `available` in the box subnet, the mount target's name on the allowlist
     (<az-id>.<fs-id>.efs.{s.region}.amazonaws.com), and the execution role devbox-exec-<name> (README › Troubleshooting).
- 4. Learn-mode domains. Stay in `network learn` for a full session (cold start, aws sso login, a Claude turn,
-    a web search, a reconnect), then `network enforce` lists every name seen (TLS, HTTP and DNS) that the allowlist doesn't have.
+ 4. Blocked domains. After a full session (cold start, aws sso login, a Claude turn, a web search, a reconnect),
+    `network allowlist` lists every name the firewalls blocked (TLS, HTTP and DNS) that the allowlist doesn't have.
  5. Image size. `docker image ls {image}` (on disk; `docker image inspect --format '{{{{.Size}}}}'` gives only the compressed size)
     must stay under AgentCore's 2 GB image limit.
  6. Terminal opens. `uv run deploy/shell-probe.py <user>` (after copy(__devbox.getToken()) in the tab): a STATUS frame with the
@@ -2173,9 +2121,9 @@ In the signed-in page's console: T = __devbox.getToken() (the owner's Okta acces
 13. undeploy, then deploy. Write a marker file in ~/ first; after the redeploy it must still be there (a plain undeploy keeps
     the EFS file system, its access points and the mount target; the new runtime mounts the same folder).
 14. Web search. After `aws sso login` in the box, the web-search MCP server connects without running /mcp.
-15. DNS Firewall. In enforce mode `getent hosts example.com` in the box answers nothing while an allowlisted name resolves
+15. DNS Firewall. `getent hosts example.com` in the box answers nothing while an allowlisted name resolves
     (and a new session still mounts EFS), and the VPC's DNS queries reach {DNS_LOG_GROUP}.
-16. Port 80. In enforce mode `curl -m 5 http://example.com` in the box can't connect (only 443 leaves the subnet).
+16. Port 80. `curl -m 5 http://example.com` in the box can't connect (only 443 leaves the subnet).
 17. Sign-out. Run __devbox.signOut() in the page's console (or open {wb}/#signout), then reload twice: the Okta
     sign-in page must appear (no silent prompt=none sign-in). That proves the org accepted the form POST to /v1/logout."""
 
@@ -3365,34 +3313,8 @@ def allowlist_domains(ctx: Ctx) -> list[str]:
     )
 
 
-def ensure_rule_groups(ctx: Ctx) -> tuple[str | None, str | None]:
+def ensure_rule_group(ctx: Ctx) -> str | None:
     nfw = ctx.aws.nfw
-    learn_arn, cur = rule_group_arn(ctx, RG_LEARN)
-    want = learn_rule_group_request()
-    if not learn_arn:
-        r = change(
-            ctx,
-            f"create firewall rule group {RG_LEARN} (learn: alert on every name, block nothing)",
-            nfw.create_rule_group,
-            **want,
-        )
-        learn_arn = r and r["RuleGroupResponse"]["RuleGroupArn"]
-    elif (
-        cur["RuleGroup"]["RulesSource"].get("RulesString", "").strip()
-        != want["RuleGroup"]["RulesSource"]["RulesString"].strip()
-    ):
-        change(
-            ctx,
-            f"update firewall rule group {RG_LEARN}",
-            nfw.update_rule_group,
-            UpdateToken=cur["UpdateToken"],
-            RuleGroupArn=learn_arn,
-            Type="STATEFUL",
-            RuleGroup=want["RuleGroup"],
-        )
-    else:
-        ok(f"firewall rule group {RG_LEARN}")
-
     domains = allowlist_domains(ctx)
     allow_arn, cur = rule_group_arn(ctx, RG_ALLOW)
     if not allow_arn:
@@ -3419,13 +3341,11 @@ def ensure_rule_groups(ctx: Ctx) -> tuple[str | None, str | None]:
                 Type="STATEFUL",
                 RuleGroup=allowlist_rule_group(domains),
             )
-    return learn_arn, allow_arn
+    return allow_arn
 
 
-def ensure_firewall_policy(
-    ctx: Ctx, learn_arn: str | None, allow_arn: str | None, mode: str | None = None
-) -> str | None:
-    """Create the policy in DEVBOX_EGRESS_MODE; afterwards keep its mode unless one is asked for (network learn|enforce)."""
+def ensure_firewall_policy(ctx: Ctx, allow_arn: str | None) -> str | None:
+    """The allowlist, then drop (and alert on) everything else."""
     nfw = ctx.aws.nfw
     try:
         cur = nfw.describe_firewall_policy(FirewallPolicyName=FIREWALL_POLICY)
@@ -3433,39 +3353,31 @@ def ensure_firewall_policy(
         if not is_missing(e):
             raise
         cur = None
-    if not (learn_arn and allow_arn):
-        pending(ctx, f"create firewall policy {FIREWALL_POLICY} ({mode or ctx.s.egress_mode} mode)")
+    what = "the allowlist, then drop everything else"
+    if not allow_arn:
+        pending(ctx, f"create firewall policy {FIREWALL_POLICY} ({what})")
         return None
+    doc = firewall_policy_doc(allow_arn, ctx.s.enforce_defaults)
     if cur is None:
-        m = mode or ctx.s.egress_mode
-        doc = firewall_policy_doc(m, learn_arn=learn_arn, allow_arn=allow_arn, enforce_defaults=ctx.s.enforce_defaults)
         r = change(
             ctx,
-            f"create firewall policy {FIREWALL_POLICY} ({m} mode)",
+            f"create firewall policy {FIREWALL_POLICY} ({what})",
             nfw.create_firewall_policy,
             **firewall_policy_request(doc),
         )
-        ctx.state.setdefault("network", {})["mode"] = m
         return r and r["FirewallPolicyResponse"]["FirewallPolicyArn"]
     arn = cur["FirewallPolicyResponse"]["FirewallPolicyArn"]
-    current_mode = policy_mode(cur["FirewallPolicy"], learn_arn, allow_arn)
-    m = mode or current_mode or ctx.s.egress_mode
-    doc = firewall_policy_doc(m, learn_arn=learn_arn, allow_arn=allow_arn, enforce_defaults=ctx.s.enforce_defaults)
     if covers(cur["FirewallPolicy"], doc):
-        ok(
-            f"firewall policy {FIREWALL_POLICY}: {m} mode"
-            + ("" if mode else f" (switch with `network {'enforce' if m == 'learn' else 'learn'}`)")
-        )
+        ok(f"firewall policy {FIREWALL_POLICY}: {what}")
     else:
         change(
             ctx,
-            f"set firewall policy {FIREWALL_POLICY} to {m} mode",
+            f"set firewall policy {FIREWALL_POLICY} to {what}",
             nfw.update_firewall_policy,
             UpdateToken=cur["UpdateToken"],
             FirewallPolicyArn=arn,
             FirewallPolicy=doc,
         )
-    ctx.state.setdefault("network", {})["mode"] = m
     return arn
 
 
@@ -3539,9 +3451,7 @@ def ensure_group(ctx: Ctx, vpc_id: str, name: str, description: str) -> str | No
     return change(ctx, f"create security group {name} (its default allow-all outbound removed)", create)
 
 
-def reconcile_rules(
-    ctx: Ctx, sg_id: str, name: str, egress_wanted: list[dict], ingress_wanted: list[dict], mode: str | None
-) -> None:
+def reconcile_rules(ctx: Ctx, sg_id: str, name: str, egress_wanted: list[dict], ingress_wanted: list[dict]) -> None:
     ec2 = ctx.aws.ec2
     rules = ec2.describe_security_group_rules(Filters=[{"Name": "group-id", "Values": [sg_id]}])["SecurityGroupRules"]
     for egress, wanted, authorize, revoke in (
@@ -3553,11 +3463,10 @@ def reconcile_rules(
         extra = {k: rid for k, rid in have.items() if k not in want}
         missing = [w for k, w in want.items() if k not in have]
         kind = "outbound" if egress else "inbound"
-        in_mode = f" in {mode} mode" if egress and mode else ""
         if extra:
             change(
                 ctx,
-                f"  remove {kind} {', '.join(rule_label(k) for k in extra)} from {name} (not wanted{in_mode})",
+                f"  remove {kind} {', '.join(rule_label(k) for k in extra)} from {name} (not wanted)",
                 revoke_rules,
                 revoke,
                 sg_id,
@@ -3573,29 +3482,22 @@ def reconcile_rules(
                 missing,
             )
         if not extra and not missing:
-            ok(
-                f"  {name} {kind}{f' ({mode} mode)' if egress and mode else ''}: "
-                + (", ".join(rule_label(k) for k in want) or "none")
-            )
+            ok(f"  {name} {kind}: " + (", ".join(rule_label(k) for k in want) or "none"))
 
 
-def ensure_security_group(ctx: Ctx, vpc_id: str, mode: str, *, create_efs: bool = True) -> str | None:
-    """devbox-box (the runtimes' network interfaces): no inbound; HTTPS (and HTTP in learn mode) out through the
-    firewall, DNS to the resolver, NFS to devbox-efs. devbox-efs (the mount target): NFS in from devbox-box only,
-    nothing out. `network learn|enforce` passes create_efs=False: it keeps devbox-efs's rules but doesn't make it."""
+def ensure_security_group(ctx: Ctx, vpc_id: str) -> str | None:
+    """devbox-box (the runtimes' network interfaces): no inbound; HTTPS out through the firewall, DNS to the
+    resolver, NFS to devbox-efs. devbox-efs (the mount target): NFS in from devbox-box only, nothing out."""
     box_sg = ensure_group(
         ctx, vpc_id, SG_NAME, "Dev box runtimes: no inbound; HTTPS out through the firewall; NFS to devbox-efs"
     )
-    if create_efs:
-        efs_sg = ensure_group(ctx, vpc_id, EFS_SG, "Dev box EFS mount target: NFS in from devbox-box only")
-    else:
-        efs_sg = (find_security_group(ctx, vpc_id, EFS_SG) or {}).get("GroupId")
+    efs_sg = ensure_group(ctx, vpc_id, EFS_SG, "Dev box EFS mount target: NFS in from devbox-box only")
     ctx.net["efs_sg"] = efs_sg
     if box_sg:
-        reconcile_rules(ctx, box_sg, SG_NAME, sg_egress_wanted(mode, efs_sg), [], mode)
+        reconcile_rules(ctx, box_sg, SG_NAME, sg_egress_wanted(efs_sg), [])
     if efs_sg and box_sg:
-        reconcile_rules(ctx, efs_sg, EFS_SG, [], efs_sg_ingress_wanted(box_sg), None)
-    elif efs_sg or create_efs:
+        reconcile_rules(ctx, efs_sg, EFS_SG, [], efs_sg_ingress_wanted(box_sg))
+    else:
         pending(ctx, f"  allow NFS (TCP {NFS_PORT}) from {SG_NAME} to {EFS_SG} (both groups' rules)")
     return box_sg
 
@@ -3627,12 +3529,7 @@ def ensure_route(ctx: Ctx, table: dict, dest: str, kind: str, target: str) -> No
         )
 
 
-def egress_mode(ctx: Ctx, mode: str | None = None) -> str:
-    """The mode asked for, else the one ensure_firewall_policy found (or made), else DEVBOX_EGRESS_MODE."""
-    return mode or ctx.state.get("network", {}).get("mode") or ctx.s.egress_mode
-
-
-def ensure_network(ctx: Ctx, *, mode: str | None = None, paused: bool | None = None) -> None:
+def ensure_network(ctx: Ctx, *, paused: bool | None = None) -> None:
     """paused: None = read the VPC's tag; resume passes False, since a tag read straight after DeleteTags can be stale."""
     s, ec2, nfw = ctx.s, ctx.aws.ec2, ctx.aws.nfw
     section(
@@ -3671,9 +3568,8 @@ def ensure_network(ctx: Ctx, *, mode: str | None = None, paused: bool | None = N
             Report.changes += 1
         ctx.net = {"vpc": None}
         ensure_log_group(ctx, FIREWALL_LOG_GROUP, 90)
-        learn_arn, allow_arn = ensure_rule_groups(ctx)
-        ensure_firewall_policy(ctx, learn_arn, allow_arn, mode)
-        ensure_dns_firewall(ctx, None, egress_mode(ctx, mode))
+        ensure_firewall_policy(ctx, ensure_rule_group(ctx))
+        ensure_dns_firewall(ctx, None)
         return
     for attr in ("EnableDnsSupport", "EnableDnsHostnames"):
         if ec2.describe_vpc_attribute(VpcId=vpc_id, Attribute=attr[0].lower() + attr[1:])[attr]["Value"]:
@@ -3732,12 +3628,10 @@ def ensure_network(ctx: Ctx, *, mode: str | None = None, paused: bool | None = N
         )
 
     ensure_log_group(ctx, FIREWALL_LOG_GROUP, 90)
-    learn_arn, allow_arn = ensure_rule_groups(ctx)
-    policy_arn = ensure_firewall_policy(ctx, learn_arn, allow_arn, mode)
-    m = egress_mode(ctx, mode)
-    sg_id = ensure_security_group(ctx, vpc_id, m)
+    policy_arn = ensure_firewall_policy(ctx, ensure_rule_group(ctx))
+    sg_id = ensure_security_group(ctx, vpc_id)
     ensure_mount_target(ctx, vpc_id, subnet_ids.get("devbox-box"), ctx.net.get("efs_sg"))
-    ensure_dns_firewall(ctx, vpc_id, m)
+    ensure_dns_firewall(ctx, vpc_id)
 
     paused = is_paused(vpc) if paused is None else paused
     nat_id = endpoint = None
@@ -4005,17 +3899,13 @@ def ensure_domain_list(ctx: Ctx, name: str, domains: list[str], what: str) -> st
 def dns_rule_label(want: dict) -> str:
     if want["Action"] == "ALLOW":
         return "answer the allowlist, trusting its CNAME chain"
-    return (
-        "learn: alert on every other name, still answer it"
-        if want["Action"] == "ALERT"
-        else "enforce: NXDOMAIN for every other name"
-    )
+    return "NXDOMAIN for every other name"
 
 
-def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None, mode: str) -> None:
+def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None) -> None:
     """Route 53 Resolver DNS Firewall. The VPC resolver sits on the VPC's local route, so DNS never passes
     Network Firewall, and the resolver answers any public name: without this, a DNS query is an unwatched way out
-    (<data>.attacker.example). The allowlist is the same file as Network Firewall's; the mode follows it."""
+    (<data>.attacker.example). The allowlist is the same file as Network Firewall's."""
     r53 = ctx.aws.r53r
     domains = dns_domains(allowlist_domains(ctx))
     allow_id = ensure_domain_list(
@@ -4038,7 +3928,7 @@ def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None, mode: str) -> None:
             Tags=tag_list(DNS_RULE_GROUP),
         )
         gid, rules = r and r["FirewallRuleGroup"]["Id"], []
-    for want in dns_rules_wanted(mode, allow_id, any_id):
+    for want in dns_rules_wanted(allow_id, any_id):
         have = next(
             (
                 r
@@ -4067,7 +3957,7 @@ def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None, mode: str) -> None:
                 **want,
             )
 
-    # Query logging: how learn mode sees the names (every alert lands here), and how enforce mode shows what it blocked.
+    # Query logging: what DNS Firewall blocked (`network allowlist` lists it).
     ensure_log_group(ctx, DNS_LOG_GROUP, 90)
     dest = dns_query_log_destination(ctx.account, ctx.s.region)
     qlc = find_named(paged(r53.list_resolver_query_log_configs, "ResolverQueryLogConfigs", "NextToken"), DNS_QUERY_LOG)
@@ -4075,7 +3965,7 @@ def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None, mode: str) -> None:
         qid = qlc["Id"]
         if qlc.get("DestinationArn") and qlc["DestinationArn"].rstrip(":*") != dest.rstrip(":*"):
             warn(
-                f"query logging {DNS_QUERY_LOG} writes to {qlc['DestinationArn']}, not {DNS_LOG_GROUP}: `network enforce` won't see it"
+                f"query logging {DNS_QUERY_LOG} writes to {qlc['DestinationArn']}, not {DNS_LOG_GROUP}: `network allowlist` won't see it"
             )
         else:
             ok(f"Resolver query logging {DNS_QUERY_LOG} → {DNS_LOG_GROUP}")
@@ -4192,7 +4082,7 @@ def ensure_dns_firewall(ctx: Ctx, vpc_id: str | None, mode: str) -> None:
     if qa["Status"] in ("ACTION_NEEDED", "FAILED"):
         bad(
             f"  DNS query logging is {qa['Status']}: {qa.get('Error', '')} {qa.get('ErrorMessage', '')}".rstrip()
-            + " (without it `network enforce` can't list the DNS names learn mode saw)"
+            + " (without it `network allowlist` can't list the DNS names it blocked)"
         )
     else:
         ok(f"  DNS queries → {DNS_LOG_GROUP} ({qa['Status']})")
@@ -5077,32 +4967,21 @@ def cmd_network(ctx: Ctx, action: str) -> int:
     vpc = find_vpc(ctx)
     if not vpc:
         die("there's no dev box network yet: run deploy first")
-    if action in ("learn", "enforce"):
+    if action == "allowlist":
         if not ctx.gateway:
             die(f"there's no {GATEWAY_NAME} gateway yet (the allowlist names it): run deploy first")
-        section(f"Egress mode: {action} (Network Firewall, the security group's port 80, DNS Firewall)")
-        learn_arn, allow_arn = ensure_rule_groups(ctx)
-        if action == "enforce":
-            seen = seen_names(ctx)
-            allowlist = allowlist_domains(ctx)
-            missing = unlisted(list(seen), allowlist)
-            if missing:
-                warn(f"{len(missing)} name(s) seen in the last 24 h are not on the allowlist and will be dropped:")
-                for n in missing:
-                    say(f"      {n}  ({', '.join(sorted(seen[n]))})")
-                warn("add the ones the box needs to templates/egress-allowlist.txt and run `network enforce` again")
-            elif seen:
-                ok("every name the firewalls saw in the last 24 h is on the allowlist")
-            http = sorted(n for n, how in seen.items() if "HTTP" in how and n not in missing)
-            if http:
-                warn(
-                    "seen over plain HTTP, which enforce mode closes (port 80; a Host header can be forged): "
-                    + ", ".join(http)
-                    + ". The box must use HTTPS for these."
-                )
-        ensure_firewall_policy(ctx, learn_arn, allow_arn, action)
-        ensure_security_group(ctx, vpc["VpcId"], action, create_efs=False)
-        ensure_dns_firewall(ctx, vpc["VpcId"], action)
+        section("Egress allowlist: templates/egress-allowlist.txt → Network Firewall and DNS Firewall")
+        ensure_firewall_policy(ctx, ensure_rule_group(ctx))
+        ensure_dns_firewall(ctx, vpc["VpcId"])
+        blocked = seen_names(ctx)
+        missing = unlisted(list(blocked), allowlist_domains(ctx))
+        if missing:
+            warn(f"{len(missing)} name(s) blocked in the last 24 h aren't on the allowlist:")
+            for n in missing:
+                say(f"      {n}  ({', '.join(sorted(blocked[n]))})")
+            warn("add the ones the box needs to templates/egress-allowlist.txt and run `network allowlist` again")
+        else:
+            ok("nothing blocked in the last 24 h is missing from the allowlist")
         save_state(ctx.state)
         return 1 if Report.problems else 0
     if action == "pause":
@@ -5170,7 +5049,7 @@ def cmd_network(ctx: Ctx, action: str) -> int:
         if not (ctx.net.get("nat") and ctx.net.get("firewall_endpoint")):
             die("resume didn't bring back the NAT gateway and the firewall endpoint: run `network resume` again")
         say()
-        say(f"{_c('1;32')}Running.{_c('0')} Egress mode: {ctx.state.get('network', {}).get('mode', '?')}.")
+        say(f"{_c('1;32')}Running.{_c('0')}")
         return 1 if Report.problems else 0
     raise ValueError(action)
 
@@ -5191,7 +5070,7 @@ def logs_query(ctx: Ctx, group: str, query: str, what: str) -> list[dict[str, st
     try:
         q = logs.start_query(logGroupName=group, startTime=now - 86400, endTime=now, queryString=query)
     except ClientError as e:
-        warn(f"couldn't read {what} ({err_text(e)}); switching anyway")
+        warn(f"couldn't read {what} ({err_text(e)})")
         return None
     r = wait_for(
         f"the {what} query",
@@ -5207,8 +5086,8 @@ def logs_query(ctx: Ctx, group: str, query: str, what: str) -> list[dict[str, st
 
 
 def seen_names(ctx: Ctx) -> dict[str, set[str]]:
-    """Every name the two firewalls saw in the last 24 h, and how: TLS / HTTP (Network Firewall's alert log)
-    and DNS (the Resolver query log: what DNS Firewall alerted on or blocked)."""
+    """Every name the two firewalls blocked in the last 24 h, and how: TLS / HTTP (Network Firewall's alert log)
+    and DNS (the Resolver query log)."""
     seen: dict[str, set[str]] = {}
     for row in logs_query(ctx, FIREWALL_LOG_GROUP, seen_names_query(), "the firewall's alert log") or []:
         if row.get("name"):
@@ -5323,17 +5202,16 @@ def cmd_status(ctx: Ctx) -> int:
     else:
         fw = find_firewall(ctx)
         nat = find_nat(ctx, vpc["VpcId"])
-        mode = None
+        allowlist_on = False
         try:
             pol = ctx.aws.nfw.describe_firewall_policy(FirewallPolicyName=FIREWALL_POLICY)
-            mode = policy_mode(
-                pol["FirewallPolicy"], rule_group_arn(ctx, RG_LEARN)[0], rule_group_arn(ctx, RG_ALLOW)[0]
-            )
+            allowlist_on = policy_uses(pol["FirewallPolicy"], rule_group_arn(ctx, RG_ALLOW)[0])
         except ClientError as e:
             if not is_missing(e):
                 raise
-        (warn if is_paused(vpc) else ok)(
-            f"VPC {vpc['VpcId']}: {'PAUSED' if is_paused(vpc) else 'running'}, egress mode {mode or '?'}"
+        (warn if is_paused(vpc) or not allowlist_on else ok)(
+            f"VPC {vpc['VpcId']}: {'PAUSED' if is_paused(vpc) else 'running'}, egress "
+            + ("allowlist on" if allowlist_on else f"allowlist NOT on ({FIREWALL_POLICY}); deploy sets it")
         )
         ok(f"firewall {fw['FirewallStatus']['Status'] if fw else 'none'} · NAT {nat['State'] if nat else 'none'}")
         eps = find_s3_endpoints(ctx, vpc["VpcId"])
@@ -5349,7 +5227,7 @@ def cmd_status(ctx: Ctx) -> int:
         grp = find_named(paged(r53.list_firewall_rule_groups, "FirewallRuleGroups", "NextToken"), DNS_RULE_GROUP)
         any_list = find_named(paged(r53.list_firewall_domain_lists, "FirewallDomainLists", "NextToken"), DNS_ANY_LIST)
         if grp:
-            dmode = dns_mode(
+            blocks = dns_blocks_the_rest(
                 paged(r53.list_firewall_rules, "FirewallRules", "NextToken", FirewallRuleGroupId=grp["Id"]),
                 any_list and any_list["Id"],
             )
@@ -5362,8 +5240,9 @@ def cmd_status(ctx: Ctx) -> int:
                     VpcId=vpc["VpcId"],
                 )
             )
-            (ok if attached and dmode == mode else warn)(
-                f"DNS Firewall {DNS_RULE_GROUP}: {dmode or '?'} mode, {'on' if attached else 'NOT on'} the VPC's resolver"
+            (ok if attached and blocks else warn)(
+                f"DNS Firewall {DNS_RULE_GROUP}: {'NXDOMAIN' if blocks else 'NOT blocking'} for names off the allowlist, "
+                f"{'on' if attached else 'NOT on'} the VPC's resolver"
             )
         else:
             warn(f"no DNS Firewall ({DNS_RULE_GROUP}): DNS queries leave unfiltered; deploy adds it")
@@ -5767,10 +5646,9 @@ def undeploy_all(ctx: Ctx, delete_volumes: bool) -> list[str]:
             except ClientError as e:
                 if not is_missing(e):
                     raise
-        for name in (RG_LEARN, RG_ALLOW):
-            arn, _ = rule_group_arn(ctx, name)
-            if arn:
-                change(ctx, f"delete firewall rule group {name}", retry_in_use, nfw.delete_rule_group, RuleGroupArn=arn)
+        arn, _ = rule_group_arn(ctx, RG_ALLOW)
+        if arn:
+            change(ctx, f"delete firewall rule group {RG_ALLOW}", retry_in_use, nfw.delete_rule_group, RuleGroupArn=arn)
         delete_log_groups(ctx, FIREWALL_LOG_GROUP)
         delete_log_groups(ctx, DNS_LOG_GROUP)
 
@@ -6444,8 +6322,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
     sub.add_parser("check", help="read-only: prerequisites, and what deploy would change")
     sub.add_parser("deploy", help="create or update everything (safe to re-run; never deletes the old Instances boxes)")
-    net = sub.add_parser("network", help="egress firewall: learn | enforce | pause | resume")
-    net.add_argument("action", choices=["learn", "enforce", "pause", "resume"])
+    net = sub.add_parser("network", help="egress firewall: allowlist | pause | resume")
+    net.add_argument("action", choices=["allowlist", "pause", "resume"])
     un = sub.add_parser("undeploy", help="remove it (lists everything, then asks for the account id)")
     un.add_argument(
         "--delete-volumes",
