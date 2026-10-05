@@ -1,0 +1,14 @@
+{
+	"name": "mcp-gateway-proxy",
+	"version": "1.0.0",
+	"license": "Apache-2.0",
+	"type": "module",
+	"main": "index.js",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.12.1",
+		"@smithy/signature-v4": "^5.1.2",
+		"@smithy/hash-node": "^4.0.4",
+		"@smithy/protocol-http": "^5.1.2",
+		"@aws-sdk/credential-providers": "^3.840.0"
+	}
+}

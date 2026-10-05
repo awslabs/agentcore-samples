@@ -267,6 +267,7 @@ Test-Downloads/
 .claude/
 CLAUDE.md
 !**/03-code-agents-competition-e2e/coding_agents/claude-code/CLAUDE.md
+!06-workshops/14-AgentCore-coding-agents/coding_agents/claude-code/CLAUDE.md
 plan/
 
 ### draw.io source files (keep rendered PNG only) ###
@@ -287,6 +288,8 @@ plan/
 !01-features/02-host-your-agent/01-runtime/04-coding-agents/06-codex-with-efs/Dockerfile
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/agent/Dockerfile
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
+!06-workshops/14-AgentCore-coding-agents/coding_agents/claude-code/Dockerfile
+!06-workshops/14-AgentCore-coding-agents/gateway_mcp/app/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*
@@ -345,3 +348,10 @@ plan/
 01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/datadog/
 01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/glean/
 01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/01-attach-targets/mcp/mcp-servers/01-configure-auth/authorization-code-flow/snowflake/
+06-workshops/14-AgentCore-coding-agents/*.pem
+06-workshops/14-AgentCore-coding-agents/workshop_config.json
+06-workshops/14-AgentCore-coding-agents/infra.config
+06-workshops/14-AgentCore-coding-agents/coding_agents/claude-code/runtime_config.json
+06-workshops/14-AgentCore-coding-agents/coding_agents/claude-code/agent.config
+06-workshops/14-AgentCore-coding-agents/gateway_mcp/.deployed-state.json
+06-workshops/14-AgentCore-coding-agents/sample-project/.venv/
