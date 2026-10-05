@@ -1,0 +1,35 @@
+{
+  "gateway": {
+    "name": "strale-compliance-gateway",
+    "protocolType": "MCP",
+    "protocolConfiguration": {
+      "mcp": {
+        "supportedVersions": ["2025-03-26"],
+        "searchType": "SEMANTIC"
+      }
+    },
+    "description": "AgentCore Gateway with Strale data capabilities"
+  },
+  "target": {
+    "name": "strale-mcp-server",
+    "targetConfiguration": {
+      "mcp": {
+        "mcpServer": {
+          "endpoint": "https://api.strale.io/mcp"
+        }
+      }
+    },
+    "credentialProviderConfigurations": [
+      {
+        "credentialProviderType": "API_KEY",
+        "credentialProvider": {
+          "apiKeyCredentialProvider": {
+            "credentialParameterName": "Authorization",
+            "credentialPrefix": "Bearer ",
+            "credentialLocation": "HEADER"
+          }
+        }
+      }
+    ]
+  }
+}
