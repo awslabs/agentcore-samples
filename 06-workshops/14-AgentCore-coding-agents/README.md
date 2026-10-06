@@ -165,6 +165,18 @@ The `sample-project/` folder contains a simple task-manager app (Python/Flask ba
 
 ---
 
+## Security
+
+See [CONTRIBUTING](../../CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+This library is licensed under the MIT-0 License. See the [LICENSE](../../LICENSE) file.
+
+> **Note:** This is sample code for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment.
+
+---
+
 ## Cleanup
 
 Run the teardown cells in [lab-00-deploy.ipynb](lab-00-deploy.ipynb) (Step 9), or manually:
