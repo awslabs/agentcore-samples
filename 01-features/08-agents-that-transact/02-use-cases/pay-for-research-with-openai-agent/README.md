@@ -59,9 +59,9 @@ HTTP requests and exposes them as a function tool.
 
 - Python 3.10+ and AWS CLI v2.
 - An AWS execution profile with access to the configured OpenAI model on Bedrock.
-- For paid research, complete the [shared payment setup][setup] and
-  [wallet-provider setup][providers]: a payment manager, a `READY` connector,
-  and an active, funded, delegated testnet wallet.
+- For paid research, a payment manager, a `READY` connector, and an active,
+  funded, delegated testnet wallet. Complete the
+  [one-time payment setup](#one-time-payment-setup) below if needed.
 - For either Coinbase setup mode, activate the
   [Coinbase Marketplace subscription][marketplace] after reviewing its pricing
   and terms. An active wallet is not sufficient if the connector reports
@@ -74,6 +74,7 @@ Before configuring payment access, read the
   `CreatePaymentSession` / `DeletePaymentSession`; research needs
   `GetPaymentInstrument`, `GetPaymentSession`, and `ProcessPayment` on the
   configured manager, plus Bedrock access. The research role must not raise budgets.
+  See the [AgentCore Payments IAM role guidance][payments-iam].
 - Keep wallet-provider credentials in AgentCore Identity, not in this sample,
   agent prompts, or tool arguments.
 - Use conservative budgets and short sessions, and require end-user delegation.
@@ -85,6 +86,52 @@ Before configuring payment access, read the
 [providers]: ../../00-getting-started/00-setup-agentcore-payments/providers/
 [marketplace]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html
 [security]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-security-best-practices.html
+[payments-quick-start]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-getting-started.html
+[payments-iam]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-iam-roles.html
+
+## One-time payment setup
+
+Skip this section for public-only research or if you already have the required
+payment resources. Use a setup/admin AWS profile for provisioning, separate
+from the management and execution profiles used below. Follow the
+[AgentCore Payments GA quick start][payments-quick-start] for current prerequisites,
+provider portal steps, and console/SDK options.
+
+The existing [shared setup tutorial][setup] provides the infrastructure walkthrough:
+
+1. [Choose a wallet provider][setup-provider]. For Coinbase, use Quick create
+   or supply your existing CDP credentials as described in the
+   [provider setup guide][providers]. Follow the GA quick start for current
+   credential-generation and project-level delegated-signing steps.
+2. [Create the payment manager and connector][setup-manager]. Complete the
+   Coinbase authorization flow if using Quick create, then confirm the connector
+   is `READY` before proceeding.
+3. [Create the per-user wallet][setup-wallet]. Use the same user ID throughout
+   setup and research, and a real email address for wallet consent.
+   For the default Genesis Block merchant, choose `NETWORK=ETHEREUM` and
+   fund the wallet on **Base Sepolia**, not Base mainnet.
+4. [Fund the wallet and grant delegated signing][setup-funding]. Coinbase
+   project-level delegated signing does not replace the end user's WalletHub
+   consent. Follow the [GA wallet funding and delegation guide][payments-wallet]
+   and [verify the chain-specific balance][setup-verify] before running research.
+
+With the GA SDK, the Coinbase WalletHub `redirectUrl` is inside
+`paymentInstrumentDetails.embeddedCryptoWallet`. Wallet creation is asynchronous:
+if the address or URL is not ready, retrieve the same instrument with
+`get_payment_instrument` rather than creating another wallet.
+
+Keep the manager ARN, instrument ID, and user ID. Return to this sample and copy
+only those identifiers in [step 2](#2-configure-payment-identifiers) below.
+Create a fresh, capped session with this sample's script instead of reusing the
+tutorial's session. Provider credentials stay in the shared setup and AgentCore
+Identity; do not copy them into this sample.
+
+[setup-provider]: ../../00-getting-started/00-setup-agentcore-payments/#step-1--capture-wallet-provider-credentials-pick-one-provider
+[setup-manager]: ../../00-getting-started/00-setup-agentcore-payments/#step-2--provision-the-shared-stack-with-the-agentcore-cli
+[setup-wallet]: ../../00-getting-started/00-setup-agentcore-payments/#step-3--create-the-per-user-wallet-and-session-with-the-agentcore-sdk
+[setup-funding]: ../../00-getting-started/00-setup-agentcore-payments/#step-4--fund-the-wallet-and-grant-delegated-signing-once-per-user
+[setup-verify]: ../../00-getting-started/00-setup-agentcore-payments/#inspect--verify
+[payments-wallet]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-how-it-works.html
 
 ## Run the sample
 
@@ -140,6 +187,9 @@ Choose the maximum you are willing to spend. Budgets preserve sub-cent values
 with up to six decimal places; expiry must be 15–480 minutes. A session limits
 spending but does not fund the wallet.
 
+For the GA budget and expiry options, see
+[Create a payment session](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-create-session.html).
+
 ### 4. Run research
 
 Switch to the execution profile and run with human approval enabled:
@@ -188,6 +238,9 @@ follow the [shared cleanup instructions][cleanup].
 [cleanup]: ../../00-getting-started/00-setup-agentcore-payments/#clean-up
 
 ## Payment behavior
+
+The [GA payment-processing guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-process-payment.html)
+explains how instruments, sessions, and signed payment results fit together.
 
 The adapter requires an allowed HTTPS host, rejects private/non-routable
 addresses, and pins both requests to the same validated IP while retaining TLS
