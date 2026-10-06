@@ -12,7 +12,8 @@ Each runtime is its own AgentCore CLI project, inside its source directory:
 Each project's agentcore.json is committed with placeholders only: no account ID,
 no IdP identifiers, no deployment-specific values. For the selected runtime this script:
 
-  1. checks the `agentcore` on PATH is the npm AgentCore CLI 0.30.x, not the pip tool;
+  1. finds the npm AgentCore CLI 0.30.x on PATH, skipping the pip tool of the same
+     name inside a virtual environment, and calls it by absolute path;
   2. checks the runtime's execution role exists (created by
      2-lakehouse-tenant-roles-setup/setup_runtime_roles.py);
   3. reads the IdP flag and the values earlier steps stored in SSM Parameter Store,
@@ -22,7 +23,7 @@ no IdP identifiers, no deployment-specific values. For the selected runtime this
      runs `agentcore deploy`, and restores the placeholders afterwards, even on failure;
   6. stores the runtime ARN/ID in SSM under the names the later steps read.
 
-Usage (run with the sample's venv Python by absolute path; do NOT activate the venv):
+Usage (with the sample's venv Python; an activated venv is fine):
     .venv/bin/python deployment/agentcore_cli_deploy.py lakehouse-mcp
     .venv/bin/python deployment/agentcore_cli_deploy.py opensearch-mcp
     .venv/bin/python deployment/agentcore_cli_deploy.py lakehouse-agent
@@ -31,8 +32,8 @@ Usage (run with the sample's venv Python by absolute path; do NOT activate the v
 
 import argparse
 import json
+import os
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -144,30 +145,52 @@ Two different tools install a command named `agentcore`:
   - the AgentCore CLI (npm package @aws/agentcore), which this script needs, and
   - the older starter toolkit (pip package bedrock-agentcore-starter-toolkit),
     which installs into a Python virtual environment's bin/ directory.
-An activated venv puts its bin/ first on PATH, so `agentcore` resolves to the pip
-tool. Fix: run `deactivate`, then invoke this script with the venv's Python by
-absolute path (e.g. .venv/bin/python deployment/agentcore_cli_deploy.py <runtime>).
-Install the CLI with: npm install -g @aws/agentcore@0.30.0
+This script skips any `agentcore` inside a virtual environment and uses the first
+other one on PATH that reports version 0.30.x. None was found.
+Fix: install the CLI with `npm install -g @aws/agentcore@0.30.0` and make sure npm's
+global bin directory is on PATH (`npm prefix -g` shows it; the CLI is in its bin/).
 """
 
 
+def _venv_roots() -> list[Path]:
+    roots = []
+    if os.environ.get("VIRTUAL_ENV"):
+        roots.append(Path(os.environ["VIRTUAL_ENV"]).resolve())
+    if sys.prefix != sys.base_prefix:  # this interpreter is itself a venv's Python
+        roots.append(Path(sys.prefix).resolve())
+    return roots
+
+
+def _in_venv(path_dir: Path, roots: list[Path]) -> bool:
+    resolved = path_dir.resolve()
+    if any(resolved == root or root in resolved.parents for root in roots):
+        return True
+    return (path_dir.parent / "pyvenv.cfg").exists()  # any other venv's bin/ that is on PATH
+
+
 def resolve_agentcore_cli() -> str:
-    cli = shutil.which("agentcore")
-    if not cli:
-        fail("`agentcore` is not on PATH." + CLI_CLASH_HELP)
-    real = Path(cli).resolve()
-    if any((parent / "pyvenv.cfg").exists() for parent in (Path(cli).parent.parent, real.parent.parent)):
-        fail(f"`agentcore` resolves to {cli}, inside a Python virtual environment." + CLI_CLASH_HELP)
-    result = subprocess.run([cli, "--version"], capture_output=True, text=True, check=False)
-    lines = (result.stdout or "").strip().splitlines()
-    version = lines[0].strip() if lines else ""
-    if result.returncode != 0 or not version.startswith(REQUIRED_CLI_MAJOR_MINOR):
-        fail(
-            f"`{cli} --version` returned {version or result.stderr.strip()!r}; "
-            f"this sample is pinned to AgentCore CLI {REQUIRED_CLI_MAJOR_MINOR}x." + CLI_CLASH_HELP
-        )
-    print(f"✅ AgentCore CLI {version} at {cli}")
-    return cli
+    """Absolute path of the first non-venv `agentcore` on PATH that reports 0.30.x."""
+    roots = _venv_roots()
+    seen: list[str] = []
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry:
+            continue
+        candidate = Path(entry) / "agentcore"
+        if not (candidate.is_file() and os.access(candidate, os.X_OK)):
+            continue
+        cli = str(candidate.absolute())
+        if _in_venv(Path(entry), roots):
+            seen.append(f"{cli} (skipped: inside a Python virtual environment)")
+            continue
+        result = subprocess.run([cli, "--version"], capture_output=True, text=True, check=False)
+        lines = (result.stdout or "").strip().splitlines()
+        version = lines[0].strip() if lines else ""
+        if result.returncode == 0 and version.startswith(REQUIRED_CLI_MAJOR_MINOR):
+            print(f"✅ AgentCore CLI {version} at {cli}")
+            return cli
+        seen.append(f"{cli} (skipped: version {version or result.stderr.strip()!r}, need {REQUIRED_CLI_MAJOR_MINOR}x)")
+    found = "".join(f"\n   - {s}" for s in seen) or "\n   - (no `agentcore` on PATH)"
+    fail(f"No usable AgentCore CLI {REQUIRED_CLI_MAJOR_MINOR}x on PATH. Found:{found}\n" + CLI_CLASH_HELP)
 
 
 # ─────────────────────────────────────────────────────────────────────────
