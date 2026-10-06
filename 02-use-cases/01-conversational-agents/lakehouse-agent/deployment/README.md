@@ -67,8 +67,40 @@ The agent (Step 8) is IdP-agnostic: it wires two prefixed MCP clients
 
 1. AWS CLI configured with appropriate permissions
 2. Python 3.10+ with virtual environment
-3. Docker running (for AgentCore Runtime deployments)
-4. `bedrock-agentcore-starter-toolkit` installed
+3. Node.js 20+ and the AgentCore CLI at exactly 0.30.0, installed globally (outside the venv):
+   `npm install -g @aws/agentcore@0.30.0`
+4. [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (the CLI uses it to package each runtime's Python dependencies)
+
+Docker is no longer required: the three AgentCore Runtimes are packaged as code zips by the AgentCore CLI.
+
+> **AgentCore CLI notes.**
+>
+> - **Why the exact pin:** each runtime's CLI project (`<runtime-dir>/agentcore/`) was
+>   generated with CLI 0.30.0, and its committed lockfile pins the matching
+>   `@aws/agentcore-cdk` construct version. `agentcore_cli_deploy.py` refuses any CLI
+>   that is not 0.30.x.
+> - **Two tools are called `agentcore`.** `requirements.txt` still installs the older
+>   Python starter toolkit, which puts its own `agentcore` in `.venv/bin`. The deploy
+>   script skips any `agentcore` inside the active virtual environment and calls the
+>   npm CLI by absolute path, so running it from an activated venv is fine. To check
+>   what you have: `which -a agentcore`; the npm one (outside `.venv`) reports `0.30.0`
+>   from `agentcore --version`.
+> - **Each runtime's IAM execution role is created at that runtime's own step**
+>   (`2-lakehouse-tenant-roles-setup/setup_runtime_roles.py create --role …`, just
+>   before its deploy): two of the three role policies are scoped to resources that
+>   only exist by then (the S3 bucket from Step 3, the OpenSearch collection from
+>   Step 7).
+> - **`aws-targets.json`** is written by the deploy script into the runtime's
+>   `agentcore/` directory from your caller identity and region. It contains your
+>   account ID; it is gitignored and must not be committed.
+> - **Teardown** (`--destroy --yes`) deletes the runtime's CloudFormation stack
+>   (`AgentCore-<project>-default`) and the SSM parameters its deploy wrote. Delete the
+>   execution role afterwards, once the stack is gone.
+> - **Only the runtimes use the CLI.** The gateways and interceptors (and the IdP,
+>   tenant IAM roles, S3 Tables, Lake Formation and OpenSearch steps) are not deployed
+>   by the CLI: its gateway configuration has no request/response interceptor or
+>   token-exchange (on-behalf-of) settings, which both gateways here depend on. They
+>   stay on the scripts in this directory.
 
 > **`[OKTA]` additional prerequisites.** If you deploy the Okta path
 > (`IDP_PROVIDER=okta`), you also need an Okta org (a free **Okta Integrator Free
@@ -142,7 +174,9 @@ cd 02-use-cases/01-conversational-agents/lakehouse-agent
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install bedrock-agentcore-starter-toolkit
+
+# AgentCore CLI (Node.js 20+), outside the venv
+npm install -g @aws/agentcore@0.30.0
 ```
 
 ## Deployment Sequence
@@ -406,16 +440,24 @@ The admin role has Lake Formation permissions granted in Step 3d.
 
 ### Step 4: Deploy Claims MCP Server
 
-Deploys the claims MCP Athena server (`4a-mcp-lakehouse-server`) to AgentCore Runtime.
+Deploys the claims MCP Athena server (`4a-mcp-lakehouse-server`) to AgentCore Runtime
+with the AgentCore CLI. Two calls: create the runtime's execution role, then deploy.
 
 ```bash
-cd ../4a-mcp-lakehouse-server
-python deploy_runtime.py --yes
+cd ../2-lakehouse-tenant-roles-setup
+python setup_runtime_roles.py create --role lakehouse-mcp
+python ../agentcore_cli_deploy.py lakehouse-mcp
 ```
+
+The deploy script reads the IdP flag and the earlier steps' values from SSM, fills
+them into `4a-mcp-lakehouse-server/agentcore/agentcore.json` for the duration of the
+deploy (the committed file holds placeholders only), and deploys stack
+`AgentCore-lakehousemcpserver-default`.
 
 SSM Parameters created:
 
 - `/app/lakehouse-agent/mcp-server-runtime-arn`
+- `/app/lakehouse-agent/mcp-server-runtime-id`
 
 > **Note:** the second MCP runtime — the OpenSearch notes server
 > (`4b-mcp-opensearch-server`) — is deployed later in **Step 7 (Notes Gateway)**,
@@ -516,11 +558,14 @@ python 01_deploy_opensearch_collection.py
 
 SSM: `/app/lakehouse-agent/opensearch-collection-arn`, `/app/lakehouse-agent/opensearch-collection-endpoint`
 
-**7.2 Deploy the OpenSearch notes MCP runtime** (`4b`) — shared:
+**7.2 Deploy the OpenSearch notes MCP runtime** (`4b`) — shared. Its execution
+role is scoped to the collection from 7.1, so it is created here, then the runtime
+is deployed with the AgentCore CLI (stack `AgentCore-opensearchmcpserver-default`):
 
 ```bash
-cd ../4b-mcp-opensearch-server
-python deploy_runtime.py --yes
+cd ../2-lakehouse-tenant-roles-setup
+python setup_runtime_roles.py create --role opensearch-mcp
+python ../agentcore_cli_deploy.py opensearch-mcp
 ```
 
 SSM: `/app/lakehouse-agent/opensearch-mcp-runtime-arn`, `/app/lakehouse-agent/opensearch-mcp-runtime-id`
@@ -530,6 +575,7 @@ SSM: `/app/lakehouse-agent/opensearch-mcp-runtime-arn`, `/app/lakehouse-agent/op
 user's Cognito `sub` so notes owners match by construction:
 
 ```bash
+cd ../4b-mcp-opensearch-server
 python seed_cognito_user_subs.py
 ```
 
@@ -593,14 +639,22 @@ same inbound user bearer. It holds **no OBO grant** (Finding 15). GW2/notes is
 **REQUIRED**: the agent hard-fails (raises) if `notes-gateway-url` is absent or
 GW2 is unreachable — there is no claims-only fallback.
 
+Two calls, as for the MCP runtimes: create the agent's execution role, then
+deploy it with the AgentCore CLI (stack `AgentCore-lakehouseagent-default`).
+The deploy needs `gateway-arn` from Step 6 and fails naming the missing step if
+it is absent.
+
 ```bash
-cd ../6-lakehouse-agent
-python deploy_lakehouse_agent.py --yes
+cd ../2-lakehouse-tenant-roles-setup
+python setup_runtime_roles.py create --role lakehouse-agent
+python ../agentcore_cli_deploy.py lakehouse-agent
 ```
 
 SSM Parameters created:
 
 - `/app/lakehouse-agent/agent-runtime-arn`
+- `/app/lakehouse-agent/agent-runtime-id`
+- `/app/lakehouse-agent/agent-name` (the deployed runtime name, `lakehouseagent_lakehouse_agent`)
 
 ---
 
@@ -651,18 +705,18 @@ Steps are marked **shared** (run on both IdPs), **`[COGNITO]`**, or **`[OKTA]`**
 | 3c            | shared       | `3-s3tables-setup`                              | `python setup_s3tables.py`                        |
 | 3d            | shared       | `3-s3tables-setup`                              | `python setup_lakeformation_permissions.py`       |
 | 3e            | shared       | `3-s3tables-setup`                              | `python load_sample_data.py`                      |
-| 4             | shared       | `4a-mcp-lakehouse-server`                       | `python deploy_runtime.py --yes`                  |
+| 4             | shared       | `2-lakehouse-tenant-roles-setup`                | `python setup_runtime_roles.py create --role lakehouse-mcp` then `python ../agentcore_cli_deploy.py lakehouse-mcp` |
 | 5.1           | shared       | `5a-gateway-setup/interceptor-request`          | `./deploy.sh`                                     |
 | 5.2           | shared       | `5a-gateway-setup/interceptor-response`         | `./deploy.sh`                                     |
 | 6             | shared       | `5a-gateway-setup`                              | `python create_gateway.py --yes`                  |
 | 7.1           | shared       | `5b-obo-gateway-setup`                          | `python 01_deploy_opensearch_collection.py`       |
-| 7.2           | shared       | `4b-mcp-opensearch-server`                      | `python deploy_runtime.py --yes`                  |
+| 7.2           | shared       | `2-lakehouse-tenant-roles-setup`                | `python setup_runtime_roles.py create --role opensearch-mcp` then `python ../agentcore_cli_deploy.py opensearch-mcp` |
 | 7.3           | `[COGNITO]`  | `4b-mcp-opensearch-server`                      | `python seed_cognito_user_subs.py`                |
 | 7.4           | shared       | `4b-mcp-opensearch-server`                      | `python load_sample_opensearch_data.py`           |
 | 7.5           | `[OKTA]`     | `5b-obo-gateway-setup`                          | `python 03_create_oauth_provider.py`              |
 | 7.5           | `[COGNITO]`  | `5a-gateway-setup/interceptor-notes`            | `./deploy.sh`                                     |
 | 7.6           | shared       | `5b-obo-gateway-setup`                          | `python 04_create_obo_gateway.py`                 |
-| 8             | shared       | `6-lakehouse-agent`                             | `python deploy_lakehouse_agent.py --yes`          |
+| 8             | shared       | `2-lakehouse-tenant-roles-setup`                | `python setup_runtime_roles.py create --role lakehouse-agent` then `python ../agentcore_cli_deploy.py lakehouse-agent` |
 | 9 (optional)  | shared       | `streamlit-ui`                                  | `streamlit run streamlit_app.py`                  |
 | 10 (optional) | shared       | `advanced-agentcore-policy-gateway-interceptor` | `bash scripts/pre-deploy.sh && npx cdk deploy`    |
 
@@ -682,6 +736,7 @@ deployment/
 │   └── cleanup_okta.py
 ├── 2-lakehouse-tenant-roles-setup/       # Step 2 — IAM tenant roles
 │   ├── setup_iam_roles.py
+│   ├── setup_runtime_roles.py            #   Steps 4 / 7.2 / 8 — runtime execution roles (create/delete)
 │   └── cleanup_iam_roles.py
 ├── 3-s3tables-setup/                     # Step 3 — S3 Tables + Lake Formation
 │   ├── integrate_s3tables_lakeformation.py
@@ -691,15 +746,17 @@ deployment/
 │   ├── verify_setup.py
 │   └── cleanup_s3tables.py
 ├── 4a-mcp-lakehouse-server/              # Step 4 — claims MCP (Athena) runtime
-│   ├── deploy_runtime.py
-│   └── cleanup_runtime.py
+│   ├── server.py
+│   ├── athena_tools_secure.py
+│   ├── pyproject.toml                    #   runtime dependencies (CodeZip packaging)
+│   └── agentcore/                        #   AgentCore CLI project for this runtime
 ├── 4b-mcp-opensearch-server/             # Step 7 — notes MCP (OpenSearch) runtime + seed/load helpers
-│   ├── deploy_runtime.py
 │   ├── seed_cognito_user_subs.py         #   Step 7.3 [COGNITO]
 │   ├── load_sample_opensearch_data.py    #   Step 7.4
 │   ├── server.py
 │   ├── opensearch_tools.py
-│   └── cleanup_runtime.py
+│   ├── pyproject.toml
+│   └── agentcore/                        #   AgentCore CLI project for this runtime
 ├── 5a-gateway-setup/                     # Steps 5-6 — claims Gateway (GW1)
 │   ├── interceptor-request/              # Step 5.1 — REQUEST interceptor + tenant-role-map seeder
 │   │   ├── deploy.sh
@@ -724,8 +781,10 @@ deployment/
 │   ├── 04_create_obo_gateway.py             #   Step 7.6
 │   └── 06_cleanup_obo_gateway.py
 ├── 6-lakehouse-agent/                    # Step 8 — conversational agent (two clients: claims/ + notes/)
-│   ├── deploy_lakehouse_agent.py
-│   └── cleanup_agent.py
+│   ├── lakehouse_agent.py
+│   ├── pyproject.toml
+│   └── agentcore/                        #   AgentCore CLI project for this runtime
+├── agentcore_cli_deploy.py               # Steps 4 / 7.2 / 8 — deploy or destroy one runtime with the AgentCore CLI
 └── advanced-agentcore-policy-gateway-interceptor/   # Step 10 (optional, Phase 2)
     ├── README.md
     ├── bin/app.ts
@@ -762,7 +821,9 @@ appear only after **Step 7**.
 
 ## Cleanup
 
-Each deployment step has a dedicated cleanup script. Run them in reverse order.
+Each script-deployed step has a dedicated cleanup script; each runtime is removed with
+`agentcore_cli_deploy.py <runtime> --destroy --yes` followed by
+`setup_runtime_roles.py delete --role <runtime>`. Run them in reverse order.
 
 Tear down in **reverse deploy order** (this mirrors notebook `09-optional-cleanup`).
 IdP-specific teardown steps are marked `[COGNITO]` / `[OKTA]` — run only the
@@ -785,9 +846,11 @@ See [advanced-agentcore-policy-gateway-interceptor/README.md#cleanup](advanced-a
 Then run the Phase 1 cleanup scripts:
 
 ```bash
-# Step 8: Delete Lakehouse Agent
-cd 6-lakehouse-agent
-python cleanup_agent.py
+# Step 8: Delete Lakehouse Agent — its CloudFormation stack and SSM keys, then
+# its execution role (only once the stack delete has succeeded)
+python agentcore_cli_deploy.py lakehouse-agent --destroy --yes
+cd 2-lakehouse-tenant-roles-setup
+python setup_runtime_roles.py delete --role lakehouse-agent
 
 # Step 7: Delete Notes Gateway (GW2) — AOSS collection, OBO provider / M2M
 # provider, notes-gateway, and the net-new notes-gateway-* / opensearch-* SSM keys.
@@ -804,13 +867,14 @@ cd ../5a-gateway-setup/interceptor-notes
 cd ..
 python cleanup_gateway.py
 
-# Step 4: Delete claims MCP Server runtime
-cd ../4a-mcp-lakehouse-server
-python cleanup_runtime.py
+# Step 4: Delete claims MCP Server runtime (stack), then its execution role
+cd ../2-lakehouse-tenant-roles-setup
+python ../agentcore_cli_deploy.py lakehouse-mcp --destroy --yes
+python setup_runtime_roles.py delete --role lakehouse-mcp
 
-# Step 7 (runtime): Delete notes (OpenSearch) MCP Server runtime
-cd ../4b-mcp-opensearch-server
-python cleanup_runtime.py
+# Step 7 (runtime): Delete notes (OpenSearch) MCP Server runtime (stack), then its role
+python ../agentcore_cli_deploy.py opensearch-mcp --destroy --yes
+python setup_runtime_roles.py delete --role opensearch-mcp
 
 # Step 3: Delete S3 Tables + Lake Formation integration
 cd ../3-s3tables-setup

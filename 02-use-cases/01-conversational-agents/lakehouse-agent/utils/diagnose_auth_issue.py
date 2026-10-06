@@ -264,8 +264,8 @@ def diagnose_okta(params, jwt_config):
 
     if not (discovery_match and audience_match):
         print("\n💡 Solution:")
-        print("   Re-run: python deployment/6-lakehouse-agent/deploy_lakehouse_agent.py")
-        print("   (recreates the runtime authorizer from the current Okta SSM contract)")
+        print("   Re-run: python deployment/agentcore_cli_deploy.py lakehouse-agent")
+        print("   (re-deploys the runtime with its authorizer built from the current Okta SSM contract)")
         return
 
     print("\n✅ ALL CONFIGURATION CHECKS PASSED!")
@@ -326,10 +326,16 @@ def main():
         print("   Run the setup scripts in order:")
         if idp_provider == "cognito":
             print("   1. python gateway-setup/setup_cognito.py")
-            print("   2. python lakehouse-agent/deploy_lakehouse_agent.py")
+            print(
+                "   2. python deployment/2-lakehouse-tenant-roles-setup/setup_runtime_roles.py create --role lakehouse-agent"
+            )
+            print("   3. python deployment/agentcore_cli_deploy.py lakehouse-agent")
         else:
             print("   1. python deployment/1-okta-setup/setup_okta.py  (writes okta-* keys)")
-            print("   2. python deployment/6-lakehouse-agent/deploy_lakehouse_agent.py")
+            print(
+                "   2. python deployment/2-lakehouse-tenant-roles-setup/setup_runtime_roles.py create --role lakehouse-agent"
+            )
+            print("   3. python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return
 
     # Get agent runtime configuration
