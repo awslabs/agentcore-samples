@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "lakehouseagent",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "lakehouseagent"
+  },
+  "runtimes": [
+    {
+      "name": "lakehouse_agent",
+      "build": "CodeZip",
+      "entrypoint": "lakehouse_agent.py",
+      "codeLocation": "./",
+      "runtimeVersion": "PYTHON_3_10",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "requestHeaderAllowlist": [
+        "Authorization"
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://idp.placeholder.invalid/.well-known/openid-configuration",
+          "allowedClients": [
+            "__ALLOWED_CLIENT__"
+          ]
+        }
+      },
+      "instrumentation": {
+        "enableOtel": true
+      },
+      "executionRoleArn": "arn:aws:iam::000000000000:role/AgentCoreRuntimeRole-lakehouse-agent",
+      "envVars": [
+        {
+          "name": "AWS_REGION",
+          "value": "__AWS_REGION__"
+        },
+        {
+          "name": "GATEWAY_ARN",
+          "value": "__GATEWAY_ARN__"
+        }
+      ],
+      "tags": {
+        "Application": "lakehouse-agent",
+        "Purpose": "lakehouse-agent"
+      }
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "capacityProviders": [],
+  "payments": []
+}

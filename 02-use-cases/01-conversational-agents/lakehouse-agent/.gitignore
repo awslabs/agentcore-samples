@@ -61,17 +61,18 @@ Dockerfile
 .agentcore.yaml
 .agentcore.json
 
-# AgentCore CLI project (agentcore/): deployer-specific state and build output.
-# aws-targets.json carries the deploying account ID and is written by
-# agentcore/deploy_runtimes.py at deploy time; .cli/ holds deployed ARNs.
-agentcore/aws-targets.json
-agentcore/.cli/
-agentcore/.cache/
-agentcore/.env.local
-agentcore/*.zip
-agentcore/*/staging/
-agentcore/cdk/cdk.out/
-agentcore/cdk/node_modules/
-agentcore/cdk/dist/
+# AgentCore CLI projects (one per runtime, deployment/<runtime>/agentcore/):
+# deployer-specific state and build output. aws-targets.json carries the
+# deploying account ID and is written by the deploy wrapper at deploy time;
+# .cli/ holds deployed ARNs.
+deployment/*/agentcore/aws-targets.json
+deployment/*/agentcore/.cli/
+deployment/*/agentcore/.cache/
+deployment/*/agentcore/.env.local
+deployment/*/agentcore/*.zip
+deployment/*/agentcore/*/staging/
+deployment/*/agentcore/cdk/cdk.out/
+deployment/*/agentcore/cdk/node_modules/
+deployment/*/agentcore/cdk/dist/
 # The repository-level lib/ rule would otherwise hide the CDK stack source.
-!agentcore/cdk/lib/
+!deployment/*/agentcore/cdk/lib/
