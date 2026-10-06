@@ -121,11 +121,12 @@ Three evaluation interfaces are available depending on your use case:
 | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`ground-truth-based-evaluation/`](ground-truth-based-evaluation/) | EvaluationClient + DatasetRunner + BatchRunner with expected responses, expected tool trajectories, and session assertions                                          |
 | [`llm-as-a-judge-evaluation/`](llm-as-a-judge-evaluation/)         | Custom LLM-as-a-judge evaluators (TRACE + SESSION) with ground-truth placeholders alongside built-in evaluators                                                     |
+| [`llm-judge-human-alignment/`](llm-judge-human-alignment/)         | Align a custom LLM judge with independent domain-expert scores: ground-truth workbook, off-console review app, batch evaluation with inline assertions, and gates  |
 | [`custom-code-based-evaluation/`](custom-code-based-evaluation/)   | Lambda-backed deterministic evaluators (code-based) for exact data validation, mixed with built-in LLM evaluators; on-demand and online modes                       |
 | [`skills-evaluation/`](skills-evaluation/)                         | Native Strands Agent Skills evaluated with `Builtin.SkillSelectionAccuracy` and `Builtin.SkillInstructionFollowing`                                               |
 | [`supported-frameworks/`](supported-frameworks/)                   | The same HR Assistant re-implemented in other supported frameworks (OpenAI Agents SDK, LlamaIndex), each deployed and evaluated with built-in and custom evaluators |
 
-The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the default HR Assistant agent deployed from `utils/`. The `skills-evaluation/` sample uses the same agent source with an opt-in skills directory and a separate runtime config. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders.
+The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the default HR Assistant agent deployed from `utils/`. The `skills-evaluation/` sample uses the same agent source with an opt-in skills directory and a separate runtime config. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders. The `llm-judge-human-alignment/` sample deploys its own insurance claims assistant.
 
 ## Agent Architecture
 

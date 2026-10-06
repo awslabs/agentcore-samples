@@ -1,0 +1,43 @@
+{
+  "llmAsAJudge": {
+    "instructions": "You are evaluating an insurance claims assistant. Judge whether the assistant resolved the claimant's request against the supplied assertions. Consider accuracy, completeness, helpfulness, and clarity of next steps.\n\nSession: {context}\nAvailable tools: {available_tools}\nAssertions: {assertions}",
+    "ratingScale": {
+      "numerical": [
+        {
+          "value": 1,
+          "label": "Critical failure",
+          "definition": "The business outcome is wrong, a required referral is missing, or the response creates material business, safety, privacy, or transaction risk."
+        },
+        {
+          "value": 2,
+          "label": "Major issues",
+          "definition": "Useful content is present, but the outcome or prescribed action is materially wrong."
+        },
+        {
+          "value": 3,
+          "label": "Partially correct",
+          "definition": "The response is directionally correct but incomplete or ambiguous."
+        },
+        {
+          "value": 4,
+          "label": "Mostly correct",
+          "definition": "The outcome is correct, with minor omissions that do not change the result."
+        },
+        {
+          "value": 5,
+          "label": "Fully correct",
+          "definition": "The outcome, supporting explanation, evidence use, and required action are correct."
+        }
+      ]
+    },
+    "modelConfig": {
+      "bedrockEvaluatorModelConfig": {
+        "modelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "inferenceConfig": {
+          "maxTokens": 512,
+          "temperature": 0.0
+        }
+      }
+    }
+  }
+}
