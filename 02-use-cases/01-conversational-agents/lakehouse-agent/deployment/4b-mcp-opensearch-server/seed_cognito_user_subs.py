@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Seed Cognito test-user `sub` values into SSM for the OpenSearch notes RLS
-(Cognito GW2 path — DR-9 match-by-construction).
+(Cognito GW2 path — match-by-construction).
 
 On the Cognito path, the notes REQUEST interceptor forwards the caller's Cognito
 `sub` (pool subject GUID) and the OpenSearch server filters `owner_user_sub`

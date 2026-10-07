@@ -40,7 +40,7 @@ the diagram).
 ### Dual-IdP topology
 
 The topology is **symmetric across both IdPs** — the flag flips authentication
-methods, never the shape of the system (see DR-1). Both `cognito` and `okta`
+methods, never the shape of the system. Both `cognito` and `okta`
 deploy **two gateways**:
 
 - **GW1 (claims gateway)** is identical on both paths: a REQUEST interceptor
@@ -51,7 +51,7 @@ deploy **two gateways**:
   the seeder branches on `IDP_PROVIDER` so the interceptor lookup hits on both.
 - **GW2 (notes gateway)** is where the flag actually flips. It fronts the
   OpenSearch notes MCP server and differs only in how per-user identity reaches
-  the target (DR-9):
+  the target:
   - **`[OKTA]`** — an OBO (RFC 8693) credential provider on the gateway target
     exchanges the caller's bearer token, and the OpenSearch server derives the
     owner `sub` from the forwarded bearer.
@@ -118,7 +118,7 @@ Docker is no longer required: the three AgentCore Runtimes are packaged as code 
 > works — the loader searches both and prints which file it used.
 >
 > `.env` holds Okta credentials **only** — the IdP flag itself is set in Step 0,
-> not in `.env` (see DR-12).
+> not in `.env`.
 >
 > **🔑 The token needs a broad admin role.** An Okta API token inherits the
 > permissions of the admin who created it, and `setup_okta.py` writes to four
@@ -193,8 +193,8 @@ cd 02-use-cases/01-conversational-agents/lakehouse-agent
 python -m utils.idp_config cognito   # or: okta
 ```
 
-This is the command-line equivalent of notebook `01-deploy-idp`'s Step-0 cell
-(DR-12). The flag is chosen here — **not** in `.env` (which holds Okta
+This is the command-line equivalent of notebook `01-deploy-idp`'s Step-0 cell.
+The flag is chosen here — **not** in `.env` (which holds Okta
 credentials only).
 
 SSM Parameters created:
@@ -524,7 +524,7 @@ Creates the claims gateway (GW1) connecting to the claims MCP server with the
 request and response interceptors from Step 5. On the Okta path the gateway
 authorizer is created against the Okta authorization server; on the Cognito
 path against the Cognito user pool. The branching lives inside
-`create_gateway.py` (read the flag once, DR-8) — you run the same command
+`create_gateway.py` (read the flag once) — you run the same command
 either way.
 
 ```bash
@@ -545,7 +545,7 @@ SSM Parameters created:
 
 Deploys the notes path: an OpenSearch Serverless (AOSS) collection, the
 OpenSearch notes MCP runtime, sample notes data, and the notes gateway (GW2).
-This is where the IdP flag flips (DR-9): Okta uses an OBO credential provider,
+This is where the IdP flag flips: Okta uses an OBO credential provider,
 Cognito uses a thin notes REQUEST interceptor. Run the sub-steps in order; the
 auth-flip sub-step (7.5) runs **only** the branch matching your `IDP_PROVIDER`.
 Mirrors notebook `05b-deploy-notes-gateway`.
@@ -611,7 +611,7 @@ provider `lakehouse-notes-cognito-oauth-provider` for the gateway→runtime leg
 is created in 7.6)
 
 **7.6 Create the notes gateway (GW2)** — shared entrypoint; branches internally
-on `IDP_PROVIDER` (the DR-11 pre-flight IdP-mismatch guard fires here):
+on `IDP_PROVIDER` (the pre-flight IdP-mismatch guard fires here):
 
 ```bash
 cd ../5b-obo-gateway-setup   # from interceptor-notes: cd ../../5b-obo-gateway-setup
@@ -911,7 +911,7 @@ python cleanup_okta.py
 > a group called `administrators`) is deleted too. Check the deploy log for
 > `ℹ️  … already exists` lines before running teardown.
 
-> ⚠️ **Lake Formation admins are preserved (B17).** `cleanup_s3tables.py`
+> ⚠️ **Lake Formation admins are preserved.** `cleanup_s3tables.py`
 > deregisters only the resources this guide registered; it does **not** rewrite
 > the data-lake settings, so any pre-existing data-lake administrators remain
 > untouched. Do not add a `put-data-lake-settings` call to teardown.

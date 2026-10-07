@@ -93,7 +93,7 @@ class SSMConfig:
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
 
-        # IdP selector — read once (DR-8). GW2 flips auth by IdP (DR-9): Okta =
+        # IdP selector — read once. GW2 flips auth by IdP: Okta =
         # OBO (TOKEN_EXCHANGE, no interceptor); Cognito = REQUEST interceptor +
         # Cognito M2M provider. Load only the active IdP's keys.
         self.idp_provider = get_idp_provider(self.ssm)
@@ -111,7 +111,7 @@ class SSMConfig:
             print(f"   ✅ OpenSearch MCP Runtime ARN: {self.opensearch_mcp_runtime_arn}")
             print(f"   ✅ OBO Credential Provider ARN: {self.obo_credential_provider_arn}")
         else:  # cognito
-            # [COGNITO] interceptor path (DR-9): Cognito authorizer + notes REQUEST
+            # [COGNITO] interceptor path: Cognito authorizer + notes REQUEST
             # interceptor + Cognito M2M provider for the gateway→runtime leg.
             self.cognito_user_pool_arn = self._get(f"{SSM_PREFIX}cognito-user-pool-arn")
             self.cognito_app_client_id = self._get(f"{SSM_PREFIX}cognito-app-client-id")
@@ -385,7 +385,7 @@ def create_obo_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, An
                 if gateway["name"] == GATEWAY_NAME:
                     gateway_id = gateway["gatewayId"]
                     detail = client.get_gateway(gatewayIdentifier=gateway_id)
-                    # DR-11 pre-flight: refuse to reuse a gateway deployed for the
+                    # Pre-flight IdP-mismatch guard: refuse to reuse a gateway deployed for the
                     # other IdP (flag-switch without teardown).
                     assert_gateway_idp_matches(detail, config.idp_provider, GATEWAY_NAME)
                     gateway_url = detail["gatewayUrl"]
@@ -512,7 +512,7 @@ def wait_for_gateway_active(client, gateway_id: str, max_wait_seconds: int = 300
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# [COGNITO] GW2 interceptor path (DR-9). No OBO/TOKEN_EXCHANGE — a REQUEST
+# [COGNITO] GW2 interceptor path. No OBO/TOKEN_EXCHANGE — a REQUEST
 # interceptor forwards the caller sub; the gateway→runtime leg uses a Cognito
 # M2M provider. Mirrors GW1's interceptor gateway, pointed at the OpenSearch MCP.
 # ─────────────────────────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ def create_notes_cognito_provider(client, config: SSMConfig) -> str:
 def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, Any]:
     """Create the GW2 notes gateway (Cognito): customJWTAuthorizer + REQUEST interceptor.
 
-    Same GW2 name/keys as the OBO path (topology symmetric, DR-1) — only the auth
+    Same GW2 name/keys as the OBO path (topology symmetric) — only the auth
     mechanism differs. No interceptorConfigurations RESPONSE (notes has one tool);
     identity is forwarded by the thin notes REQUEST interceptor.
     """
@@ -631,7 +631,7 @@ def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -
                 if gateway["name"] == GATEWAY_NAME:
                     gateway_id = gateway["gatewayId"]
                     detail = client.get_gateway(gatewayIdentifier=gateway_id)
-                    # DR-11 pre-flight: refuse to reuse a gateway deployed for the
+                    # Pre-flight IdP-mismatch guard: refuse to reuse a gateway deployed for the
                     # other IdP (flag-switch without teardown).
                     assert_gateway_idp_matches(detail, config.idp_provider, GATEWAY_NAME)
                     gateway_arn = f"arn:aws:bedrock-agentcore:{config.region}:{config.account_id}:gateway/{gateway_id}"
@@ -697,7 +697,7 @@ def main():
         print("=" * 70)
         role_arn = create_obo_gateway_role(config)
 
-        # Step 2: Create the GW2 gateway (DR-9 auth flip by IdP)
+        # Step 2: Create the GW2 gateway (auth flip by IdP)
         print("\n" + "=" * 70)
         print("Step 2: Create GW2 gateway")
         print("=" * 70)

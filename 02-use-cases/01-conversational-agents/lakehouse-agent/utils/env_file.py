@@ -13,7 +13,7 @@ script path, which made this a real gap rather than a cosmetic one.
 this sample, and the one script that imported it (``utils/check_runtime.py``) was
 relying on an undeclared import that happens to be present in some environments.
 The parser below is ~15 lines, so removing the dependency is cheaper than pinning
-it (and DR-19's lesson is that every unpinned dependency is a future breakage).
+it (every unpinned dependency is a future breakage).
 
 Semantics match ``python-dotenv``'s default: **an already-exported environment
 variable wins.** ``.env`` supplies values that are missing, it never overrides

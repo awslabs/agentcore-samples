@@ -5,7 +5,7 @@ IdP provider flag helper for the consolidated lakehouse-agent tutorial.
 This tutorial runs on either Amazon Cognito or Okta, selected by a single
 top-level flag ``IDP_PROVIDER`` with allowed values ``"cognito"`` or ``"okta"``.
 
-Flag persistence (see design "Flag-Persistence Mechanism", DR-12):
+Flag persistence:
     1. The reader chooses the IdP **in notebook 01's Step-0 cell** by passing an
        explicit value: ``set_idp_provider(ssm_client, value="cognito")`` (or
        ``"okta"``). The notebook cell is the canonical knob — NOT ``.env``.
@@ -78,7 +78,7 @@ def set_idp_provider(ssm_client, value: str | None = None, verbose: bool = True)
         1. Explicit ``value`` argument — the canonical knob; notebook 01's Step-0
            cell passes this (e.g. ``value="cognito"``).
         2. Fallback only: the ``IDP_PROVIDER`` environment variable, if set. This
-           is NOT the documented way to choose the IdP (DR-12) — it exists so the
+           is NOT the documented way to choose the IdP — it exists so the
            resolver has a sensible middle rung when no explicit value is passed.
         3. The default (``"cognito"``) so an unmodified checkout reproduces the
            upstream tutorial.
@@ -146,7 +146,7 @@ def get_idp_provider(ssm_client) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# DR-11 pre-flight IdP-mismatch guard
+# Pre-flight IdP-mismatch guard
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -154,7 +154,7 @@ def detect_gateway_idp(live_gateway) -> str:
     """
     Infer a live gateway's IdP from its JWT authorizer configuration.
 
-    Used by the DR-11 pre-flight guard to catch a flag-switch-without-teardown
+    Used by the pre-flight IdP-mismatch guard to catch a flag-switch-without-teardown
     before an in-place converge/reuse mutates the gateway into the other IdP.
 
     Detection (from ``authorizerConfiguration.customJWTAuthorizer``):
@@ -198,7 +198,7 @@ def detect_gateway_idp(live_gateway) -> str:
 
 def assert_gateway_idp_matches(live_gateway, flag: str, gateway_name: str) -> None:
     """
-    DR-11 pre-flight guard: fail fast if a live gateway's IdP != the current flag.
+    Pre-flight IdP-mismatch guard: fail fast if a live gateway's IdP != the current flag.
 
     A gateway's IdP is baked into its JWT authorizer; an in-place converge (GW1)
     or reuse (GW2) against a gateway deployed for the *other* IdP would silently
@@ -221,7 +221,7 @@ def assert_gateway_idp_matches(live_gateway, flag: str, gateway_name: str) -> No
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# CLI entrypoint (Option-B / DevOps path — DR-12-consistent)
+# CLI entrypoint (Option-B / DevOps path)
 # ─────────────────────────────────────────────────────────────────────────
 # The notebook path chooses the IdP in notebook 01's Step-0 cell. The CLI path
 # has no notebook, so this entrypoint is the equivalent explicit knob:

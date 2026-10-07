@@ -29,7 +29,7 @@ def main():
     ssm = boto3.client("ssm", region_name=region)
     lambda_client = boto3.client("lambda", region_name=region)
 
-    # IdP selector (DR-8) + config load. `new_vars` are the env keys to set on
+    # IdP selector + config load. `new_vars` are the env keys to set on
     # the Lambda (always includes IDP_PROVIDER so the Lambda code branches).
     idp_provider = get_idp_provider(ssm)
     print(f"\n📋 Loading correct {idp_provider} configuration from SSM...")

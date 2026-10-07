@@ -37,7 +37,7 @@ fi
 
 echo "   Region: $AWS_REGION"
 
-# IdP selector (DR-8 Flag-2, R4/M3): fail-fast SSM read — NO env override, NO
+# IdP selector: fail-fast SSM read — NO env override, NO
 # implicit default (matches utils.idp_config.get_idp_provider). The flag is set
 # once in notebook 01 Step-0 (or `python -m utils.idp_config <cognito|okta>`).
 # Build the Lambda env var block for the active IdP once, used by BOTH the

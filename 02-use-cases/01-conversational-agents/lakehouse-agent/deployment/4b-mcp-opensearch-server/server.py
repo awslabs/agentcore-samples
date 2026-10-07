@@ -68,7 +68,7 @@ _config_cache = None
 
 
 def _resolve_idp_provider() -> str:
-    """IdP selector (DR-8): env (set at deploy time) → SSM → cognito default."""
+    """IdP selector: env (set at deploy time) → SSM → cognito default."""
     v = os.environ.get("IDP_PROVIDER")
     if v:
         return v.strip().lower()
@@ -294,7 +294,7 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
         except Exception:
             pass  # Don't fail if we can't write to file
 
-        # Identity source differs by IdP (DR-8/DR-9): Okta forwards a user-scoped
+        # Identity source differs by IdP: Okta forwards a user-scoped
         # bearer via OBO (decode `sub` from the header); Cognito's notes REQUEST
         # interceptor injects the caller `sub` on the body-context channel
         # (params.arguments.context.user_id). Either way the value is the caller

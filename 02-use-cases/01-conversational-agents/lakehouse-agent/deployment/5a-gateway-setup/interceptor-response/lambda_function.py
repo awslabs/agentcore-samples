@@ -42,7 +42,7 @@ _jwks = None
 
 
 def _resolve_idp_provider() -> str:
-    """IdP selector for the Lambda (DR-8): env (set at deploy time) → SSM → cognito."""
+    """IdP selector for the Lambda: env (set at deploy time) → SSM → cognito."""
     v = os.environ.get("IDP_PROVIDER")
     if v:
         return v.strip().lower()
@@ -58,7 +58,7 @@ IDP_PROVIDER = _resolve_idp_provider()
 
 
 def get_config() -> dict[str, str]:
-    """Get IdP configuration from environment variables or SSM (DR-8 branch)."""
+    """Get IdP configuration from environment variables or SSM."""
     global _config
 
     if _config is not None:
@@ -145,7 +145,7 @@ def get_config() -> dict[str, str]:
 
 
 def get_public_keys() -> dict[str, Any]:
-    """Fetch IdP public keys for JWT validation (DR-8: Cognito vs Okta JWKS URL)."""
+    """Fetch IdP public keys for JWT validation (Cognito vs Okta JWKS URL)."""
     global _jwks
 
     if _jwks is not None:
@@ -200,7 +200,7 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
             logger.error("Public key not found for token")
             return None
 
-        # Decode differs by IdP (DR-8): Cognito access tokens have no 'aud' →
+        # Decode differs by IdP: Cognito access tokens have no 'aud' →
         # validate client_id; Okta access tokens carry 'aud' → validate directly.
         if IDP_PROVIDER == "cognito":
             # [COGNITO] upstream verbatim

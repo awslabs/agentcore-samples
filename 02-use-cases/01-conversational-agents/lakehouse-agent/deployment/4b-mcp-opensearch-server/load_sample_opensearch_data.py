@@ -281,7 +281,7 @@ def discover_user_subs(ssm) -> list[dict[str, str]]:
     """
     Discover test-user sub identifiers from SSM.
 
-    Reads /app/lakehouse-agent/<idp>-user-*-sub (DR-8/DR-9 IdP branch):
+    Reads /app/lakehouse-agent/<idp>-user-*-sub (IdP branch):
     `okta-user-*` on Okta (written by setup_okta.py in notebook 01),
     `cognito-user-*` on Cognito (each user's Cognito `sub` GUID, seeded by
     seed_cognito_user_subs.py).

@@ -30,7 +30,7 @@ User → Gateway → Interceptor Lambda → DynamoDB Lookup → Assume Tenant Ro
 
 **Updated `_get_athena_client()` method:**
 - Now accepts `tenant_credentials` parameter
-- Tenant credentials from the interceptor are **required**: when they are absent the method raises `PermissionError` (fail-closed, DR-14) rather than falling back to broader credentials
+- Tenant credentials from the interceptor are **required**: when they are absent the method raises `PermissionError` (fail-closed) rather than falling back to broader credentials
 - `LOCAL_DEVELOPMENT=true` is the **sole** escape hatch — dev-only, uses default credentials (never enable in a deployed environment)
 
 **Updated `_execute_query()` method:**
@@ -100,7 +100,7 @@ Only when `LOCAL_DEVELOPMENT=true` (dev-only escape hatch — **not** a producti
 ```
 In a deployed environment, missing tenant credentials are **denied** (`PermissionError`), not silently downgraded.
 
-## Failure Behavior (fail-closed, DR-14)
+## Failure Behavior (fail-closed)
 
 Authorization failures **deny by default** — there is no fail-open fallback:
 - If `tenant_credentials` are absent from the context, the Athena tool raises `PermissionError` and the request is refused (the REQUEST interceptor also returns 403 when the tenant-role STS exchange fails).

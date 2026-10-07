@@ -140,7 +140,7 @@ class GatewayCleanup:
         # deleted the GW2 notes/OBO providers — those are owned by
         # 06_cleanup_obo_gateway.py and are intentionally NOT deleted here.
         if self.idp_provider == "cognito":
-            # DR-17: create_gateway.py now REQUIRES the dedicated M2M client and no
+            # create_gateway.py now REQUIRES the dedicated M2M client and no
             # longer creates the hybrid "lakehouse-mcp-oauth-provider". We KEEP the
             # hybrid name in the delete list anyway (safe-if-absent) so teardown still
             # cleans up any provider left behind by a pre-hardening deploy.

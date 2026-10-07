@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit test for the DR-11 pre-flight IdP-mismatch guard (utils/idp_config.py).
+Unit test for the pre-flight IdP-mismatch guard (utils/idp_config.py).
 
 Runs fully offline — no AWS calls — using small dict fixtures that mimic a
 bedrock-agentcore get_gateway/list_gateways item, so it can run in CI or on a

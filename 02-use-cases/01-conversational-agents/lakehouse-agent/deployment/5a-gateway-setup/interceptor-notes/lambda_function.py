@@ -16,7 +16,7 @@ identity and forwards the `sub`. Fail-closed: no resolvable `sub` → error, no
 data (R5.4).
 
 The shared JWT-validation helpers (`get_config`, `get_public_keys`,
-`validate_and_decode_jwt`) mirror the claims interceptor's DR-8 Cognito|Okta
+`validate_and_decode_jwt`) mirror the claims interceptor's Cognito|Okta
 branch so the code is familiar; in practice this Lambda is only attached on the
 Cognito GW2 path (Okta GW2 is interceptor-less / OBO).
 """
@@ -39,7 +39,7 @@ _jwks = None
 
 
 def _resolve_idp_provider() -> str:
-    """IdP selector for the Lambda (DR-8): env (set at deploy time) → SSM → cognito."""
+    """IdP selector for the Lambda: env (set at deploy time) → SSM → cognito."""
     v = os.environ.get("IDP_PROVIDER")
     if v:
         return v.strip().lower()
@@ -55,7 +55,7 @@ IDP_PROVIDER = _resolve_idp_provider()
 
 
 def get_config() -> dict[str, str]:
-    """Get IdP configuration from environment variables or SSM (DR-8 branch)."""
+    """Get IdP configuration from environment variables or SSM."""
     global _config
 
     if _config is not None:
@@ -128,7 +128,7 @@ def get_config() -> dict[str, str]:
 
 
 def get_public_keys() -> dict[str, Any]:
-    """Fetch IdP public keys for JWT validation (DR-8: Cognito vs Okta JWKS URL)."""
+    """Fetch IdP public keys for JWT validation (Cognito vs Okta JWKS URL)."""
     global _jwks
 
     if _jwks is not None:
@@ -152,7 +152,7 @@ def get_public_keys() -> dict[str, Any]:
 
 
 def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
-    """Validate JWT and decode claims (DR-8 Cognito|Okta branch, mirrors GW1)."""
+    """Validate JWT and decode claims (Cognito|Okta branch, mirrors GW1)."""
     try:
         config = get_config()
         jwks = get_public_keys()

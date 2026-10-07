@@ -10,7 +10,7 @@ extend = "../../../pyproject.toml"
 [lint]
 # Appended to the root config's ignore list (which stays in effect).
 extend-ignore = [
-    # `except Exception` is this sample's deliberate fail-closed idiom (DR-14); the root config already exempts sibling E722 as acceptable in demo scripts.
+    # `except Exception` is this sample's deliberate fail-closed idiom; the root config already exempts sibling E722 as acceptable in demo scripts.
     "BLE001",
     # Shebangs sit on scripts invoked as `python x.py` rather than as executables; matches the upstream base files this sample extends.
     "EXE001",
@@ -20,7 +20,7 @@ extend-ignore = [
     "DTZ005",
     # Same naive-datetime contract as DTZ005, for timestamp parsing.
     "DTZ006",
-    # DR-15's hard-fail contract depends on vanilla exception types propagating to the caller unchanged.
+    # This sample's hard-fail contract depends on vanilla exception types propagating to the caller unchanged.
     "TRY002",
     # Implicit string concatenation sits inside the answer-key-validated notes loader; deferred rather than risked mid-validation.
     "ISC004",

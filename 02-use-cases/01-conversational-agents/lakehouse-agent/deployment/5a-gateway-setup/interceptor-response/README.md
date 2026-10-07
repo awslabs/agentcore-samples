@@ -63,7 +63,7 @@ On a `tools/list` response the Lambda:
    meta-tool — noise for this demo). Gateway tool names are prefixed `target___tool`; the interceptor
    compares on the un-prefixed tool name.
 
-### Fail semantics — fail-CLOSED (DR-14)
+### Fail semantics — fail-CLOSED
 
 This interceptor **fails closed**: every authorization-failure path returns an **empty tool list**
 (deny-all), never the unfiltered catalog. This is a deliberate divergence from the upstream tutorial,

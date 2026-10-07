@@ -22,7 +22,7 @@ logger = logging.getLogger()
 
 
 def _resolve_idp_provider() -> str:
-    """IdP selector for the Lambda (DR-8): env (set at deploy time) → SSM → cognito."""
+    """IdP selector for the Lambda: env (set at deploy time) → SSM → cognito."""
     v = os.environ.get("IDP_PROVIDER")
     if v:
         return v.strip().lower()

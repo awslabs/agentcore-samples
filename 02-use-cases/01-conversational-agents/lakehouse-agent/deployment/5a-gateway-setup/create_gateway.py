@@ -50,7 +50,7 @@ class SSMConfig:
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
 
-        # IdP selector — read once (DR-8 flag-branch convention).
+        # IdP selector — read once (flag-branch convention).
         self.idp_provider = get_idp_provider(self.ssm)
 
         # Load configuration from SSM
@@ -65,12 +65,12 @@ class SSMConfig:
         )
 
         if self.idp_provider == "cognito":
-            # [COGNITO] user-pool authorizer + dedicated M2M provider (DR-17)
+            # [COGNITO] user-pool authorizer + dedicated M2M provider
             self.cognito_user_pool_arn = self._get_parameter("/app/lakehouse-agent/cognito-user-pool-arn")
             self.cognito_app_client_id = self._get_parameter("/app/lakehouse-agent/cognito-app-client-id")
             self.cognito_domain = self._get_parameter("/app/lakehouse-agent/cognito-domain")
 
-            # M2M client for the Gateway-to-Runtime leg — REQUIRED (DR-17). setup_cognito
+            # M2M client for the Gateway-to-Runtime leg — REQUIRED. setup_cognito
             # (notebook 01) unconditionally creates the dedicated M2M client, so require it
             # (fail-fast via _get_parameter, which sys.exit(1)s on ParameterNotFound) rather
             # than silently falling back to the USER app client — symmetric with
@@ -281,7 +281,7 @@ class GatewaySetup:
             return role_arn
 
         except iam.exceptions.EntityAlreadyExistsException:
-            # In-place idempotent update (DR-8 Flag-3, both paths): re-assert the
+            # In-place idempotent update (both paths): re-assert the
             # script-owned trust + inline policy while preserving any out-of-band
             # attachments. No detach-all / delete-recreate / sleep.
             print(f"ℹ️  Role {role_name} already exists — updating in place (preserving out-of-band attachments)")
@@ -321,7 +321,7 @@ class GatewaySetup:
             # Create IAM role for gateway
             role_arn = self.create_gateway_role(gateway_name)
 
-            # JWT authorizer differs by IdP (DR-8): Cognito validates by client_id
+            # JWT authorizer differs by IdP: Cognito validates by client_id
             # (Cognito access tokens carry no 'aud'); Okta validates by audience.
             if self.config.idp_provider == "cognito":
                 # [COGNITO] upstream verbatim
@@ -399,7 +399,7 @@ class GatewaySetup:
 
         except Exception as e:
             if "already exists" in str(e):
-                # In-place converge (DR-8 Flag-3, both paths): round-trip the LIVE
+                # In-place converge (both paths): round-trip the LIVE
                 # authorizer + protocol (update_gateway is a full-replace PUT — omitting
                 # them would drop auth / reset SEMANTIC search) and re-apply the
                 # REQUEST+RESPONSE interceptor config so re-runs attach RESPONSE.
@@ -409,7 +409,7 @@ class GatewaySetup:
                     if gateway["name"] == gateway_name:
                         gateway_id = gateway["gatewayId"]
                         live = self.client.get_gateway(gatewayIdentifier=gateway_id)
-                        # DR-11 pre-flight: refuse to converge a gateway deployed
+                        # Pre-flight IdP-mismatch guard: refuse to converge a gateway deployed
                         # for the other IdP (flag-switch without teardown).
                         assert_gateway_idp_matches(live, self.config.idp_provider, gateway_name)
                         gateway_url = live["gatewayUrl"]
@@ -481,7 +481,7 @@ class GatewaySetup:
         try:
             print(f"\n🔐 Creating OAuth2 credential provider: {provider_name}")
 
-            # Provider config differs by IdP (DR-8): Cognito has no OIDC discovery
+            # Provider config differs by IdP: Cognito has no OIDC discovery
             # endpoint for its token endpoint → pass authorization-server metadata
             # directly; Okta exposes /.well-known on its custom auth server → use
             # the discoveryUrl form.
@@ -607,7 +607,7 @@ class GatewaySetup:
                             "oauthCredentialProvider": {
                                 "providerArn": oauth_provider_arn,
                                 # Cognito: [] (client_credentials); Okta: non-empty
-                                # scope required by its auth server (DR-8).
+                                # scope required by its auth server.
                                 "scopes": scopes or [],
                             }
                         },
@@ -732,9 +732,9 @@ def main():
             # Get MCP endpoint URL for the runtime
             mcp_url = get_runtime_mcp_url(config.mcp_server_runtime_arn, config.region)
 
-            # OAuth2 provider for the Gateway→MCP-runtime M2M leg differs by IdP
-            # (DR-8): Cognito needs a manual auth-server-metadata envelope + the
-            # dedicated M2M client (DR-17); Okta uses discovery + its single app client.
+            # OAuth2 provider for the Gateway→MCP-runtime M2M leg differs by IdP:
+            # Cognito needs a manual auth-server-metadata envelope + the
+            # dedicated M2M client; Okta uses discovery + its single app client.
             # Target scopes: Cognito [] (client_credentials); Okta ['claims.query'].
             if config.idp_provider == "cognito":
                 # [COGNITO] upstream verbatim
@@ -742,7 +742,7 @@ def main():
                 cognito_issuer = f"https://cognito-idp.{config.region}.amazonaws.com/{user_pool_id}"
                 cognito_token_endpoint = f"{config.cognito_domain}/oauth2/token"
 
-                # M2M client is REQUIRED (DR-17) — the user-app-client hybrid fallback
+                # M2M client is REQUIRED — the user-app-client hybrid fallback
                 # (provider "lakehouse-mcp-oauth-provider") has been removed; always use
                 # the dedicated M2M provider, symmetric with GW2.
                 print("\n🔐 Using M2M client for Gateway-to-Runtime authentication")

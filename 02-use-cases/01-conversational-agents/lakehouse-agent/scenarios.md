@@ -21,7 +21,7 @@ is the lesson the rest of the document illustrates.
 | Axis | Gateway | Data store | What scopes a result | How it is enforced |
 |---|---|---|---|---|
 | **Per-role** | **Claims Gateway (GW1)** | Athena / S3 Tables (Iceberg) | The caller's **group** (policyholders vs adjusters vs administrators) | **Columns** by Lake Formation (per-role grants / wildcard exclusions) plus the tenant-role **table grants**; **rows** at the tool layer — the claims tools bind the caller into a `WHERE user_id = ?` predicate. Same on both IdPs. |
-| **Per-user** | **Notes Gateway (GW2)** | OpenSearch Serverless | The caller's **individual identity** (`sub`) | Per-document `owner_user_sub` field with a query-time `term` filter. How the caller's `sub` arrives is IdP-branched: **`[OKTA]`** the OBO-exchanged bearer (RFC 8693 `TOKEN_EXCHANGE`, no interceptor Lambda); **`[COGNITO]`** a thin notes REQUEST interceptor injecting it on the body-context channel (`params.arguments.context.user_id`, DR-9). |
+| **Per-user** | **Notes Gateway (GW2)** | OpenSearch Serverless | The caller's **individual identity** (`sub`) | Per-document `owner_user_sub` field with a query-time `term` filter. How the caller's `sub` arrives is IdP-branched: **`[OKTA]`** the OBO-exchanged bearer (RFC 8693 `TOKEN_EXCHANGE`, no interceptor Lambda); **`[COGNITO]`** a thin notes REQUEST interceptor injecting it on the body-context channel (`params.arguments.context.user_id`). |
 
 Both paths start from the **same** inbound `Authorization: Bearer <user_jwt>`.
 They diverge in *what* the result is scoped to, and *where* enforcement lands:
@@ -230,7 +230,7 @@ The incoming request does NOT contain a role or email in the headers. It contain
 
 On authorization failure the interceptors fail **CLOSED** — the RESPONSE interceptor returns an empty tool catalog (deny-all) and the REQUEST interceptor returns 403 if the tenant-role exchange fails; they never fall open to all-tools or to the runtime's default credentials.
 
-> The claims path carries identity via this group→role STS exchange (not a forwarded header). The **notes** path (GW2 / OpenSearch) differs: on Cognito a thin notes REQUEST interceptor injects the caller `sub` on the body-context channel (`params.arguments.context.user_id`, DR-9); on Okta the OBO-exchanged bearer carries it.
+> The claims path carries identity via this group→role STS exchange (not a forwarded header). The **notes** path (GW2 / OpenSearch) differs: on Cognito a thin notes REQUEST interceptor injects the caller `sub` on the body-context channel (`params.arguments.context.user_id`); on Okta the OBO-exchanged bearer carries it.
 
 ### Role-to-Tool Mapping (DynamoDB: `lakehouse_tenant_role_map`)
 
@@ -386,7 +386,7 @@ The owner identity is resolved by IdP:
   email/login). AgentCore Identity performs the RFC 8693 `TOKEN_EXCHANGE`
   natively, per request — there is **no** interceptor Lambda on this path.
 - **`[COGNITO]`** — injected by the thin notes REQUEST interceptor on the
-  body-context channel (`params.arguments.context.user_id`), per DR-9.
+  body-context channel (`params.arguments.context.user_id`).
 
 The group→tool RBAC from Part 1 is unchanged for notes tools; only the per-user
 owner scoping is notes-specific. See `deployment/README.md` **Step 7 (Notes
