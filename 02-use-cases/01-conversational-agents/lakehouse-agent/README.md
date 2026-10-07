@@ -1161,6 +1161,12 @@ Scopes are validated in the Gateway interceptor Lambda.
 
 ---
 
+## Further reading
+
+- [Implement on-behalf-of token exchange for multi-tenant agents with Amazon Bedrock AgentCore Gateway](https://aws.amazon.com/blogs/machine-learning/implement-on-behalf-of-token-exchange-for-multi-tenant-agents-with-amazon-bedrock-agentcore-gateway/) (AWS Machine Learning Blog, July 2026): the official description of the on-behalf-of token-exchange pattern that this sample's Okta path implements, here in front of Lake Formation-governed data, including the Okta pitfalls covered in [`deployment/1-okta-setup/README.md`](deployment/1-okta-setup/README.md#troubleshooting-the-four-token-exchange-gates).
+
+---
+
 ## License
 
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.

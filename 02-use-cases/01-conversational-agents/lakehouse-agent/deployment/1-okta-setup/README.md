@@ -128,6 +128,14 @@ A working Okta OBO exchange must satisfy four conditions. If `GetResourceOauth2T
 
 > **Teaching callout — "provider created / READY" is not proof the exchange works.** `create_oauth2_credential_provider` validates only the AWS-side schema; **Okta is not contacted until the first live `GetResourceOauth2Token`**. A provider can sit at `READY` while the exchange still fails one of the four gates above. Always validate the OBO path with a real exchange (notebook `07-optional-multi-user-isolation-test` or a smoke call), never with provider creation alone.
 
+**Where to look in Okta.** When an exchange fails, open the Okta Admin Console's **System Log** and filter on the event type `app.oauth2.as.token.grant`. Each exchange attempt is logged there with its outcome and, on failure, the Okta error code to match against the table above. The same entry shows the request as Okta received it, such as the subject token type (a quick way to confirm the `subject_token_type` override took effect) and the requested and granted scopes. Clearing one gate can expose the next, so check the log again after each fix.
+
+One more condition, outside the four gates:
+
+- **DPoP must be disabled on both Okta apps** (the user-login app that issues the subject token and the exchange app). AgentCore Identity relays the token and does not hold the DPoP key, so with DPoP required the exchange fails with `invalid_dpop_proof`. This pitfall is documented in the AWS post below.
+
+AWS documents the same pitfalls in [Implement on-behalf-of token exchange for multi-tenant agents with Amazon Bedrock AgentCore Gateway](https://aws.amazon.com/blogs/machine-learning/implement-on-behalf-of-token-exchange-for-multi-tenant-agents-with-amazon-bedrock-agentcore-gateway/) (July 2026); see its "Common pitfalls" section.
+
 ---
 
 ## Okta vs Entra (sibling-IdP note)
