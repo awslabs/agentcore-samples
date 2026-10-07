@@ -17,6 +17,7 @@ AWS Agent registry lets you discover and manage agents, tools, and resources acr
 | `00-getting-started/end-to-end/01-registry-end-to-end/` | Full end-to-end walkthrough: registry → records → approval → search |
 | `00-getting-started/end-to-end/02-registry-end-to-end-oauth/` | End-to-end with Cognito CUSTOM_JWT OAuth authentication |
 | `01-advanced/admin-approval-workflow/` | EventBridge + Lambda + DynamoDB approval pipeline with Slack notifications |
+| `03-advanced/agent-registry-web-ui/` | Cloudscape React web UI for Publisher, Approver and Consumer personas (Cognito + scoped IAM, zero backend) |
 | `01-advanced/consumer-discovery-semantic-search/` | 12 semantic search scenarios across 14 e-commerce capabilities |
 | `01-advanced/discovery-and-invocation-at-runtime/` | Orchestrator agent that discovers and invokes tools from registry at runtime |
 | `01-advanced/kiro-registry-dcr-auth0/` | registry as an MCP server in Kiro IDE via Auth0 DCR (RFC 7591) |
@@ -36,8 +37,8 @@ by concern: authentication (OAuth, DCR), automation (Lambda sync), runtime integ
 ## Finding Things
 
 - **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`
-- **By role** → Consumer: `consumer-discovery-semantic-search`, `kiro/*`; Publisher: `00-getting-started/step-by-step`, `publish-agentcore-tools-in-registry`; Admin: `admin-approval-workflow`
-- **By complexity** → Beginner: `00-getting-started/`; Intermediate: `consumer-discovery`, `admin-approval`, `registry-synchronize`; Advanced: `discovery-and-invocation-at-runtime`, `registry-push-sync-lambda`
+- **By role** → Consumer: `consumer-discovery-semantic-search`, `kiro/*`; Publisher: `00-getting-started/step-by-step`, `publish-agentcore-tools-in-registry`; Admin: `admin-approval-workflow`; All three (web UI): `agent-registry-web-ui`
+- **By complexity** → Beginner: `00-getting-started/`; Intermediate: `consumer-discovery`, `admin-approval`, `registry-synchronize`; Advanced: `discovery-and-invocation-at-runtime`, `registry-push-sync-lambda`, `agent-registry-web-ui`
 
 ## Prerequisites
 
