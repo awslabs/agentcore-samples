@@ -49,7 +49,7 @@ def main():
             print(f"   User Pool ID: {user_pool_id}")
             print(f"   App Client ID: {app_client_id}")
         else:  # okta
-            # [OKTA] canonical §6 keys
+            # [OKTA] SSM keys
             okta_org_url = ssm.get_parameter(Name="/app/lakehouse-agent/okta-org-url")["Parameter"]["Value"]
             okta_auth_server_id = ssm.get_parameter(Name="/app/lakehouse-agent/okta-auth-server-id")["Parameter"][
                 "Value"

@@ -80,7 +80,7 @@ if [ "$IDP_PROVIDER" = "cognito" ]; then
     echo "   Cognito App Client ID: $COGNITO_APP_CLIENT_ID"
     LAMBDA_ENV_VARS="COGNITO_REGION=$AWS_REGION,COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID,COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID,IDP_PROVIDER=$IDP_PROVIDER,TENANT_ROLE_MAPPING_TABLE=lakehouse_tenant_role_map"
 else
-    # [OKTA] custom-auth-server param loads (canonical §6 keys)
+    # [OKTA] custom-auth-server param loads
     set +e
     OKTA_ORG_URL=$(aws ssm get-parameter --name /app/lakehouse-agent/okta-org-url --query 'Parameter.Value' --output text 2>&1)
     ORG_RESULT=$?

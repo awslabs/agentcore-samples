@@ -107,7 +107,7 @@ def get_config() -> dict[str, str]:
         }
         logger.info(f"Cognito configuration loaded: region={region}, user_pool_id={user_pool_id}")
     else:  # okta
-        # [OKTA] fork verbatim (canonical §6 okta-* keys)
+        # [OKTA] fork verbatim (okta-* keys)
         region = os.environ.get("AWS_REGION", "us-east-1")
         okta_org_url = os.environ.get("OKTA_ORG_URL", "")
         okta_auth_server_id = os.environ.get("OKTA_AUTH_SERVER_ID", "")

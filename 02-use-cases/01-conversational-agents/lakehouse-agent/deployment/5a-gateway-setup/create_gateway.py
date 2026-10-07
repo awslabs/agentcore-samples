@@ -88,7 +88,7 @@ class SSMConfig:
             print(f"   ✅ Cognito App Client ID: {self.cognito_app_client_id}")
             print(f"   ✅ Cognito Domain: {self.cognito_domain}")
         else:  # okta
-            # [OKTA] custom-auth-server authorizer + single-client provider (canonical §6)
+            # [OKTA] custom-auth-server authorizer + single-client provider
             self.okta_org_url = self._get_parameter("/app/lakehouse-agent/okta-org-url")
             self.okta_auth_server_id = self._get_parameter("/app/lakehouse-agent/okta-auth-server-id")
             self.okta_app_client_id = self._get_parameter("/app/lakehouse-agent/okta-app-client-id")
@@ -336,7 +336,7 @@ class GatewaySetup:
                     }
                 }
             else:  # okta
-                # [OKTA] custom-auth-server discovery + audience (canonical §6 names)
+                # [OKTA] custom-auth-server discovery + audience
                 auth_config = {
                     "customJWTAuthorizer": {
                         "discoveryUrl": self.config.okta_discovery_url,
@@ -502,7 +502,7 @@ class GatewaySetup:
                     }
                 }
             else:  # okta
-                # [OKTA] discovery-URL form (canonical §6 okta-discovery-url)
+                # [OKTA] discovery-URL form (okta-discovery-url)
                 oauth2_config = {
                     "customOauth2ProviderConfig": {
                         "oauthDiscovery": {"discoveryUrl": self.config.okta_discovery_url},
@@ -760,7 +760,6 @@ def main():
                 target_scopes = []
             else:  # okta
                 # [OKTA] single Okta app client handles client_credentials directly
-                # (canonical §6 provider name)
                 print("\n🔐 Using Okta app client for Gateway-to-Runtime authentication")
                 provider_name = "lakehouse-mcp-okta-oauth-provider"
                 oauth_provider_arn = setup.create_oauth_provider(
