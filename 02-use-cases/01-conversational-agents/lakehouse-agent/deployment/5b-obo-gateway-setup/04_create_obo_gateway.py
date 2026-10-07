@@ -121,7 +121,7 @@ class SSMConfig:
             # M2M client for the gateway→runtime leg — REQUIRED (R4/m3). setup_cognito
             # (notebook 01) always creates the dedicated M2M client, so require it
             # (fail-fast via _get) rather than silently falling back to the USER app
-            # client — consistent with 4b-mcp-opensearch-server/deploy_runtime.py.
+            # client — consistent with deployment/agentcore_cli_deploy.py.
             self.cognito_m2m_client_id = self._get(f"{SSM_PREFIX}cognito-m2m-client-id")
             self.cognito_m2m_client_secret = self._get(f"{SSM_PREFIX}cognito-m2m-client-secret", secure=True)
             self.has_m2m_client = True

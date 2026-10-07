@@ -263,7 +263,7 @@ def ensure_index(client: OpenSearch) -> None:
             # / design §12 #3 ("idempotent IaC pattern") suggests fail-loud
             # on drift, but the original demo's data-load scripts do not
             # mapping-diff either. Tutorial-reader cleanup path: run
-            # cleanup_runtime.py + re-deploy the AOSS collection (D.2 task
+            # agentcore_cli_deploy.py opensearch-mcp --destroy + re-deploy the AOSS collection (D.2 task
             # 9.6) to drop and recreate the index.
             return
     except Exception as e:

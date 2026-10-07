@@ -3,11 +3,11 @@
 Verify the OpenSearch MCP runtime deploy.
 
 Thin orchestrator. The actual runtime deploy is owned by
-deployment/4b-mcp-opensearch-server/deploy_runtime.py — notebook 05b runs
+deployment/agentcore_cli_deploy.py opensearch-mcp — notebook 05b runs
 that script directly. This verifier:
 
   1. Confirms the SSM key /app/lakehouse-agent/opensearch-mcp-runtime-arn
-     and -id are present (deploy_runtime.py wrote them).
+     and -id are present (agentcore_cli_deploy.py wrote them).
   2. Calls bedrock-agentcore-control:GetAgentRuntime as a healthcheck and
      reports the runtime's READY status + protocol + authorizer summary.
 
@@ -16,7 +16,7 @@ This script does NOT redeploy the runtime — it is read-only on AWS state
 
 Per design §10 reconciliation: notebook 05b's cell order is
   5b/01_deploy_opensearch_collection.py  (creates AOSS substrate)
-  4b/deploy_runtime.py                   (deploys the runtime)
+  agentcore_cli_deploy.py opensearch-mcp (deploys the runtime)
   5b/02_verify_opensearch_mcp.py         (this verifier)
   5b/03..05                              (oauth provider + OBO gateway + agent IAM)
 
@@ -64,13 +64,13 @@ def main():
 
     if not runtime_arn:
         print(f"❌ {RUNTIME_ARN_KEY} not found in SSM")
-        print("   Run deployment/4b-mcp-opensearch-server/deploy_runtime.py first")
+        print("   Run deployment/agentcore_cli_deploy.py opensearch-mcp first")
         sys.exit(1)
     print(f"   ✅ {RUNTIME_ARN_KEY} = {runtime_arn}")
 
     if not runtime_id:
         print(f"❌ {RUNTIME_ID_KEY} not found in SSM")
-        print("   Run deployment/4b-mcp-opensearch-server/deploy_runtime.py first")
+        print("   Run deployment/agentcore_cli_deploy.py opensearch-mcp first")
         sys.exit(1)
     print(f"   ✅ {RUNTIME_ID_KEY} = {runtime_id}")
 

@@ -143,7 +143,7 @@ class Project:
 CLI_CLASH_HELP = """
 Two different tools install a command named `agentcore`:
   - the AgentCore CLI (npm package @aws/agentcore), which this script needs, and
-  - the older starter toolkit (pip package bedrock-agentcore-starter-toolkit),
+  - the older Python starter toolkit, if you previously installed it,
     which installs into a Python virtual environment's bin/ directory.
 This script skips any `agentcore` inside a virtual environment and uses the first
 other one on PATH that reports version 0.30.x. None was found.

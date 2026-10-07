@@ -167,7 +167,7 @@ class SecureAthenaClaimsTools:
         # ⚠️  FOOTGUN: LOCAL_DEVELOPMENT is an unguarded manual override — anyone who
         # sets this env var (e.g. on the deployed runtime) disables tenant isolation
         # and the query runs under the runtime's default role. Deploy never sets it
-        # (see deploy_runtime.py), but nothing here detects a "real" environment. A
+        # (see envVars in agentcore/agentcore.json), but nothing here detects a "real" environment. A
         # stronger option would be to REFUSE when live IdP/SSM config is present
         # (e.g. an idp-provider param exists) so the hatch only works truly offline;
         # left as an explicit tutorial-simplicity tradeoff (documented, not enforced).

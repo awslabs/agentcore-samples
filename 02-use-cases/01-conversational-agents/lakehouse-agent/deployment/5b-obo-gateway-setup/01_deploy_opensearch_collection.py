@@ -18,7 +18,8 @@ All three policy names are derived from the collection
 name; no extra SSM keys are persisted for them.
 
 Per design §10 reconciliation: this script runs BEFORE
-deployment/4b-mcp-opensearch-server/deploy_runtime.py — the runtime cannot
+the OpenSearch MCP runtime role and deploy (setup_runtime_roles.py create
+--role opensearch-mcp, then agentcore_cli_deploy.py opensearch-mcp) — the runtime cannot
 deploy until opensearch-collection-{arn,endpoint} are in SSM (the runtime
 IAM role's aoss:APIAccessAll statement scopes to a specific collection ARN).
 
@@ -44,7 +45,7 @@ import boto3
 COLLECTION_NAME = "lakehouse-claim-notes"
 
 # The runtime IAM role name is hardcoded in
-# 4b-mcp-opensearch-server/deploy_runtime.py:create_runtime_role(). The
+# 2-lakehouse-tenant-roles-setup/setup_runtime_roles.py (--role opensearch-mcp). The
 # role's ARN is fully predictable from the role name (default IAM path).
 RUNTIME_ROLE_NAME = "AgentCoreRuntimeRole-opensearch-mcp"
 
@@ -108,12 +109,12 @@ def get_runtime_role_arn(account_id: str) -> str:
     """
     Build the predictable runtime role ARN.
 
-    4b-mcp-opensearch-server/deploy_runtime.py creates the
+    2-lakehouse-tenant-roles-setup/setup_runtime_roles.py creates the
     role with default IAM path (no Path= kwarg), so the ARN is:
         arn:aws:iam::<account>:role/<role-name>
     The role does NOT have to exist at the time this script runs — AOSS
     does not validate principal existence at policy-create time. The
-    runtime deploy in step 2 (4b/deploy_runtime.py) creates the role with
+    role-creation step that follows (setup_runtime_roles.py create --role opensearch-mcp) creates the role with
     this exact name, and the data-access policy already authorizes it.
     """
     return f"arn:aws:iam::{account_id}:role/{RUNTIME_ROLE_NAME}"
@@ -281,7 +282,7 @@ def ensure_data_access_policy(aoss, collection_name: str, runtime_role_arn: str,
 
     Single-write at step 1 with both principals.
     AOSS does not validate principal existence at policy-create time, so the
-    runtime role can be referenced even before 4b/deploy_runtime.py creates it.
+    runtime role can be referenced even before setup_runtime_roles.py creates it.
     """
     print(f"\n🛡️  Data-access policy: {DATA_ACCESS_POLICY_NAME}")
     print(f"   Runtime role:     {runtime_role_arn}  (read)")
@@ -404,7 +405,8 @@ def main():
         print(f"   ARN:      {collection['arn']}")
         print(f"   Endpoint: {collection['endpoint']}")
         print("\n📋 Next Steps:")
-        print("   1. Deploy the OpenSearch MCP runtime (deployment/4b-mcp-opensearch-server/deploy_runtime.py)")
+        print("   1. Create the runtime role and deploy the OpenSearch MCP runtime:")
+        print("      setup_runtime_roles.py create --role opensearch-mcp, then agentcore_cli_deploy.py opensearch-mcp")
         print("   2. Verify deploy via 02_verify_opensearch_mcp.py")
         print("   3. Continue notebook 05b cells (oauth provider, OBO gateway, ...)")
         print("\n" + "=" * 70)

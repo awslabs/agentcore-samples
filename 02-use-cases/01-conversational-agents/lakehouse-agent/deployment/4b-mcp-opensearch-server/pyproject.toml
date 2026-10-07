@@ -7,8 +7,8 @@ name = "opensearch-mcp-server"
 version = "0.1.0"
 description = "Claim-notes OpenSearch MCP server for AgentCore Runtime"
 requires-python = ">=3.10"
-# Packaged by the AgentCore CLI (CodeZip). The starter toolkit is a deploy-time tool
-# and is not a runtime dependency, so it is not listed here.
+# Packaged by the AgentCore CLI (CodeZip). Only runtime dependencies are listed here;
+# deploy-time tooling is not.
 dependencies = [
     "aws-opentelemetry-distro==0.12.2",
     "bedrock-agentcore>=1.0.0",

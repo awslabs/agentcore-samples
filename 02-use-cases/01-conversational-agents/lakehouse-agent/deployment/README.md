@@ -79,8 +79,9 @@ Docker is no longer required: the three AgentCore Runtimes are packaged as code 
 >   generated with CLI 0.30.0, and its committed lockfile pins the matching
 >   `@aws/agentcore-cdk` construct version. `agentcore_cli_deploy.py` refuses any CLI
 >   that is not 0.30.x.
-> - **Two tools are called `agentcore`.** `requirements.txt` still installs the older
->   Python starter toolkit, which puts its own `agentcore` in `.venv/bin`. The deploy
+> - **Two tools are called `agentcore`.** If you previously installed the older Python
+>   starter toolkit (earlier versions of `requirements.txt` did), your venv still has its
+>   own `agentcore` in `.venv/bin`. The deploy
 >   script skips any `agentcore` inside the active virtual environment and calls the
 >   npm CLI by absolute path, so running it from an activated venv is fine. To check
 >   what you have: `which -a agentcore`; the npm one (outside `.venv`) reports `0.30.0`

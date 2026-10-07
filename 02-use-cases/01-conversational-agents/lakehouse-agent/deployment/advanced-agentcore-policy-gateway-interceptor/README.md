@@ -317,9 +317,9 @@ dedicated cleanup script, run in reverse order:
 
 ```bash
 cd 02-use-cases/lakehouse-agent/deployment
-cd 6-lakehouse-agent              && python cleanup_agent.py
+cd 2-lakehouse-tenant-roles-setup && python ../agentcore_cli_deploy.py lakehouse-agent --destroy --yes && python setup_runtime_roles.py delete --role lakehouse-agent
 cd ../5a-gateway-setup             && python cleanup_gateway.py
-cd ../4a-mcp-lakehouse-server      && python cleanup_runtime.py
+cd ../2-lakehouse-tenant-roles-setup && python ../agentcore_cli_deploy.py lakehouse-mcp --destroy --yes && python setup_runtime_roles.py delete --role lakehouse-mcp
 cd ../3-s3tables-setup            && python cleanup_s3tables.py
 cd ../2-lakehouse-tenant-roles-setup && python cleanup_iam_roles.py
 cd ../1-cognito-setup             && python cleanup_cognito.py

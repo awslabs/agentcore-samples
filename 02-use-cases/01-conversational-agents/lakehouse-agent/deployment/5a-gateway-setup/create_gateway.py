@@ -74,7 +74,7 @@ class SSMConfig:
             # (notebook 01) unconditionally creates the dedicated M2M client, so require it
             # (fail-fast via _get_parameter, which sys.exit(1)s on ParameterNotFound) rather
             # than silently falling back to the USER app client — symmetric with
-            # 5b-obo-gateway-setup/04_create_obo_gateway.py and 4b-.../deploy_runtime.py.
+            # 5b-obo-gateway-setup/04_create_obo_gateway.py and deployment/agentcore_cli_deploy.py.
             self.cognito_m2m_client_id = self._get_parameter("/app/lakehouse-agent/cognito-m2m-client-id")
             self.cognito_m2m_client_secret = self._get_parameter(
                 "/app/lakehouse-agent/cognito-m2m-client-secret", secure=True

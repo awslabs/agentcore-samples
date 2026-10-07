@@ -24,10 +24,12 @@ grant (the GW2 gateway role performs the RFC 8693 exchange, Finding 15), so
 there is nothing to undo on the agent role.
 
 Resources NOT cleaned here (owned by sibling cleanup scripts):
-  - OpenSearch_MCP_Server runtime + its IAM/ECR/CodeBuild + opensearch-mcp-runtime-{arn,id}
-    -> deployment/4b-mcp-opensearch-server/cleanup_runtime.py
-  - Agent runtime + IAM/ECR/CodeBuild
-    -> deployment/6-lakehouse-agent/cleanup_agent.py
+  - OpenSearch MCP runtime stack + opensearch-mcp-runtime-{arn,id}, then its execution role
+    -> deployment/agentcore_cli_deploy.py opensearch-mcp --destroy --yes
+       + setup_runtime_roles.py delete --role opensearch-mcp
+  - Agent runtime stack, then its execution role
+    -> deployment/agentcore_cli_deploy.py lakehouse-agent --destroy --yes
+       + setup_runtime_roles.py delete --role lakehouse-agent
   - Interceptor gateway and its substrate
     -> deployment/5a-gateway-setup/cleanup_gateway.py
   - Okta OBO exchange app (lakehouse-obo-exchange-client) + okta-obo-client-* SSM keys
@@ -294,7 +296,7 @@ class OBOCleanup:
             "opensearch-collection-endpoint",
         ]
         # opensearch-mcp-runtime-{arn,id} are intentionally NOT deleted here —
-        # they're owned by deployment/4b-mcp-opensearch-server/cleanup_runtime.py
+        # they're owned by deployment/agentcore_cli_deploy.py opensearch-mcp --destroy
         # and removing them here would create a coverage overlap that would
         # produce ⚠️ on second-run cleanup (defeats R10.2 ⏭️-only second-run).
         for p in params:

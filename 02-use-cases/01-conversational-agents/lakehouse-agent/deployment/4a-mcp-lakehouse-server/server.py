@@ -141,7 +141,7 @@ def get_config() -> dict[str, str | None]:
     config["test_user"] = os.environ.get("TEST_USER_1", "policyholder001@example.com")
     # LOCAL_DEVELOPMENT is an unguarded manual escape hatch: when true, tools fall back
     # to the runtime's DEFAULT credentials (no tenant role) — tenant isolation is
-    # disabled. Deploy never sets it (deploy_runtime.py). Warn LOUD if it is ever on.
+    # disabled. Deploy never sets it (envVars in agentcore/agentcore.json). Warn LOUD if it is ever on.
     # Stronger option (not taken, tutorial-simplicity tradeoff): refuse when live
     # IdP/SSM config is present so the hatch only works truly offline.
     config["local_development"] = os.environ.get("LOCAL_DEVELOPMENT", "false").lower() == "true"
