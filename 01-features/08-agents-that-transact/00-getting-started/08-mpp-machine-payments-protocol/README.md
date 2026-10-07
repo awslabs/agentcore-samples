@@ -207,6 +207,7 @@ print(sess["availableLimits"]["availableSpendAmount"])
 | Service     | URL                                              | Cost   |
 |:------------|:-------------------------------------------------|:-------|
 | AgentMail   | `GET https://mpp.api.agentmail.to/v0/inboxes`    | free   |
+| Agent402    | `POST https://agent402.tools/api/hash`           | $0.001 |
 | Browserbase | `POST https://mpp.browserbase.com/search`        | $0.01  |
 | Allium      | `POST https://agents.allium.so/api/v1/developer/prices` | $0.02 |
 
