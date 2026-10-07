@@ -11,7 +11,7 @@ This script:
    by setup_okta.py in notebook 01, cognito-user-* by seed_cognito_user_subs.py)
    and bulk-loads DISJOINT free-text claim-note documents per user.
 
-Data distinctness (per design §4):
+Data distinctness:
 - Notes are FREE-TEXT (adjuster narratives, damage descriptions, call
   summaries), qualitatively different from the structured claims records
   served by the Claims_MCP_Server (which carry claim_id, claim_status,

@@ -2,7 +2,7 @@
 """
 Create the OBO_Gateway and TOKEN_EXCHANGE target.
 
-Per design §7d: the OBO_Gateway is the architectural centerpiece of this
+The OBO_Gateway is the architectural centerpiece of this
 demo. It has NO Lambda interceptor — identity propagation is performed
 natively by AgentCore Identity via on-behalf-of TOKEN_EXCHANGE (RFC 8693).
 This is the structural contrast to the Interceptor_Gateway path.
@@ -143,7 +143,7 @@ class SSMConfig:
             sys.exit(1)
 
     def store_gateway_parameters(self, gateway_id: str, gateway_arn: str, gateway_url: str, gateway_name: str):
-        """Persist OBO gateway info to SSM (per design §8b net-new keys)."""
+        """Persist OBO gateway info to SSM (net-new keys)."""
         print("\n💾 Storing OBO gateway configuration in SSM Parameter Store...")
         parameters = [
             {
@@ -315,7 +315,7 @@ def create_obo_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, An
     """
     Create the OBO_Gateway with Okta customJWTAuthorizer + MCP protocol.
 
-    Per design §7d: NO interceptorConfigurations. Identity propagation is
+    NO interceptorConfigurations. Identity propagation is
     native via AgentCore Identity TOKEN_EXCHANGE (configured at target
     level, not gateway level).
 
@@ -326,7 +326,7 @@ def create_obo_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, An
     print("   Authorizer: customJWTAuthorizer (Okta)")
     print(f"      discoveryUrl: {config.okta_discovery_url}")
     print(f"      allowedAudience: ['{config.okta_resource_server_audience}']")
-    print("   No interceptorConfigurations (OBO path is interceptor-less per §7d)")
+    print("   No interceptorConfigurations (OBO path is interceptor-less)")
 
     auth_config = {
         "customJWTAuthorizer": {
@@ -360,7 +360,7 @@ def create_obo_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, An
             },
             authorizerType="CUSTOM_JWT",
             authorizerConfiguration=auth_config,
-            description="OBO_Gateway for OpenSearch_MCP_Server (RFC 8693 TOKEN_EXCHANGE; design §7d)",
+            description="OBO_Gateway for OpenSearch_MCP_Server (RFC 8693 TOKEN_EXCHANGE)",
             tags={"Application": "lakehouse-agent", "Purpose": "notes-gateway"},
         )
         gateway_id = response["gatewayId"]

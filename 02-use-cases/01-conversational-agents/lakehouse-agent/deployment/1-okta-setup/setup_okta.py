@@ -174,7 +174,7 @@ class OktaSetup:
     def store_parameters_in_ssm(self, config: dict):
         """
         Store Okta configuration in SSM Parameter Store under
-        /app/lakehouse-agent/okta-* per design §8b.
+        /app/lakehouse-agent/okta-*.
 
         Args:
             config: Dictionary with org_url, app_client_id, app_client_secret,
@@ -602,7 +602,7 @@ class OktaSetup:
             else:
                 print(f"✅ Scope created: {name}")
 
-        # Create a `groups` claim on the auth server (per design §7a — the
+        # Create a `groups` claim on the auth server (the
         # interceptor's claim-extraction priority list expects `groups`).
         from okta.models import OAuth2Claim
 
@@ -643,7 +643,7 @@ class OktaSetup:
         server is created. Without one, every token request returns
         `access_denied: Policy evaluation failed`. This is a SEMANTIC gap
         between API success (server created) and operational readiness (server
-        usable for token issuance) — captured in design.md §6c.
+        usable for token issuance).
 
         v1 ships a single permissive rule covering all 5 configured scopes for
         all assigned client applications and the standard grant types

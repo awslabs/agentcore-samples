@@ -141,7 +141,7 @@ def main():
         print(f"      Expected: {audience}")
         print(f"      Got:      {payload.get('aud')}")
 
-    # Sanity-check the groups claim is present (per design §7a — required
+    # Sanity-check the groups claim is present (required
     # for the interceptor's claim-to-tenant-role exchange).
     if "groups" in payload:
         print(f"   ✅ groups claim present (count: {len(payload.get('groups', []))})")

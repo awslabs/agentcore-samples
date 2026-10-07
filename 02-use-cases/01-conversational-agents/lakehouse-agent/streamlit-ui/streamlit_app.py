@@ -113,7 +113,7 @@ def fetch_interceptor_tools(gateway_url: str, token: str):
     return _run_async(_run())
 
 
-# Authorization Code + PKCE redirect URI (Okta path) per design §7g.
+# Authorization Code + PKCE redirect URI (Okta path).
 # Cross-file coupling: this constant MUST match the URI registered in
 # `deployment/1-okta-setup/setup_okta.py` (`redirectUris`). If you change this
 # value, also amend setup_okta.py atomically so the writer and consumer of the
@@ -675,7 +675,7 @@ with st.sidebar:
     # (access_token / id_token / user_email).
     if not st.session_state.access_token:
         if IDP_PROVIDER == "okta":
-            # ── Okta: Authorization Code + PKCE flow per design §7g ──────────
+            # ── Okta: Authorization Code + PKCE flow ──────────
             with st.expander("🔐 User Login", expanded=True):
                 config = st.session_state.idp_config
                 required_keys = (

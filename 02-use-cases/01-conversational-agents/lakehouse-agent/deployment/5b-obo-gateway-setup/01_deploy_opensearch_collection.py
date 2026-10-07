@@ -6,7 +6,7 @@ This script provisions the AOSS substrate the OpenSearch_MCP_Server queries:
 
   1. Encryption policy (AWS-owned KMS key)
   2. Network policy (public access)
-  3. Collection (SEARCH type, per design §4)
+  3. Collection (SEARCH type)
   4. Wait until the collection reaches ACTIVE status
   5. Data-access policy granting BOTH:
        (a) the OpenSearch MCP runtime role by its predictable ARN
@@ -17,7 +17,7 @@ This script provisions the AOSS substrate the OpenSearch_MCP_Server queries:
 All three policy names are derived from the collection
 name; no extra SSM keys are persisted for them.
 
-Per design §10 reconciliation: this script runs BEFORE
+Order: this script runs BEFORE
 the OpenSearch MCP runtime role and deploy (setup_runtime_roles.py create
 --role opensearch-mcp, then agentcore_cli_deploy.py opensearch-mcp) — the runtime cannot
 deploy until opensearch-collection-{arn,endpoint} are in SSM (the runtime

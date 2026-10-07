@@ -2,7 +2,7 @@
 """
 Create the AgentCore Identity OAuth2 credential provider for the OBO_Gateway.
 
-Per design §7d: the OBO path uses an AgentCore Identity credential provider of
+The OBO path uses an AgentCore Identity credential provider of
 vendor `CustomOauth2` configured against the Okta authorization server's
 discovery URL. The provider declares (a) basic OAuth2 client credentials and
 (b) the on-behalf-of TOKEN_EXCHANGE grant configuration. The grant type is
@@ -57,7 +57,7 @@ import sys
 
 import boto3
 
-PROVIDER_NAME = "lakehouse-obo-okta-provider"  # design §7d code snippet
+PROVIDER_NAME = "lakehouse-obo-okta-provider"
 SSM_PREFIX = "/app/lakehouse-agent/"
 
 

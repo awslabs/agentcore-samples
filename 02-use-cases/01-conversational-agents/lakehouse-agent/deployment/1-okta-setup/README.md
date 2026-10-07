@@ -140,7 +140,7 @@ AWS documents the same pitfalls in [Implement on-behalf-of token exchange for mu
 
 ## Okta vs Entra (sibling-IdP note)
 
-The two-client requirement is **Okta-specific**. Okta uses `TOKEN_EXCHANGE` (RFC 8693) and needs **two** clients (user-login + dedicated exchange). Microsoft Entra ID uses `JWT_AUTHORIZATION_GRANT` (RFC 7523) and is **single-client**. A future Ping sibling is RFC 8693 like Okta (expect two-client). See the design doc's IdP family table (§6a) for the client-topology column.
+The two-client requirement is **Okta-specific**. Okta uses `TOKEN_EXCHANGE` (RFC 8693) and needs **two** clients (user-login + dedicated exchange). Microsoft Entra ID uses `JWT_AUTHORIZATION_GRANT` (RFC 7523) and is **single-client**. A future Ping sibling is RFC 8693 like Okta (expect two-client).
 
 ---
 

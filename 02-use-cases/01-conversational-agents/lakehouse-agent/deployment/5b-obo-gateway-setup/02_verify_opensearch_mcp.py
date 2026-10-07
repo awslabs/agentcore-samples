@@ -14,7 +14,7 @@ that script directly. This verifier:
 This script does NOT redeploy the runtime — it is read-only on AWS state
 (GetAgentRuntime + SSM read). Re-running is safe and idempotent.
 
-Per design §10 reconciliation: notebook 05b's cell order is
+Notebook 05b's cell order is
   5b/01_deploy_opensearch_collection.py  (creates AOSS substrate)
   agentcore_cli_deploy.py opensearch-mcp (deploys the runtime)
   5b/02_verify_opensearch_mcp.py         (this verifier)

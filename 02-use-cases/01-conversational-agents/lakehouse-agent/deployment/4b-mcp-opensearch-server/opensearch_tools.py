@@ -6,8 +6,7 @@ Identity-claim source: the user's Okta `sub`, extracted upstream by server.py
 from the validated Authorization header (the authorizer already validated
 signature/issuer/audience/expiry; the tool layer extracts claims only). v1 RLS
 scope: per-user filter only, policyholder archetype;
-policyholder archetype; adjuster/admin scope expansion is a v2 deferral
-(design §11 (e)).
+policyholder archetype; adjuster/admin scope expansion is a v2 deferral.
 
 Security Flow:
 1. OBO_Gateway customJWTAuthorizer validates inbound JWT (Okta discovery URL,
@@ -121,7 +120,7 @@ class OpenSearchClaimNotesTools:
                 }
 
             # Build query body: term filter on owner_user_sub is the ONLY hard
-            # constraint (per-user RLS; design §7e — per-user
+            # constraint (per-user RLS — per-user
             # filter only, no group-archetype broadening in v1).
             #
             # The note_text match must NOT be a hard gate. Previously it sat in
