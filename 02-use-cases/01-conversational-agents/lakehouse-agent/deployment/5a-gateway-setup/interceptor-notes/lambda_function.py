@@ -13,7 +13,7 @@ Deliberately THIN vs the claims REQUEST interceptor: it does NOT perform the
 DynamoDB tenant-role → STS exchange and does NOT do tool-gating (notes RLS is
 the `owner_user_sub` filter; there is a single notes tool). It only validates
 identity and forwards the `sub`. Fail-closed: no resolvable `sub` → error, no
-data (R5.4).
+data.
 
 The shared JWT-validation helpers (`get_config`, `get_public_keys`,
 `validate_and_decode_jwt`) mirror the claims interceptor's Cognito|Okta
@@ -272,7 +272,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return build_error_response("Invalid or expired JWT token", body, 401)
 
         # Notes RLS keys on the caller `sub` — matches the seeded owner_user_sub
-        # by construction (loader seeds each user's Cognito `sub`). Fail-closed (R5.4).
+        # by construction (loader seeds each user's Cognito `sub`). Fail-closed.
         user_sub = claims.get("sub")
         if not user_sub:
             logger.error("❌ `sub` not found in token claims — refusing (fail-closed)")

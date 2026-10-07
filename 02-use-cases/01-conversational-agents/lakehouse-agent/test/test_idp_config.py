@@ -84,7 +84,7 @@ def main():
     expect_value_error("validate('') fails fast", lambda: validate_idp_provider(""))
     expect_value_error("validate('auth0') fails fast", lambda: validate_idp_provider("auth0"))
 
-    # Fail-fast messages must name the flag and the allowed values (R1.3).
+    # Fail-fast messages must name the flag and the allowed values.
     try:
         validate_idp_provider("nope")
     except ValueError as e:
@@ -104,7 +104,7 @@ def main():
     val = set_idp_provider(ssm, verbose=False)
     check("set(from env 'okta') returns 'okta'", val == "okta")
 
-    # --- set_idp_provider: default to cognito when unset (R1.4) ---
+    # --- set_idp_provider: default to cognito when unset ---
     os.environ.pop(FLAG_NAME, None)
     ssm = FakeSSM()
     val = set_idp_provider(ssm, verbose=False)

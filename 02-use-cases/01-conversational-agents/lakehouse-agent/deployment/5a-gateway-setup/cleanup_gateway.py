@@ -41,7 +41,7 @@ class GatewayCleanup:
         self.iam = boto3.client("iam")
         self.dynamodb = boto3.client("dynamodb", region_name=self.region)
         self.ssm = boto3.client("ssm", region_name=self.region)
-        # Active IdP (R4/M4) — selects the exact GW1 provider name(s) to delete.
+        # Active IdP — selects the exact GW1 provider name(s) to delete.
         self.idp_provider = get_idp_provider(self.ssm)
         self.keep_ssm = keep_ssm
 
@@ -135,7 +135,7 @@ class GatewayCleanup:
 
     def delete_oauth_providers(self):
         print("\n🗑️  Deleting GW1 OAuth2 credential providers...")
-        # EXACT-name deletes for the ACTIVE IdP's GW1 provider(s) only (R4/M4),
+        # EXACT-name deletes for the ACTIVE IdP's GW1 provider(s) only,
         # safe-if-absent. The prior lakehouse-prefix substring match collaterally
         # deleted the GW2 notes/OBO providers — those are owned by
         # 06_cleanup_obo_gateway.py and are intentionally NOT deleted here.

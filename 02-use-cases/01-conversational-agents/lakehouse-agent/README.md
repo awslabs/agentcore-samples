@@ -619,7 +619,7 @@ python 03_create_oauth_provider.py                                        # [OKT
 cd ../5a-gateway-setup/interceptor-notes && ./deploy.sh                   # [COGNITO] notes REQUEST interceptor  ── auth-flip ──
 cd ../../5b-obo-gateway-setup && python 04_create_obo_gateway.py          # [shared] create GW2 (branches internally by IdP)
 # (The agent deliberately holds NO OBO grant — the GW2 gateway role performs
-#  the RFC 8693 exchange, Finding 15.)
+#  the RFC 8693 exchange.)
 
 # Step 6: Lakehouse Agent on AgentCore Runtime  [shared]
 cd ../2-lakehouse-tenant-roles-setup && python setup_runtime_roles.py create --role lakehouse-agent

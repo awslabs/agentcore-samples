@@ -185,8 +185,8 @@ npm install -g @aws/agentcore@0.30.0
 ### Step 0: Choose Your Identity Provider
 
 Select the IdP once and persist it to SSM (`/app/lakehouse-agent/idp-provider`).
-Every downstream step reads the flag from SSM; the default is `cognito`
-(R1.4), so Cognito users may skip this step.
+Every downstream step reads the flag from SSM; the default is `cognito`,
+so Cognito users may skip this step.
 
 ```bash
 cd 02-use-cases/01-conversational-agents/lakehouse-agent
@@ -626,7 +626,7 @@ SSM Parameters created:
 - `/app/lakehouse-agent/notes-gateway-name`
 
 > **Note:** the agent deliberately holds **NO** OBO grant — the GW2 gateway role
-> performs the RFC 8693 exchange with its own role (Finding 15). No agent-IAM
+> performs the RFC 8693 exchange with its own role. No agent-IAM
 > patch step is needed.
 
 ---
@@ -636,7 +636,7 @@ SSM Parameters created:
 Deploys the conversational AI agent to AgentCore Runtime. The agent is
 IdP-agnostic: it wires **two prefixed MCP clients** — `claims/*` → GW1
 (`gateway-url`) and `notes/*` → GW2 (`notes-gateway-url`) — authenticated by the
-same inbound user bearer. It holds **no OBO grant** (Finding 15). GW2/notes is
+same inbound user bearer. It holds **no OBO grant**. GW2/notes is
 **REQUIRED**: the agent hard-fails (raises) if `notes-gateway-url` is absent or
 GW2 is unreachable — there is no claims-only fallback.
 

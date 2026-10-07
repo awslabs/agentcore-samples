@@ -13,7 +13,7 @@ This script does three things, in order:
      permissions as the interceptor gateway's role (workload-identity +
      OAuth2 token vault access). Mirrors the interceptor side's defect of
      unconditionally deleting-and-recreating the role on already-exists
-     (preserved here per R8.5).
+     (preserved here).
   2. Create the OBO_Gateway with customJWTAuthorizer against Okta and
      protocolConfiguration.mcp.supportedVersions=['2025-11-25'].
      Crucially, NO interceptorConfigurations is supplied — the OBO
@@ -118,7 +118,7 @@ class SSMConfig:
             self.cognito_app_client_secret = self._get(f"{SSM_PREFIX}cognito-app-client-secret", secure=True)
             self.cognito_domain = self._get(f"{SSM_PREFIX}cognito-domain")
             self.notes_interceptor_lambda_arn = self._get(f"{SSM_PREFIX}notes-interceptor-lambda-arn")
-            # M2M client for the gateway→runtime leg — REQUIRED (R4/m3). setup_cognito
+            # M2M client for the gateway→runtime leg — REQUIRED. setup_cognito
             # (notebook 01) always creates the dedicated M2M client, so require it
             # (fail-fast via _get) rather than silently falling back to the USER app
             # client — consistent with deployment/agentcore_cli_deploy.py.
@@ -188,7 +188,7 @@ def create_obo_gateway_role(config: SSMConfig) -> str:
 
     Mirrors 5a-gateway-setup/create_gateway.py:create_gateway_role(). Same
     trust policy + same permissions shape (workload-identity + OAuth2
-    token-vault access). Per R8.5: preserves the original's defect of
+    token-vault access). Preserves the original's defect of
     deleting-and-recreating the role on already-exists (not corrected
     here).
     """
@@ -205,7 +205,7 @@ def create_obo_gateway_role(config: SSMConfig) -> str:
 
     # Mirrors interceptor gateway's policy. The OBO path uses
     # GetWorkloadAccessTokenForJWT + GetResourceOauth2Token under the hood;
-    # Lambda invoke is harmless surplus (kept for symmetry / R8.1).
+    # Lambda invoke is harmless surplus (kept for symmetry).
     policy_document = {
         "Version": "2012-10-17",
         "Statement": [
@@ -611,7 +611,7 @@ def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -
             authorizerType="CUSTOM_JWT",
             authorizerConfiguration=auth_config,
             interceptorConfigurations=interceptor_config,
-            description="GW2 notes gateway (Cognito REQUEST interceptor; DR-9)",
+            description="GW2 notes gateway (Cognito REQUEST interceptor)",
             tags={"Application": "lakehouse-agent", "Purpose": "notes-gateway"},
         )
         gateway_id = response["gatewayId"]
@@ -750,7 +750,7 @@ def main():
             print("   Auth: Cognito M2M (client_credentials) + REQUEST interceptor for identity")
         print("\n📋 Next Steps:")
         print("   - The agent deliberately holds NO OBO grant — the GW2 gateway role")
-        print("     performs the RFC 8693 exchange (Finding 15).")
+        print("     performs the RFC 8693 exchange.")
         print("   - Deploy the agent (06-deploy-agent.ipynb) with its two MCP clients:")
         print("     claims/* via Interceptor_Gateway, notes/* via OBO_Gateway.")
         print("=" * 70)

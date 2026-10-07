@@ -259,12 +259,12 @@ def ensure_index(client: OpenSearch) -> None:
     try:
         if client.indices.exists(index=CLAIM_NOTES_INDEX):
             print("   ⏭️  Index already exists; skipping create")
-            # Note: We do not validate the existing mapping shape here. R8.5
-            # / design §12 #3 ("idempotent IaC pattern") suggests fail-loud
+            # Note: We do not validate the existing mapping shape here. An
+            # "idempotent IaC pattern" would suggest fail-loud
             # on drift, but the original demo's data-load scripts do not
             # mapping-diff either. Tutorial-reader cleanup path: run
-            # agentcore_cli_deploy.py opensearch-mcp --destroy + re-deploy the AOSS collection (D.2 task
-            # 9.6) to drop and recreate the index.
+            # agentcore_cli_deploy.py opensearch-mcp --destroy + re-deploy the AOSS collection
+            # to drop and recreate the index.
             return
     except Exception as e:
         print(f"   ⚠️  exists() probe failed: {e}; attempting create anyway")

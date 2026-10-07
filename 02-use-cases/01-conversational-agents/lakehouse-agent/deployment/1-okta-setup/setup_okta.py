@@ -354,7 +354,7 @@ class OktaSetup:
                     "applicationType": OpenIdConnectApplicationType("web"),
                     # TRUSTED skips the per-user consent dialog (matches the original
                     # Cognito demo's no-consent behavior). Demo's v1 Streamlit UI does
-                    # not yet surface a consent prompt; v2 may revisit per R15.1.b.
+                    # not yet surface a consent prompt; v2 may revisit.
                     "consentMethod": OpenIdConnectApplicationConsentMethod("TRUSTED"),
                     # ORG_URL: the app uses the standard tenant URL; the *custom auth
                     # server* (created below) carries the unique `api://lakehouse-api`
@@ -890,7 +890,7 @@ class OktaSetup:
         # Cognito seed_cognito_user_subs.py convention). CRITICAL: the Okta
         # access-token `sub` claim is the user's EMAIL (login), NOT created.id
         # (the 00u… Okta user id) — seeding the id would make owner_user_sub
-        # match nothing at query time (vacuous-pass; fork Finding 16). The
+        # match nothing at query time (vacuous-pass). The
         # created.id capture above (results["sub"]) is left as-is for the
         # summary print and is intentionally NOT reused here.
         print("\n🔑 Seeding okta-user-<label>-sub keys for notes RLS...")

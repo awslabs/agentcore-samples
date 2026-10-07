@@ -81,7 +81,7 @@ def expect_error(name, fn, exc):
 
 def main():
     print("\n" + "=" * 70)
-    print("DR-11 PRE-FLIGHT IdP-MISMATCH GUARD — UNIT TEST")
+    print("PRE-FLIGHT IdP-MISMATCH GUARD — UNIT TEST")
     print("=" * 70 + "\n")
 
     # --- detect_gateway_idp: happy paths ---
@@ -146,7 +146,7 @@ def main():
     if passed != total:
         print("❌ Some tests failed.")
         sys.exit(1)
-    print("🎉 All DR-11 guard tests passed!")
+    print("🎉 All guard tests passed!")
     sys.exit(0)
 
 

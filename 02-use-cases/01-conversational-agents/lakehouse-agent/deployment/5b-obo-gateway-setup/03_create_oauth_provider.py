@@ -19,9 +19,9 @@ Two providers exist in the deployed system:
     as the dedicated OBO exchange app (okta-obo-client-*).
 
 Both reference the SAME Okta authorization server / discovery URL (single
-Okta_Authorization_Server per R1.6), but DIFFERENT client apps: the OBO leg
+Okta_Authorization_Server), but DIFFERENT client apps: the OBO leg
 requires a dedicated exchange client distinct from the subject-token issuer
-(R1.6 revised: one auth server, two apps).
+(one auth server, two apps).
 
 Idempotent: try-create -> on AlreadyExistsException, list-by-name and reuse
 the existing provider's ARN. Mirrors the interceptor side's

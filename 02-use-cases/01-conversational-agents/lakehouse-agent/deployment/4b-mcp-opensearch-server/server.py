@@ -310,7 +310,7 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
         print(f"👤 USER SUB: {user_sub}")
 
         if not user_sub:
-            # Per R4.5: if no Authorization header / no sub, return error and
+            # If no Authorization header / no sub, return error and
             # do NOT return any data. This is the load-bearing fail-closed
             # behavior of the OBO path.
             logger.error("❌ User sub not found — refusing to query without identity")

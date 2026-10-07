@@ -6,7 +6,7 @@ Mirrors deployment/5a-gateway-setup/cleanup_gateway.py shape. Tears down what
 9.1-9.4 created (and only that — by-name scoping prevents collateral damage
 to the interceptor side or to other workloads in the account).
 
-Cleanup coverage (per R10.4 + tasks.md 9.6):
+Cleanup coverage:
   1. OBO_Gateway target (lakehouse-obo-target)
   2. OBO_Gateway (lakehouse-notes-gateway)
   3. OBO_Gateway IAM role (agentcore-lakehouse-notes-gateway-role)
@@ -20,7 +20,7 @@ Cleanup coverage (per R10.4 + tasks.md 9.6):
      obo-credential-provider-arn
 
 Note: there is no agent-IAM revert step — the agent deliberately holds NO OBO
-grant (the GW2 gateway role performs the RFC 8693 exchange, Finding 15), so
+grant (the GW2 gateway role performs the RFC 8693 exchange), so
 there is nothing to undo on the agent role.
 
 Resources NOT cleaned here (owned by sibling cleanup scripts):
@@ -40,7 +40,7 @@ data-access policy BEFORE collection (AOSS rejects collection delete while a
 data-access policy references it). Encryption + network policies can be
 removed anytime after the collection is gone.
 
-Idempotent (per R10.1 + R10.2): re-running after a successful first run logs
+Idempotent: re-running after a successful first run logs
 all ⏭️ and exits 0.
 
 Usage:
@@ -298,7 +298,7 @@ class OBOCleanup:
         # opensearch-mcp-runtime-{arn,id} are intentionally NOT deleted here —
         # they're owned by deployment/agentcore_cli_deploy.py opensearch-mcp --destroy
         # and removing them here would create a coverage overlap that would
-        # produce ⚠️ on second-run cleanup (defeats R10.2 ⏭️-only second-run).
+        # produce ⚠️ on second-run cleanup (defeats the ⏭️-only second-run guarantee).
         for p in params:
             try:
                 self.ssm.delete_parameter(Name=f"{SSM_PREFIX}{p}")
