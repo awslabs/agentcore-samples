@@ -55,6 +55,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import boto3
+from bedrock_agentcore.evaluation import EvaluationClient
 from boto3.session import Session
 from botocore.config import Config
 
@@ -108,7 +109,7 @@ if not _config_path.exists():
     print("Run deploy.py first:  cd ../utils && python deploy.py")
     sys.exit(1)
 
-_cfg = json.loads(_config_path.read_text())
+_cfg = json.loads(_config_path.read_text(encoding="utf-8"))
 AGENT_ID = _cfg["agent_id"]
 AGENT_ARN = _cfg["agent_arn"]
 REGION = args.region or _cfg.get("region") or Session().region_name or "us-east-1"
@@ -124,26 +125,26 @@ _dm_backend: str
 _dm_ids: dict[str, str]
 
 if _jev_ids_path.exists():
-    _raw = json.loads(_jev_ids_path.read_text())
+    _raw = json.loads(_jev_ids_path.read_text(encoding="utf-8"))
     _dm_ids = _raw["evaluator_ids"]
     _dm_backend = "Jev"
-    _dm_groundedness_key = "JevGroundedness"
-    _dm_helpfulness_key = "JevHelpfulness"
+    _DM_GROUNDEDNESS_KEY = "JevGroundedness"
+    _DM_HELPFULNESS_KEY = "JevHelpfulness"
     print(f"Using Jev evaluator IDs from: {_jev_ids_path}")
 elif _decider_ids_path.exists():
-    _raw = json.loads(_decider_ids_path.read_text())
+    _raw = json.loads(_decider_ids_path.read_text(encoding="utf-8"))
     _dm_ids = _raw["evaluator_ids"]
     _dm_backend = "Strands Decider"
-    _dm_groundedness_key = "DeciderGroundedness"
-    _dm_helpfulness_key = "DeciderHelpfulness"
+    _DM_GROUNDEDNESS_KEY = "DeciderGroundedness"
+    _DM_HELPFULNESS_KEY = "DeciderHelpfulness"
     print(f"Using Strands Decider evaluator IDs from: {_decider_ids_path}")
 else:
     print("ERROR: No DM evaluator IDs found.")
     print("Run evaluate.py --with-jev or evaluate.py --with-decider first to deploy the decision-model evaluators.")
     sys.exit(1)
 
-DM_GROUNDEDNESS_ID = _dm_ids[_dm_groundedness_key]
-DM_HELPFULNESS_ID = _dm_ids[_dm_helpfulness_key]
+DM_GROUNDEDNESS_ID = _dm_ids[_DM_GROUNDEDNESS_KEY]
+DM_HELPFULNESS_ID = _dm_ids[_DM_HELPFULNESS_KEY]
 
 # ============================================================
 # boto3 clients
@@ -204,12 +205,12 @@ print(f"  Session ID : {SESSION_ID[:36]}")
 print()
 
 
-def _invoke_agent(prompt: str, session_id: str) -> str:
+def _invoke_agent(user_prompt: str, session_id: str) -> str:
     resp = agentcore_client.invoke_agent_runtime(
         agentRuntimeArn=AGENT_ARN,
         qualifier="DEFAULT",
         runtimeSessionId=session_id,
-        payload=json.dumps({"prompt": prompt}).encode("utf-8"),
+        payload=json.dumps({"prompt": user_prompt}).encode("utf-8"),
     )
     raw = resp["response"].read().decode("utf-8")
     parts = []
@@ -253,13 +254,11 @@ time.sleep(WAIT_SECONDS)
 # per-turn scores.
 # ============================================================
 
-from bedrock_agentcore.evaluation import EvaluationClient
-
 print()
 print(f"[Step 2/3] Screening with {_dm_backend} evaluators ...")
 
 dm_ec = EvaluationClient(region_name=REGION)
-dm_ec._evaluator_level_cache.update(
+dm_ec._evaluator_level_cache.update(  # pylint: disable=protected-access
     {
         DM_GROUNDEDNESS_ID: "TRACE",
         DM_HELPFULNESS_ID: "TRACE",
@@ -361,7 +360,7 @@ else:
     )
 
     builtin_ec = EvaluationClient(region_name=REGION)
-    builtin_ec._evaluator_level_cache.update(
+    builtin_ec._evaluator_level_cache.update(  # pylint: disable=protected-access
         {
             "Builtin.Correctness": "TRACE",
             "Builtin.Helpfulness": "TRACE",
@@ -384,11 +383,13 @@ else:
     for i in range(N_TURNS):
         corr = _corr_results[i] if i < len(_corr_results) else {}
         hlp = _help_builtin[i] if i < len(_help_builtin) else {}
-        is_flagged = (i + 1) in flagged_turns
+        is_flagged = i + 1 in flagged_turns
 
         flag_marker = " *** FLAGGED ***" if is_flagged else ""
         print(f"  Turn {i + 1}{flag_marker}")
-        print(f"    Prompt     : {CASCADE_TURNS[i][:80]}{'...' if len(CASCADE_TURNS[i]) > 80 else ''}")
+        turn_text = CASCADE_TURNS[i]
+        prompt_preview = turn_text[:80] + ("..." if len(turn_text) > 80 else "")
+        print(f"    Prompt     : {prompt_preview}")
 
         if corr:
             corr_err = corr.get("errorCode")
@@ -419,9 +420,9 @@ else:
 
     # Cost savings for escalated sessions
     saved_calls = (N_TURNS - len(flagged_turns)) * 2
-    total_possible = N_TURNS * 2
-    pct_saved = round(saved_calls / total_possible * 100) if total_possible else 0
-    print(f"  Cost saving: {saved_calls} of {total_possible} LLM evaluator call(s) avoided ({pct_saved}% reduction).")
+    _TOTAL_LM_CALLS = N_TURNS * 2
+    _PCT_SAVED = round(saved_calls / _TOTAL_LM_CALLS * 100) if _TOTAL_LM_CALLS else 0
+    print(f"  Cost saving: {saved_calls} of {_TOTAL_LM_CALLS} LLM evaluator call(s) avoided ({_PCT_SAVED}% reduction).")
 
 # ============================================================
 # Cascade summary
@@ -452,7 +453,8 @@ print(
 if not flagged_turns:
     print("  With cascade    : 0 LLM calls (DM found no issues).")
 else:
-    print(f"  With cascade    : {len(flagged_turns) * 2} LLM calls (only for {len(flagged_turns)} flagged turn(s)).")
+    _flagged_lm = len(flagged_turns) * 2
+    print(f"  With cascade    : {_flagged_lm} LLM calls (only for {len(flagged_turns)} flagged turn(s)).")
 print()
 print(
     "  At scale, if most sessions pass the DM screen, the cascade eliminates\n"
@@ -488,5 +490,5 @@ _output = {
 }
 
 _out_path = _RESULTS_DIR / "cascade_results.json"
-_out_path.write_text(json.dumps(_output, indent=2, default=str))
+_out_path.write_text(json.dumps(_output, indent=2, default=str), encoding="utf-8")
 print(f"\n  Results saved: {_out_path}")
