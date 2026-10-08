@@ -791,3 +791,126 @@ agentcore add evaluator \
 | **Latency** | 2–10 s | < 1 ms | ~200 ms (network) | ~115 ms + network |
 | **Customizable** | Prompt based | Fully | Question definitions | Question definitions |
 | **Best for** | Qualitative nuance | Exact rules / facts | Calibrated judgment, no infra | Same + data-residency |
+
+---
+
+## Decision-Model Cascade
+
+`cascade.py` demonstrates the **confidence-based cascade** pattern: decision-model evaluators act as a fast first-pass filter, and only sessions that fail the filter escalate to built-in LLM evaluators for a rich natural-language explanation.
+
+### Why this matters
+
+Built-in LLM evaluators (`Builtin.Correctness`, `Builtin.Helpfulness`) produce detailed explanations but cost one LLM inference call per turn per evaluator. At production scale — thousands of sessions per day — evaluating every turn with an LLM is expensive.
+
+Decision models (Jev, Strands Decider) are 10–50× cheaper per evaluation call:
+- No full LLM inference — specialized 2B-parameter model
+- ~100–200 ms latency
+- Calibrated probability scores that map cleanly to pass/fail thresholds
+
+The cascade combines both:
+
+```
+Every session
+    │
+    ▼  cheap: ~100 ms / turn, no LLM
+  ┌───────────────────────────────────┐
+  │  DM screen                        │
+  │  JevGroundedness   (TRACE)        │
+  │  JevHelpfulness    (TRACE)        │
+  └───────────────────────────────────┘
+         │                    │
+    PASS (value ≥ threshold)  FAIL (value < threshold)
+         │                    │
+    ✓ done                    ▼  expensive: LLM inference
+                    ┌─────────────────────────┐
+                    │  Built-in LLM escalation │
+                    │  Builtin.Correctness     │
+                    │  Builtin.Helpfulness     │
+                    │  (with explanation text) │
+                    └─────────────────────────┘
+```
+
+If 80% of sessions pass the DM screen, you eliminate 80% of LLM evaluator calls while still getting a detailed explanation for every session that has an issue.
+
+### Run the cascade
+
+Prerequisites: run `evaluate.py --with-jev` or `evaluate.py --with-decider` first to create `results/jev_evaluator_ids.json` or `results/decider_evaluator_ids.json`.
+
+```bash
+# Auto-detect from results/ (reads whichever IDs file exists)
+python cascade.py
+
+# Explicit path + custom thresholds
+python cascade.py \
+    --jev-ids results/jev_evaluator_ids.json \
+    --groundedness-threshold 0.80 \
+    --helpfulness-threshold 0.65
+```
+
+### What the script does
+
+1. **Invokes the HR assistant** with three standard turns (PTO balance, PTO request, policy lookup) and one adversarial turn (payroll dispute — the agent has no payroll-correction tool, so its response falls short of the employee's goal).
+
+2. **Screens with DM evaluators** — runs `JevGroundedness` and `JevHelpfulness` (or their Decider equivalents) at TRACE level. Results are printed per turn with pass/fail markers.
+
+3. **Escalates flagged turns** — if any turn scores below the threshold, runs `Builtin.Correctness` and `Builtin.Helpfulness` on the same session and prints the LLM explanation alongside the score.
+
+4. **Prints a cost summary** showing how many LLM evaluator calls were saved versus a baseline that always runs built-in evaluators.
+
+### Example output
+
+```
+[Step 2/3] Screening with Jev evaluators ...
+
+  Turn   Groundedness  Helpfulness  Flags
+  -------------------------------------------------------
+  1              0.94         0.91  —
+  2              0.91         0.88  —
+  3              0.89         0.85  —
+  4 (adversarial) 0.72        0.31  LOW_HELP(0.31<0.60)
+
+  Flagged turns : [4]
+
+[Step 3/3] Escalating to built-in LLM evaluators ...
+
+  Turn 4 *** FLAGGED ***
+    Prompt     : EMP-001 says they worked 20 hours of overtime...
+    Correctness: 0.68  [partial]
+    Explanation: The agent correctly reported the January 2026 pay stub
+                 figures (gross $8,333.33, net $5,362.50) but could not
+                 verify the overtime claim or update payroll — the response
+                 does not resolve the employee's core concern.
+    Helpfulness: 0.29  [slightly helpful]
+    Explanation: The agent retrieved available pay information but the
+                 employee's goal (dispute resolution + payroll correction)
+                 remains unmet. The agent should direct the employee to
+                 the payroll team or open a support ticket.
+
+  Cost saving: 6 of 8 LLM evaluator call(s) avoided (75% reduction).
+
+Cascade Summary
+═══════════════════════════════════════════════════════════════
+  Session         : cascade-<uuid>
+  Turns evaluated : 4
+  DM backend      : Jev
+  DM flagged      : 1 turn(s) — [4]
+  LLM escalated   : yes
+  LLM calls saved : 6 of 8 (75%)
+```
+
+### Output file
+
+`results/cascade_results.json` contains:
+- `per_turn_dm_scores` — groundedness and helpfulness score per turn, with flags
+- `flagged_turns` — list of 1-based turn indices that triggered escalation
+- `builtin_results` — full Correctness and Helpfulness results (with explanations) for the escalated session
+- `cost_summary` — comparison of LLM calls with and without the cascade
+
+### Tuning thresholds
+
+| Threshold | Effect |
+|---|---|
+| Lower (e.g. 0.50) | Fewer escalations; only the most problematic sessions reach LLM evaluation |
+| Higher (e.g. 0.85) | More escalations; near-borderline turns also get LLM review |
+
+Start with the defaults (`--groundedness-threshold 0.75 --helpfulness-threshold 0.60`) and adjust based on your false-positive rate: look at `per_turn_dm_scores` to see how often flagged turns actually had meaningful issues according to the LLM explanation.
