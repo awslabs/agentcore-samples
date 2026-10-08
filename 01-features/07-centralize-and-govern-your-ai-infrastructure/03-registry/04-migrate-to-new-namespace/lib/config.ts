@@ -18,6 +18,9 @@ import * as apiAdapterFile from '../glue/common/migration_common/adapter/api-ada
 
 export type LoadMode = 'FULL' | 'INCREMENTAL';
 
+/** Mirrors DUPLICATE_NAME_MODES in glue/common/migration_common/registry_api.py. */
+export type DuplicateNamesMode = 'fail' | 'suffix';
+
 export interface EngineConfig {
   readonly account?: string;
   readonly region?: string;
@@ -106,6 +109,20 @@ export interface TransformConfig {
   readonly namePrefix: string;
   readonly allowedRecordTypes: string[];
   readonly passthroughFields: string[];
+  /**
+   * What happens when two source records transform to the same target `(name, recordVersion)`.
+   *
+   * The target dedup key is `(name, recordVersion)`; a migrated record keeps the name its source
+   * record has, and Preview required neither part to be unique -- so two source records sharing a
+   * name is reachable with real data.
+   *
+   * `fail` (the default): the second record to claim the identity is refused and reported, so
+   * nothing is overwritten and the run ends PARTIAL_SUCCESS. `suffix`: the second record is
+   * migrated under a deterministic distinct name instead -- the original name with a short digest
+   * of that record's own source identity appended. Only the dedup key changes; `displayName` keeps
+   * the source record's name, and the id crosswalk records both.
+   */
+  readonly duplicateNames: DuplicateNamesMode;
 }
 
 export interface ApiConfig {
@@ -335,6 +352,10 @@ export function loadMigrationConfig(configPath: string): MigrationConfig {
       namePrefix: transformInput.namePrefix ?? transformInput.identifierPrefix ?? 'migrated',
       allowedRecordTypes: transformInput.allowedRecordTypes ?? ['AGENT', 'MCP', 'SKILL', 'CUSTOM'],
       passthroughFields: transformInput.passthroughFields ?? ['description'],
+      // Defaults to refusing the second claimant: nothing is overwritten and the collision is
+      // reported. Must stay equal to DEFAULT_TRANSFORM in adapter_defaults.py, which is what a run
+      // with no deployment uses.
+      duplicateNames: transformInput.duplicateNames ?? 'fail',
     },
   };
 
@@ -606,6 +627,14 @@ function validateConfig(config: MigrationConfig): void {
     if (!validRecordTypes.has(recordType)) {
       throw new Error(`runtime.transform.allowedRecordTypes contains unsupported record type ${recordType}`);
     }
+  }
+  // A typo here would otherwise be read as the default by the load stage, which treats anything
+  // that is not `suffix` as `fail` -- silently giving the stricter behaviour on a run configured
+  // precisely to migrate colliding records.
+  if (!['fail', 'suffix'].includes(config.runtime.transform.duplicateNames)) {
+    throw new Error(
+      `runtime.transform.duplicateNames must be 'fail' or 'suffix', got ${config.runtime.transform.duplicateNames}`,
+    );
   }
   const supportedPassthroughFields = new Set(['description']);
   for (const field of config.runtime.transform.passthroughFields) {

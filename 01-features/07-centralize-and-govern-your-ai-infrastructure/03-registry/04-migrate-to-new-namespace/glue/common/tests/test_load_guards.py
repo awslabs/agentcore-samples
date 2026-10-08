@@ -13,6 +13,7 @@ Each test states the failure it prevents.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import os
 import sys
@@ -21,13 +22,20 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from migration_common.jobs.transform_load import (
+    TargetNameClaimPool,
     _approval_summary,
     _process_record,
     _validate_extract_manifest,
     _validate_replay_configuration,
     _verify_mapping_has_not_changed,
+    plan_target_names,
 )
-from migration_common.registry_api import LoadResult
+from migration_common.registry_api import (
+    LoadResult,
+    RegistryApiError,
+    TargetNameClaims,
+    disambiguated_target_name,
+)
 from migration_common.settings import replay_configuration_fingerprint
 from migration_common.storage import S3Store
 from migration_common.transform import RecordTransformer
@@ -400,6 +408,454 @@ class ProcessOneRecord(unittest.TestCase):
         outcome = self._process(envelope(), clients=pool, dry_run=False)
         self.assertFalse(outcome.succeeded)
         self.assertIn("did not return a recordId", outcome.error)
+
+
+class DuplicateNameHandling(unittest.TestCase):
+    """``transform.duplicateNames``: two source records, one target ``(name, recordVersion)``.
+
+    A migrated record keeps the name its source record has and the target dedup key is
+    ``(name, recordVersion)``, neither part of which Preview required to be unique -- so this is
+    reachable with real data rather than hypothetical.
+
+    ``fail`` (the default) refuses the second record to claim the identity, which is what stops one
+    record from overwriting the other. ``suffix`` migrates it under the original name plus a digest
+    of *that record's own source identity*, which is the part that matters: nothing in the name
+    depends on the run, the batch position or a counter, so every attempt produces the same name and
+    a re-run recognises the record it already migrated instead of creating a second one.
+    """
+
+    # The canonical claimant id the loader derives for the colliding record below --
+    # account/region/registry/recordId -- which is the only thing the suffix is computed from.
+    SECOND_CLAIMANT = f"{SOURCE['accountId']}/{SOURCE['region']}/{SOURCE['registryId']}/rec-2"
+
+    def setUp(self):
+        self.transformer = RecordTransformer({})
+
+    def _staged(self, record_id: str, *, name: str):
+        return envelope(oldRecordId=record_id, record=dict(PREVIEW_RECORD, recordId=record_id, name=name))
+
+    def _claim(self, pool, sequence: int, record_id: str, *, name: str = "payments-mcp"):
+        """Run one staged record through the worker, claiming its identity in ``sequence`` order.
+
+        A dry run is enough: the claim is applied on every path, precisely so that a dry run cannot
+        pass a batch a live load would refuse.
+        """
+        return _process_record(
+            "runs/raw/part-00000.jsonl",
+            self._staged(record_id, name=name),
+            mapping_by_id={"map-a": MAPPING},
+            transformer=self.transformer,
+            clients=None,
+            dry_run=True,
+            name_claims=pool,
+            claim_sequence=sequence,
+        )
+
+    def _expected_suffixed(self, name: str, claimant: str | None = None) -> str:
+        digest = hashlib.sha256((claimant or self.SECOND_CLAIMANT).encode("utf-8")).hexdigest()[:8]
+        return f"{name[: 255 - len(digest) - 1]}-{digest}"
+
+    def test_the_default_refuses_the_second_record_and_says_why(self):
+        pool = TargetNameClaimPool()
+        first = self._claim(pool, 0, "rec-1")
+        second = self._claim(pool, 1, "rec-2")
+
+        self.assertTrue(first.succeeded)
+        self.assertEqual(first.name, "payments-mcp")
+        self.assertFalse(second.succeeded)
+        self.assertIn("already claimed", second.error)
+        self.assertIn("rec-2", second.error)
+
+    def test_suffix_migrates_the_second_record_under_a_deterministic_distinct_name(self):
+        pool = TargetNameClaimPool(duplicate_names="suffix")
+        first = self._claim(pool, 0, "rec-1")
+        second = self._claim(pool, 1, "rec-2")
+
+        # The record that got there first is untouched: only the later claimant moves.
+        self.assertTrue(first.succeeded)
+        self.assertEqual(first.name, "payments-mcp")
+
+        self.assertTrue(second.succeeded)
+        self.assertEqual(second.name, self._expected_suffixed("payments-mcp"))
+        self.assertEqual(second.transformed_record["name"], second.name)
+        # Only the dedup key moved. The record is still labelled with the name its source record
+        # has, in the payload and in what the crosswalk reports.
+        self.assertEqual(second.display_name, "payments-mcp")
+        self.assertEqual(second.transformed_record["displayName"], "payments-mcp")
+        self.assertEqual(second.preview_name, "payments-mcp")
+        self.assertTrue(
+            any("duplicateNames" in warning and second.name in warning for warning in second.warnings),
+            second.warnings,
+        )
+
+    def test_the_suffixed_name_does_not_depend_on_the_attempt(self):
+        """A second attempt must reach the same name, or it would migrate the record twice."""
+        names = []
+        for _attempt in range(2):
+            pool = TargetNameClaimPool(duplicate_names="suffix")
+            self._claim(pool, 0, "rec-1")
+            names.append(self._claim(pool, 1, "rec-2").name)
+        self.assertEqual(names[0], names[1])
+        self.assertEqual(names[0], self._expected_suffixed("payments-mcp"))
+
+    def test_re_claiming_within_one_attempt_returns_the_same_suffixed_name(self):
+        """A retried record must not walk to a new name each time it is processed."""
+        pool = TargetNameClaimPool(duplicate_names="suffix")
+        self._claim(pool, 0, "rec-1")
+        first_pass = self._claim(pool, 1, "rec-2")
+        second_pass = self._claim(pool, 2, "rec-2")
+        self.assertEqual(second_pass.name, first_pass.name)
+
+    def test_a_maximum_length_name_stays_within_the_target_bound(self):
+        """Preview allows a 255-character name, so the suffix has to fit inside that, not past it."""
+        long_name = "n" * 255
+        pool = TargetNameClaimPool(duplicate_names="suffix")
+        self._claim(pool, 0, "rec-1", name=long_name)
+        second = self._claim(pool, 1, "rec-2", name=long_name)
+
+        self.assertTrue(second.succeeded, second.error)
+        self.assertEqual(len(second.name), 255)
+        self.assertEqual(second.name, self._expected_suffixed(long_name))
+
+    def test_a_distinct_record_version_is_not_a_collision_in_either_mode(self):
+        """The dedup key is (name, recordVersion): same name, different version, nothing to resolve."""
+        for mode in ("fail", "suffix"):
+            with self.subTest(duplicateNames=mode):
+                pool = TargetNameClaimPool(duplicate_names=mode)
+                staged = self._staged("rec-1", name="payments-mcp")
+                staged["record"]["recordVersion"] = "1.0"
+                first = _process_record(
+                    "runs/raw/part-00000.jsonl",
+                    staged,
+                    mapping_by_id={"map-a": MAPPING},
+                    transformer=self.transformer,
+                    clients=None,
+                    dry_run=True,
+                    name_claims=pool,
+                    claim_sequence=0,
+                )
+                staged = self._staged("rec-2", name="payments-mcp")
+                staged["record"]["recordVersion"] = "2.0"
+                second = _process_record(
+                    "runs/raw/part-00000.jsonl",
+                    staged,
+                    mapping_by_id={"map-a": MAPPING},
+                    transformer=self.transformer,
+                    clients=None,
+                    dry_run=True,
+                    name_claims=pool,
+                    claim_sequence=1,
+                )
+                self.assertTrue(second.succeeded, second.error)
+                self.assertEqual([first.name, second.name], ["payments-mcp", "payments-mcp"])
+
+
+class _StagedRecords:
+    """Just enough of ``S3Store`` for ``plan_target_names``: staged envelopes, in a chosen order.
+
+    The order is the point: it is what a real extract does not guarantee (Preview List pagination is
+    not ordered) and what the plan must therefore not depend on.
+    """
+
+    def __init__(self, envelopes):
+        self._envelopes = list(envelopes)
+
+    def iter_json_lines_objects(self, objects, *, read_ahead=0):
+        # `objects` and `read_ahead` are part of the S3Store signature the caller uses; the staged
+        # records are held in memory here, so neither is needed to produce them.
+        for index, value in enumerate(self._envelopes):
+            yield f"runs/raw/part-{index:05d}.jsonl", value
+
+
+class WhichRecordKeepsASharedName(unittest.TestCase):
+    """``plan_target_names``: who is entitled to a target identity, decided before the load starts.
+
+    With ``duplicateNames = "suffix"`` the loader has to answer "which of these records keeps the name
+    they share" -- and answer it the same way in every run, or a re-run renames records that are
+    already in the target registry and referenced by name. The two things that answer it are committed
+    state (a record already in the registry keeps the name it is there under, including records this
+    run does not stage) and, for records not yet migrated, the lowest canonical claimant id. Neither
+    can be influenced by staged order or by which subset of a registry a run carries, which is what
+    these tests hold it to.
+    """
+
+    NAME = "payments-mcp"
+
+    def setUp(self):
+        self.transformer = RecordTransformer({})
+
+    @staticmethod
+    def _claimant(record_id: str) -> str:
+        return f"{SOURCE['accountId']}/{SOURCE['region']}/{SOURCE['registryId']}/{record_id}"
+
+    def _staged(self, record_id: str, *, name: str | None = None):
+        return envelope(
+            oldRecordId=record_id,
+            record=dict(PREVIEW_RECORD, recordId=record_id, name=name or self.NAME),
+        )
+
+    def _key(self, name: str, version: str | None = None):
+        return (str(TARGET["registryId"]), name, version)
+
+    def _plan(self, envelopes, *, known=None, assigned=None):
+        return plan_target_names(
+            _StagedRecords(envelopes),
+            [{"key": "runs/raw/part-00000.jsonl"}],
+            mapping_by_id={"map-a": MAPPING},
+            transformer=self.transformer,
+            known_record_ids=known or {},
+            assigned_names=assigned or {},
+        )
+
+    def _suffixed(self, record_id: str, name: str | None = None) -> str:
+        return disambiguated_target_name(name or self.NAME, self._claimant(record_id))
+
+    def test_the_lowest_source_identity_keeps_the_name(self):
+        # Nothing has been migrated yet, so there is no established answer -- but there still has to be
+        # a repeatable one, and the only repeatable fact about two source records is their identity.
+        owners, established = self._plan([self._staged("rec-2"), self._staged("rec-1")])
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-1"))
+        self.assertEqual(established, {})
+
+    def test_the_plan_does_not_depend_on_the_order_the_records_are_staged(self):
+        forwards, _ = self._plan([self._staged("rec-1"), self._staged("rec-2")])
+        backwards, _ = self._plan([self._staged("rec-2"), self._staged("rec-1")])
+        self.assertEqual(forwards, backwards)
+
+    def test_a_record_already_in_the_registry_keeps_its_name_over_a_lower_identity(self):
+        # rec-1 sorts lower, but rec-2 is already published under the name. Handing it to rec-1 would
+        # rename a live record and leave every reference to it pointing at nothing.
+        owners, established = self._plan(
+            [self._staged("rec-1"), self._staged("rec-2")],
+            known={"map-a": {"rec-2": "new-2"}},
+            assigned={"map-a": {"rec-2": {"name": self.NAME, "recordVersion": None}}},
+        )
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-2"))
+        self.assertEqual(established, {self._claimant("rec-2"): self.NAME})
+
+    def test_a_name_held_by_a_record_this_run_does_not_stage_is_not_handed_out(self):
+        # An incremental run carries a fraction of the registry. The record holding this name is not in
+        # this window at all, so the only thing that can protect its name is the committed state.
+        owners, _ = self._plan(
+            [self._staged("rec-1")],
+            assigned={"map-a": {"rec-9": {"name": self.NAME, "recordVersion": None}}},
+        )
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-9"))
+        self.assertNotEqual(owners[self._key(self.NAME)], self._claimant("rec-1"))
+
+    def test_a_record_that_was_moved_onto_a_suffixed_name_keeps_it_when_staged_alone(self):
+        # The incremental case: only the suffixed record is in this run's window, so nothing else is
+        # asking for the base name. It must still not take it -- it is in the registry under the
+        # suffixed one, and taking the base name would duplicate the name it renamed away from.
+        suffixed = self._suffixed("rec-2")
+        owners, established = self._plan(
+            [self._staged("rec-2")],
+            known={"map-a": {"rec-2": "new-2"}},
+            assigned={"map-a": {"rec-2": {"name": suffixed, "recordVersion": None}}},
+        )
+        self.assertEqual(established, {self._claimant("rec-2"): suffixed})
+        self.assertEqual(owners[self._key(suffixed)], self._claimant("rec-2"))
+        # It is not even a candidate for the base name: it is asking for the suffixed one, so the base
+        # stays available to whichever record is entitled to it (here, one this run does not carry).
+        self.assertNotIn(self._key(self.NAME), owners)
+
+    def test_a_record_migrated_before_names_were_recorded_is_credited_with_its_own_name(self):
+        # An id map written by an earlier version of this tool has no names in it. Such a record can
+        # only be in the registry under its own unsuffixed name, because a collision failed the record
+        # instead of renaming it -- so that is what it keeps, even against a lower identity.
+        owners, established = self._plan(
+            [self._staged("rec-1"), self._staged("rec-2")],
+            known={"map-a": {"rec-2": "new-2"}},
+        )
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-2"))
+        self.assertEqual(established, {self._claimant("rec-2"): self.NAME})
+
+    def test_a_record_renamed_at_source_releases_the_name_it_held(self):
+        # The load renames that target record in place, so the name it used to hold really is free --
+        # refusing to reuse it would fail a record for a collision that no longer exists.
+        owners, _ = self._plan(
+            [self._staged("rec-1", name="renamed-mcp"), self._staged("rec-2", name="payments-mcp")],
+            known={"map-a": {"rec-1": "new-1"}},
+            assigned={"map-a": {"rec-1": {"name": self.NAME, "recordVersion": None}}},
+        )
+        self.assertEqual(owners[self._key("renamed-mcp")], self._claimant("rec-1"))
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-2"))
+
+    def test_the_same_name_at_a_different_record_version_is_a_separate_identity(self):
+        staged_one = self._staged("rec-1")
+        staged_one["record"]["recordVersion"] = "1.0"
+        staged_two = self._staged("rec-2")
+        staged_two["record"]["recordVersion"] = "2.0"
+        owners, _ = self._plan([staged_one, staged_two])
+        self.assertEqual(owners[self._key(self.NAME, "1.0")], self._claimant("rec-1"))
+        self.assertEqual(owners[self._key(self.NAME, "2.0")], self._claimant("rec-2"))
+
+    def test_the_suffixed_name_a_record_is_moved_onto_is_reserved_for_it(self):
+        # The plan has to account for the names it hands out, not just the ones records asked for.
+        owners, _ = self._plan([self._staged("rec-1"), self._staged("rec-2")])
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-1"))
+        self.assertEqual(owners[self._key(self._suffixed("rec-2"))], self._claimant("rec-2"))
+
+    def test_a_record_whose_own_name_is_another_records_suffixed_form_keeps_it(self):
+        # Pathological but resolvable: rec-3 is *named* what rec-2 would be suffixed to. A record
+        # asking for a name under its own steam outranks one being moved onto it, so rec-3 keeps it --
+        # and rec-2, which now has nowhere to go, is refused at claim time rather than either of them
+        # being decided by staged order.
+        collides_with_suffix = self._suffixed("rec-2")
+        owners, _ = self._plan(
+            [
+                self._staged("rec-1"),
+                self._staged("rec-2"),
+                self._staged("rec-3", name=collides_with_suffix),
+            ]
+        )
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-1"))
+        self.assertEqual(owners[self._key(collides_with_suffix)], self._claimant("rec-3"))
+
+    def test_a_record_the_transform_rejects_does_not_reserve_anything(self):
+        # Its failure is reported per record by the load. Reserving a name for a record that will never
+        # be written would move a healthy record off a name nothing holds.
+        broken = self._staged("rec-1")
+        broken["record"]["descriptors"] = "not-a-descriptor-object"
+        owners, _ = self._plan([broken, self._staged("rec-2")])
+        self.assertEqual(owners[self._key(self.NAME)], self._claimant("rec-2"))
+
+
+class ClaimingThePlannedName(unittest.TestCase):
+    """The pool applies the plan: the record entitled to a name gets it, whoever claims first."""
+
+    NAME = "payments-mcp"
+
+    def setUp(self):
+        self.transformer = RecordTransformer({})
+
+    @staticmethod
+    def _claimant(record_id: str) -> str:
+        return f"{SOURCE['accountId']}/{SOURCE['region']}/{SOURCE['registryId']}/{record_id}"
+
+    def _claim(self, pool, sequence: int, record_id: str, name: str | None = None):
+        return _process_record(
+            "runs/raw/part-00000.jsonl",
+            envelope(
+                oldRecordId=record_id,
+                record=dict(PREVIEW_RECORD, recordId=record_id, name=name or self.NAME),
+            ),
+            mapping_by_id={"map-a": MAPPING},
+            transformer=self.transformer,
+            clients=None,
+            dry_run=True,
+            name_claims=pool,
+            claim_sequence=sequence,
+        )
+
+    def test_the_planned_owner_keeps_the_name_even_when_it_claims_second(self):
+        # Without the plan this is the bug: the first record to reach the claim keeps the name, so the
+        # answer changes with the staged order, and a re-extract renames both records.
+        pool = TargetNameClaimPool(
+            duplicate_names="suffix",
+            name_owners={(str(TARGET["registryId"]), self.NAME, None): self._claimant("rec-2")},
+        )
+        first = self._claim(pool, 0, "rec-1")
+        second = self._claim(pool, 1, "rec-2")
+
+        self.assertEqual(first.name, disambiguated_target_name(self.NAME, self._claimant("rec-1")))
+        self.assertEqual(second.name, self.NAME)
+
+    def test_a_record_that_already_answers_to_a_suffixed_name_keeps_answering_to_it(self):
+        # Nothing else is being loaded, so the name it came with is free -- and taking it would rename
+        # a record that is already published under the suffixed one.
+        suffixed = disambiguated_target_name(self.NAME, self._claimant("rec-2"))
+        pool = TargetNameClaimPool(
+            duplicate_names="suffix",
+            assigned_names={self._claimant("rec-2"): suffixed},
+        )
+        outcome = self._claim(pool, 0, "rec-2")
+        self.assertEqual(outcome.name, suffixed)
+        self.assertEqual(outcome.display_name, self.NAME)
+
+    def test_a_stale_assigned_name_that_is_not_this_records_suffix_is_ignored(self):
+        # State recorded against a different base name (the record was renamed at source) must not
+        # pin the record to a name it is no longer entitled to.
+        pool = TargetNameClaimPool(
+            duplicate_names="suffix",
+            assigned_names={self._claimant("rec-2"): "something-else-entirely"},
+        )
+        self.assertEqual(self._claim(pool, 0, "rec-2").name, self.NAME)
+
+    def test_the_plan_is_ignored_under_the_default_mode(self):
+        # `fail` never moves a record off a name, so a plan it was handed must not change which record
+        # is refused -- the default path has to behave exactly as it did before suffixing existed.
+        pool = TargetNameClaimPool(
+            name_owners={(str(TARGET["registryId"]), self.NAME, None): self._claimant("rec-2")},
+            assigned_names={self._claimant("rec-2"): "anything"},
+        )
+        first = self._claim(pool, 0, "rec-1")
+        second = self._claim(pool, 1, "rec-2")
+        self.assertEqual(first.name, self.NAME)
+        self.assertFalse(second.succeeded)
+        self.assertIn("already claimed", second.error)
+
+    def test_when_both_names_are_taken_the_error_names_both(self):
+        # `suffix` reduces the collisions that stop a migration; it does not remove them. The operator
+        # has to be able to tell this apart from the ordinary duplicate.
+        claimant = self._claimant("rec-2")
+        suffixed = disambiguated_target_name(self.NAME, claimant)
+        claims = TargetNameClaims(
+            {
+                (str(TARGET["registryId"]), self.NAME, None): "other-record",
+                (str(TARGET["registryId"]), suffixed, None): "another-record",
+            },
+            duplicate_names="suffix",
+        )
+        with self.assertRaises(RegistryApiError) as raised:
+            claims.claim(str(TARGET["registryId"]), self.NAME, None, claimant)
+        message = str(raised.exception)
+        self.assertIn(self.NAME, message)
+        self.assertIn(suffixed, message)
+        self.assertIn("both names are taken", message)
+
+    def test_a_name_that_coincides_with_another_records_suffix_resolves_the_same_in_every_order(self):
+        # The one case where two records are planned onto the same identity: rec-3 is *named* what rec-2
+        # would be renamed to. Reserving the planned name is not enough on its own -- the claim has to
+        # enforce the reservation, or whichever of the two reached it first would keep the name and a
+        # re-extract that paginated differently would rename the other one instead.
+        names = {
+            "rec-1": self.NAME,
+            "rec-2": self.NAME,
+            "rec-3": disambiguated_target_name(self.NAME, self._claimant("rec-2")),
+        }
+        for order in itertools.permutations(sorted(names)):
+            with self.subTest(order=order):
+                plan, _ = plan_target_names(
+                    _StagedRecords(
+                        envelope(
+                            oldRecordId=record_id,
+                            record=dict(PREVIEW_RECORD, recordId=record_id, name=names[record_id]),
+                        )
+                        for record_id in order
+                    ),
+                    [{"key": "runs/raw/part-00000.jsonl"}],
+                    mapping_by_id={"map-a": MAPPING},
+                    transformer=self.transformer,
+                    known_record_ids={},
+                    assigned_names={},
+                )
+                pool = TargetNameClaimPool(duplicate_names="suffix", name_owners=plan)
+                outcomes = {
+                    record_id: self._claim(pool, sequence, record_id, names[record_id])
+                    for sequence, record_id in enumerate(order)
+                }
+
+                self.assertEqual(outcomes["rec-1"].name, self.NAME)
+                self.assertEqual(outcomes["rec-3"].name, names["rec-3"])
+                self.assertFalse(outcomes["rec-2"].succeeded)
+                self.assertIn("both names are taken", outcomes["rec-2"].error)
+
+    def test_there_is_no_suffixed_form_of_an_empty_name(self):
+        # The transform never produces one; this is the guard that keeps a future caller from asking
+        # the service for a name starting with '-', which it refuses.
+        with self.assertRaises(RegistryApiError):
+            disambiguated_target_name("", self._claimant("rec-1"))
 
 
 class ApprovalSummaryReporting(unittest.TestCase):
