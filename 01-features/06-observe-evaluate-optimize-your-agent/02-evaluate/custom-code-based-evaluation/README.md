@@ -1,6 +1,6 @@
-# Custom Code-Based evaluation
+# Custom Code-Based Evaluation
 
-Evaluate your Amazon Bedrock AgentCore agent using **deterministic Lambda-backed evaluators**. Code-based evaluators run your own Python logic — regex checks, business rule validation, statistical tests — and return a score without any LLM inference. Results are fully reproducible across runs.
+Evaluate your Amazon Bedrock AgentCore agent using three complementary evaluator types: **deterministic code-based Lambda evaluators** that run your own Python logic, **built-in LLM-as-a-judge evaluators** that produce natural-language explanations, and **decision-model evaluators** backed by small specialized models that return calibrated confidence scores at a fraction of the cost of a full LLM call. All three types work with the same `EvaluationClient` API and can run in the same evaluation pass.
 
 ## What You'll Learn
 
@@ -9,7 +9,9 @@ Evaluate your Amazon Bedrock AgentCore agent using **deterministic Lambda-backed
 | **Code-based evaluators** | Lambda functions that receive agent spans and return scores using deterministic logic |
 | **TRACE-level code evaluator** | `HRResponseLength` — validates response length is within acceptable bounds |
 | **SESSION-level code evaluator** | `HRFactChecker` — pattern-matches HR facts (PTO balances, pay figures, policy details) against known ground truth |
-| **Mixed evaluator sets** | Combine code-based evaluators with built-in LLM evaluators in the same run |
+| **Decision-model evaluators** | Small specialized models (Jev, Strands Decider 2B) that return calibrated probability scores per turn — faster and cheaper than LLM inference |
+| **Confidence-based cascade** | Use decision-model scores as a cheap first-pass gate; only escalate flagged turns to built-in LLM evaluators for a detailed explanation |
+| **Mixed evaluator sets** | Combine code-based, decision-model, and built-in LLM evaluators in the same run |
 | **On-demand evaluation** | Spot-check a specific session with `EvaluationClient` |
 | **Dataset runner** | Automate agent invocation + evaluation across multiple scenarios |
 | **Online evaluation** | Create a config that continuously scores live traffic with code-based evaluators |
@@ -122,15 +124,24 @@ agentcore add online-eval \
 
 ## Key Concepts
 
-### Code-Based vs Built-in Evaluators
+### Evaluator Types
 
-| | Built-in (LLM-as-judge) | Code-based (Lambda) |
-|---|---|---|
-| **Judge** | LLM with a fixed evaluation prompt | Your custom Lambda function |
-| **Output** | Probabilistic score with explanation | Deterministic score |
-| **Cost** | LLM inference per evaluation | Lambda invocation |
-| **Best for** | Nuanced qualitative assessment | Exact data validation, business rules |
-| **Customizable** | Limited (fixed prompt templates) | Fully customizable |
+AgentCore supports three evaluator types that each occupy a different cost/accuracy/customizability position.
+
+| | Built-in (LLM-as-judge) | Code-based (Lambda) | Decision model |
+|---|---|---|---|
+| **Judge** | LLM with a fixed evaluation prompt | Your custom Lambda function | Small specialized model (2B parameters) |
+| **Output** | Probabilistic score + natural-language explanation | Deterministic score | Calibrated confidence score (0–1) |
+| **Cost** | LLM inference per call | Lambda invocation only | API fee (Jev) or self-hosted compute |
+| **Latency** | 2–10 s | < 1 ms | ~100–200 ms |
+| **Best for** | Nuanced qualitative assessment, root-cause explanation | Exact data validation, business rules | High-volume screening, cost-efficient cascade gate |
+| **Customizable** | Limited (fixed prompt templates) | Fully customizable | Question definitions in `evaluators.json` |
+
+**When to use each type:**
+
+- Use **code-based evaluators** when you need exact, reproducible checks — specific numbers in responses, correct tool call sequences, format constraints. No LLM inference, no variance between runs.
+- Use **built-in evaluators** when you need a qualitative judgment or a natural-language explanation of what went wrong. Best for debugging and reporting, but each call runs full LLM inference.
+- Use **decision models** when you need to evaluate a large volume of turns affordably. Decision models are trained specifically to select from a fixed set of options and return well-calibrated probabilities, making them well-suited as a cost-effective first-pass screen. The cascade pattern pairs them with built-in evaluators: the decision model flags anything below a confidence threshold, and only those flagged sessions escalate to the more expensive LLM evaluator.
 
 ### Evaluator Levels
 
@@ -161,41 +172,54 @@ def lambda_handler(input: EvaluatorInput, context) -> EvaluatorOutput:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  evaluate.py                                                                 │
-│                                                                              │
-│  1. Deploy Lambda functions (hr-response-length, hr-fact-checker)            │
-│  2. Register evaluators via bedrock-agentcore-control                        │
-│  3a. On-demand: EvaluationClient.run(session_id, evaluator_ids)             │
-│  3b. Dataset: OnDemandEvaluationDatasetRunner.run(dataset, agent_invoker)   │
-│  3c. Online: create_online_evaluation_config (auto-evaluates all sessions)  │
-└────────────────┬────────────────────────────────────────────────────────────┘
-                 │
-     ┌───────────▼────────────┐        ┌──────────────────────────────┐
-     │  AgentCore runtime      │        │  AgentCore evaluations DP   │
-     │  HR Assistant agent     │──OTel─▶│  bedrock-agentcore          │
-     │  (Strands Agents)       │        │                             │
-     └─────────────────────────┘        │   ┌──────────────────────┐  │
-                                        │   │  Builtin LLM evals   │  │
-     ┌─────────────────────────┐        │   │  Correctness         │  │
-     │  CloudWatch Logs        │        │   │  Helpfulness         │  │
-     │  /aws/bedrock-agentcore/│        │   │  ResponseRelevance   │  │
-     │  runtimes/<agent-id>    │        │   └──────────────────────┘  │
-     └─────────────────────────┘        │   ┌──────────────────────┐  │
-                                        │   │  Code-based Lambda   │  │
-     ┌─────────────────────────┐        │   │  HRResponseLength    │  │
-     │  AWS Lambda             │◀───────│   │  HRFactChecker       │  │
-     │  hr-response-length     │        │   └──────────────────────┘  │
-     │  hr-fact-checker        │        └─────────────────────────────┘
-     └─────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  evaluate.py / cascade.py                                                     │
+│                                                                               │
+│  1. Deploy Lambda functions (hr-response-length, hr-fact-checker,             │
+│                              jev-evaluator / strands-decider-evaluator)       │
+│  2. Register evaluators via bedrock-agentcore-control                         │
+│  3a. On-demand: EvaluationClient.run(session_id, evaluator_ids)              │
+│  3b. Dataset: OnDemandEvaluationDatasetRunner.run(dataset, agent_invoker)    │
+│  3c. Online: create_online_evaluation_config (auto-evaluates all sessions)   │
+│  3d. Cascade: DM screen → escalate flagged turns to built-in LLM evaluators  │
+└─────────────────┬────────────────────────────────────────────────────────────┘
+                  │
+     ┌────────────▼────────────┐        ┌───────────────────────────────────┐
+     │  AgentCore runtime       │        │  AgentCore evaluations DP        │
+     │  HR Assistant agent      │──OTel─▶│  bedrock-agentcore               │
+     │  (Strands Agents)        │        │                                   │
+     └──────────────────────────┘        │  ┌───────────────────────────┐   │
+                                         │  │  Builtin LLM evals        │   │
+     ┌──────────────────────────┐        │  │  Correctness  Helpfulness │   │
+     │  CloudWatch Logs          │        │  └───────────────────────────┘   │
+     │  /aws/bedrock-agentcore/  │        │  ┌───────────────────────────┐   │
+     │  runtimes/<agent-id>      │        │  │  Code-based Lambda evals  │   │
+     └──────────────────────────┘        │  │  HRResponseLength         │   │
+                                         │  │  HRFactChecker            │◀──┤
+     ┌──────────────────────────┐        │  └───────────────────────────┘   │
+     │  AWS Lambda               │◀───────│  ┌───────────────────────────┐   │
+     │  hr-response-length       │        │  │  Decision-model evals     │   │
+     │  hr-fact-checker          │        │  │  JevGroundedness          │◀──┤
+     │  jev-evaluator            │        │  │  JevHelpfulness           │   │
+     │  strands-decider-evaluator│        │  │  DeciderGroundedness      │   │
+     └──────────────────────────┘        │  └───────────────────────────┘   │
+                                         └───────────────────────────────────┘
+           ┌──────────────────────────────────────────────────┐
+           │  Decision-model cascade (cascade.py)              │
+           │                                                   │
+           │  DM score < threshold?                            │
+           │    No  → session passes, no LLM call              │
+           │    Yes → Builtin.Correctness + Helpfulness        │
+           └──────────────────────────────────────────────────┘
 ```
 
-**evaluation flow:**
+**Evaluation flow:**
 1. Agent is invoked; OTel spans are written to CloudWatch
-2. `EvaluationClient` or `OnDemandEvaluationDatasetRunner` collects spans from CloudWatch
-3. The service calls each evaluator — builtin evaluators run LLM inference; code-based evaluators invoke your Lambda with the span payload
-4. For **online evaluation**, AgentCore continuously watches the log group and automatically evaluates new sessions without any explicit trigger
-5. All results are aggregated and returned (on-demand) or written to the online evaluation results log group
+2. `EvaluationClient` collects spans from CloudWatch
+3. The service dispatches to each evaluator: built-in evaluators run LLM inference; code-based evaluators invoke your Lambda with the span payload; decision-model evaluators invoke a Lambda that calls a specialized small model (Jev API or self-hosted Strands Decider server)
+4. For the **cascade**, decision-model scores act as a gate: only sessions with at least one turn below the threshold proceed to the more expensive built-in evaluators
+5. For **online evaluation**, AgentCore continuously watches the log group and automatically evaluates new sessions without any explicit trigger
+6. All results are aggregated and returned (on-demand) or written to the online evaluation results log group
 
 ---
 
@@ -548,14 +572,16 @@ Code-based evaluators are supported for **both on-demand** (`EvaluationClient`, 
 - Combine code-based evaluators with `EvaluationClient` to validate specific production sessions
 - Add code-based evaluators to your CI/CD pipeline for zero-cost regression testing on every deployment
 - Use online evaluation with a lower sampling rate (e.g. 10%) to cost-effectively monitor high-traffic agents
-- Try `--with-jev` or `--with-decider` to add a calibrated decision model to your evaluation mix
+- Run `evaluate.py --with-jev` or `--with-decider` to deploy decision-model evaluators, then `cascade.py` to see the cascade pattern in action
 - Explore [`ground-truth-based-evaluation/`](../ground-truth-based-evaluation/) for `EvaluationClient` and ground-truth-based evaluations with built-in evaluators
 
 ---
 
 ## Decision-Model Evaluators
 
-Beyond deterministic code and probabilistic LLM-as-a-judge, a third option is a **decision model** — a small, specialized model (≤2B parameters) trained specifically to select from a fixed set of options and return calibrated confidence scores. Decision models are faster than full LLMs, cheaper to run, and produce well-calibrated probabilities that map cleanly to `value` scores.
+Beyond deterministic code and probabilistic LLM-as-a-judge, a third option is a **decision model** — a small, specialized model (2B parameters or fewer) trained specifically to select from a fixed set of options and return calibrated confidence scores. Decision models are faster than full LLMs, cheaper to run, and produce well-calibrated probabilities that map cleanly to `value` scores.
+
+Decision models fit into an evaluation workflow in two ways. First, as a standalone evaluator registered with AgentCore, they return per-turn scores (groundedness, helpfulness, goal completion) just like any other evaluator in a `EvaluationClient.run()` call. Second, as the screening layer in a confidence-based cascade: the decision model score determines whether a turn is "interesting enough" to warrant a full LLM judgment with explanation. In practice, if your agent handles mostly routine queries that score above 0.80 on both groundedness and helpfulness, the cascade means you pay for LLM evaluation on only the small fraction of turns that fall short.
 
 This sample supports two interchangeable decision-model backends:
 
