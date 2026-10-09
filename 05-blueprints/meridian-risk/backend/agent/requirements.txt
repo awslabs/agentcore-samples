@@ -1,0 +1,14 @@
+# Pinned to the versions validated by fullstack-solution-template-for-agentcore.
+strands-agents==1.32.0
+bedrock-agentcore==1.4.7
+mcp==1.28.1
+boto3>=1.40.0
+# Used directly for the Gateway's per-request SigV4 signing hook.
+httpx>=0.27.0
+# Provider SDKs for the Gateway's /inference endpoint (LLM-gateway pattern).
+# Both are needed because which wire format a model speaks is a property of the
+# model: Claude serves /v1/messages (anthropic), everything else on the
+# bedrock-mantle connector serves /v1/chat/completions (openai). Each SDK gets
+# a custom httpx client carrying the same SigV4 signer used for MCP tool calls.
+openai>=1.55.0
+anthropic>=0.40.0

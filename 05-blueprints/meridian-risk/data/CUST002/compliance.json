@@ -1,0 +1,33 @@
+{
+  "customer_id": "CUST002",
+  "kyc_verification": {
+    "status": "completed",
+    "date": "2023-08-10",
+    "documents_verified": [
+      "Certificate of Incorporation",
+      "Articles of Association",
+      "Board Resolution",
+      "Beneficial Ownership Declaration"
+    ]
+  },
+  "sanctions_screening": {
+    "status": "clear",
+    "last_check": "2024-01-15",
+    "databases_checked": ["OFAC", "UN", "EU", "UK HMT"],
+    "matches": []
+  },
+  "pep_screening": {
+    "status": "clear",
+    "directors_screened": 2,
+    "beneficial_owners_screened": 3,
+    "matches": []
+  },
+  "adverse_media": {
+    "status": "clear",
+    "last_check": "2024-01-12",
+    "findings": []
+  },
+  "aml_risk_rating": "low",
+  "enhanced_due_diligence_required": false,
+  "next_review_date": "2024-08-10"
+}

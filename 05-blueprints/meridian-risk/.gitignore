@@ -1,0 +1,56 @@
+# Secrets and generated environment files
+.env
+.env.deploy
+frontend/.env.local
+
+# Terraform
+infra/terraform.tfvars
+infra/*.auto.tfvars
+infra/.terraform/
+# Archived state from a previous account. Terraform state is not portable
+# between accounts: the provider derives each resource's identity from the
+# *current* caller's account id plus the stored resource id, so reusing a state
+# file against different credentials fails with "Unexpected Identity Change"
+# before any API call is made.
+infra/.state-archive/
+infra/.terraform.lock.hcl
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tf.plan
+infra/.artifacts/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS / editor
+.DS_Store
+.idea/
+
+# Tooling artifacts
+.omc/
+**/.omc/
+frontend/tsconfig.tsbuildinfo
+infra-outputs.json
+frontend/public/config.json
+infra/*.plan
+docs/palettes/
+
+# Screenshot scratch space. Curated images live in docs/assets/ and are tracked.
+docs/screenshots/
+
+# Internal-only artifacts — never ship to the public repo.
+# .security/ holds security-scan exports; presentation/ holds internal decks.
+.security/
+presentation/
+
+# Local-only working docs — kept on disk, never pushed.
+# superpowers/ holds design specs + implementation plans; architecture.py is the
+# local diagram generator (its rendered output in docs/assets/ is tracked).
+docs/superpowers/
+docs/architecture.py

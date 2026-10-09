@@ -1,0 +1,183 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Login
+   Split plate: brand statement left, form right. The plate carries the
+   institutional tone before any data is on screen.
+   ========================================================================== */
+
+.boot {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+.login {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  min-height: 100vh;
+}
+
+@media (max-width: 940px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+  .login-plate {
+    display: none;
+  }
+}
+
+.login-plate {
+  position: relative;
+  border-right: var(--rule);
+  background:
+    radial-gradient(ellipse 70% 50% at 20% 0%, var(--plate-glow) 0%, transparent 70%),
+    linear-gradient(160deg, var(--plate-base), var(--ink-900) 60%);
+  overflow: hidden;
+}
+
+/* Faint ledger rules — a nod to a printed credit memo. Tiles cleanly: a 1px
+   line on a 34px band has no visible join, unlike a sized gradient wash. */
+.login-plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--plate-line) 1px, transparent 1px);
+  background-size: 100% 34px;
+  background-repeat: repeat;
+  opacity: 0.5;
+}
+
+/* Oversized amber section mark, bled off the corner. */
+.login-plate::after {
+  content: "§";
+  position: absolute;
+  right: -60px;
+  bottom: -120px;
+  font-family: var(--serif);
+  font-size: 420px;
+  line-height: 1;
+  color: var(--amber);
+  opacity: 0.045;
+  pointer-events: none;
+}
+
+.login-plate-inner {
+  position: relative;
+  padding: 54px 56px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.login-wordmark {
+  font-size: 30px;
+}
+
+.login-rule {
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber-dim), transparent 70%);
+  margin: 26px 0 32px;
+}
+
+.login-headline {
+  font-family: var(--serif);
+  font-size: clamp(34px, 3.6vw, 52px);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+}
+
+.login-headline em {
+  color: var(--amber);
+  font-style: italic;
+}
+
+.login-blurb {
+  color: var(--text-mid);
+  font-size: 14px;
+  line-height: 1.62;
+  margin-top: 20px;
+  max-width: 46ch;
+}
+
+/* The hairline separators come from the 1px grid gap over an ink background.
+   padding-top must stay off this element, or the padding renders as an empty
+   leading cell above the first row. */
+.login-stack {
+  margin-top: auto;
+  display: grid;
+  gap: 1px;
+  background: var(--ink-700);
+  border-top: var(--rule);
+  border-bottom: var(--rule);
+}
+
+.login-stack > div {
+  background: var(--ink-850);
+  padding: 12px 2px;
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.login-stack dt {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.login-stack dd {
+  font-size: 13px;
+  color: var(--text-mid);
+}
+
+.login-foot {
+  margin-top: 26px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+}
+
+.login-form-side {
+  display: grid;
+  place-items: center;
+  padding: 40px 32px;
+}
+
+.login-form {
+  width: 100%;
+  max-width: 372px;
+}
+
+.login-title {
+  font-family: var(--serif);
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 8px;
+}
+
+.login-sub {
+  color: var(--text-mid);
+  font-size: 13.5px;
+  margin-bottom: 28px;
+}
+
+.login-note {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: var(--rule);
+  color: var(--text-lo);
+  font-size: 12px;
+  line-height: 1.55;
+}

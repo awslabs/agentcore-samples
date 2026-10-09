@@ -1,0 +1,28 @@
+{
+  "customer_id": "CUST002",
+  "name": "TechStart Innovations Inc",
+  "account_type": "corporate",
+  "industry": "Technology",
+  "incorporation": {
+    "country": "United States",
+    "state": "California",
+    "date": "2020-06-22"
+  },
+  "contact": {
+    "address": "456 Innovation Drive, San Francisco, CA 94105",
+    "phone": "+1-415-555-0200",
+    "email": "finance@techstart.example.com"
+  },
+  "directors": [
+    { "name": "Michael Chen", "role": "CEO", "pep_status": false },
+    { "name": "Sarah Johnson", "role": "CTO", "pep_status": false }
+  ],
+  "beneficial_owners": [
+    { "name": "Michael Chen", "ownership_percentage": 35 },
+    { "name": "Sarah Johnson", "ownership_percentage": 25 },
+    { "name": "Venture Capital Partners", "ownership_percentage": 40 }
+  ],
+  "kyc_status": "verified",
+  "risk_flags": [],
+  "annual_revenue": "$10M-$25M"
+}

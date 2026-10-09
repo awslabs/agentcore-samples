@@ -1,0 +1,139 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Theme tokens — the only place colour literals belong.
+
+   Both themes define the same names, so component rules never branch on theme.
+   The `ink-*` ramp runs dark-to-light in the dark theme and light-to-dark in the
+   light theme; what stays constant is its *role* — 900 is the page ground, 850
+   panels, 700 borders.
+   ========================================================================== */
+
+/* ==========================================================================
+   Meridian Risk — KYC Onboarding Desk
+   Aesthetic: institutional risk terminal. Deep slate ground, amber signal,
+   editorial serif for headline moments, mono for every number and identifier.
+   Numbers are data: they are always mono, always tabular.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Theme tokens.
+
+   Both themes define the same names, so component rules never branch on theme.
+   The `ink-*` ramp runs dark-to-light in the dark theme and light-to-dark in
+   the light theme; what stays constant is its *role* — 900 is the page ground,
+   850 panels, 700 borders.
+   -------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* Ground — layered slate rather than flat black, so panels read as depth. */
+  --ink-900: #0b0e14;
+  --ink-850: #0f1319;
+  --ink-800: #141922;
+  --ink-750: #1a2029;
+  --ink-700: #222a35;
+  --ink-600: #2f3947;
+
+  /* Type */
+  --text-hi: #eef1f6;
+  --text-mid: #a3adbd;
+  --text-lo: #6b7789;
+
+  /* Atmosphere */
+  --grid-line: #141922;
+  --vignette: #1c2430;
+  --masthead-from: #0f1319f2;
+  --masthead-to: #0b0e14d9;
+  --hover-tint: #ffffff05;
+  --plate-glow: #232e3c;
+  --plate-base: var(--ink-850);
+  --plate-line: var(--ink-800);
+
+  /* Amber is the institutional signal colour — used sparingly, never decorative. */
+  --amber: #e8a33d;
+  --amber-dim: #8a6224;
+  --amber-glow: #e8a33d1f;
+  /* Text placed on top of a solid amber fill. */
+  --amber-ink: #17130a;
+
+  /* Verdict semantics. Muted enough to sit in a dense table, clear enough to scan.
+     The `-line` tokens are the same hues at border strength. */
+  --approve: #4ba883;
+  --approve-bg: #4ba8831a;
+  --approve-line: #4ba88340;
+  --escalate: #d99339;
+  --escalate-bg: #d993391f;
+  --escalate-line: #d9933940;
+  --reject: #d1596b;
+  --reject-bg: #d1596b1a;
+  --reject-line: #d1596b40;
+  --reject-edge: #d1596b55;
+  --reject-text: #f0b8c1;
+
+  --serif: "Instrument Serif", Georgia, serif;
+  --sans: "IBM Plex Sans", -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --rule: 1px solid var(--ink-700);
+}
+
+/* --------------------------------------------------------------------------
+   Light theme — "Warm Stone & Copper".
+
+   The ground is stone rather than paper so panels visibly float above it: the
+   ground-to-panel span is ~14/255. An earlier version put both within ~7/255,
+   which made every surface sit at the same lightness and read as washed out.
+
+   The accent is copper (#a3611a), not the dark theme's amber. At #e8a33d the
+   amber is unreadable on a light ground; a straight darkening to ~#8a5e0f
+   turns olive, so the hue is shifted toward red to stay a warm metal.
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ink-900: #e9e4d8;
+  --ink-850: #f7f4ec;
+  --ink-800: #efe9dc;
+  --ink-750: #f1ecdf;
+  --ink-700: #cabfa6;
+  --ink-600: #ab9e80;
+
+  --text-hi: #1a1710;
+  --text-mid: #554d3d;
+  --text-lo: #857a63;
+
+  --grid-line: #ded7c6;
+  --vignette: #fffdf7;
+  --masthead-from: #f7f4ecf2;
+  --masthead-to: #e9e4d8d9;
+  --hover-tint: #0000000d;
+  --plate-glow: #fffdf7;
+  /* The login plate sits a shade darker than the form side, so the split reads
+     as two surfaces. Inverting the dark theme's lighter-plate relationship is
+     what keeps the layering legible on paper. */
+  --plate-base: #e2dccb;
+  --plate-line: #cdc4ab;
+
+  --amber: #a3611a;
+  --amber-dim: #c99a5c;
+  --amber-glow: #a3611a14;
+  --amber-ink: #fff8ec;
+
+  --approve: #1b6b45;
+  --approve-bg: #1b6b4516;
+  --approve-line: #1b6b4545;
+  --escalate: #9a5a0c;
+  --escalate-bg: #9a5a0c16;
+  --escalate-line: #9a5a0c45;
+  --reject: #96222f;
+  --reject-bg: #96222f14;
+  --reject-line: #96222f40;
+  --reject-edge: #96222f5c;
+  --reject-text: #7a1a25;
+}

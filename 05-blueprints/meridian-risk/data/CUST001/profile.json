@@ -1,0 +1,28 @@
+{
+  "customer_id": "CUST001",
+  "name": "Acme Corporation Ltd",
+  "account_type": "corporate",
+  "industry": "Manufacturing",
+  "incorporation": {
+    "country": "United States",
+    "state": "Delaware",
+    "date": "2015-03-15"
+  },
+  "contact": {
+    "address": "123 Business Park, Suite 400, New York, NY 10001",
+    "phone": "+1-212-555-0100",
+    "email": "finance@acmecorp.example.com"
+  },
+  "directors": [
+    { "name": "John Smith", "role": "CEO", "pep_status": false },
+    { "name": "Jane Doe", "role": "CFO", "pep_status": false }
+  ],
+  "beneficial_owners": [
+    { "name": "John Smith", "ownership_percentage": 45 },
+    { "name": "Jane Doe", "ownership_percentage": 30 },
+    { "name": "Investment Fund ABC", "ownership_percentage": 25 }
+  ],
+  "kyc_status": "verified",
+  "risk_flags": [],
+  "annual_revenue": "$50M-$100M"
+}
