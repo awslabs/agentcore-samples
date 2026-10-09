@@ -1,0 +1,26 @@
+[project]
+name = "agent-core-datadog"
+version = "0.1.0"
+description = "Amazon Bedrock AgentCore integration with Datadog LLM Observability"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3",
+    "bedrock-agentcore",
+    "bedrock-agentcore-starter-toolkit",
+    "uv",
+    "strands-agents",
+    "strands-agents-tools",
+    "opentelemetry-exporter-otlp-proto-http",
+    "opentelemetry-sdk",
+]
+
+[tool.uv.sources]
+strands-agents-tools = { git = "https://github.com/strands-agents/tools.git" }
+strands-agents = { git = "https://github.com/okamototk/sdk-python.git", branch = "fix-env-OTEL_SERVICE_NAME" }
+
+[tool.uv]
+override-dependencies = [
+    "strands-agents-tools @ git+https://github.com/strands-agents/tools",
+    "strands-agents @ git+https://github.com/okamototk/sdk-python.git@fix-env-OTEL_SERVICE_NAME",
+]
