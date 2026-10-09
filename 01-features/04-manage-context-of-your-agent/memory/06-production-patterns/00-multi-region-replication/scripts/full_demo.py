@@ -43,6 +43,7 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, ".")
 from agentcore_replication import (
     DualRegionEventWriter,
+    InMemoryRecordMap,
     StreamStats,
     make_target_client,
     process_kinesis_records,
@@ -96,12 +97,12 @@ def wait_active(ctl, mem_id, label, timeout=600):
 
 def create_memory(ctl, region, name, execution_role_arn=None):
     strategies = [{"semanticMemoryStrategy": {"name": "semantic", "namespaces": [NAMESPACE_TEMPLATE]}}]
-    kwargs = dict(
-        name=name,
-        description="STM+LTM cross-region replication demo",
-        eventExpiryDuration=90,
-        memoryStrategies=strategies,
-    )
+    kwargs = {
+        "name": name,
+        "description": "STM+LTM cross-region replication demo",
+        "eventExpiryDuration": 90,
+        "memoryStrategies": strategies,
+    }
     if execution_role_arn:
         kwargs["memoryExecutionRoleArn"] = execution_role_arn
     mem_id = ctl.create_memory(**kwargs)["memory"]["id"]
@@ -191,18 +192,19 @@ def consume_stream(kinesis, stream_name, target_client, target_memory_id, expect
     ]
 
     stats = StreamStats()
+    record_map = InMemoryRecordMap()  # the Lambda path uses DynamoDBRecordMap instead
     deadline = time.time() + timeout
     while time.time() < deadline:
         resp = kinesis.get_records(ShardIterator=shard_iter, Limit=100)
         shard_iter = resp["NextShardIterator"]
         records = resp.get("Records", [])
         if records:
-            process_kinesis_records(records, target_client, target_memory_id, stats=stats)
+            process_kinesis_records(records, target_client, target_memory_id, record_map, stats=stats)
             log(
                 f"  stream: received={stats.received} replicated={stats.replicated} "
                 f"skipped={stats.skipped} failed={stats.failed}"
             )
-        if stats.replicated >= expected and expected > 0:
+        if stats.replicated >= expected > 0:
             break
         time.sleep(5)
     return stats
@@ -369,8 +371,8 @@ def main():
             if src_texts.issubset(tgt_text_set):
                 log(f"✅ LTM: all {len(src_texts)} source records replicated via the Kinesis record stream.")
                 log(
-                    "   (Replays are idempotent: the source memoryRecordId is used "
-                    "as the target requestIdentifier, so re-delivery is a no-op.)"
+                    "   (Replays are safe: creates send a clientToken derived from the "
+                    "stream event, and the record map skips events already applied.)"
                 )
             else:
                 ok = False
