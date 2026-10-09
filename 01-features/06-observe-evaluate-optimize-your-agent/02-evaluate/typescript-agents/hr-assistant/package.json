@@ -1,0 +1,31 @@
+{
+  "name": "hr-assistant-ts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TypeScript HR Assistant — LangGraph + OpenInference, deployed on Bedrock AgentCore Runtime",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/agent.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arizeai/openinference-instrumentation-langchain": "^4.0.20",
+    "@aws-sdk/client-cloudwatch-logs": "^3.835.0",
+    "@langchain/aws": "^1.4.4",
+    "@langchain/core": "^1.2.9",
+    "@langchain/langgraph": "^1.4.13",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^2.10.0",
+    "@opentelemetry/instrumentation": "^0.221.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-trace-base": "^2.10.0",
+    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "express": "^4.21.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

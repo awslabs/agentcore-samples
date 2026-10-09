@@ -124,8 +124,9 @@ Three evaluation interfaces are available depending on your use case:
 | [`custom-code-based-evaluation/`](custom-code-based-evaluation/)   | Lambda-backed deterministic evaluators (code-based) for exact data validation, mixed with built-in LLM evaluators; on-demand and online modes. Also includes Jev and Strands Decider decision-model evaluators (opt-in via `--with-jev` / `--with-decider`) |
 | [`skills-evaluation/`](skills-evaluation/)                         | Native Strands Agent Skills evaluated with `Builtin.SkillSelectionAccuracy` and `Builtin.SkillInstructionFollowing`                                               |
 | [`supported-frameworks/`](supported-frameworks/)                   | The same HR Assistant re-implemented in other supported frameworks (OpenAI Agents SDK, LlamaIndex), each deployed and evaluated with built-in and custom evaluators |
+| [`typescript-agents/`](typescript-agents/)                         | A TypeScript (LangGraph.js) HR Assistant in a custom container, evaluated across the full lifecycle: on-demand, dataset, batch, and online evaluation |
 
-The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the default HR Assistant agent deployed from `utils/`. The `skills-evaluation/` sample uses the same agent source with an opt-in skills directory and a separate runtime config. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders.
+The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the default HR Assistant agent deployed from `utils/`. The `skills-evaluation/` sample uses the same agent source with an opt-in skills directory and a separate runtime config. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders. The `typescript-agents/` sample ports the agent to TypeScript and deploys it as a custom Docker container with its own `deploy.py`.
 
 ## Agent Architecture
 
@@ -244,5 +245,11 @@ python evaluate.py
 cd skills-evaluation
 pip install -r requirements.txt
 python ../utils/deploy.py --skills-dir skills --config-output agent_config.json
+python evaluate.py
+
+# TypeScript agent: on-demand, dataset, batch, and online evaluation (from 02-evaluate/)
+cd typescript-agents
+pip install -r requirements.txt
+python deploy.py
 python evaluate.py
 ```
