@@ -109,6 +109,17 @@ aws bedrock-agentcore-control update-memory --region "$SOURCE_REGION" \
   --memory-id "$SOURCE_MEMORY_ID" \
   --memory-execution-role-arn "$EXEC_ROLE" >/dev/null
 
+# UpdateMemory leaves the memory UPDATING for a minute or two, and the next
+# update is rejected until it's ACTIVE again.
+echo "==> Waiting for $SOURCE_MEMORY_ID to become ACTIVE"
+while true; do
+  STATUS="$(aws bedrock-agentcore-control get-memory --region "$SOURCE_REGION" \
+    --memory-id "$SOURCE_MEMORY_ID" --query memory.status --output text)"
+  [[ "$STATUS" == ACTIVE ]] && break
+  [[ "$STATUS" == FAILED ]] && { echo "Memory $SOURCE_MEMORY_ID is FAILED" >&2; exit 1; }
+  sleep 10
+done
+
 # 6. Enable record streaming on the source memory -> Kinesis.
 echo "==> Enabling record streaming on $SOURCE_MEMORY_ID"
 python "$ROOT/scripts/enable_streaming.py" \
