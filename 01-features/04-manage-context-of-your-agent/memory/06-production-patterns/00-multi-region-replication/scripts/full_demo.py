@@ -231,7 +231,8 @@ def count_events(data, mem_id):
 def list_records(data, mem_id):
     recs, token = [], None
     while True:
-        kw = {"memoryId": mem_id, "namespace": "/", "maxResults": 100}
+        # namespacePath="/" lists every namespace; namespace="/" returns no records.
+        kw = {"memoryId": mem_id, "namespacePath": "/", "maxResults": 100}
         if token:
             kw["nextToken"] = token
         resp = data.list_memory_records(**kw)
