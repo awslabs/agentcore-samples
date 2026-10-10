@@ -8,3 +8,4 @@ playwright>=1.40.0
 rich>=13.0.0
 fastapi>=0.109.0
 uvicorn>=0.27.0
+nest_asyncio
