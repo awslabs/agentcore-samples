@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """Check runtime status"""
 
-import boto3
 import json
-from dotenv import load_dotenv
 import os
+import sys
+from pathlib import Path
 
-load_dotenv()
+import boto3
+
+# Importable both as `python utils/check_runtime.py` (sys.path[0] is utils/) and
+# as `python -m utils.check_runtime` (sys.path[0] is the sample root).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from utils.env_file import load_env_file
+
+# Was `from dotenv import load_dotenv; load_dotenv()` — python-dotenv is not a
+# declared dependency of this sample, so that import worked only where the package
+# happened to be installed. The shared loader keeps the same precedence
+# (already-exported variables win) with no dependency to pin.
+load_env_file()
 
 runtime_id = os.getenv("LAKEHOUSE_AGENT_RUNTIME_ID", "lakehouse_agent-Hhb3lX6y7M")
 region = os.getenv("AWS_REGION", "us-east-1")

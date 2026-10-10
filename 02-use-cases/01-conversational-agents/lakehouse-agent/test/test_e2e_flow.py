@@ -4,6 +4,7 @@ Test end-to-end flow: Cognito Token → Runtime → Agent → Gateway → MCP Se
 """
 
 import json
+
 import requests
 from config import config
 
@@ -62,10 +63,11 @@ def invoke_agent_runtime(bearer_token: str, prompt: str = "Show me all my claims
         base_url = f"https://bedrock-agentcore.{region}.amazonaws.com"
         runtime_url = f"{base_url}/runtimes/{escaped_arn}/invocations"
 
-        # Payload with bearer token for Gateway calls
+        # The bearer token is sent only in the Authorization header below; the agent
+        # reads it from there. It is deliberately absent from the body so that the
+        # agent's fallback warning identifies any caller still sending it that way.
         payload = {
             "prompt": prompt,
-            "bearer_token": bearer_token,  # Pass token in payload for agent to use with Gateway
         }
 
         print(f"   Runtime URL: {runtime_url}")

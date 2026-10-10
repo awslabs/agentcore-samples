@@ -31,7 +31,10 @@ def main():
         print("   ❌ Agent runtime ARN not found in SSM")
         print("\n💡 Solution:")
         print("   The agent hasn't been deployed yet.")
-        print("   Run: python lakehouse-agent/deploy_lakehouse_agent.py")
+        print(
+            "   Run: python deployment/2-lakehouse-tenant-roles-setup/setup_runtime_roles.py create --role lakehouse-agent"
+        )
+        print("        python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return
 
     # Get agent runtime details
