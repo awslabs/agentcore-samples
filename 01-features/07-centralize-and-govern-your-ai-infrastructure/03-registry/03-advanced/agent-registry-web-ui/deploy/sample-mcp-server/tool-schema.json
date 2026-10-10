@@ -1,0 +1,29 @@
+[
+  {
+    "name": "echo",
+    "description": "Echo a message back with a server-side UTC timestamp. Use to verify connectivity to the sample MCP server.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The text to echo back."
+        }
+      },
+      "required": ["message"]
+    }
+  },
+  {
+    "name": "describe_registry_record_types",
+    "description": "Describe the AWS Agent Registry record types and the descriptor plus schema version each one requires. Omit recordType to get all of them.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "recordType": {
+          "type": "string",
+          "description": "One of MCP, AGENT, SKILL, CUSTOM. Case-insensitive. Omit for the full catalog."
+        }
+      }
+    }
+  }
+]
