@@ -23,7 +23,7 @@
   },
   "homepage": "https://github.com/megandsouza03/typescript-mcp-server-on-aws-agentcore-runtime#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "express": "^5.1.0",
     "zod": "^3.25.76"
   },
