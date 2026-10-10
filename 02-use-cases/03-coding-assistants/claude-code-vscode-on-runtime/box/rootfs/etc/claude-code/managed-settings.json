@@ -1,0 +1,98 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "AWS_REGION": "us-east-1",
+    "AWS_PROFILE": "devbox",
+    "AWS_CONFIG_FILE": "/etc/devbox/aws-config",
+    "AWS_SHARED_CREDENTIALS_FILE": "/dev/null",
+    "AWS_EC2_METADATA_DISABLED": "true",
+    "AWS_CONTAINER_CREDENTIALS_FULL_URI": "",
+    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1",
+    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": "1",
+    "DISABLE_UPDATES": "1",
+    "DISABLE_INSTALLATION_CHECKS": "1"
+  },
+  "awsAuthRefresh": "aws sso login --sso-session devbox --use-device-code --no-browser",
+  "skipWebFetchPreflight": true,
+  "allowManagedHooksOnly": true,
+  "allowManagedPermissionRulesOnly": true,
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [{ "serverName": "web-search" }],
+  "strictKnownMarketplaces": [],
+  "disableSideloadFlags": true,
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(psql *)",
+      "Bash(mysql *)",
+      "Bash(mongosh *)",
+      "Bash(redis-cli *)",
+      "Bash(aws * --profile *)",
+      "Bash(aws *)",
+      "Bash(claude mcp *)",
+      "Bash(claude plugin *)",
+      "Bash(claude plugins *)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.pgpass)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Edit(//etc/claude-code/**)",
+      "Edit(//etc/devbox/**)",
+      "Edit(//opt/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/block-direct-access.py" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/last-session.py" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/agent-busy.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/agent-busy.py", "async": true }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/last-session.py", "async": true },
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/agent-busy.py", "async": true }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3 -I /etc/claude-code/hooks/agent-busy.py" }
+        ]
+      }
+    ]
+  }
+}

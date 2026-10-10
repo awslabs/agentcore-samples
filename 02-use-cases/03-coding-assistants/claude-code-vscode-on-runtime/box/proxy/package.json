@@ -1,0 +1,15 @@
+{
+  "name": "devbox-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The dev box's only way in: AgentCore /ping, /invocations and /ws in front of openvscode-server.",
+  "type": "module",
+  "main": "server.mjs",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "ws": "8.21.3"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=60000 ../test/*.test.mjs"
+  }
+}

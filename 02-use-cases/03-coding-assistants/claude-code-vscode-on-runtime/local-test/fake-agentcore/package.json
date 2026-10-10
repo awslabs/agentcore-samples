@@ -1,0 +1,16 @@
+{
+  "name": "devbox-fake-agentcore",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fake AgentCore Runtime data plane for the dev box local test",
+  "type": "module",
+  "main": "server.mjs",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

@@ -1,0 +1,129 @@
+<!-- Copyright (C) Microsoft Corporation. All rights reserved. -->
+<!--
+	Derived from openvscode-server 1.109.5 out/vs/code/browser/workbench/workbench.html (MIT License;
+	pinned by sha256 in build/pins.mjs). Changed for the dev box: our classic scripts run first in <head>
+	(the WebSocket shim, then sign-in and the loader), and the VS Code module scripts, workbench.css and
+	the workbench configuration are added by /devbox/loader.js once the box reports VS Code ready.
+	On /terminal the loader adds xterm.js and /devbox/terminal.js instead, and never loads VS Code.
+	The edge Lambda puts a fresh CSP nonce on the script tags of every response.
+-->
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+
+		<!-- Mobile tweaks -->
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-title" content="Code">
+		<link rel="apple-touch-icon" href="{{WORKBENCH_WEB_BASE_URL}}/resources/server/code-192.png" />
+
+		<!-- Disable pinch zooming -->
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+
+		<title>Dev box</title>
+
+		<!-- Workbench Icon/Manifest -->
+		<link rel="icon" href="{{WORKBENCH_WEB_BASE_URL}}/resources/server/favicon.ico" type="image/x-icon" />
+		<link rel="manifest" href="{{WORKBENCH_WEB_BASE_URL}}/resources/server/manifest.json" crossorigin="use-credentials" />
+
+		<!-- Dev box: the shim must replace window.WebSocket before anything else runs. -->
+		<script nonce="{{CSP_NONCE}}" src="/devbox/shim.js"></script>
+		<script nonce="{{CSP_NONCE}}" src="/devbox/oidc.js"></script>
+		<script nonce="{{CSP_NONCE}}" src="/devbox/loader.js"></script>
+
+		<style>
+			html, body { margin: 0; height: 100%; background: #1f1f1f; }
+			.devbox-overlay {
+				position: fixed; inset: 0; z-index: 2147483000;
+				display: flex; align-items: center; justify-content: center;
+				background: #1f1f1f; color: #cccccc;
+				font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+			}
+			.devbox-card {
+				width: min(520px, calc(100vw - 48px)); padding: 28px 32px;
+				background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+			}
+			.devbox-card h1 { margin: 0 0 12px; font-size: 18px; font-weight: 600; color: #ffffff; }
+			.devbox-card p { margin: 0 0 8px; }
+			.devbox-muted { color: #9d9d9d; }
+			.devbox-states { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 16px 0 8px; }
+			.devbox-states dt { color: #9d9d9d; }
+			.devbox-states dd { margin: 0; }
+			.devbox-hint code, .devbox-banner code {
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+				background: #1f1f1f; border: 1px solid #3c3c3c; border-radius: 4px; padding: 1px 5px;
+				word-break: break-all;
+			}
+			.devbox-actions { display: flex; gap: 8px; margin-top: 20px; }
+			.devbox-overlay button, .devbox-banner button {
+				font: inherit; color: #ffffff; background: #0e639c; border: 1px solid #0e639c;
+				border-radius: 4px; padding: 5px 14px; cursor: pointer;
+			}
+			.devbox-overlay button:hover, .devbox-banner button:hover { background: #1177bb; }
+			.devbox-overlay button:focus-visible, .devbox-banner button:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+			#devbox-signout { background: transparent; border-color: #5a5a5a; }
+			.devbox-banners {
+				position: fixed; right: 16px; bottom: 36px; z-index: 2147483001;
+				display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+				width: max-content; max-width: min(720px, calc(100vw - 48px));
+			}
+			.devbox-banner {
+				display: flex; align-items: center; gap: 12px;
+				padding: 10px 14px; background: #252526; color: #ffffff; border: 1px solid #cca700; border-radius: 6px;
+				font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+				box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+			}
+			.devbox-banner[role="status"] { border-color: #3c3c3c; }
+			.devbox-overlay [hidden] { display: none !important; }
+			.devbox-modes { color: #9d9d9d; }
+			.devbox-card .devbox-modes { margin: 16px 0 0; }
+			.devbox-modes a { color: #3794ff; text-decoration: none; }
+			.devbox-modes a:hover { text-decoration: underline; }
+			.devbox-modes [aria-current] { color: #ffffff; }
+			/* /terminal: a bar, then the xterm.js terminal filling the rest of the window. */
+			.devbox-term { position: fixed; inset: 0; display: flex; flex-direction: column; background: #1e1e1e; }
+			.devbox-term-bar {
+				flex: none; display: flex; align-items: center; gap: 16px; height: 34px; padding: 0 12px;
+				background: #252526; border-bottom: 1px solid #3c3c3c; color: #cccccc;
+				font: 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+			}
+			.devbox-term-title { color: #ffffff; font-weight: 600; white-space: nowrap; }
+			.devbox-term-state { flex: 1; color: #9d9d9d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+			.devbox-term-bar button {
+				font: inherit; color: #ffffff; background: transparent; border: 1px solid #5a5a5a;
+				border-radius: 4px; padding: 4px 10px; cursor: pointer;
+			}
+			.devbox-term-bar button:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+			.devbox-term-screen { flex: 1; min-height: 0; overflow: hidden; padding: 6px 0 0 10px; }
+		</style>
+	</head>
+
+	<body aria-label="">
+		<div id="devbox-overlay" class="devbox-overlay" aria-busy="true">
+			<main class="devbox-card" aria-labelledby="devbox-title">
+				<h1 id="devbox-title">Dev box</h1>
+				<p id="devbox-status" role="status" aria-live="polite">Loading…</p>
+				<p id="devbox-detail" class="devbox-muted"></p>
+				<p id="devbox-elapsed" class="devbox-muted" aria-live="off"></p>
+				<dl id="devbox-states" class="devbox-states" hidden>
+					<dt>Disk</dt><dd id="devbox-volume"></dd>
+					<dt>VS Code</dt><dd id="devbox-vscode"></dd>
+					<dt>AWS sign-in in the box</dt><dd id="devbox-signedin"></dd>
+				</dl>
+				<p id="devbox-hint" class="devbox-hint devbox-muted" hidden>
+					If you aren't signed in to AWS in the box, Claude Code shows a sign-in URL and a code in its
+					terminal when VS Code opens: open the URL and enter the code. Or open Terminal › New Terminal
+					and run <code id="devbox-device-login"></code>.
+				</p>
+				<div class="devbox-actions">
+					<button type="button" id="devbox-signin" hidden>Sign in</button>
+					<button type="button" id="devbox-retry" hidden>Try again</button>
+					<button type="button" id="devbox-signout" hidden>Sign out</button>
+				</div>
+				<!-- The loader puts the Terminal · VS Code switch here once it knows which one this page is. -->
+				<div id="devbox-modes" hidden></div>
+			</main>
+		</div>
+	</body>
+</html>

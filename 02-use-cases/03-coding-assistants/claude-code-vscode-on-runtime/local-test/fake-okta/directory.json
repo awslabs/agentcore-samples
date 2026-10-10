@@ -1,0 +1,49 @@
+{
+  "users": {
+    "ada": {
+      "uid": "00uadalovelace000001",
+      "login": "ada.lovelace@example.com",
+      "name": "Ada Lovelace",
+      "groups": ["Everyone", "devbox-users", "ClaudeCode-Power"]
+    },
+    "grace": {
+      "uid": "00ugracehopper0000002",
+      "login": "grace.hopper@example.com",
+      "name": "Grace Hopper",
+      "groups": ["Everyone", "devbox-users", "ClaudeCode-Standard"]
+    },
+    "mallory": {
+      "uid": "00umallory0000000003",
+      "login": "mallory@example.com",
+      "name": "Mallory Example",
+      "groups": ["Everyone"]
+    }
+  },
+  "clients": {
+    "0oadevboxspafake0001": {
+      "name": "Dev Box",
+      "type": "spa",
+      "redirectUris": ["${WORKBENCH_ORIGIN}/callback"],
+      "postLogoutRedirectUris": ["${WORKBENCH_ORIGIN}/"],
+      "grantTypes": ["authorization_code", "refresh_token"],
+      "ruleScopes": ["openid", "profile", "email", "offline_access", "devbox"],
+      "assignedGroups": ["devbox-users"]
+    },
+    "0oaotherappfake00002": {
+      "name": "Another app on the same authorization server (for example the laptop's Claude Code app)",
+      "type": "native",
+      "redirectUris": ["http://localhost:9499/callback"],
+      "postLogoutRedirectUris": [],
+      "grantTypes": ["authorization_code", "refresh_token"],
+      "ruleScopes": ["*"],
+      "assignedGroups": []
+    }
+  },
+  "authorizationServer": {
+    "audience": "api://default",
+    "scopes": ["openid", "profile", "email", "address", "phone", "offline_access", "devbox"],
+    "groupsClaim": { "filterStartsWith": "devbox", "onlyForScope": "devbox" },
+    "clientIdClaim": { "onlyForScope": "devbox" }
+  },
+  "trustedOrigins": ["${WORKBENCH_ORIGIN}"]
+}

@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PolicyEngineConfiguration",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:GetPolicyEngine",
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:policy-engine/DevboxToolsPolicies-*"
+    },
+    {
+      "Sid": "PolicyEngineAuthorization",
+      "Effect": "Allow",
+      "Action": ["bedrock-agentcore:AuthorizeAction", "bedrock-agentcore:PartiallyAuthorizeActions"],
+      "Resource": [
+        "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:policy-engine/DevboxToolsPolicies-*",
+        "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:gateway/devbox-tools-*"
+      ]
+    },
+    {
+      "Sid": "WebSearchGateway",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeGateway",
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:gateway/devbox-tools-*"
+    },
+    {
+      "Sid": "WebSearchTool",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeWebSearch",
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:aws:tool/web-search.v1"
+    }
+  ]
+}

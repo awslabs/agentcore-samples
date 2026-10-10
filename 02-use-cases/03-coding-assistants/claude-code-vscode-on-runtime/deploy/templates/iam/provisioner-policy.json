@@ -1,0 +1,120 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OwnLogStreams",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:{{REGION}}:{{ACCOUNT_ID}}:log-group:/aws/lambda/devbox-provisioner:log-stream:*"
+    },
+    {
+      "Sid": "TheBoxRecords",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+      "Resource": "arn:aws:dynamodb:{{REGION}}:{{ACCOUNT_ID}}:table/devbox-boxes"
+    },
+    {
+      "Sid": "FoldersOnTheBoxFileSystemOnly",
+      "Effect": "Allow",
+      "Action": ["elasticfilesystem:CreateAccessPoint", "elasticfilesystem:TagResource"],
+      "Resource": ["{{FILE_SYSTEM_ARN}}", "arn:aws:elasticfilesystem:{{REGION}}:{{ACCOUNT_ID}}:access-point/*"]
+    },
+    {
+      "Sid": "SeeFolders",
+      "Effect": "Allow",
+      "Action": ["elasticfilesystem:DescribeAccessPoints", "elasticfilesystem:DescribeFileSystems", "elasticfilesystem:DescribeMountTargets"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ExecRolesOnlyWithTheBoundary",
+      "Effect": "Allow",
+      "Action": ["iam:CreateRole", "iam:PutRolePolicy"],
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:role/devbox-exec-*",
+      "Condition": { "StringEquals": { "iam:PermissionsBoundary": "{{BOUNDARY_ARN}}" } }
+    },
+    {
+      "Sid": "ReadAndTagExecRoles",
+      "Effect": "Allow",
+      "Action": ["iam:GetRole", "iam:TagRole"],
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:role/devbox-exec-*"
+    },
+    {
+      "Sid": "PassExecRolesToAgentCoreOnly",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:role/devbox-exec-*",
+      "Condition": { "StringEquals": { "iam:PassedToService": "bedrock-agentcore.amazonaws.com" } }
+    },
+    {
+      "Sid": "NeverLiftOrWidenTheBoundary",
+      "Effect": "Deny",
+      "Action": ["iam:DeleteRolePermissionsBoundary", "iam:PutRolePermissionsBoundary", "iam:AttachRolePolicy",
+                 "iam:UpdateAssumeRolePolicy", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "MakeRuntimesInTheBoxSubnetOnly",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:CreateAgentRuntime",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "aws:RequestTag/{{TAG_KEY}}": "{{TAG_VALUE}}" },
+        "ForAllValues:StringEquals": {
+          "bedrock-agentcore:subnets": ["{{BOX_SUBNET_ID}}"],
+          "bedrock-agentcore:securityGroups": ["{{BOX_SECURITY_GROUP_ID}}"]
+        }
+      }
+    },
+    {
+      "Sid": "TheDefaultEndpointOfANewRuntime",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:runtime/*"
+    },
+    {
+      "Sid": "OurTagsOnANewRuntimeItsEndpointAndWorkloadIdentity",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:TagResource",
+      "Resource": [
+        "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:runtime/*",
+        "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:workload-identity-directory/default",
+        "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:workload-identity-directory/default/workload-identity/*"
+      ],
+      "Condition": {
+        "StringEquals": { "aws:RequestTag/{{TAG_KEY}}": "{{TAG_VALUE}}" },
+        "ForAllValues:StringEquals": { "aws:TagKeys": ["{{TAG_KEY}}", "{{USER_TAG_KEY}}"] }
+      }
+    },
+    {
+      "Sid": "TheBoxRuntimesOnly",
+      "Effect": "Allow",
+      "Action": ["bedrock-agentcore:UpdateAgentRuntime", "bedrock-agentcore:GetAgentRuntime", "bedrock-agentcore:GetResourcePolicy",
+                 "bedrock-agentcore:PutResourcePolicy"],
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:runtime/devbox_vm_*"
+    },
+    {
+      "Sid": "ListRuntimes",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:ListAgentRuntimes",
+      "Resource": "*"
+    },
+    {
+      "Sid": "RuntimeWorkloadIdentity",
+      "Effect": "Allow",
+      "Action": ["bedrock-agentcore:CreateWorkloadIdentity", "bedrock-agentcore:GetWorkloadIdentity"],
+      "Resource": "arn:aws:bedrock-agentcore:{{REGION}}:{{ACCOUNT_ID}}:workload-identity-directory/default*"
+    },
+    {
+      "Sid": "RuntimeChecksItsNetworkAndImage",
+      "Effect": "Allow",
+      "Action": ["ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs", "ec2:DescribeNetworkInterfaces"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TheBoxImage",
+      "Effect": "Allow",
+      "Action": ["ecr:DescribeImages", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+      "Resource": "arn:aws:ecr:{{REGION}}:{{ACCOUNT_ID}}:repository/devbox-box"
+    }
+  ]
+}
