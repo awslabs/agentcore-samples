@@ -1,0 +1,8 @@
+langchain[aws]
+langgraph
+langchain-community
+opentelemetry-instrumentation-langchain
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+aws-opentelemetry-distro
+boto3
