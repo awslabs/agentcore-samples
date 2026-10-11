@@ -139,9 +139,10 @@ def _ensure_inline_policy(iam, role_name: str, policy_name: str, policy: Dict[st
     iam.put_role_policy(RoleName=role_name, PolicyName=policy_name, PolicyDocument=json.dumps(policy))
 
 
-def _eval_exec_role(iam) -> str:
+def _eval_exec_role(iam, account_id: str) -> str:
     trust = json.loads((IAM_DIR / "trust-policy.json").read_text())
-    perms = json.loads((IAM_DIR / "permissions-policy.json").read_text())
+    perms_text = (IAM_DIR / "permissions-policy.json").read_text().replace("<ACCOUNT_ID>", account_id)
+    perms = json.loads(perms_text)
     arn = _ensure_role(
         iam,
         EVAL_ROLE_NAME,
@@ -378,7 +379,7 @@ def main() -> int:
     lam = session.client("lambda")
     cp = _cp_client(session)
 
-    eval_exec_role_arn = _eval_exec_role(iam)
+    eval_exec_role_arn = _eval_exec_role(iam, account_id)
     lambda_role_arn = _lambda_exec_role(iam)
 
     evaluator_ids: List[str] = []
