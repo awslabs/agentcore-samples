@@ -373,7 +373,7 @@ You now have a working agent running locally and in the cloud. Here are the next
 |---|---|---|
 | **Add Memory** | `agentcore add memory --name SharedMemory --strategies SEMANTIC,SUMMARIZATION --expiry 30` | Agent remembers users across sessions |
 | **Add Gateway** | `agentcore add gateway --name my-gateway --runtimes CustomerSupport` | Centralize and share tools across agents via MCP |
-| **Add Evaluations** | `agentcore add online-eval --name QualityMonitor --agent CustomerSupport --evaluator Builtin.GoalSuccessRate --sampling-rate 100 --enable-on-create` | Continuous quality monitoring |
+| **Add Evaluations** | `agentcore add online-eval --name QualityMonitor --runtime CustomerSupport --evaluator Builtin.GoalSuccessRate --sampling-rate 100 --enable-on-create` | Continuous quality monitoring |
 | **View Logs** | `agentcore logs` | Stream live logs from your deployed agent |
 | **View Traces** | `agentcore traces list --limit 10` | Inspect OpenTelemetry traces in CloudWatch |
 
