@@ -1,0 +1,12 @@
+node_modules
+dist
+.venv
+__pycache__
+*.pyc
+.DS_Store
+.env
+.agentcore_identity_user.env
+.bedrock_agentcore
+.bedrock_agentcore.yaml
+.agentcore_identity_cognito_user.json
+.python_version
