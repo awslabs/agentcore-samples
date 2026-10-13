@@ -217,7 +217,7 @@ After the script runs, the online config continues scoring new sessions until yo
 # Disable the online evaluation config
 aws bedrock-agentcore-control update-online-evaluation-config \
     --online-evaluation-config-id <config-id-from-results/online_eval_config.json> \
-    --enable-config false
+    --execution-status DISABLED
 
 # Delete when no longer needed
 aws bedrock-agentcore-control delete-online-evaluation-config \
