@@ -19,10 +19,10 @@ Why truncation?
 The coordinator's instructions live in system_prompt.md, next to this script.
 
 Usage:
-    python research_coordinator_harness_truncation.py
+    AWS_PROFILE=<your-profile> python research_coordinator_harness_truncation.py
 
 Prerequisites:
-    - An AWS CLI profile with credentials, set in AWS_PROFILE
+    - AWS credentials configured (for example, an AWS CLI profile)
     - pip install -r ../../requirements.txt (local only, nothing is deployed to the harness)
     - An IAM execution role for the harness, set in EXECUTION_ROLE_ARN
     - Access to global.anthropic.claude-sonnet-5 in Amazon Bedrock
@@ -36,16 +36,16 @@ import boto3
 from botocore.config import Config
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-AWS_PROFILE = "agent"
 REGION = "us-west-2"
 HARNESS_NAME = "ResearchCoordinator"
 
 # IAM role the harness runs as. It needs access to the harness's managed memory.
-EXECUTION_ROLE_ARN = "arn:aws:iam::123456789012:role/harness-execution-role"
+# Replace this placeholder with your own role ARN (see "Running the Python Scripts" in the README).
+EXECUTION_ROLE_ARN = "arn:aws:iam::123456789012:role/<your-execution-role-here>"
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
-session = boto3.Session(profile_name=AWS_PROFILE, region_name=REGION)
+session = boto3.Session(region_name=REGION)
 control = session.client("bedrock-agentcore-control")
 runtime = session.client(
     "bedrock-agentcore",
@@ -60,7 +60,6 @@ def create_harness():
     harness = control.create_harness(
         harnessName=HARNESS_NAME,
         executionRoleArn=EXECUTION_ROLE_ARN,
-        clientToken=str(uuid.uuid4()),
         model={
             "bedrockModelConfig": {
                 "modelId": "global.anthropic.claude-sonnet-5",

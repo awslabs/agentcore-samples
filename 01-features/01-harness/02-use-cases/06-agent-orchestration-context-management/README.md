@@ -139,9 +139,7 @@ The script leaves the harness running so you can inspect it. Delete it when you'
 
 ```python
 import boto3
-# Use the same profile and region as the script
-session = boto3.Session(profile_name="agent", region_name="us-west-2")
-control = session.client("bedrock-agentcore-control")
+control = boto3.client("bedrock-agentcore-control", region_name="us-west-2")
 control.delete_harness(harnessId="<harness-id>")
 
 # Only if you created the role with utils/iam.py (see below)
@@ -163,10 +161,10 @@ The harness needs an IAM execution role with access to Amazon Bedrock and to the
 python -c "from utils.iam import create_harness_role; print(create_harness_role())"
 ```
 
-At the top of the script, set the printed ARN as `EXECUTION_ROLE_ARN` and set `AWS_PROFILE` to the AWS CLI profile you want to use. The script passes that profile to boto3 directly, so the `AWS_PROFILE` environment variable has no effect. Change `REGION` too if you don't use `us-west-2`. Then run the script:
+Replace the placeholder `EXECUTION_ROLE_ARN` at the top of the script with the printed ARN, or with the ARN of an existing role that has the same permissions. Change `REGION` too if you don't use `us-west-2`. The script uses the default AWS credential chain, so pick a profile with `AWS_PROFILE` if you need one. Then run the script:
 
 ```bash
-python research_coordinator_harness_truncation.py
+AWS_PROFILE=<your-profile> python research_coordinator_harness_truncation.py
 ```
 
 The full run takes about 15 minutes. The research files are written to the agent's VM, and the final report is also printed to your terminal.
