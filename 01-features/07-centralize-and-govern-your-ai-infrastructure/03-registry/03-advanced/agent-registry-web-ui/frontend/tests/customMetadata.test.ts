@@ -5,6 +5,9 @@
 // property tests in customMetadata.property.test.ts cover the general rules;
 // these pin specific cases from the design.
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import type { CustomMetadataSchemaConfiguration } from "@aws-sdk/client-agent-registry-control";
 import {
   buildSearchFilter,
@@ -225,5 +228,130 @@ describe("complianceLabel (Req 8.5)", () => {
     expect(complianceLabel("COMPLIANT")).toEqual({ type: "success", label: "Compliant" });
     expect(complianceLabel("NON_COMPLIANT")).toEqual({ type: "warning", label: "Non-compliant" });
     expect(complianceLabel(undefined)).toEqual({ type: "none", label: "-" });
+  });
+});
+
+// The demo schema lives only in deploy/custom-metadata-schema.json (Req 2.2).
+// The seed script turns each schema object into a JSON string with jq tojson;
+// JSON.stringify does the same here so the file is checked as the service sees it.
+interface RawSchema {
+  type: string;
+  properties: Record<string, Record<string, unknown>>;
+  required?: string[];
+}
+interface RawSchemaFile {
+  defaultSchema: RawSchema;
+  recordTypeSchemaOverrides: { recordType: string; schema: RawSchema }[];
+}
+const here = dirname(fileURLToPath(import.meta.url));
+const demoSchemaText = readFileSync(
+  resolve(here, "../../deploy/custom-metadata-schema.json"),
+  "utf8",
+);
+const demoSchema = JSON.parse(demoSchemaText) as RawSchemaFile;
+const DEMO_CONFIG: CustomMetadataSchemaConfiguration = {
+  defaultSchema: JSON.stringify(demoSchema.defaultSchema),
+  recordTypeSchemaOverrides: demoSchema.recordTypeSchemaOverrides.map((o) => ({
+    recordType: o.recordType,
+    schema: JSON.stringify(o.schema),
+  })),
+};
+const DEMO_RECORD_TYPES = ["MCP", "AGENT", "SKILL", "CUSTOM"];
+
+function demoFields(recordType: string): MetadataField[] {
+  const result = parseSchema(DEMO_CONFIG, recordType);
+  if (!result.ok) throw new Error(result.error);
+  return result.fields;
+}
+
+/** Every key used anywhere in a parsed JSON value. */
+function allKeys(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(allKeys);
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).flatMap(([k, v]) => [k, ...allKeys(v)]);
+  }
+  return [];
+}
+
+describe("demo schema file deploy/custom-metadata-schema.json (Req 2.3-2.6)", () => {
+  const defaultProps = demoSchema.defaultSchema.properties;
+  const defaultRequired = demoSchema.defaultSchema.required ?? [];
+
+  it("parses for every record type", () => {
+    for (const rt of DEMO_RECORD_TYPES) {
+      expect(parseSchema(DEMO_CONFIG, rt).ok, rt).toBe(true);
+    }
+  });
+
+  it("defaultSchema has every Field_Type and a required common field (Req 2.3)", () => {
+    const common = demoFields("MCP").filter((f) => f.source === "common");
+    const types = new Set(common.map((f) => f.type));
+    for (const t of ["text", "enum", "url", "boolean"]) expect(types).toContain(t);
+    expect(common.some((f) => f.required)).toBe(true);
+  });
+
+  it("overrides repeat a common attribute and add a record-type field (Req 2.4)", () => {
+    const overrides = demoSchema.recordTypeSchemaOverrides;
+    expect(overrides.length).toBeGreaterThan(0);
+    for (const o of overrides) {
+      expect(DEMO_RECORD_TYPES).toContain(o.recordType);
+      expect(o.recordType).not.toBe("GATEWAY");
+    }
+    const repeats = overrides.some((o) =>
+      Object.entries(o.schema.properties).some(([name, def]) => {
+        const common = defaultProps[name];
+        if (!common) return false;
+        const commonEnum = (common.enum as string[] | undefined) ?? [];
+        const addsValues = ((def.enum as string[] | undefined) ?? []).some(
+          (v) => !commonEnum.includes(v),
+        );
+        const makesRequired =
+          (o.schema.required ?? []).includes(name) && !defaultRequired.includes(name);
+        return addsValues || makesRequired;
+      }),
+    );
+    expect(repeats).toBe(true);
+    const adds = overrides.some((o) =>
+      Object.keys(o.schema.properties).some((name) => !(name in defaultProps)),
+    );
+    expect(adds).toBe(true);
+  });
+
+  it("satisfies the documented custom metadata limits (Req 2.5)", () => {
+    for (const rt of DEMO_RECORD_TYPES) {
+      const fields = demoFields(rt);
+      expect(fields.length, rt).toBeLessThanOrEqual(30);
+      for (const f of fields) {
+        expect(f.name).toMatch(/^[A-Za-z][A-Za-z0-9_-]*$/);
+        if (f.type === "enum") {
+          expect(f.enumValues?.length ?? 0).toBeGreaterThanOrEqual(1);
+          expect(f.enumValues?.length ?? 0).toBeLessThanOrEqual(25);
+        }
+      }
+    }
+    const keys = allKeys(demoSchema);
+    for (const banned of ["$schema", "default", "pattern"]) {
+      expect(keys).not.toContain(banned);
+    }
+    const schemas = [
+      demoSchema.defaultSchema,
+      ...demoSchema.recordTypeSchemaOverrides.map((o) => o.schema),
+    ];
+    for (const s of schemas) {
+      for (const [name, def] of Object.entries(s.properties)) {
+        for (const [key, v] of Object.entries(def)) {
+          if (key === "enum") {
+            expect(Array.isArray(v), name).toBe(true);
+            for (const item of v as unknown[]) expect(typeof item, name).toBe("string");
+          } else {
+            expect(typeof v === "object" && v !== null, `${name}.${key}`).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it("contains no non-inclusive terms (Req 2.6)", () => {
+    expect(demoSchemaText).not.toMatch(/master|slave|whitelist|blacklist|whiteday|blackday/i);
   });
 });

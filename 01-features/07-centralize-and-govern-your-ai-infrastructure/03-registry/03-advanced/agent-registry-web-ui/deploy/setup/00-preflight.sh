@@ -17,6 +17,16 @@ need npm;  ok "npm found ($(npm -v))"
 if command -v jq >/dev/null 2>&1; then ok "jq found"; else warn "jq not found (required by 06-sample-mcp-gateway.sh)"; fi
 if command -v zip >/dev/null 2>&1; then ok "zip found"; else warn "zip not found (required by 06-sample-mcp-gateway.sh)"; fi
 
+# Custom metadata support. The skeleton is generated locally (no AWS API call).
+# Capture it first: piping straight into `grep -q` under pipefail can report a
+# false negative when grep exits early and aws gets SIGPIPE.
+SKELETON="$(aws agent-registry-control create-registry --generate-cli-skeleton input 2>/dev/null || true)"
+if grep -q customMetadataSchemaConfiguration <<<"$SKELETON"; then
+  ok "aws CLI supports --custom-metadata-schema-configuration"
+else
+  warn "AWS CLI $(aws --version 2>&1 | head -1) lacks --custom-metadata-schema-configuration; upgrade the AWS CLI before 03-registry.sh up"
+fi
+
 info "Confirming which AWS account/identity these scripts will act on"
 run_capture ACCOUNT aws sts get-caller-identity --query Account --output text
 run_capture ARN     aws sts get-caller-identity --query Arn     --output text

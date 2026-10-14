@@ -25,6 +25,23 @@ ST="$D/state/outputs.env"
 # shellcheck disable=SC1090
 source "$ST"
 
+# jq builds the custom metadata schema configuration below. Check for it before
+# creating anything so a missing tool leaves no orphaned registry behind.
+command -v jq >/dev/null 2>&1 || {
+  echo "ERROR: jq is required (brew install jq / dnf install jq). Nothing was created." >&2
+  exit 1
+}
+
+# Custom metadata schema: deploy/custom-metadata-schema.json is the only definition.
+# The file stores schemas as objects for readability; the API expects each schema as
+# a JSON string, so jq converts them with tojson. Fails here (before create-registry)
+# if the file is missing or not valid JSON.
+SCHEMA_FILE="$D/custom-metadata-schema.json"
+SCHEMA_CONFIG=$(jq -c '{defaultSchema: (.defaultSchema|tojson), recordTypeSchemaOverrides: [.recordTypeSchemaOverrides[] | {recordType, schema: (.schema|tojson)}]}' "$SCHEMA_FILE") || {
+  echo "ERROR: could not build the custom metadata schema configuration from $SCHEMA_FILE. Nothing was created." >&2
+  exit 1
+}
+
 # ---------------------------------------------------------------------------
 # Resolve + VALIDATE the persona password BEFORE creating any AWS resource, so a
 # bad password fails fast instead of leaving an orphaned registry behind.
@@ -115,6 +132,7 @@ REG_ARN=$(aws agent-registry-control create-registry \
   --description "Demo registry for the Agent Registry UI" \
   --discovery-configuration "$DISCOVERY_CONFIG" \
   --approval-configuration '{"autoApprovalRules":[]}' \
+  --custom-metadata-schema-configuration "$SCHEMA_CONFIG" \
   --tags Sample=agent-registry-ui,ManagedBy=deploy-scripts \
   --query registryArn --output text) || { echo "create-registry failed"; exit 1; }
 REG_ID="${REG_ARN##*/}"
@@ -141,16 +159,19 @@ for i in $(seq 1 30); do
 done
 
 echo "== 3. Seed records (all types, full lifecycle) =="
-mk_record () {  # name type descriptors-json [version] [tags]  -> echoes recordId
+mk_record () {  # name type descriptors-json [version] [tags] [custom-metadata-json]  -> echoes recordId
   # CreateRegistryRecord takes tags directly, so a seeded record is tagged in one
   # call. (UpdateRegistryRecord has no tags field — later changes go through
   # tag-resource / untag-resource against the record ARN.)
-  local arn tags_arg=()
+  # The 6th argument is the record's custom metadata, a JSON object validated by the
+  # registry against custom-metadata-schema.json (booleans are native JSON booleans).
+  local arn tags_arg=() meta_arg=()
   [ -n "${5:-}" ] && tags_arg=(--tags "$5")
+  [ -n "${6:-}" ] && meta_arg=(--custom-metadata "$6")
   arn=$(aws agent-registry-control create-registry-record \
     --registry-id "$REG_ID" --name "$1" --record-type "$2" \
     --descriptors "$3" --record-version "${4:-1.0.0}" \
-    "${tags_arg[@]}" \
+    "${tags_arg[@]}" "${meta_arg[@]}" \
     --query recordArn --output text) || true
   echo "${arn##*/}"
 }
@@ -165,22 +186,22 @@ submit_only () {  # recordId  (leave PENDING_APPROVAL)
 }
 
 # --- MCP (server.json, schema 2025-12-11) ---
-# The 5th argument tags the record at creation.
-MCP1=$(mk_record "incident-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/incident-mcp\",\"description\":\"Incident response MCP server\",\"version\":\"1.0.0\"}","dataSchemaVersion":"2025-12-11"}}' 1.0.0 "owner=sre-team,env=prod,tier=critical")
-MCP2=$(mk_record "deploy-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/deploy-mcp\",\"description\":\"Deployment automation MCP server\",\"version\":\"2.1.0\"}","dataSchemaVersion":"2025-12-11"}}' 2.1.0 "owner=platform-team,env=prod,tier=standard")
-MCP3=$(mk_record "observability-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/observability-mcp\",\"description\":\"Metrics and logs query MCP server\",\"version\":\"0.9.0\"}","dataSchemaVersion":"2025-12-11"}}' 0.9.0 "owner=observability-team,env=dev")
+# The 5th argument tags the record at creation; the 6th sets its custom metadata.
+MCP1=$(mk_record "incident-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/incident-mcp\",\"description\":\"Incident response MCP server\",\"version\":\"1.0.0\"}","dataSchemaVersion":"2025-12-11"}}' 1.0.0 "owner=sre-team,env=prod,tier=critical" '{"owner":"sre-team","dataClassification":"internal","handlesPii":false,"runbookUrl":"https://example.com/runbooks/incident-mcp-server"}')
+MCP2=$(mk_record "deploy-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/deploy-mcp\",\"description\":\"Deployment automation MCP server\",\"version\":\"2.1.0\"}","dataSchemaVersion":"2025-12-11"}}' 2.1.0 "owner=platform-team,env=prod,tier=standard" '{"owner":"platform-team","dataClassification":"internal","handlesPii":false}')
+MCP3=$(mk_record "observability-mcp-server" MCP '{"mcpServer":{"data":"{\"name\":\"my-org/observability-mcp\",\"description\":\"Metrics and logs query MCP server\",\"version\":\"0.9.0\"}","dataSchemaVersion":"2025-12-11"}}' 0.9.0 "owner=observability-team,env=dev" '{"owner":"observability-team","dataClassification":"public","handlesPii":false}')
 
 # --- AGENT (A2A card, schema 0.3) ---
-AGENT1=$(mk_record "triage-agent" AGENT '{"a2aAgentCard":{"data":"{\"name\":\"Triage Agent\",\"description\":\"Triages incidents\",\"version\":\"1.0.0\",\"protocolVersion\":\"0.3.0\",\"url\":\"https://api.example.com/a2a\",\"capabilities\":{},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"triage\",\"name\":\"Triage\",\"description\":\"Triage an incident\",\"tags\":[\"ops\"]}]}","dataSchemaVersion":"0.3"}}' 1.0.0 "owner=sre-team,env=prod,costCenter=1234")
-AGENT2=$(mk_record "rollout-agent" AGENT '{"a2aAgentCard":{"data":"{\"name\":\"Rollout Agent\",\"description\":\"Coordinates progressive rollouts\",\"version\":\"1.2.0\",\"protocolVersion\":\"0.3.0\",\"url\":\"https://api.example.com/rollout/a2a\",\"capabilities\":{},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"rollout\",\"name\":\"Rollout\",\"description\":\"Progressive delivery\",\"tags\":[\"deploy\"]}]}","dataSchemaVersion":"0.3"}}' 1.2.0 "owner=platform-team,env=staging")
+AGENT1=$(mk_record "triage-agent" AGENT '{"a2aAgentCard":{"data":"{\"name\":\"Triage Agent\",\"description\":\"Triages incidents\",\"version\":\"1.0.0\",\"protocolVersion\":\"0.3.0\",\"url\":\"https://api.example.com/a2a\",\"capabilities\":{},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"triage\",\"name\":\"Triage\",\"description\":\"Triage an incident\",\"tags\":[\"ops\"]}]}","dataSchemaVersion":"0.3"}}' 1.0.0 "owner=sre-team,env=prod,costCenter=1234" '{"owner":"sre-team","dataClassification":"internal","handlesPii":false,"modelFamily":"claude"}')
+AGENT2=$(mk_record "rollout-agent" AGENT '{"a2aAgentCard":{"data":"{\"name\":\"Rollout Agent\",\"description\":\"Coordinates progressive rollouts\",\"version\":\"1.2.0\",\"protocolVersion\":\"0.3.0\",\"url\":\"https://api.example.com/rollout/a2a\",\"capabilities\":{},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"rollout\",\"name\":\"Rollout\",\"description\":\"Progressive delivery\",\"tags\":[\"deploy\"]}]}","dataSchemaVersion":"0.3"}}' 1.2.0 "owner=platform-team,env=staging" '{"owner":"platform-team","dataClassification":"restricted","handlesPii":false,"modelFamily":"claude"}')
 
 # --- SKILL (skill definition, schema 0.1.0) ---
-SKILL1=$(mk_record "runbook-skill" SKILL '{"agentSkillsDefinition":{"data":"{\"websiteUrl\":\"https://example.com/runbook-skill\",\"repository\":{\"url\":\"https://github.com/example/runbook-skill\",\"source\":\"github\"}}","dataSchemaVersion":"0.1.0"}}' 1.0.0 "owner=sre-team,env=dev")
-SKILL2=$(mk_record "pii-redaction-skill" SKILL '{"agentSkillsDefinition":{"data":"{\"websiteUrl\":\"https://example.com/pii-redaction-skill\",\"repository\":{\"url\":\"https://github.com/example/pii-redaction-skill\",\"source\":\"github\"}}","dataSchemaVersion":"0.1.0"}}' 1.0.0 "owner=security-team,env=prod,dataClass=sensitive")
+SKILL1=$(mk_record "runbook-skill" SKILL '{"agentSkillsDefinition":{"data":"{\"websiteUrl\":\"https://example.com/runbook-skill\",\"repository\":{\"url\":\"https://github.com/example/runbook-skill\",\"source\":\"github\"}}","dataSchemaVersion":"0.1.0"}}' 1.0.0 "owner=sre-team,env=dev" '{"owner":"sre-team","dataClassification":"internal","handlesPii":false,"runbookUrl":"https://example.com/runbooks/runbook-skill"}')
+SKILL2=$(mk_record "pii-redaction-skill" SKILL '{"agentSkillsDefinition":{"data":"{\"websiteUrl\":\"https://example.com/pii-redaction-skill\",\"repository\":{\"url\":\"https://github.com/example/pii-redaction-skill\",\"source\":\"github\"}}","dataSchemaVersion":"0.1.0"}}' 1.0.0 "owner=security-team,env=prod,dataClass=sensitive" '{"owner":"security-team","dataClassification":"confidential","handlesPii":true}')
 
 # --- CUSTOM (any JSON, no schema version) ---
-CUSTOM1=$(mk_record "incident-enricher-tool" CUSTOM '{"custom":{"data":"{\"kind\":\"lambda-tool\",\"functionArn\":\"arn:aws:lambda:us-east-1:000000000000:function:incident-enricher\",\"description\":\"Enriches incidents with CMDB data\",\"invocation\":\"sync\"}"}}' 1.0.0 "owner=sre-team,env=prod")
-CUSTOM2=$(mk_record "oncall-knowledge-base" CUSTOM '{"custom":{"data":"{\"kind\":\"knowledge-base\",\"engine\":\"bedrock-kb\",\"id\":\"KB-2210\",\"description\":\"Runbook knowledge base for on-call\"}"}}' 1.0.0 "owner=sre-team,env=staging")
+CUSTOM1=$(mk_record "incident-enricher-tool" CUSTOM '{"custom":{"data":"{\"kind\":\"lambda-tool\",\"functionArn\":\"arn:aws:lambda:us-east-1:000000000000:function:incident-enricher\",\"description\":\"Enriches incidents with CMDB data\",\"invocation\":\"sync\"}"}}' 1.0.0 "owner=sre-team,env=prod" '{"owner":"sre-team","dataClassification":"confidential","handlesPii":true}')
+CUSTOM2=$(mk_record "oncall-knowledge-base" CUSTOM '{"custom":{"data":"{\"kind\":\"knowledge-base\",\"engine\":\"bedrock-kb\",\"id\":\"KB-2210\",\"description\":\"Runbook knowledge base for on-call\"}"}}' 1.0.0 "owner=sre-team,env=staging" '{"owner":"sre-team","dataClassification":"internal","handlesPii":false}')
 
 echo "  created 9 records; driving lifecycle..."
 # APPROVED (discoverable): one+ of each type
@@ -239,3 +260,10 @@ if [ "$REGISTRY_AUTH_MODE" = "CUSTOM_JWT" ]; then
   echo "      --auth-parameters USERNAME=consumer@example.com,PASSWORD='<password>' \\"
   echo "      --query 'AuthenticationResult.AccessToken' --output text"
 fi
+
+echo ""
+echo "== Custom metadata search =="
+echo "  Example filter (matches incident-enricher-tool and pii-redaction-skill):"
+echo '    {"customMetadata.dataClassification":{"$eq":"confidential"}}'
+echo "  Note: search indexing is eventually consistent, so a newly approved record"
+echo "  can take a short while to appear in search results."
