@@ -28,6 +28,7 @@ import { toFriendlyError, type FriendlyError } from "../api/errors";
 import StatusBadge from "../components/StatusBadge";
 import { useBreadcrumbs } from "../components/Breadcrumbs";
 import ConnectRegistry from "../components/ConnectRegistry";
+import { buildSearchFilter } from "../components/customMetadata";
 
 const RECORD_TYPES = [
   { label: "All types", value: "" },
@@ -121,7 +122,12 @@ export default function RegistryDetailPage() {
       if (query.trim()) {
         // NL search, narrowed by the selected record type (metadata filter).
         setResults(
-          await searchRecords(clients, registryId, query.trim(), type),
+          await searchRecords(
+            clients,
+            registryId,
+            query.trim(),
+            buildSearchFilter(type ?? "", [], {}),
+          ),
         );
       } else {
         setResults(await listDiscoverable(clients, registryId, type));

@@ -17,8 +17,10 @@ import {
   type DescriptorSource,
   type RegistryRecordStatus,
   type RecordType,
+  type UpdatedCustomMetadataMap,
 } from "@aws-sdk/client-agent-registry-control";
 import type { Clients } from "./client";
+import type { CustomMetadata } from "../components/customMetadata";
 
 export type {
   RegistryRecordSummary,
@@ -78,6 +80,12 @@ export interface CreateRecordInput {
    * (the filterable record fields are name, recordType and status only).
    */
   tags?: Record<string, string>;
+  /**
+   * Custom metadata values keyed by schema field name, as built by
+   * `toCustomMetadata`. Sent only when it has at least one key; an empty or
+   * absent object omits `customMetadata` from the request.
+   */
+  customMetadata?: CustomMetadata;
 }
 
 export async function createRecord(
@@ -86,6 +94,10 @@ export async function createRecord(
 ): Promise<string> {
   const tags =
     input.tags && Object.keys(input.tags).length > 0 ? input.tags : undefined;
+  const customMetadata =
+    input.customMetadata && Object.keys(input.customMetadata).length > 0
+      ? input.customMetadata
+      : undefined;
   const res = await c.control.send(
     new CreateRegistryRecordCommand({
       registryId: input.registryId,
@@ -96,6 +108,7 @@ export async function createRecord(
       recordVersion: input.recordVersion,
       descriptors: input.descriptors,
       tags,
+      customMetadata,
     }),
   );
   return res.recordArn!;
@@ -110,6 +123,11 @@ export async function updateRecord(
     displayName?: string;
     description?: string;
     recordVersion?: string;
+    /**
+     * Full-replacement custom metadata wrapper from `buildMetadataUpdate`.
+     * Passed through unchanged; `undefined` omits the member (leave unchanged).
+     */
+    customMetadata?: UpdatedCustomMetadataMap;
   },
 ): Promise<void> {
   // PATCH-wrapper semantics for the optional string fields:
@@ -128,6 +146,7 @@ export async function updateRecord(
       displayName: wrap(input.displayName),
       description: wrap(input.description),
       recordVersion: input.recordVersion,
+      customMetadata: input.customMetadata,
     }),
   );
 }

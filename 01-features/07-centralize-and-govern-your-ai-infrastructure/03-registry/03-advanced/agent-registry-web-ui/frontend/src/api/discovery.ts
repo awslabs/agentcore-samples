@@ -6,6 +6,7 @@ import {
   ListDiscoverableRegistryRecordsCommand,
   BatchGetDiscoverableRegistryRecordCommand,
   type RegistryRecordFilterName,
+  type SearchDiscoverableRegistryRecordsCommandInput,
 } from "@aws-sdk/client-agent-registry";
 import type { Clients } from "./client";
 import { callMcpTool, McpError } from "./mcp";
@@ -25,6 +26,8 @@ export interface DiscoverableRecord {
   recordVersion?: string;
   status?: string;
   descriptors?: unknown;
+  /** Free-form custom metadata; passed through from the response as-is. */
+  customMetadata?: Record<string, unknown>;
   [k: string]: unknown;
 }
 
@@ -64,13 +67,14 @@ function endpointFor(registryId: string): string {
 
 /**
  * Natural-language semantic search over APPROVED records (relevance-ranked,
- * single page, max 20).
+ * single page, max 20). `filter` is a metadata filter document (e.g. from
+ * `buildSearchFilter`); it is omitted from the request when undefined.
  */
 export async function searchRecords(
   c: Clients,
   registryId: string,
   query: string,
-  recordType?: string,
+  filter?: Record<string, unknown>,
   maxResults = 20,
 ): Promise<DiscoverableRecord[]> {
   if (c.authMode === "CUSTOM_JWT") {
@@ -82,7 +86,7 @@ export async function searchRecords(
       {
         searchQuery: query,
         maxResults,
-        ...(recordType ? { filter: { recordType: { $eq: recordType } } } : {}),
+        ...(filter !== undefined ? { filter } : {}),
       },
     );
     return recordsOf(payload);
@@ -93,7 +97,12 @@ export async function searchRecords(
       registryIds: [registryId],
       searchQuery: query,
       maxResults,
-      filters: recordType ? { recordType: { $eq: recordType } } : undefined,
+      ...(filter !== undefined
+        ? {
+            filters:
+              filter as SearchDiscoverableRegistryRecordsCommandInput["filters"],
+          }
+        : {}),
     }),
   );
   return (res.registryRecords ?? []) as unknown as DiscoverableRecord[];

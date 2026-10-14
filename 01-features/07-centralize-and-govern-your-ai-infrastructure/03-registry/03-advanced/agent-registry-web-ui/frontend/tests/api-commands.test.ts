@@ -152,6 +152,82 @@ describe("records API command shapes", () => {
     expect((control[0].input as any).tags).toBeUndefined();
   });
 
+  describe("createRecord customMetadata", () => {
+    const base = {
+      registryId: "reg-1",
+      name: "n",
+      recordType: "MCP" as const,
+      descriptors: { custom: { data: "{}" } },
+    };
+
+    it("sends customMetadata when it has values", async () => {
+      const { clients, control } = fakeClients({
+        CreateRegistryRecordCommand: [{ recordArn: "arn:rec" }],
+      });
+      await createRecord(clients, {
+        ...base,
+        customMetadata: { team: "payments", pii: true },
+      });
+      expect((control[0].input as any).customMetadata).toEqual({
+        team: "payments",
+        pii: true,
+      });
+    });
+
+    it("omits an empty customMetadata object rather than sending {}", async () => {
+      const { clients, control } = fakeClients({
+        CreateRegistryRecordCommand: [{ recordArn: "arn:rec" }],
+      });
+      await createRecord(clients, { ...base, customMetadata: {} });
+      expect((control[0].input as any).customMetadata).toBeUndefined();
+    });
+
+    it("omits customMetadata when undefined", async () => {
+      const { clients, control } = fakeClients({
+        CreateRegistryRecordCommand: [{ recordArn: "arn:rec" }],
+      });
+      await createRecord(clients, base);
+      expect((control[0].input as any).customMetadata).toBeUndefined();
+    });
+  });
+
+  describe("updateRecord customMetadata wrapper", () => {
+    it("passes a populated { optionalValue } wrapper through unchanged", async () => {
+      const { clients, control } = fakeClients();
+      const wrapper = { optionalValue: { team: "payments", pii: false } };
+      await updateRecord(clients, {
+        registryId: "r",
+        recordId: "x",
+        customMetadata: wrapper,
+      });
+      expect((control[0].input as any).customMetadata).toEqual({
+        optionalValue: { team: "payments", pii: false },
+      });
+    });
+
+    it("passes an empty { optionalValue: {} } wrapper through (clear all)", async () => {
+      const { clients, control } = fakeClients();
+      await updateRecord(clients, {
+        registryId: "r",
+        recordId: "x",
+        customMetadata: { optionalValue: {} },
+      });
+      expect((control[0].input as any).customMetadata).toEqual({
+        optionalValue: {},
+      });
+    });
+
+    it("omits customMetadata when undefined (leave unchanged)", async () => {
+      const { clients, control } = fakeClients();
+      await updateRecord(clients, {
+        registryId: "r",
+        recordId: "x",
+        displayName: "New",
+      });
+      expect((control[0].input as any).customMetadata).toBeUndefined();
+    });
+  });
+
   describe("updateRecord PATCH-wrapper semantics", () => {
     it("undefined optional -> field omitted (unchanged)", async () => {
       const { clients, control } = fakeClients();
@@ -304,7 +380,9 @@ describe("discovery over SigV4 (AWS_IAM registry)", () => {
         { registryRecords: [{ name: "hit" }] },
       ],
     });
-    const out = await searchRecords(clients, "reg-1", "find me", "MCP", 5);
+    const out = await searchRecords(clients, "reg-1", "find me", {
+      recordType: { $eq: "MCP" },
+    }, 5);
     expect(out).toHaveLength(1);
     expect(data[0].command).toBe("SearchDiscoverableRegistryRecordsCommand");
     expect(data[0].input).toEqual({
@@ -323,6 +401,40 @@ describe("discovery over SigV4 (AWS_IAM registry)", () => {
       searchQuery: "q",
       maxResults: 20,
       filters: undefined,
+    });
+    expect(data[0].input).not.toHaveProperty("filters");
+  });
+
+  it("searchRecords sends a custom-metadata filter document as `filters`", async () => {
+    const { clients, data } = fakeClients();
+    const filter = {
+      $and: [
+        { recordType: { $eq: "MCP" } },
+        { team: { $eq: "payments" } },
+        { pii: { $eq: true } },
+      ],
+    };
+    await searchRecords(clients, "reg-1", "q", filter);
+    expect(data[0].input).toEqual({
+      registryIds: ["reg-1"],
+      searchQuery: "q",
+      maxResults: 20,
+      filters: filter,
+    });
+    expect(data[0].input).not.toHaveProperty("filter");
+  });
+
+  it("listDiscoverable request shape is unchanged without a recordType", async () => {
+    const { clients, data } = fakeClients();
+    await listDiscoverable(clients, "reg-1");
+    expect(data[0]).toEqual({
+      command: "ListDiscoverableRegistryRecordsCommand",
+      input: {
+        registryId: "reg-1",
+        filters: undefined,
+        nextToken: undefined,
+        maxResults: 100,
+      },
     });
   });
 
@@ -396,7 +508,9 @@ describe("discovery over the MCP endpoint (CUSTOM_JWT registry)", () => {
     const calls = stubFetch({ registryRecords: [{ name: "hit" }] });
     const { clients } = fakeClients({}, "CUSTOM_JWT");
 
-    const out = await searchRecords(clients, "reg-1", "find me", "MCP", 5);
+    const out = await searchRecords(clients, "reg-1", "find me", {
+      recordType: { $eq: "MCP" },
+    }, 5);
     expect(out).toEqual([{ name: "hit" }]);
     expect(calls).toHaveLength(1);
 
@@ -417,6 +531,30 @@ describe("discovery over the MCP endpoint (CUSTOM_JWT registry)", () => {
       maxResults: 5,
       filter: { recordType: { $eq: "MCP" } },
     });
+  });
+
+  it("searchRecords sends a custom-metadata filter as the MCP `filter` argument", async () => {
+    const calls = stubFetch([]);
+    const { clients } = fakeClients({}, "CUSTOM_JWT");
+    const filter = {
+      $and: [{ recordType: { $eq: "AGENT" } }, { team: { $eq: "payments" } }],
+    };
+
+    await searchRecords(clients, "reg-1", "q", filter);
+    const args = JSON.parse(calls[0].init.body as string).params.arguments;
+    expect(args).toEqual({ searchQuery: "q", maxResults: 20, filter });
+    expect(args).not.toHaveProperty("filters");
+  });
+
+  it("searchRecords omits the MCP `filter` argument when the filter is undefined", async () => {
+    const calls = stubFetch([]);
+    const { clients } = fakeClients({}, "CUSTOM_JWT");
+
+    await searchRecords(clients, "reg-1", "q");
+    const args = JSON.parse(calls[0].init.body as string).params.arguments;
+    expect(args).toEqual({ searchQuery: "q", maxResults: 20 });
+    expect(args).not.toHaveProperty("filter");
+    expect(args).not.toHaveProperty("filters");
   });
 
   it("listDiscoverable uses the list tool with the array filter shape", async () => {
