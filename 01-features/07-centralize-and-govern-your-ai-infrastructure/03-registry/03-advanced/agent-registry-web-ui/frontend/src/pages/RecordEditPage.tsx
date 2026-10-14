@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ContentLayout from "@cloudscape-design/components/content-layout";
 import Header from "@cloudscape-design/components/header";
@@ -19,6 +19,27 @@ import { useAuth } from "../auth/AuthContext";
 import { getRecord, updateRecord } from "../api/records";
 import { toFriendlyError, type FriendlyError } from "../api/errors";
 import { useBreadcrumbs } from "../components/Breadcrumbs";
+import { useRegistrySchema } from "../api/useRegistrySchema";
+import CustomMetadataForm from "../components/CustomMetadataForm";
+import {
+  buildMetadataUpdate,
+  parseSchema,
+  pickFields,
+  toCustomMetadata,
+  validateMetadata,
+  type CustomMetadata,
+  type MetadataValue,
+} from "../components/customMetadata";
+
+/** Stored string/boolean values of a record's customMetadata document. */
+function storedMetadata(doc: unknown): CustomMetadata | undefined {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return undefined;
+  const out: CustomMetadata = {};
+  for (const [k, v] of Object.entries(doc as Record<string, unknown>)) {
+    if (typeof v === "string" || typeof v === "boolean") out[k] = v;
+  }
+  return out;
+}
 
 export default function RecordEditPage() {
   const { registryId = "", recordId = "" } = useParams();
@@ -33,6 +54,29 @@ export default function RecordEditPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<FriendlyError | null>(null);
+  // Custom metadata (Req 7). `originalMetadata` is the comparison baseline for
+  // buildMetadataUpdate and is only set on load, so a failed save keeps it.
+  const [recordType, setRecordType] = useState<string | null>(null);
+  const [originalMetadata, setOriginalMetadata] = useState<
+    CustomMetadata | undefined
+  >(undefined);
+  const [metadata, setMetadata] = useState<Record<string, MetadataValue>>({});
+  const [metadataReady, setMetadataReady] = useState(false);
+  const {
+    config,
+    loading: schemaLoading,
+    loadError,
+  } = useRegistrySchema(registryId);
+  const parsed = useMemo(
+    () => (recordType === null ? null : parseSchema(config, recordType)),
+    [config, recordType],
+  );
+  // Schema_Load_Failure (loadError or a parse error) or no fields: hide the
+  // form and omit customMetadata from the update (Req 7.8).
+  const metadataFields = useMemo(
+    () => (!loadError && parsed?.ok ? parsed.fields : []),
+    [loadError, parsed],
+  );
 
   const load = useCallback(async () => {
     if (!clients) return;
@@ -43,6 +87,8 @@ export default function RecordEditPage() {
       setDisplayName(r.displayName ?? "");
       setDescription(r.description ?? "");
       setVersion(r.recordVersion ?? "");
+      setOriginalMetadata(storedMetadata(r.customMetadata));
+      setRecordType(r.recordType ?? "");
     } catch (e) {
       setError(toFriendlyError(e, capabilities?.persona));
     } finally {
@@ -53,6 +99,18 @@ export default function RecordEditPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  // Pre-fill once, after both the record and the schema have loaded, with the
+  // stored values restricted to the record type's fields (Req 7.1).
+  useEffect(() => {
+    if (metadataReady || recordType === null || schemaLoading) return;
+    setMetadata(pickFields(metadataFields, originalMetadata ?? {}));
+    setMetadataReady(true);
+  }, [metadataReady, recordType, schemaLoading, metadataFields, originalMetadata]);
+  const showMetadata = metadataReady && metadataFields.length > 0;
+  const metadataPayload = toCustomMetadata(metadataFields, metadata);
+  const metadataErrors = showMetadata
+    ? validateMetadata(metadataFields, metadataPayload)
+    : [];
 
   useBreadcrumbs([
     { text: "Registries", href: "/" },
@@ -69,6 +127,8 @@ export default function RecordEditPage() {
 
   const save = async () => {
     if (!clients) return;
+    // The Save button is disabled while errors exist; Enter-to-submit is too.
+    if (metadataErrors.length > 0) return;
     setSaving(true);
     setError(null);
     try {
@@ -79,6 +139,14 @@ export default function RecordEditPage() {
         displayName,
         description,
         recordVersion: version || undefined,
+        ...(showMetadata
+          ? {
+              customMetadata: buildMetadataUpdate(
+                originalMetadata,
+                metadataPayload,
+              ),
+            }
+          : {}),
       });
       navigate(`/registries/${registryId}/records/${recordId}`);
     } catch (e) {
@@ -107,7 +175,11 @@ export default function RecordEditPage() {
                 >
                   Cancel
                 </Button>
-                <Button variant="primary" loading={saving} disabled={loading}>
+                <Button
+                  variant="primary"
+                  loading={saving}
+                  disabled={loading || metadataErrors.length > 0}
+                >
                   Save changes
                 </Button>
               </SpaceBetween>
@@ -150,6 +222,22 @@ export default function RecordEditPage() {
                 Descriptor content editing is done on create; this form updates
                 metadata only.
               </Box>
+              {showMetadata && (
+                <SpaceBetween size="m">
+                  <Header
+                    variant="h2"
+                    description="Attributes defined by this registry's custom metadata schema. If you set any value, every required field must be filled. Clearing every value removes the record's custom metadata."
+                  >
+                    Custom metadata
+                  </Header>
+                  <CustomMetadataForm
+                    fields={metadataFields}
+                    value={metadata}
+                    onChange={setMetadata}
+                    errors={metadataErrors}
+                  />
+                </SpaceBetween>
+              )}
             </SpaceBetween>
           </Form>
         </form>

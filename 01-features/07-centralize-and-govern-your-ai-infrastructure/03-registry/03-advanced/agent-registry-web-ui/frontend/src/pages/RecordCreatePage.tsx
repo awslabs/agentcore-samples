@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ContentLayout from "@cloudscape-design/components/content-layout";
 import Header from "@cloudscape-design/components/header";
@@ -15,6 +15,7 @@ import Alert from "@cloudscape-design/components/alert";
 import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
 import Box from "@cloudscape-design/components/box";
 import { useClients } from "../api/useClients";
+import { useRegistrySchema } from "../api/useRegistrySchema";
 import { useAuth } from "../auth/AuthContext";
 import { createRecord, type RecordType } from "../api/records";
 import { toFriendlyError, type FriendlyError } from "../api/errors";
@@ -35,6 +36,15 @@ import {
   validateSource,
   type SourceConfig,
 } from "../components/source";
+import CustomMetadataForm from "../components/CustomMetadataForm";
+import CustomMetadataView from "../components/CustomMetadataView";
+import {
+  parseSchema,
+  pickFields,
+  toCustomMetadata,
+  validateMetadata,
+  type MetadataValue,
+} from "../components/customMetadata";
 
 const TYPE_OPTIONS = [
   { label: "MCP server", value: "MCP" },
@@ -58,6 +68,7 @@ export default function RecordCreatePage() {
   const [data, setData] = useState(DESCRIPTOR_TEMPLATES.MCP ?? "{}");
   const [source, setSource] = useState<SourceConfig>(defaultSourceConfig);
   const [tags, setTags] = useState<TagPair[]>([]);
+  const [metadata, setMetadata] = useState<Record<string, MetadataValue>>({});
   const [error, setError] = useState<FriendlyError | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -66,6 +77,23 @@ export default function RecordCreatePage() {
   const tagErrors = validateTags(tags);
   const sourceErrors = validateSource(recordType, source);
   const syncing = source.mode === "fromUrl";
+
+  // Custom metadata (Req 6). The step is shown only when the registry schema
+  // loads and parses with at least one field for the selected record type; on a
+  // Schema_Load_Failure or without a schema it is hidden and nothing is sent.
+  const { config, loadError } = useRegistrySchema(registryId);
+  const parsed = useMemo(
+    () => parseSchema(config, recordType),
+    [config, recordType],
+  );
+  const metadataFields = !loadError && parsed.ok ? parsed.fields : [];
+  const showMetadata = metadataFields.length > 0;
+  const metadataPayload = toCustomMetadata(metadataFields, metadata);
+  const metadataErrors = showMetadata
+    ? validateMetadata(metadataFields, metadataPayload)
+    : [];
+  // Step indices: the metadata step, when shown, sits immediately before Review.
+  const METADATA_STEP = 4;
   // A synchronized descriptor is fetched by the registry, so the inline JSON is not sent.
   const descriptorRequired = !syncing;
 
@@ -94,10 +122,17 @@ export default function RecordCreatePage() {
     // SKILL and CUSTOM descriptors have no `source` field, so drop back to inline
     // rather than leaving an unsubmittable configuration behind.
     setSource((s) => (s.mode === "fromUrl" ? { ...s, mode: "inline" } : s));
+    // Keep custom metadata values for fields that remain in the new type's
+    // Effective_Field_Set and drop the rest (Req 6.4).
+    const next = parseSchema(config, opt.value);
+    if (!loadError && next.ok) setMetadata((m) => pickFields(next.fields, m));
   };
 
   const submit = async () => {
     if (!clients) return;
+    // Wizard has no disabled-submit prop, so invalid custom metadata is
+    // enforced here (Req 5.10); the step shows each error next to its field.
+    if (metadataErrors.length > 0) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -110,6 +145,7 @@ export default function RecordCreatePage() {
         recordVersion: version || undefined,
         descriptors: buildDescriptors(recordType, data, buildSource(source)),
         tags: toTagMap(tags),
+        ...(showMetadata ? { customMetadata: metadataPayload } : {}),
       });
       navigate(`/registries/${registryId}`);
     } catch (e) {
@@ -153,6 +189,15 @@ export default function RecordCreatePage() {
               tagErrors.length > 0
             ) {
               return; // stay on step 3; the Alert lists every problem
+            }
+            // Guard leaving the Custom metadata step with invalid values.
+            if (
+              showMetadata &&
+              step === METADATA_STEP &&
+              detail.requestedStepIndex > METADATA_STEP &&
+              metadataErrors.length > 0
+            ) {
+              return; // stay; each FormField shows its error
             }
             setStep(detail.requestedStepIndex);
           }}
@@ -298,6 +343,24 @@ export default function RecordCreatePage() {
                 </SpaceBetween>
               ),
             },
+            ...(showMetadata
+              ? [
+                  {
+                    title: "Custom metadata",
+                    isOptional: true,
+                    description:
+                      "Attributes defined by this registry's custom metadata schema. If you set any value, every required field must be filled.",
+                    content: (
+                      <CustomMetadataForm
+                        fields={metadataFields}
+                        value={metadata}
+                        onChange={setMetadata}
+                        errors={metadataErrors}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               title: "Review",
               content: (
@@ -346,6 +409,21 @@ export default function RecordCreatePage() {
                       </pre>
                     </Box>
                   )}
+                  {showMetadata && (
+                    <SpaceBetween size="xs">
+                      <Box variant="h3">Custom metadata</Box>
+                      {Object.keys(metadataPayload).length === 0 ? (
+                        <Box color="text-status-inactive">
+                          No custom metadata entered.
+                        </Box>
+                      ) : (
+                        <CustomMetadataView
+                          fields={metadataFields}
+                          values={metadataPayload}
+                        />
+                      )}
+                    </SpaceBetween>
+                  )}
                   {descriptorRequired && !jsonValid && (
                     <Alert type="error">Descriptor is not valid JSON.</Alert>
                   )}
@@ -358,6 +436,11 @@ export default function RecordCreatePage() {
                   {tagErrors.length > 0 && (
                     <Alert type="error">
                       One or more tags are invalid — see the Tags step.
+                    </Alert>
+                  )}
+                  {metadataErrors.length > 0 && (
+                    <Alert type="error">
+                      Custom metadata is invalid — see the Custom metadata step.
                     </Alert>
                   )}
                 </SpaceBetween>

@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ContentLayout from "@cloudscape-design/components/content-layout";
 import Header from "@cloudscape-design/components/header";
@@ -13,6 +13,7 @@ import Alert from "@cloudscape-design/components/alert";
 import Box from "@cloudscape-design/components/box";
 import Spinner from "@cloudscape-design/components/spinner";
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
+import Link from "@cloudscape-design/components/link";
 import { useClients } from "../api/useClients";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -28,6 +29,11 @@ import ReasonModal from "../components/ReasonModal";
 import ConsumptionGuide from "../components/ConsumptionGuide";
 import { summarizeDescriptorSource } from "../components/source";
 import { useBreadcrumbs } from "../components/Breadcrumbs";
+import { useRegistrySchema } from "../api/useRegistrySchema";
+import CustomMetadataView, {
+  ComplianceBadge,
+} from "../components/CustomMetadataView";
+import { parseSchema } from "../components/customMetadata";
 
 // Normalized view over both the control-plane record and the data-plane
 // discoverable record (which a Consumer reads for approved records).
@@ -41,6 +47,10 @@ interface RecordView {
   statusReason?: string;
   recordArn?: string;
   descriptors?: any;
+  /** Present on both planes (control-plane get and data-plane batch-get). */
+  customMetadata?: Record<string, unknown>;
+  /** Control-plane responses only; the data-plane view has no compliance. */
+  customMetadataSchemaComplianceStatus?: string;
 }
 
 function descriptorJson(rec: RecordView): string {
@@ -89,6 +99,22 @@ export default function RecordDetailPage() {
   const [error, setError] = useState<FriendlyError | null>(null);
   const [busy, setBusy] = useState(false);
   const [modal, setModal] = useState<ModalKind>(null);
+  const {
+    config,
+    loading: schemaLoading,
+    loadError: schemaLoadError,
+  } = useRegistrySchema(registryId);
+
+  // Field set for display. undefined while loading or on a Schema_Load_Failure
+  // (GetRegistry failed or the schema did not parse), so values render as raw
+  // text labeled with the field name (Req 8.4).
+  const recordType = rec?.recordType;
+  const metadataFields = useMemo(() => {
+    if (schemaLoading || schemaLoadError || recordType === undefined)
+      return undefined;
+    const parsed = parseSchema(config, recordType);
+    return parsed.ok ? parsed.fields : undefined;
+  }, [config, recordType, schemaLoading, schemaLoadError]);
 
   const load = useCallback(async () => {
     if (!clients) return;
@@ -374,6 +400,60 @@ export default function RecordDetailPage() {
                 />
               </Container>
             )}
+
+            <Container
+              header={
+                <Header
+                  variant="h2"
+                  description="Schema-validated attributes defined by the registry. Consumers can filter discovery searches on them."
+                >
+                  Custom metadata
+                </Header>
+              }
+            >
+              <SpaceBetween size="m">
+                {/* Req 8.6: Publishers must fix non-compliant records before resubmitting. */}
+                {caps?.canPublish &&
+                  rec.customMetadataSchemaComplianceStatus ===
+                    "NON_COMPLIANT" && (
+                    <Alert type="warning" header="Custom metadata is non-compliant">
+                      This record does not match the registry's current custom
+                      metadata schema. Update the record to match the schema
+                      before its next submission for approval.{" "}
+                      <Link
+                        href={`/registries/${registryId}/records/${recordId}/edit`}
+                        onFollow={(e) => {
+                          e.preventDefault();
+                          navigate(
+                            `/registries/${registryId}/records/${recordId}/edit`,
+                          );
+                        }}
+                      >
+                        Edit record
+                      </Link>
+                    </Alert>
+                  )}
+                {rec.customMetadataSchemaComplianceStatus && (
+                  <KeyValuePairs
+                    columns={2}
+                    items={[
+                      {
+                        label: "Schema compliance",
+                        value: (
+                          <ComplianceBadge
+                            status={rec.customMetadataSchemaComplianceStatus}
+                          />
+                        ),
+                      },
+                    ]}
+                  />
+                )}
+                <CustomMetadataView
+                  fields={metadataFields}
+                  values={rec.customMetadata}
+                />
+              </SpaceBetween>
+            </Container>
 
             <ConsumptionGuide rec={rec} />
 

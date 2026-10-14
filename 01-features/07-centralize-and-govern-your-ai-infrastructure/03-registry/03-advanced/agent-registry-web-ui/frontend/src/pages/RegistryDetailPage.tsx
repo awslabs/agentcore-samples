@@ -1,8 +1,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import type { CustomMetadataSchemaConfiguration } from "@aws-sdk/client-agent-registry-control";
 import ContentLayout from "@cloudscape-design/components/content-layout";
 import Header from "@cloudscape-design/components/header";
 import Table from "@cloudscape-design/components/table";
@@ -18,7 +19,7 @@ import Link from "@cloudscape-design/components/link";
 import { useClients } from "../api/useClients";
 import { useAuth } from "../auth/AuthContext";
 import { listRecords, type RegistryRecordSummary } from "../api/records";
-import { getRegistry, type GetRegistryResponse } from "../api/registry";
+import { useRegistrySchema } from "../api/useRegistrySchema";
 import {
   searchRecords,
   listDiscoverable,
@@ -28,7 +29,27 @@ import { toFriendlyError, type FriendlyError } from "../api/errors";
 import StatusBadge from "../components/StatusBadge";
 import { useBreadcrumbs } from "../components/Breadcrumbs";
 import ConnectRegistry from "../components/ConnectRegistry";
-import { buildSearchFilter } from "../components/customMetadata";
+import CustomMetadataSchema from "../components/CustomMetadataSchema";
+import CustomMetadataFilters from "../components/CustomMetadataFilters";
+import { ComplianceBadge } from "../components/CustomMetadataView";
+import {
+  buildSearchFilter,
+  displayValues,
+  exampleFilter,
+  filterableFields,
+  parseSchema,
+  schemaRecordTypes,
+  type FilterSelections,
+  type MetadataField,
+} from "../components/customMetadata";
+
+/** True when any record type's schema fails to parse (part of Schema_Load_Failure). */
+function schemaParseFails(
+  config: CustomMetadataSchemaConfiguration | undefined,
+): boolean {
+  if (!config) return false;
+  return schemaRecordTypes(config).some((t) => !parseSchema(config, t).ok);
+}
 
 const RECORD_TYPES = [
   { label: "All types", value: "" },
@@ -58,7 +79,16 @@ export default function RegistryDetailPage() {
     capabilities && (capabilities.canPublish || capabilities.canApprove),
   );
   const [mode, setMode] = useState(canListAll ? "records" : "discover");
-  const [registry, setRegistry] = useState<GetRegistryResponse | null>(null);
+  // GetRegistry (allowed for every persona) supplies authorizerType for the
+  // connect instructions and the custom metadata schema. A failure is not fatal
+  // to the page: it only shows as a schema load error (Req 9.4).
+  const {
+    registry,
+    config,
+    loading: schemaLoading,
+    loadError,
+  } = useRegistrySchema(registryId);
+  const schemaFailed = loadError || schemaParseFails(config);
   const [records, setRecords] = useState<RegistryRecordSummary[]>([]);
   const [filterText, setFilterText] = useState("");
   const [recordsType, setRecordsType] = useState(RECORD_TYPES[0]);
@@ -71,6 +101,13 @@ export default function RegistryDetailPage() {
   const [typeFilter, setTypeFilter] = useState(RECORD_TYPES[0]);
   const [results, setResults] = useState<DiscoverableRecord[]>([]);
   const [searching, setSearching] = useState(false);
+  // Custom metadata filter selections; cleared whenever the record type changes.
+  const [metaFilters, setMetaFilters] = useState<FilterSelections>({});
+  const searchMode = query.trim() !== "";
+  const metaFields = useMemo(
+    () => (schemaFailed ? [] : filterableFields(config, typeFilter.value)),
+    [schemaFailed, config, typeFilter.value],
+  );
 
   const loadRecords = useCallback(async () => {
     if (!clients) return;
@@ -90,24 +127,6 @@ export default function RegistryDetailPage() {
     else setLoading(false);
   }, [loadRecords, canListAll]);
 
-  // The registry's authorizerType drives the connect instructions. Every persona can
-  // read it (GetRegistry is allowed for all three roles); a failure here is not fatal
-  // to the page, so it does not raise the page-level error banner.
-  useEffect(() => {
-    if (!clients) return;
-    let cancelled = false;
-    getRegistry(clients, registryId)
-      .then((r) => {
-        if (!cancelled) setRegistry(r);
-      })
-      .catch(() => {
-        /* non-fatal: the connect tab falls back to the configured auth mode */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [clients, registryId]);
-
   useBreadcrumbs([
     { text: "Registries", href: "/" },
     { text: registryId, href: `/registries/${registryId}` },
@@ -120,24 +139,48 @@ export default function RegistryDetailPage() {
     const type = typeFilter.value || undefined;
     try {
       if (query.trim()) {
-        // NL search, narrowed by the selected record type (metadata filter).
+        // NL search, narrowed by record type and custom metadata (one filter doc).
         setResults(
           await searchRecords(
             clients,
             registryId,
             query.trim(),
-            buildSearchFilter(type ?? "", [], {}),
+            buildSearchFilter(type ?? "", metaFields, metaFilters),
           ),
         );
       } else {
+        // List mode supports no custom metadata conditions (Req 10.10).
         setResults(await listDiscoverable(clients, registryId, type));
       }
     } catch (e) {
+      // Selections stay as they are so the user can adjust and retry (Req 12.3).
       setError(toFriendlyError(e, capabilities?.persona));
     } finally {
       setSearching(false);
     }
-  }, [clients, registryId, query, typeFilter.value, capabilities?.persona]);
+  }, [
+    clients,
+    registryId,
+    query,
+    typeFilter.value,
+    metaFields,
+    metaFilters,
+    capabilities?.persona,
+  ]);
+
+  /** Req 8.7. Same labels and formatting as the record detail page, joined compactly. */
+  const metadataSummary = (r: DiscoverableRecord): string => {
+    let fields: MetadataField[] | undefined;
+    if (!schemaFailed) {
+      const parsed = parseSchema(config, r.recordType ?? "");
+      fields = parsed.ok ? parsed.fields : undefined;
+    }
+    const items = displayValues(fields, r.customMetadata);
+    if (items.length === 0) return "-";
+    return items
+      .map((i) => `${i.label}: ${i.kind === "link" ? i.href : i.text}`)
+      .join("; ");
+  };
 
   // Reactively re-run discovery when the tab, query, or type filter changes.
   // Debounced so typing in the search box doesn't fire a request per keystroke.
@@ -194,6 +237,12 @@ export default function RegistryDetailPage() {
           </Alert>
         )}
 
+        <CustomMetadataSchema
+          config={config}
+          loadError={loadError}
+          loading={schemaLoading}
+        />
+
         <SegmentedControl
           selectedId={mode}
           onChange={({ detail }) => setMode(detail.selectedId)}
@@ -217,6 +266,7 @@ export default function RegistryDetailPage() {
           <ConnectRegistry
             registryId={registryId}
             authorizerType={registry?.discoveryConfiguration?.authorizerType}
+            exampleFilter={schemaFailed ? undefined : exampleFilter(config)}
           />
         ) : mode === "records" ? (
           <Table<RegistryRecordSummary>
@@ -283,6 +333,15 @@ export default function RegistryDetailPage() {
                 header: "Version",
                 cell: (r) => r.recordVersion ?? "-",
               },
+              {
+                id: "compliance",
+                header: "Compliance",
+                cell: (r) => (
+                  <ComplianceBadge
+                    status={r.customMetadataSchemaComplianceStatus}
+                  />
+                ),
+              },
             ]}
             empty={
               <Box textAlign="center" padding="l">
@@ -303,9 +362,10 @@ export default function RegistryDetailPage() {
               </div>
               <Select
                 selectedOption={typeFilter}
-                onChange={({ detail }) =>
-                  setTypeFilter(detail.selectedOption as typeof typeFilter)
-                }
+                onChange={({ detail }) => {
+                  setTypeFilter(detail.selectedOption as typeof typeFilter);
+                  setMetaFilters({}); // Req 10.3
+                }}
                 options={RECORD_TYPES}
               />
               <Button
@@ -315,6 +375,13 @@ export default function RegistryDetailPage() {
                 ariaLabel="Refresh results"
               />
             </SpaceBetween>
+            {searchMode && metaFields.length > 0 && (
+              <CustomMetadataFilters
+                fields={metaFields}
+                value={metaFilters}
+                onChange={setMetaFilters}
+              />
+            )}
             <Table<DiscoverableRecord>
               variant="container"
               items={results}
@@ -345,6 +412,11 @@ export default function RegistryDetailPage() {
                   id: "desc",
                   header: "Description",
                   cell: (r) => r.description ?? "-",
+                },
+                {
+                  id: "customMetadata",
+                  header: "Custom metadata",
+                  cell: metadataSummary,
                 },
               ]}
               empty={

@@ -30,6 +30,11 @@ interface Props {
   registryId: string;
   /** From GetRegistry — undefined while loading. Falls back to the build-time mode. */
   authorizerType?: RegistryAuthorizerType | string;
+  /**
+   * Example custom metadata filter (from `exampleFilter(config)`). When set,
+   * the curl example gets one extra filtered search call (Requirement 11).
+   */
+  exampleFilter?: Record<string, unknown>;
 }
 
 /** A labelled, copyable code block. */
@@ -59,7 +64,16 @@ function Snippet({ label, code }: { label: string; code: string }) {
  * discovery when the registry is CUSTOM_JWT — so the instructions are exercised
  * rather than merely asserted.
  */
-export default function ConnectRegistry({ registryId, authorizerType }: Props) {
+/** Escapes a value for use inside a single-quoted shell string. */
+function shellSingleQuoted(value: string): string {
+  return value.replace(/'/g, "'\\''");
+}
+
+export default function ConnectRegistry({
+  registryId,
+  authorizerType,
+  exampleFilter,
+}: Props) {
   const mode = authorizerType ?? config.registryAuthMode;
   const isJwt = mode === "CUSTOM_JWT";
   const endpoint = registryMcpEndpoint(registryId);
@@ -119,6 +133,34 @@ curl -s -X POST "${endpoint}" \\
        "params":{"name":"search_discoverable_registry_records",
                  "arguments":{"searchQuery":"restart unhealthy tasks"}}}'`;
 
+  const filterJson = exampleFilter
+    ? shellSingleQuoted(JSON.stringify(exampleFilter))
+    : undefined;
+  const filteredBody = `  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
+       "params":{"name":"search_discoverable_registry_records",
+                 "arguments":{"searchQuery":"restart unhealthy tasks",
+                              "filter":${filterJson}}}}'`;
+  const curlJwtFiltered = `
+
+# Same search, narrowed by a custom metadata filter.
+curl -s -X POST "${endpoint}" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: application/json, text/event-stream" \\
+${filteredBody}`;
+  const curlIamFiltered = `
+
+# Same search, narrowed by a custom metadata filter.
+curl -s -X POST "${endpoint}" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: application/json, text/event-stream" \\
+  -H "X-Amz-Security-Token: $AWS_SESSION_TOKEN" \\
+  --aws-sigv4 "aws:amz:${config.region}:agent-registry" \\
+  --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \\
+${filteredBody}`;
+  const curlSnippet = isJwt
+    ? curlJwt + (filterJson ? curlJwtFiltered : "")
+    : curlIam + (filterJson ? curlIamFiltered : "");
   return (
     <Container
       header={
@@ -303,7 +345,7 @@ curl -s -X POST "${endpoint}" \\
                     handshake. Useful for verifying the token and the registry's
                     authorizer before wiring up a client.
                   </Box>
-                  <Snippet label="Request" code={isJwt ? curlJwt : curlIam} />
+                  <Snippet label="Request" code={curlSnippet} />
                   <Link external href={DOC_MCP_ENDPOINT}>
                     Using the registry MCP endpoint
                   </Link>
