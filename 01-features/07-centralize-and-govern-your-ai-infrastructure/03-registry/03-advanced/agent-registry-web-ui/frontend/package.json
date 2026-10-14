@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-sdk/client-agent-registry": "3.1126.0",
-    "@aws-sdk/client-agent-registry-control": "3.1126.0",
+    "@aws-sdk/client-agent-registry": "3.1151.0",
+    "@aws-sdk/client-agent-registry-control": "3.1151.0",
     "@aws-sdk/credential-provider-cognito-identity": "^3.972.69",
     "@cloudscape-design/components": "^3.0.1359",
     "@cloudscape-design/global-styles": "^1.0.67",
@@ -31,6 +31,7 @@
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.12",
+    "fast-check": "^4.10.2",
     "typescript": "^5.5.4",
     "vite": "^6.4.4",
     "vitest": "^3.2.7"
