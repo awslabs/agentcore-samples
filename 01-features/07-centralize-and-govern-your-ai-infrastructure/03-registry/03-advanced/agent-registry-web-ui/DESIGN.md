@@ -171,6 +171,80 @@ The UI reads `cognito:groups` from the ID token to compute capability flags
   status` only, and the discoverable-record shape carries no tags — so tags are
   governance/cost metadata, not a discovery axis.
 
+### Custom metadata
+- A registry may define `customMetadataSchemaConfiguration` when it is created.
+  The configuration contains a `defaultSchema` JSON string and optional
+  `recordTypeSchemaOverrides`, each with a `recordType` and a JSON-string
+  `schema`. Each schema is an object with `properties` and optional `required`;
+  supported field shapes are Text (`{"type":"string"}`), Enum
+  (`{"type":"string","enum":[...]}`), URL
+  (`{"type":"string","format":"uri"}`), and Boolean
+  (`{"type":"boolean"}`).
+- The effective field set for a record type starts with the default-schema
+  fields, in declaration order, followed by fields unique to that record type's
+  override. An override that repeats a common field leaves it in its common-field
+  position, unions Enum values, and makes it required when either declaration
+  requires it. The service requires a repeated Enum to retain every value from
+  the default schema.
+- `update-registry` treats a supplied
+  `customMetadataSchemaConfiguration` as a replacement for the registry schema,
+  rather than a field-by-field patch. Changing the schema can make existing
+  records `NON_COMPLIANT`; a publisher must update a non-compliant record before
+  its next submission for approval. Record reads and summaries report
+  `customMetadataSchemaComplianceStatus` as `COMPLIANT` or `NON_COMPLIANT` when
+  the service has evaluated it.
+- Record values are a flat `customMetadata` object whose values are strings or
+  native booleans. On `update-registry-record`, omit `customMetadata` to retain
+  the stored values, send `{ "optionalValue": { ... } }` to replace all values,
+  or send `{ "optionalValue": {} }` to clear every value. This differs from a
+  field merge: callers changing one value must send the complete intended value
+  object.
+- Custom metadata is a discovery axis. For a `CUSTOM_JWT` registry, the MCP
+  `search_discoverable_registry_records` tool receives the document as its
+  singular `filter` argument:
+
+  ```json
+  {
+    "name": "search_discoverable_registry_records",
+    "arguments": {
+      "filter": {
+        "customMetadata.dataClassification": { "$eq": "confidential" }
+      }
+    }
+  }
+  ```
+
+  For an `AWS_IAM` registry, the SigV4
+  `SearchDiscoverableRegistryRecords` request carries the same document in its
+  `filters` member:
+
+  ```json
+  {
+    "registryIds": ["registry-id"],
+    "searchQuery": "incident",
+    "filters": {
+      "$and": [
+        { "recordType": { "$eq": "AGENT" } },
+        { "customMetadata.handlesPii": { "$eq": true } }
+      ]
+    }
+  }
+  ```
+
+  Search filters support `customMetadata.<fieldName>` conditions, including
+  `$eq` and `$in`, and Boolean comparisons use native booleans. List mode is
+  different: `list-discoverable-registry-records` accepts only `recordType` and
+  `descriptorType` filters, so the UI offers no custom-metadata filters there.
+- Tags and custom metadata have separate purposes. Tags are unvalidated
+  governance and cost metadata, are managed with the tagging APIs after record
+  creation, and cannot filter discovery. Custom metadata is schema-validated
+  record data and can filter discovery searches.
+- The schema is an Operator decision. Defining or replacing it uses the
+  deployer's `CreateRegistry` or `UpdateRegistry` permissions, which no app
+  persona receives. The Seed_Script reads the version-controlled schema file at
+  registry creation; the UI exposes the resulting schema read-only because the
+  sample deliberately has no admin persona.
+
 ### Descriptor source (inline vs synchronized)
 - A descriptor carries EITHER inline `data` (+ `dataSchemaVersion`) OR
   `source.fromUrl.url`. They are alternatives, not complements: with a source the

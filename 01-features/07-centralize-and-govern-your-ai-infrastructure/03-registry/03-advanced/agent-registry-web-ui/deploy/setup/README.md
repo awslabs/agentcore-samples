@@ -40,6 +40,8 @@ client) authorize with a Cognito bearer token. Use `REGISTRY_AUTH_MODE=AWS_IAM` 
 SigV4 variant. **A registry's authorizer type and JWT discovery URL are immutable** —
 changing your mind means tearing layer 03 down and back up, which creates a new registry.
 
+The seed script creates the registry with the schema from `deploy/custom-metadata-schema.json`.
+
 Layer 03 also writes `VITE_REGISTRY_ID` and `VITE_REGISTRY_AUTH_MODE` into
 `frontend/.env`; the SPA must agree with the registry, since the two modes use different
 credentials for discovery.

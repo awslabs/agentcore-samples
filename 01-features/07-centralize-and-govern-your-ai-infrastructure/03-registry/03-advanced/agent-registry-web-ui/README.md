@@ -492,6 +492,55 @@ the `aws:` prefix reserved.
 Tags are metadata for ownership, cost allocation and governance — **not** a discovery
 filter. The filterable record fields are `name`, `recordType` and `status` only.
 
+## Custom metadata
+
+Custom metadata is schema-validated record data that can be filtered in **Discover
+(search approved)**. The demo schema is defined in
+[`deploy/custom-metadata-schema.json`](deploy/custom-metadata-schema.json); the seed
+script reads that file when it creates the registry.
+
+| Field | Field type | Enum values | Required | Scope |
+|---|---|---|---|---|
+| `owner` | Text | — | Yes | Common attribute |
+| `dataClassification` | Enum | `public`, `internal`, `confidential` | No | Common attribute |
+| `runbookUrl` | URL | — | No | Common attribute |
+| `handlesPii` | Boolean | — | No | Common attribute |
+| `dataClassification` | Enum | `public`, `internal`, `confidential`, `restricted` | Yes | Common attribute override for `AGENT` |
+| `modelFamily` | Text | — | Yes | Record-type field for `AGENT` |
+
+The effective `AGENT` field set uses the `dataClassification` values from both the
+common attribute and its override. The UI shows the resulting schema, values, and
+compliance status for every persona:
+
+| Persona | Custom metadata flow |
+|---|---|
+| Publisher | Enters or edits values in the record wizard and edit page; views values and the Compliant or Non-compliant status on record details and in Manage. |
+| Approver | Views values and compliance when reviewing record details and in the Manage table. |
+| Consumer | Views values on discovery results and record details; filters approved search results by enum and Boolean schema fields. |
+
+For example, this filter matches the approved `pii-redaction-skill` and
+`incident-enricher-tool` seed records:
+
+```json
+{"customMetadata.dataClassification":{"$eq":"confidential"}}
+```
+
+Search indexing is eventually consistent, so a newly approved record can take a
+short time to appear in filtered results.
+
+Use AWS CLI v2.38.0 or later. `00-preflight.sh` verifies that the installed CLI
+accepts `--custom-metadata-schema-configuration` before deployment. The frontend
+pins both Agent Registry SDK clients to version `3.1151.0`.
+
+Deployments created before custom metadata support must be recreated because the
+schema is configured when the registry is created:
+
+```bash
+cd deploy/setup
+./03-registry.sh down
+./03-registry.sh up
+```
+
 ## Cleanup
 
 Every layer's `down` is the exact inverse of its `up`:
