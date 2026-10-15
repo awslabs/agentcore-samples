@@ -1,0 +1,315 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Agent Registry UI - Cognito User Pool + Identity Pool with 3 persona groups
+  mapped to scoped IAM roles (Consumer / Publisher / Approver). Zero-backend SPA:
+  the browser exchanges a User Pool token for short-lived scoped IAM credentials
+  for control-plane calls, and uses its Cognito access token as a bearer token for
+  discovery when the registry is CUSTOM_JWT.
+
+  SCOPE: there is deliberately no administrator persona. Creating a registry picks
+  its IMMUTABLE authorization model and provisions an AgentCore workload identity,
+  so it is done out-of-band by an operator (console / CLI / IaC) - in this sample by
+  deploy/setup/03-registry.sh using the deployer's own credentials.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: agentregistry-ui
+    Description: Prefix for all resource names.
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # User Pool (password auth + groups)
+  #
+  # This pool is also the registry's OIDC identity provider: the registry is
+  # created with a CUSTOM_JWT authorizer whose discoveryUrl is this pool's
+  # openid-configuration and whose allowedClients is the app client below. That is
+  # what lets an external MCP client (Kiro, Amazon Quick, Claude) call the
+  # registry's MCP endpoint with a token minted from this pool.
+  # ---------------------------------------------------------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AppName}-user-pool"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AppName}-spa-client"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false              # public SPA client - no secret in the browser
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  # ---------------------------------------------------------------------------
+  # Identity Pool (credential broker) - RBAC "choose role from token"
+  # ---------------------------------------------------------------------------
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub "${AppName}_identity_pool"
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+          ServerSideTokenCheck: true
+
+  # Role attachment: use the cognito:preferred_role claim (set from group RoleArn)
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        # Fallback authenticated role = Consumer (least privilege) if no group role resolves
+        authenticated: !GetAtt ConsumerRole.Arn
+      RoleMappings:
+        userpool:
+          IdentityProvider: !Sub "cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}:${UserPoolClient}"
+          Type: Token
+          AmbiguousRoleResolution: AuthenticatedRole
+
+  # ---------------------------------------------------------------------------
+  # Persona roles. All use the same trust policy (AssumeRoleWithWebIdentity on the
+  # Identity Pool) and differ only in their agent-registry permissions.
+  #
+  # The four data-plane actions (Search/List/GetDiscoverable + InvokeRegistryMcp)
+  # are only exercised when a registry uses AWS_IAM authorization. A CUSTOM_JWT
+  # registry authorizes those calls with a bearer token instead, so the grants are
+  # inert there - they are kept so both authorization models work unchanged.
+  # ---------------------------------------------------------------------------
+  ConsumerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-consumer-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: cognito-identity.amazonaws.com }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: agent-registry-consumer
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # ListRegistries has no resource type, so it needs Resource "*".
+              - Sid: ListRegistries
+                Effect: Allow
+                Action: agent-registry:ListRegistries
+                Resource: "*"
+              - Sid: DiscoverAndRead
+                Effect: Allow
+                Action:
+                  - agent-registry:SearchDiscoverableRegistryRecords
+                  - agent-registry:ListDiscoverableRegistryRecords
+                  - agent-registry:GetDiscoverableRegistryRecord
+                  - agent-registry:InvokeRegistryMcp
+                  - agent-registry:GetRegistry
+                  - agent-registry:ListTagsForResource
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+
+  PublisherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-publisher-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: cognito-identity.amazonaws.com }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: agent-registry-publisher
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # ListRegistries has no resource type, so it needs Resource "*".
+              - Sid: ListRegistries
+                Effect: Allow
+                Action: agent-registry:ListRegistries
+                Resource: "*"
+              - Sid: DiscoverAndRead
+                Effect: Allow
+                Action:
+                  - agent-registry:SearchDiscoverableRegistryRecords
+                  - agent-registry:ListDiscoverableRegistryRecords
+                  - agent-registry:GetDiscoverableRegistryRecord
+                  - agent-registry:InvokeRegistryMcp
+                  - agent-registry:GetRegistry
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+              - Sid: PublishRecords
+                Effect: Allow
+                Action:
+                  - agent-registry:CreateRegistryRecord
+                  - agent-registry:UpdateRegistryRecord
+                  - agent-registry:GetRegistryRecord
+                  - agent-registry:ListRegistryRecords
+                  - agent-registry:SubmitRegistryRecordForApproval
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+              # Tags are set at creation by CreateRegistryRecord, and changed
+              # afterwards through Tag/UntagResource (UpdateRegistryRecord has no
+              # tags field). Tag-on-create is authorized by TagResource.
+              - Sid: TagRecords
+                Effect: Allow
+                Action:
+                  - agent-registry:TagResource
+                  - agent-registry:UntagResource
+                  - agent-registry:ListTagsForResource
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+              # A record whose descriptor is SYNCHRONIZED from a URL with an OAuth
+              # credential provider requires the CALLER to hold these two actions:
+              # the registry mints an outbound token through AgentCore Identity on the
+              # publisher's behalf. Without them CreateRegistryRecord is denied even
+              # though every agent-registry: permission is present.
+              - Sid: UseOAuthCredentialProviderForSource
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetResourceOauth2Token
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:token-vault/*"
+              # GetResourceOauth2Token reads the provider's client secret from Secrets
+              # Manager USING THE CALLER'S IDENTITY, so without this the token fetch is
+              # denied and the record lands in CREATE_FAILED with a secretsmanager
+              # AccessDenied in statusReason -- even though every bedrock-agentcore and
+              # agent-registry permission is present. Verified live 2026-09-04.
+              # AgentCore names the secret bedrock-agentcore-identity!default/oauth2/<provider>-<suffix>.
+              - Sid: ReadOAuthCredentialProviderSecret
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:bedrock-agentcore-identity!default/oauth2/*"
+              # The SigV4 alternative instead hands a role to AgentCore Identity, which
+              # is a PassRole. Scoped to the service principal that receives it.
+              - Sid: PassRoleForSigV4Source
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*"
+                Condition:
+                  StringEquals:
+                    "iam:PassedToService": agent-registry.amazonaws.com
+
+  ApproverRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-approver-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: cognito-identity.amazonaws.com }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: agent-registry-approver
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # ListRegistries has no resource type, so it needs Resource "*".
+              - Sid: ListRegistries
+                Effect: Allow
+                Action: agent-registry:ListRegistries
+                Resource: "*"
+              - Sid: DiscoverAndRead
+                Effect: Allow
+                Action:
+                  - agent-registry:SearchDiscoverableRegistryRecords
+                  - agent-registry:ListDiscoverableRegistryRecords
+                  - agent-registry:GetDiscoverableRegistryRecord
+                  - agent-registry:InvokeRegistryMcp
+                  - agent-registry:GetRegistry
+                  - agent-registry:GetRegistryRecord
+                  - agent-registry:ListRegistryRecords
+                  - agent-registry:ListTagsForResource
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+              # The whole approval surface: approve / reject / deprecate.
+              - Sid: ApproveRecords
+                Effect: Allow
+                Action:
+                  - agent-registry:UpdateRegistryRecordStatus
+                Resource: !Sub "arn:${AWS::Partition}:agent-registry:${AWS::Region}:${AWS::AccountId}:registry/*"
+
+  # ---------------------------------------------------------------------------
+  # Groups (group RoleArn drives cognito:preferred_role -> chosen IAM role)
+  # ---------------------------------------------------------------------------
+  ConsumerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: AgentRegistryConsumer
+      UserPoolId: !Ref UserPool
+      Precedence: 30
+      RoleArn: !GetAtt ConsumerRole.Arn
+  PublisherGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: AgentRegistryPublisher
+      UserPoolId: !Ref UserPool
+      Precedence: 20
+      RoleArn: !GetAtt PublisherRole.Arn
+  ApproverGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: AgentRegistryApprover
+      UserPoolId: !Ref UserPool
+      Precedence: 10
+      RoleArn: !GetAtt ApproverRole.Arn
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  IdentityPoolId:
+    Value: !Ref IdentityPool
+  Region:
+    Value: !Ref AWS::Region
+  # The registry's CUSTOM_JWT authorizer is created with this discovery URL.
+  CognitoDiscoveryUrl:
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/openid-configuration"
+  ConsumerRoleArn:
+    Value: !GetAtt ConsumerRole.Arn
+  PublisherRoleArn:
+    Value: !GetAtt PublisherRole.Arn
+  ApproverRoleArn:
+    Value: !GetAtt ApproverRole.Arn

@@ -1,0 +1,15 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Dependencies for the local MCP client tester (deploy/mcp_client_tester.py).
+# Install into a repo-local venv:
+#
+#   python3 -m venv deploy/.venv
+#   deploy/.venv/bin/pip install -r deploy/requirements-test.txt
+#   deploy/.venv/bin/python deploy/mcp_client_tester.py
+#
+# mcp<2 pins the 1.x line: 2.x removed mcp.server.fastmcp and renamed several
+# client symbols, so the streamable-HTTP client import used by the tester breaks
+# on 2.x. 1.29.1 is the version this tester was validated against.
+mcp>=1.29,<2
+httpx>=0.27
