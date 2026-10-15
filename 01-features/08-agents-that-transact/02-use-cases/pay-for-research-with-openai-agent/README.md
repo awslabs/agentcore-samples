@@ -59,13 +59,14 @@ HTTP requests and exposes them as a function tool.
 
 - Python 3.10+ and AWS CLI v2.
 - An AWS execution profile with access to the configured OpenAI model on Bedrock.
-- For paid research, a payment manager, a `READY` connector, and an active,
+- For paid research, a payment manager, a configured connector, and an active,
   funded, delegated testnet wallet. Complete the
   [one-time payment setup](#one-time-payment-setup) below if needed.
 - For either Coinbase setup mode, activate the
   [Coinbase Marketplace subscription][marketplace] after reviewing its pricing
-  and terms. An active wallet is not sufficient if the connector reports
-  `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED`.
+  and terms. After subscribing, `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED` may
+  persist in connector status even when payments work. Verify with one capped
+  purchase; a successful wallet setup or proof alone does not establish settlement.
 
 Before configuring payment access, read the
 [AgentCore Payments security best practices][security]. In particular:
@@ -78,9 +79,10 @@ Before configuring payment access, read the
 - Keep wallet-provider credentials in AgentCore Identity, not in this sample,
   agent prompts, or tool arguments.
 - Use conservative budgets and short sessions, and require end-user delegation.
-- For production, add merchant-recipient (`payTo`) validation, provider policies,
-  and audit logging as described in the security guide. This sample's URL checks
-  and session limits are not a complete production security boundary.
+- The sample checks merchant recipients (`payTo`) and a per-payment maximum
+  before signing. For production, also configure provider policies and audit
+  logging as described in the security guide. These sample controls are not a
+  complete production security boundary.
 
 [setup]: ../../00-getting-started/00-setup-agentcore-payments/
 [providers]: ../../00-getting-started/00-setup-agentcore-payments/providers/
@@ -104,8 +106,9 @@ The existing [shared setup tutorial][setup] provides the infrastructure walkthro
    [provider setup guide][providers]. Follow the GA quick start for current
    credential-generation and project-level delegated-signing steps.
 2. [Create the payment manager and connector][setup-manager]. Complete the
-   Coinbase authorization flow if using Quick create, then confirm the connector
-   is `READY` before proceeding.
+   Coinbase authorization flow if using Quick create and activate the Marketplace
+   subscription. Check connector status, accounting for the stale subscription
+   status described above.
 3. [Create the per-user wallet][setup-wallet]. Use the same user ID throughout
    setup and research, and a real email address for wallet consent.
    For the default Genesis Block merchant, choose `NETWORK=ETHEREUM` and
@@ -119,6 +122,11 @@ With the GA SDK, the Coinbase WalletHub `redirectUrl` is inside
 `paymentInstrumentDetails.embeddedCryptoWallet`. Wallet creation is asynchronous:
 if the address or URL is not ready, retrieve the same instrument with
 `get_payment_instrument` rather than creating another wallet.
+
+If `ProcessPayment` reports "Delegated signing grant is not active", reopen the
+existing wallet's WalletHub `redirectUrl` and renew the end-user permission. An
+`ACTIVE` instrument and a funded balance do not establish that signing consent
+is still active. Do not create another wallet to fix an expired grant.
 
 Keep the manager ARN, instrument ID, and user ID. Return to this sample and copy
 only those identifiers in [step 2](#2-configure-payment-identifiers) below.
@@ -169,7 +177,12 @@ Copy these non-secret identifiers from the shared setup into `.env`:
 
 Set `PAID_RESEARCH_URL` to the exact approved HTTPS endpoint and include its
 hostname in `PAID_RESEARCH_ALLOWED_HOSTS`. The default endpoint is the Genesis
-Block Base Sepolia merchant. Do not copy provider credentials into this file.
+Block Base Sepolia merchant. Set `PAID_RESEARCH_ALLOWED_RECIPIENTS` to the
+approved, comma-separated merchant wallet addresses and `PAID_RESEARCH_MAX_AMOUNT`
+to the per-payment cap in USDC base units (six decimals: `10000` = 0.01 test
+USDC). The supplied recipient is for the default merchant. Verify any recipient
+change independently; do not automatically trust a new address from a 402 response.
+Do not copy provider credentials into this file.
 
 `AWS_REGION` selects the model region. Payment clients use the region in
 `PAYMENT_MANAGER_ARN`, independently of the model endpoint.
@@ -246,6 +259,12 @@ The adapter requires an allowed HTTPS host, rejects private/non-routable
 addresses, and pins both requests to the same validated IP while retaining TLS
 hostname verification. Requests use fresh clients without redirects or
 environment proxies.
+
+Before asking AgentCore to sign, the adapter checks every x402 `accepts` entry
+against the recipient allowlist and per-payment cap. All offers must be exact
+USDC payments on Base Sepolia; malformed, mainnet, other-token, and alternate
+protocol challenges are rejected without signing. Checking every offer keeps
+the SDK's network selection within the same approved policy.
 
 There is at most one signing attempt and one paid GET per research run.
 Repeated calls return the recorded result, including failures. A successful

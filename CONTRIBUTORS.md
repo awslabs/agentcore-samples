@@ -133,7 +133,6 @@
 - Deepak Singh (deepaxs)
 - Irene Arroyo Delgado (iiarroyo)
 - rmncardoso
-- Bryan Conklin (thor4)
 - mccartnick
 - ach1ntya
 - Shruthi Rajoli (rajolishruthi)

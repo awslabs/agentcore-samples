@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import json
 import os
@@ -87,6 +88,15 @@ class X402PaymentClient:
         if not self.allowed_hosts:
             raise ValueError("PAID_RESEARCH_ALLOWED_HOSTS must contain an exact host")
 
+        self.allowed_recipients = {
+            recipient.strip().lower()
+            for recipient in _required_setting("PAID_RESEARCH_ALLOWED_RECIPIENTS").split(",")
+            if recipient.strip()
+        }
+        self.max_amount = int(_required_setting("PAID_RESEARCH_MAX_AMOUNT"))
+        if not self.allowed_recipients or self.max_amount <= 0:
+            raise ValueError("Configure approved recipients and a positive per-payment maximum")
+
         self.payment_manager = create_payment_manager(manager_arn)
         self._result: str | None = None
         # PaymentManager is not thread-safe. Also prevent repeated tool calls
@@ -132,6 +142,38 @@ class X402PaymentClient:
         address = next((address for address in addresses if ipaddress.ip_address(address).version == 4), addresses[0])
         return parsed, address
 
+    def _validate_challenge(self, response: httpx.Response) -> None:
+        """Check every offered payment before the SDK selects one and signs."""
+        try:
+            # The SDK prioritizes the v2 header over the v1 JSON body.
+            header = response.headers.get("payment-required")
+            challenge = json.loads(base64.b64decode(header, validate=True)) if header is not None else response.json()
+            version = challenge["x402Version"]
+            accepts = challenge["accepts"]
+            if type(version) is not int or version not in (1, 2) or not isinstance(accepts, list) or not accepts:
+                raise ValueError
+            # This sample authorizes exact USDC payments on Base Sepolia only.
+            # Reject alternate protocols so they cannot bypass the x402 checks.
+            if "www-authenticate" in response.headers:
+                raise ValueError
+            for offer in accepts:
+                amount = offer["maxAmountRequired" if version == 1 else "amount"]
+                if (
+                    offer["scheme"] != "exact"
+                    or offer["network"] not in {"base-sepolia", "eip155:84532"}
+                    or offer["asset"].lower() != "0x036cbd53842c5426634e7929541ec2318f3dcf7e"
+                    or offer["payTo"].lower() not in self.allowed_recipients
+                    or not isinstance(amount, str)
+                    or not amount.isascii()
+                    or not amount.isdecimal()
+                    or not 0 < int(amount) <= self.max_amount
+                ):
+                    raise ValueError
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            raise ValueError(
+                "Payment challenge is invalid or exceeds the approved recipient, amount, or testnet policy"
+            ) from error
+
     def fetch(self) -> str:
         """Fetch the bound source once, retaining successes and terminal failures."""
         with self._lock:
@@ -166,6 +208,13 @@ class X402PaymentClient:
                 body=response.text[:MAX_BODY_CHARS],
                 payment_made=False,
                 payment_attempts=0,
+            )
+
+        try:
+            self._validate_challenge(response)
+        except ValueError as error:
+            return self._json(
+                ok=False, source_url=url, status_code=402, error=str(error), payment_made=False, payment_attempts=0
             )
 
         try:
