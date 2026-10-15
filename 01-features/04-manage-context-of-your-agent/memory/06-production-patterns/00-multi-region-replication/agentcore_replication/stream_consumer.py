@@ -3,12 +3,17 @@
 This is the real-time long-term-memory path. The source memory is configured
 with ``streamDeliveryResources`` (``MEMORY_RECORDS`` / ``FULL_CONTENT``) so every
 extracted/updated record is published to a Kinesis Data Stream. A consumer reads
-those stream events and re-creates each record in the target region with
-``BatchCreateMemoryRecords``.
+those stream events and applies each change to the target region: creates with
+``BatchCreateMemoryRecords``, updates with ``BatchUpdateMemoryRecords``, and
+deletes with ``BatchDeleteMemoryRecords``.
 
-Idempotency comes from ``requestIdentifier``: we set it to the source record's
-``memoryRecordId``, so replaying the same stream record is a conditional no-op in
-the target rather than a duplicate write.
+Replays are safe for two reasons. Each create sends a ``clientToken`` derived
+from the stream event, so a redelivered event can't create a second record
+(``BatchCreateMemoryRecords`` deduplicates on ``clientToken``; ``requestIdentifier``
+is for tracking only). And a :class:`~agentcore_replication.record_map.RecordMap`
+remembers which target record each source record became, plus the time of the
+last change applied, so updates and deletes reach the right record and stale or
+redelivered events are skipped.
 
 The same core function powers two consumers:
 
@@ -35,23 +40,28 @@ Stream event shape (decoded Kinesis ``data``)::
 """
 
 import base64
+import hashlib
 import json
 import logging
-import uuid
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
 
+from .record_map import MappedRecord, RecordMap
+
 logger = logging.getLogger(__name__)
 
-# Stream event types we replicate vs. ignore.
-REPLICABLE_EVENTS = {"MemoryRecordCreated", "MemoryRecordUpdated"}
-SKIP_EVENTS = {"StreamingEnabled", "MemoryRecordDeleted"}
+# Stream event types we replicate. Anything else (StreamingEnabled, or a type
+# added later) is acknowledged and skipped.
+REPLICABLE_EVENTS = {"MemoryRecordCreated", "MemoryRecordUpdated", "MemoryRecordDeleted"}
 
-# Errors worth retrying (let the ESM redeliver / a local loop re-poll); anything
-# else is terminal for that record.
-RETRYABLE_ERRORS = {"ThrottledException", "ServiceException", "RetryableConflictException"}
+# ``failedRecords[].errorCode`` is an integer. Throttling (429) and server-side
+# errors (5xx) are worth retrying (let the ESM redeliver / a local loop re-poll);
+# anything else is terminal for that record.
+NOT_FOUND = 404
+THROTTLED = 429
 
 
 def stream_delivery_resources(stream_arn: str) -> dict:
@@ -98,20 +108,44 @@ def _to_epoch(event_time) -> float:
     if isinstance(event_time, (int, float)):
         return float(event_time)
     if isinstance(event_time, str) and event_time:
+        # The stream sends nanoseconds; before Python 3.11, fromisoformat accepts at most 6 fractional digits.
+        iso = re.sub(r"(\.\d{6})\d+", r"\1", event_time.replace("Z", "+00:00"))
         try:
-            dt = datetime.fromisoformat(event_time.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(iso)
             return dt.timestamp()
         except ValueError:
             pass
     return datetime.now(timezone.utc).timestamp()
 
 
+def _client_token(stream_event: dict) -> str:
+    """Derive the create ``clientToken`` from the event, so a redelivered event sends the same token.
+
+    The consumer sends one record per call, so the token depends only on this event.
+    """
+    key = "|".join(str(stream_event.get(k, "")) for k in ("memoryId", "memoryRecordId", "eventType", "eventTime"))
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _raise_for_failed(resp: dict, operation: str, record_id: str, ignore_not_found: bool = False) -> None:
+    """Raise on ``failedRecords``: ``ClientError`` if retryable (so the batch is retried), else ``RuntimeError``."""
+    for failed in resp.get("failedRecords", []):
+        code = failed.get("errorCode") or 0
+        if ignore_not_found and code == NOT_FOUND:
+            continue
+        msg = f"record {record_id}: {code} {failed.get('errorMessage')}"
+        if code == THROTTLED or code >= 500:
+            raise ClientError({"Error": {"Code": str(code), "Message": msg}}, operation)
+        raise RuntimeError(msg)
+
+
 def replicate_stream_event(
     stream_event: dict,
     target_client,
     target_memory_id: str,
+    record_map: RecordMap,
 ) -> str:
-    """Replicate a single decoded ``memoryStreamEvent`` to the target region.
+    """Apply a single decoded ``memoryStreamEvent`` to the target region.
 
     Returns ``"replicated"`` or ``"skipped"``, or raises ``ClientError`` on a
     retryable failure so the caller (ESM or local loop) can retry the batch.
@@ -119,12 +153,33 @@ def replicate_stream_event(
     event_type = stream_event.get("eventType", "Unknown")
     record_id = stream_event.get("memoryRecordId", "")
 
-    if event_type in SKIP_EVENTS or event_type not in REPLICABLE_EVENTS:
-        # StreamingEnabled is a control event; MemoryRecordDeleted is not
-        # replicated (consolidation cleans up the target). Unknown types are
-        # ignored forward-compatibly.
+    if event_type not in REPLICABLE_EVENTS or not record_id:
+        # StreamingEnabled is a control event; unknown types are ignored forward-compatibly.
         logger.info("skip stream event type=%s id=%s", event_type, record_id)
         return "skipped"
+
+    event_time = _to_epoch(stream_event.get("eventTime"))
+    mapped = record_map.get(record_id)
+    if mapped and (event_time <= mapped.event_time or mapped.deleted):
+        # Redelivered or out of order: this change, or a newer one, was already applied.
+        logger.info("skip stale %s for %s", event_type, record_id)
+        return "skipped"
+
+    if event_type == "MemoryRecordDeleted":
+        # Delete events carry only IDs, so the map supplies the target record.
+        outcome = "skipped"
+        if mapped and mapped.target_record_id:
+            resp = target_client.batch_delete_memory_records(
+                memoryId=target_memory_id,
+                records=[{"memoryRecordId": mapped.target_record_id}],
+            )
+            _raise_for_failed(resp, "BatchDeleteMemoryRecords", record_id, ignore_not_found=True)
+            outcome = "replicated"
+        # Keep a tombstone so a late or redelivered create for this record is skipped.
+        target_record_id = mapped.target_record_id if mapped else None
+        record_map.put(record_id, MappedRecord(target_record_id, event_time, deleted=True))
+        logger.info("deleted record %s from %s", record_id, target_memory_id)
+        return outcome
 
     text = stream_event.get("memoryRecordText")
     if not text:
@@ -134,44 +189,49 @@ def replicate_stream_event(
     # Preserve namespaces verbatim so vector search behaves identically in both
     # regions. This is active-passive one-way replication, so no loop-prevention
     # prefix is needed (the target memory does not stream back).
-    namespaces = stream_event.get("namespaces") or []
-    timestamp = _to_epoch(stream_event.get("eventTime"))
-
-    # Use the source memoryRecordId as the requestIdentifier so replays of the
-    # same stream record are idempotent (the target de-dups on requestIdentifier
-    # rather than creating a second record). Fall back to a fresh id if the
-    # stream event somehow lacks one.
     #
     # NOTE: the source's memoryStrategyId is intentionally NOT forwarded. Strategy
     # IDs are generated per-memory, so the source's ID does not exist in the
-    # target and BatchCreateMemoryRecords would reject it. AgentCore associates
-    # the replicated record by its namespaces instead.
-    record = {
-        "requestIdentifier": record_id or uuid.uuid4().hex,
-        "content": {"text": text},
-        "namespaces": namespaces,
-        "timestamp": timestamp,
-    }
+    # target and the Batch APIs would reject it. AgentCore associates the
+    # replicated record by its namespaces instead.
+    namespaces = stream_event.get("namespaces") or []
 
+    if mapped:
+        # Already replicated: apply the newer content to the same target record.
+        resp = target_client.batch_update_memory_records(
+            memoryId=target_memory_id,
+            records=[
+                {
+                    "memoryRecordId": mapped.target_record_id,
+                    "timestamp": event_time,
+                    "content": {"text": text},
+                    "namespaces": namespaces,
+                }
+            ],
+        )
+        _raise_for_failed(resp, "BatchUpdateMemoryRecords", record_id)
+        record_map.put(record_id, MappedRecord(mapped.target_record_id, event_time))
+        logger.info("updated record %s in %s", record_id, target_memory_id)
+        return "replicated"
+
+    # Not replicated yet (a create, or an update whose create predates streaming).
     resp = target_client.batch_create_memory_records(
         memoryId=target_memory_id,
-        records=[record],
-        clientToken=uuid.uuid4().hex,
+        records=[
+            {
+                "requestIdentifier": record_id,
+                "content": {"text": text},
+                "namespaces": namespaces,
+                "timestamp": event_time,
+            }
+        ],
+        clientToken=_client_token(stream_event),
     )
-
-    failed = resp.get("failedRecords", [])
-    if failed:
-        f = failed[0]
-        code = f.get("errorCode", "")
-        msg = f"record {record_id}: {code} {f.get('errorMessage')}"
-        if code in RETRYABLE_ERRORS:
-            # Raise so the ESM/loop retries the whole batch.
-            raise ClientError(
-                {"Error": {"Code": code, "Message": msg}},
-                "BatchCreateMemoryRecords",
-            )
-        raise RuntimeError(msg)
-
+    _raise_for_failed(resp, "BatchCreateMemoryRecords", record_id)
+    created = resp.get("successfulRecords", [])
+    if not created:
+        raise RuntimeError(f"record {record_id}: BatchCreateMemoryRecords returned no record ID")
+    record_map.put(record_id, MappedRecord(created[0]["memoryRecordId"], event_time))
     logger.info("replicated record %s -> %s", record_id, target_memory_id)
     return "replicated"
 
@@ -180,6 +240,7 @@ def process_kinesis_records(
     kinesis_records,
     target_client,
     target_memory_id: str,
+    record_map: RecordMap,
     stats: "StreamStats | None" = None,
 ) -> StreamStats:
     """Decode and replicate a batch of raw Kinesis records.
@@ -205,7 +266,7 @@ def process_kinesis_records(
             continue
 
         try:
-            outcome = replicate_stream_event(stream_event, target_client, target_memory_id)
+            outcome = replicate_stream_event(stream_event, target_client, target_memory_id, record_map)
             if outcome == "replicated":
                 stats.replicated += 1
             else:
