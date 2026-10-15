@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+
 import boto3
 from boto3.session import Session
 
@@ -60,7 +61,7 @@ def create_execution_role() -> str:
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
                 ],
-                "Resource": "arn:aws:logs:*:*:*",
+                "Resource": f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/*",
             },
             {
                 "Effect": "Allow",
@@ -122,6 +123,16 @@ def zip_and_upload_code():
             )
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         pass
+
+    s3.put_public_access_block(
+        Bucket=S3_BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
 
     if os.path.isdir(pkg_dir):
         shutil.rmtree(pkg_dir)

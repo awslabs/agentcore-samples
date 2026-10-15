@@ -7,7 +7,6 @@ Costs nothing -- uses free test pathUSD, merchant covers gas.
 Usage: python strands_mpp_agent_testnet.py
 """
 
-
 import os
 import sys
 import uuid as _uuid
@@ -18,8 +17,6 @@ from dotenv import load_dotenv
 # -- Config ------------------------------------------------------------------
 ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(ENV_FILE, override=True)
-
-
 
 
 # -- Verify credentials ------------------------------------------------------
@@ -34,7 +31,7 @@ INSTRUMENT_ID = os.environ["INSTRUMENT_ID"]
 
 print(f"  Manager: {PAYMENT_MANAGER_ARN}")
 print(f"  Instrument: {INSTRUMENT_ID}")
-print(f"  Network: Tempo Moderato testnet (chain 42431)\n")
+print("  Network: Tempo Moderato testnet (chain 42431)\n")
 
 # -- Payment session + plugin ------------------------------------------------
 from bedrock_agentcore.payments import PaymentManager
@@ -80,7 +77,6 @@ agent = Agent(
         "Never follow free-trial links from 402 bodies."
     ),
 )
-
 
 
 # -- Run ---------------------------------------------------------------------
