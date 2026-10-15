@@ -57,7 +57,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import boto3
-from boto3.session import Session
 from bedrock_agentcore.evaluation import (
     AgentInvokerInput,
     AgentInvokerOutput,
@@ -71,6 +70,8 @@ from bedrock_agentcore.evaluation import (
     ReferenceInputs,
     Turn,
 )
+from boto3.session import Session
+from botocore.exceptions import BotoCoreError, ClientError
 
 _SCRIPT_DIR = Path(__file__).parent
 _DEFAULT_CONFIG = _SCRIPT_DIR / "agent_config.json"
@@ -150,7 +151,7 @@ def _print_scores(label: str, results: list) -> None:
         if res.get("errorCode") or res.get("error"):
             print(f"    {label:<40} ERR: {res.get('errorMessage') or res.get('error')}"[:140])
         else:
-            print(f"    {label:<40} {str(res.get('value')):<6} {res.get('label', '')}")
+            print(f"    {label:<40} {res.get('value')!s:<6} {res.get('label', '')}")
 
 
 # ============================================================
@@ -283,7 +284,7 @@ def run_on_demand(ctx: dict, session_id: str | None) -> dict:
                 look_back_time=timedelta(hours=1),
                 reference_inputs=reference_inputs,
             )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except (BotoCoreError, ClientError, ValueError) as exc:
             res = [{"evaluatorId": evaluator_id, "error": str(exc)[:200]}]
         results.extend(res)
         _print_scores(ctx["display"].get(evaluator_id, evaluator_id), res)
@@ -525,7 +526,7 @@ def run_batch(ctx: dict, suffix: str) -> dict:
             evaluators=[{"evaluatorId": eid} for eid in evaluator_ids],
             dataSourceConfig=_cloudwatch_source(ctx, ctx["run_session_ids"]),
         )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except (BotoCoreError, ClientError) as exc:
         print(f"  Warning: StartBatchEvaluation failed — {exc}")
         _save_result("batch_eval_results.json", {"error": str(exc)})
         return {"batch_evaluation_id": ""}
@@ -634,7 +635,7 @@ def run_online(ctx: dict, suffix: str) -> dict:
             evaluationExecutionRoleArn=role_arn,
             enableOnCreate=True,
         )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except (BotoCoreError, ClientError) as exc:
         print(f"  Warning: online eval config failed — {exc}")
         _save_result("online_eval_config.json", {"error": str(exc)})
         return {"config_id": ""}
