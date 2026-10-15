@@ -134,6 +134,7 @@
 - Deepak Singh (deepaxs)
 - Irene Arroyo Delgado (iiarroyo)
 - rmncardoso
+- mccartnick
 - ach1ntya
 - Shruthi Rajoli (rajolishruthi)
 - ratnopam
