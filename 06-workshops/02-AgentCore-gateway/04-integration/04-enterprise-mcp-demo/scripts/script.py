@@ -37,11 +37,11 @@ for el in output.split("\n"):
 users = [
     {
         "COGNITO_USERNAME": "vscode-admin@example.com",
-        "COGNITO_PASSWORD": "TempPassword123!",  # pragma: allowlist secret
+        "COGNITO_PASSWORD": "TempPassword123!",
     },
     {
         "COGNITO_USERNAME": "vscode-user@example.com",
-        "COGNITO_PASSWORD": "TempPassword1234!",  # pragma: allowlist secret
+        "COGNITO_PASSWORD": "TempPassword1234!",
     },
 ]
 

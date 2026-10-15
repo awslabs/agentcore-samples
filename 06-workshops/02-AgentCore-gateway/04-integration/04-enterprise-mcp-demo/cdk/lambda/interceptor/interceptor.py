@@ -1,6 +1,7 @@
-import logging
 import json
+import logging
 import os
+
 import boto3
 
 # Configure logging
@@ -10,6 +11,10 @@ logger.setLevel(logging.INFO)
 GUARDRAIL_ID = os.getenv("GUARDRAIL_ID", None)
 GUARDRAIL_VERSION = os.getenv("GUARDRAIL_VERSION", "1.0")
 MCP_METADATA_KEY = os.getenv("MCP_METADATA_KEY", "com.example/target")
+AUTH_ONBOARDING_URL = os.getenv("AUTH_ONBOARDING_URL", "")
+
+# MCP JSON-RPC error code for elicitation (authorization required)
+ELICITATION_ERROR_CODE = -32042
 
 client = boto3.client("bedrock-runtime")
 
@@ -120,10 +125,95 @@ def lambda_handler(event, context):
 
             if mcp_method == "tools/call" and response_body:
                 logger.info("tools/call response detected in RESPONSE interceptor")
-                content = (
-                    response_body.get("result", {}).get("content", [])[0].get("text", {}) if response_body else None
-                )
-                if GUARDRAIL_ID:
+
+                # Check if this is an error response (e.g., elicitation)
+                if "error" in response_body:
+                    error_code = response_body.get("error", {}).get("code")
+                    logger.info(f"Response contains error: {error_code}")
+
+                    # Special handling for elicitation errors (-32042)
+                    if error_code == ELICITATION_ERROR_CODE:
+                        # Check if caller wants raw elicitation (e.g., auth onboarding SPA)
+                        request_body = mcp_data.get("gatewayRequest", {}).get("body", {})
+                        meta = request_body.get("_meta", {}) if isinstance(request_body, dict) else {}
+
+                        if meta.get("rawElicitation"):
+                            logger.info("rawElicitation flag detected — passing through raw")
+                        elif AUTH_ONBOARDING_URL:
+                            # Rewrite elicitation to user-friendly message
+                            # BUT preserve the authorization URL from the elicitation
+                            logger.info("Rewriting elicitation to friendly message")
+                            jsonrpc_id = request_body.get("id", response_body.get("id", 1))
+
+                            # Extract the authorization URL from the elicitation
+                            elicitations = response_body.get("error", {}).get("data", {}).get("elicitations", [])
+                            auth_url = elicitations[0].get("url") if elicitations else None
+
+                            if auth_url:
+                                message = (
+                                    "⚠️ Authorization Required\n\n"
+                                    "You haven't authorized access to the downstream API yet. "
+                                    "Please visit our auth onboarding app to complete authorization:\n\n"
+                                    f"{AUTH_ONBOARDING_URL}\n\n"
+                                    "Or authorize directly using this URL:\n"
+                                    f"{auth_url}\n\n"
+                                    "After completing authorization, retry this tool call."
+                                )
+                            else:
+                                message = (
+                                    "⚠️ Authorization Required\n\n"
+                                    "You haven't authorized access to the downstream API yet. "
+                                    "Please visit our auth onboarding app to complete authorization:\n\n"
+                                    f"{AUTH_ONBOARDING_URL}\n\n"
+                                    "After completing authorization there, retry this tool call."
+                                )
+
+                            rewritten_body = {
+                                "jsonrpc": "2.0",
+                                "id": jsonrpc_id,
+                                "result": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": message,
+                                        }
+                                    ]
+                                },
+                            }
+
+                            response = {
+                                "interceptorOutputVersion": "1.0",
+                                "mcp": {
+                                    "transformedGatewayResponse": {
+                                        "statusCode": 200,
+                                        "body": rewritten_body,
+                                    }
+                                },
+                            }
+                            logger.info("Returning rewritten elicitation response with auth URL")
+                            return response
+
+                    # Pass through error responses unchanged (non-elicitation or raw elicitation requested)
+                    response = {
+                        "interceptorOutputVersion": "1.0",
+                        "mcp": {
+                            "transformedGatewayResponse": {
+                                "body": response_body,
+                                "statusCode": mcp_data.get("gatewayResponse", {}).get("statusCode", 200),
+                            }
+                        },
+                    }
+                    logger.info(f"Passing through error response: {json.dumps(response, indent=2)}")
+                    return response
+
+                # Extract content from successful result
+                content = None
+                result = response_body.get("result", {})
+                content_list = result.get("content", [])
+                if content_list and len(content_list) > 0:
+                    content = content_list[0].get("text")
+
+                if content and GUARDRAIL_ID:
                     gr_response = client.apply_guardrail(
                         guardrailIdentifier=GUARDRAIL_ID,
                         guardrailVersion=GUARDRAIL_VERSION,
@@ -147,7 +237,7 @@ def lambda_handler(event, context):
                             "type": "text",
                             "text": guardrail_text,
                         }
-                        statusCode = 403
+                        statusCode = 200
                         response = {
                             "interceptorOutputVersion": "1.0",
                             "mcp": {
@@ -163,8 +253,10 @@ def lambda_handler(event, context):
                         return response
                     else:
                         logger.info("Guardrail did not intervene. Passing through original response.")
+                elif not content:
+                    logger.info("No content found in tools/call response. Passing through unchanged.")
                 else:
-                    logger.warning("GUARDRAIL_ID environment variable not set. Skipping guardrail application.")
+                    logger.info("GUARDRAIL_ID environment variable not set. Skipping guardrail application.")
             else:
                 logger.info("Non tools/call method detected in RESPONSE interceptor. Passing through unchanged.")
 
@@ -255,5 +347,5 @@ def lambda_handler(event, context):
         logger.info(f"Interceptor response: {json.dumps(response, indent=2)}")
         return response
     except Exception as e:
-        logger.error(f"Error processing interceptor: {str(e)}")
-        raise e
+        logger.error(f"Error processing interceptor: {e!s}")
+        raise
