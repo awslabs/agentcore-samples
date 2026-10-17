@@ -18,6 +18,34 @@ set -euo pipefail
 source "$(dirname "$0")/_lib.sh"
 ACTION="${1:-up}"
 
+validate_site_distribution_state() {
+  [ -n "${SITE_DIST_ID:-}" ] && [ "$SITE_DIST_ID" != "None" ] || return
+
+  local err_file domain
+  err_file="$(mktemp)"
+  if domain="$(aws cloudfront get-distribution --id "$SITE_DIST_ID" \
+      --query 'Distribution.DomainName' --output text 2>"$err_file")"; then
+    rm -f "$err_file"
+    if [ -z "$domain" ] || [ "$domain" = "None" ]; then
+      die "could not inspect distribution $SITE_DIST_ID; AWS returned no domain, refusing to create a replacement"
+    fi
+    SITE_DOMAIN="$domain"
+  elif grep -q 'An error occurred (NoSuchDistribution)' "$err_file"; then
+    warn "recorded distribution $SITE_DIST_ID no longer exists; clearing stale local state"
+    rm -f "$err_file"
+    if [ -f "$STATE_FILE" ]; then
+      grep -vE '^SITE_(DIST_ID|DOMAIN)=' "$STATE_FILE" > "$STATE_FILE.tmp" || true
+      mv "$STATE_FILE.tmp" "$STATE_FILE"
+    fi
+    SITE_DIST_ID=""
+    SITE_DOMAIN=""
+  else
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    die "could not inspect distribution $SITE_DIST_ID; refusing to create a replacement"
+  fi
+}
+
 site_up() {
   step "Layer 05 UP - Deploy the static site (S3 + CloudFront + OAC)"
   [ -f "$FRONTEND_ENV" ] || die "missing $FRONTEND_ENV - run ./02-config.sh up first"
@@ -27,6 +55,7 @@ site_up() {
   info "Account=$ACCOUNT Region=$AWS_REGION Bucket=$BUCKET"
   SITE_OAC_ID=""; SITE_DIST_ID=""; SITE_DOMAIN=""
   load_state_ids; SITE_OAC_ID="${SITE_OAC_ID:-}"; SITE_DIST_ID="${SITE_DIST_ID:-}"; SITE_DOMAIN="${SITE_DOMAIN:-}"
+  validate_site_distribution_state
 
   step "Building the production bundle"
   # A fresh clone has no node_modules (tsc/vite come from devDependencies).
@@ -81,7 +110,6 @@ JSON
     SITE_DOMAIN="$(printf '%s' "$DJSON" | tr -d ' \n' | sed -n 's/.*"Domain":"\([^"]*\)".*/\1/p')"
     ok "created distribution $SITE_DIST_ID ($SITE_DOMAIN)"
   else
-    SITE_DOMAIN="$(aws cloudfront get-distribution --id "$SITE_DIST_ID" --query 'Distribution.DomainName' --output text 2>/dev/null || true)"
     ok "reusing distribution $SITE_DIST_ID ($SITE_DOMAIN)"
     info "invalidating the edge cache"
     run aws cloudfront create-invalidation --distribution-id "$SITE_DIST_ID" --paths '/*' \
