@@ -135,6 +135,10 @@ JSON
   [ -f "$STATE_FILE" ] && { grep -vE '^SITE_(OAC_ID|DIST_ID|DOMAIN|BUCKET)=' "$STATE_FILE" > "$STATE_FILE.tmp" || true; mv "$STATE_FILE.tmp" "$STATE_FILE"; }
   { echo "SITE_BUCKET=$BUCKET"; echo "SITE_OAC_ID=$SITE_OAC_ID"; echo "SITE_DIST_ID=$SITE_DIST_ID"; echo "SITE_DOMAIN=$SITE_DOMAIN"; } >> "$STATE_FILE"
   ok "recorded SITE_* ids"
+
+  info "Waiting for the distribution to reach Deployed (can take ~10-15 min)..."
+  run aws cloudfront wait distribution-deployed --id "$SITE_DIST_ID"
+  ok "distribution is Deployed"
   step "Layer 05 UP complete"
   info "Public URL (allow ~10-15 min on first deploy): https://$SITE_DOMAIN"
 }
