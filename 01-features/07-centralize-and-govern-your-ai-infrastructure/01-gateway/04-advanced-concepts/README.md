@@ -15,6 +15,7 @@ Advanced gateway patterns including interceptors, security controls, observabili
 | [semantic-search-tool](mcp-targets/semantic-search-tool/)                                                 | Semantic search across 300+ tools for improved agent latency                                              |
 | [gateway-observability](gateway-observability/)                                                           | CloudWatch metrics, logs, traces, and CloudTrail auditing                                                 |
 | [web-application-firewall](web-application-firewall/)                                                     | Protect the gateway with AWS WAF: associate a regional web ACL, managed + rate-based rules, failure modes |
+| [multi-gateway-tool-deduplication](multi-gateway-tool-deduplication/)                                     | Deduplicate overlapping tools from multiple AgentCore gateways                                            |
 
 ## Documentation
 
