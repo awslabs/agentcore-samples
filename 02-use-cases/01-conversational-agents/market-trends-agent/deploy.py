@@ -64,7 +64,8 @@ class MarketTrendsAgentDeployer:
         """Create IAM execution role with least-privilege permissions.
 
         Trust policy: bedrock-agentcore.amazonaws.com, conditioned on
-        aws:SourceAccount and aws:SourceArn scoped to ab-test/* resources.
+        aws:SourceAccount and aws:SourceArn scoped to the runtime/* and
+        ab-test/* resources that assume this role.
 
         Permissions: explicit statements for runtime, memory, browser, SSM,
         A/B test gateway/eval/bundle reads, and CloudWatch Logs score aggregation.
@@ -87,7 +88,14 @@ class MarketTrendsAgentDeployer:
                             "aws:SourceAccount": account_id,
                         },
                         "ArnLike": {
-                            "aws:SourceArn": f"arn:aws:bedrock-agentcore:*:{account_id}:ab-test/*",
+                            # The runtime assumes this role to serve invocations;
+                            # the A/B test harness assumes it to run variants.
+                            # Both source ARNs must be allowed or the runtime
+                            # fails to start with "Role validation failed".
+                            "aws:SourceArn": [
+                                f"arn:aws:bedrock-agentcore:*:{account_id}:runtime/*",
+                                f"arn:aws:bedrock-agentcore:*:{account_id}:ab-test/*",
+                            ],
                         },
                     },
                 }

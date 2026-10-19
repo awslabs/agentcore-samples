@@ -4,11 +4,42 @@ import logging
 from playwright.sync_api import sync_playwright, Playwright, BrowserType
 from bedrock_agentcore.tools.browser_client import browser_session
 from langchain_core.tools import tool
-from langchain_aws import ChatBedrock
+from .model_config import build_chat_model
 
 logger = logging.getLogger(__name__)
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+# Frozen quotes for the STALE_PRICES drift trigger (drift_detection/scripts/induce_drift.py).
+# Deliberately not refreshed: the trigger simulates a market-data source that
+# silently stopped updating, so a real live quote and this fixed value are
+# expected to disagree once enough time has passed. Covers the tickers
+# drift_detection/scripts/traffic.py asks about; anything else falls back to a
+# single placeholder price rather than failing.
+_STALE_QUOTES = {
+    "AAPL": "150.00",
+    "MSFT": "300.00",
+    "AMZN": "120.00",
+    "NVDA": "400.00",
+    "JPM": "140.00",
+    "GOOGL": "130.00",
+    "META": "280.00",
+    "TSLA": "200.00",
+}
+_STALE_QUOTE_FALLBACK = "100.00"
+
+
+def _stale_quote(symbol: str) -> str:
+    """A fixed cached quote, standing in for a data source that went stale.
+
+    Returned instead of a live lookup when STALE_PRICES=1 is set on the runtime.
+    Format matches what a live get_stock_data response looks like (ticker plus a
+    dollar price) so it still passes schema validation; the point is that the
+    number itself stops moving.
+    """
+    ticker = symbol.upper()
+    price = _STALE_QUOTES.get(ticker, _STALE_QUOTE_FALLBACK)
+    return f"{ticker} is trading at ${price} (cached quote)."
 
 
 def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
@@ -27,10 +58,7 @@ def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
             content = page.inner_text("body")
 
             # Use LLM to extract stock data
-            llm = ChatBedrock(
-                model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-                region_name=AWS_REGION,
-            )
+            llm = build_chat_model(region_name=AWS_REGION)
             prompt = "Extract stock price and key information for {} from this page content. Be concise:\n\n{}".format(
                 symbol, content[:3000]
             )
@@ -150,10 +178,7 @@ def search_news_with_browser(playwright: Playwright, query: str, news_source: st
                             raise e
 
             # Use LLM to extract headlines and highlights
-            llm = ChatBedrock(
-                model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-                region_name=AWS_REGION,
-            )
+            llm = build_chat_model(region_name=AWS_REGION)
 
             # Enhanced prompt to handle both search results and general market pages
             if "search" in url or encoded_query in url:
@@ -173,6 +198,12 @@ def search_news_with_browser(playwright: Playwright, query: str, news_source: st
 @tool
 def get_stock_data(symbol: str) -> str:
     """Get stock data for a given symbol"""
+    # Drift trigger: drift_detection/scripts/induce_drift.py sets STALE_PRICES=1
+    # to simulate a market-data source silently going stale. Short-circuits the
+    # live browser lookup entirely, same env-var-on-the-runtime pattern as
+    # tools/model_config.py's MODEL_ID.
+    if os.environ.get("STALE_PRICES") == "1":
+        return _stale_quote(symbol)
     try:
         with sync_playwright() as p:
             return get_stock_data_with_browser(p, symbol)
