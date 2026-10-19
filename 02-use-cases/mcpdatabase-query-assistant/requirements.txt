@@ -1,0 +1,23 @@
+# MCP Database Server Requirements
+# Python 3.10+ required
+
+# Model Context Protocol (MCP) - REQUIRED for MCP server
+mcp>=1.0.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# AWS SDK for Python
+boto3>=1.34.0
+
+# YAML configuration handling
+PyYAML>=6.0
+
+# Amazon Bedrock AgentCore Runtime toolkit
+bedrock_agentcore_starter_toolkit
+
+# PostgreSQL adapter (for database connectivity)
+psycopg2-binary>=2.9.0
+
+# Additional utilities
+requests>=2.31.0
