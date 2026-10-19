@@ -1,0 +1,145 @@
+[project]
+name = "router-supervisor-agent"
+version = "0.1.0"
+description = "Router-supervisor agent pattern for Amazon Bedrock AgentCore using Strands Agents"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "strands-agents[a2a]>=1.28.0",
+    "chardet<6",
+]
+
+[project.optional-dependencies]
+agentcore = [
+    "bedrock-agentcore",
+]
+
+[dependency-groups]
+dev = [
+    "bedrock-agentcore-starter-toolkit>=0.3.1",
+    "commitizen>=4.13.8",
+    "ruff>=0.15.2",
+]
+security = [
+    "bandit[sarif]>=1.9.3",
+]
+
+# =============================================================================
+# Ruff Configuration (Linting & Formatting)
+# =============================================================================
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py313"
+exclude = [".git", ".venv", "__pycache__", "build", "dist", ".ruff_cache"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "C90",    # mccabe complexity
+    "BLE",    # flake8-blind-except (catch specific exceptions)
+    "COM",    # flake8-commas (enforce trailing commas)
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate
+    "PL",     # pylint
+    "RUF",    # Ruff-specific
+    "D",      # pydocstyle (docstrings)
+    "S",      # flake8-bandit (security)
+]
+ignore = [
+    "D100",    # Allow missing module docstrings
+    "D104",    # Allow missing package docstrings
+    "D301",    # Allow backslashes in docstrings
+    "PLC0415", # Allow imports inside functions (for circular import avoidance)
+    "B027",    # Allow empty methods in ABCs (optional hook methods)
+    "PLR0913", # Allow many function arguments
+    "ARG002",  # Allow unused method arguments (protocol interface compliance)
+    "SIM105",  # Allow try-except-pass patterns (explicit is clearer)
+    "TID252",  # Allow relative imports (project style choice)
+    "EM101",   # Allow string literals in exceptions
+    "EM102",   # Allow f-strings in exceptions
+    "TRY003",  # Allow long exception messages
+    "COM812",  # Conflicts with ruff formatter (trailing comma in single-element)
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401", "RUF022"]
+"demo/**/*.py" = ["D"]
+"deployment/deploy.py" = ["D"]
+"deployment/cleanup.py" = ["D", "S603", "S607"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+
+# =============================================================================
+# Ty Configuration (Type Checking)
+# =============================================================================
+
+[tool.ty.rules]
+possibly-unresolved-reference = "error"
+invalid-argument-type = "error"
+missing-argument = "error"
+unsupported-operator = "error"
+division-by-zero = "error"
+unused-ignore-comment = "warn"
+redundant-cast = "warn"
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.src]
+include = ["agents", "graph", "deployment", "demo"]
+
+# =============================================================================
+# Bandit Configuration (SAST)
+# =============================================================================
+
+[tool.bandit]
+exclude_dirs = ["docs", ".venv", "build", "dist"]
+skips = [
+    "B101",  # assert_used
+]
+
+# =============================================================================
+# pip-licenses Configuration (License Compliance)
+# =============================================================================
+
+[tool.pip-licenses]
+from = "mixed"
+fail-on = "GPL;AGPL;SSPL;EUPL;CPAL;OSL;RPL"
+partial-match = true
+ignore-packages = [
+    "router-supervisor-agent",
+    "docutils",  # Triple-licensed BSD/GPL/Public Domain — usable under BSD
+]
+
+# =============================================================================
+# Commitizen Configuration (Conventional Commits)
+# =============================================================================
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+tag_format = "v$version"
+update_changelog_on_bump = true
+version_scheme = "semver"
