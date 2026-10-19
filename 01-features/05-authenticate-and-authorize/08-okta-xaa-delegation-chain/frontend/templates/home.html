@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Okta Cross App Access delegation chain</h1>
+<p class="chain">
+  Your identity survives three hops and two different token exchanges. The agent never
+  holds a credential that can reach the API.
+</p>
+
+<pre class="mermaid">
+flowchart LR
+  U["you"]
+  BFF["BFF"]
+  RT["Agent<br/>on Runtime"]
+  GW["Gateway<br/>+ interceptor"]
+  API["Todo API"]
+
+  U -->|"sign in"| BFF
+  BFF -->|"T_user"| RT
+  RT -->|"OBO<br/>T_gateway"| GW
+  GW -->|"ID-JAG x2<br/>T_tool"| API
+
+  style GW fill:#fef9c3,stroke:#ca8a04
+  style API fill:#dcfce7,stroke:#16a34a
+</pre>
+
+<p class="muted" style="text-align:center;">
+  The <strong>gateway</strong> runs the Cross App Access exchange, so the token reaching
+  the API has your <code>sub</code> and the agent as its <code>act</code>.
+</p>
+
+{% if not user %}
+  <div class="card">
+    <p><strong>Step 1 &mdash; sign in with Okta.</strong> Your tokens stay on the
+      server; the browser only gets a signed session cookie.</p>
+    <p><a href="/auth/login"><button type="button">Sign in with Okta</button></a></p>
+  </div>
+{% else %}
+  <p class="muted">Signed in as <strong>{{ user }}</strong> &middot;
+    <a href="/debug/token">inspect token claims</a> &middot;
+    <a href="/auth/logout">sign out</a></p>
+
+  {% if not runtime_configured %}
+    <div class="card warn">
+      <p><strong>The agent is not deployed yet.</strong>
+        <code>AGENT_RUNTIME_INVOKE_URL</code> is unset in <code>.env</code>.</p>
+      <p class="muted">Until then you can still prove the gateway half of the chain with
+        <code>python scripts/verify_ai_agent.py</code>.</p>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <p><strong>Step 2 &mdash; ask the agent.</strong> It exchanges your token for a
+      gateway-scoped one, then the gateway&rsquo;s interceptor performs the Cross App
+      Access exchange and calls the API as you.</p>
+    <form method="post" action="/ask">
+      <p><input type="text" name="prompt" value="{{ default_prompt }}"></p>
+      <p><button type="submit">Ask</button></p>
+    </form>
+    <p class="muted">Try &ldquo;add buy milk to my list&rdquo;, or
+      &ldquo;who am I according to the todo API?&rdquo; &mdash; the answer names you and
+      the agent that acted for you.</p>
+  </div>
+{% endif %}
+{% endblock %}

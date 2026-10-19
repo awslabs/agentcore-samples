@@ -40,6 +40,9 @@ OKTA_ISSUER = os.environ["OKTA_ISSUER"].rstrip("/")
 # The OIDC login app the user signs into (its client_id is the ID token `aud`).
 LOGIN_CLIENT_ID = os.environ["OKTA_LOGIN_CLIENT_ID"]
 LOGIN_CLIENT_SECRET = os.environ.get("OKTA_LOGIN_CLIENT_SECRET", "")
+# How the login app authenticates at the token endpoint: "none" (public + PKCE),
+# "client_secret" or "private_key_jwt". An AI Agent's paired app is private_key_jwt.
+LOGIN_AUTH_METHOD = os.environ.get("LOGIN_AUTH_METHOD", "none" if not LOGIN_CLIENT_SECRET else "client_secret")
 REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8080/callback")
 
 # The AI Agent (wlp...) that drives both token-exchange legs.
@@ -147,9 +150,37 @@ def login_and_get_id_token() -> str:
         "client_id": LOGIN_CLIENT_ID,
         "code_verifier": verifier,
     }
-    auth = (LOGIN_CLIENT_ID, LOGIN_CLIENT_SECRET) if LOGIN_CLIENT_SECRET else None
+    # Three ways the login app can authenticate here, and which one you need is
+    # decided by Okta, not by preference. Registering an AI Agent creates a paired
+    # OIDC app and binds it under **User access**; that paired app is the only issuer
+    # of ID tokens Leg 1 will accept, and Okta provisions it as a confidential client
+    # using private_key_jwt. It also cannot be downgraded to a public client -- Okta
+    # rejects `token_endpoint_auth_method: none` unless `pkce_required` is set, which
+    # is not a valid field on that app type. So signing in through it means signing a
+    # client assertion with the SAME key the agent uses for both exchange legs.
+    if LOGIN_AUTH_METHOD == "private_key_jwt":
+        extra, auth = apply_client_auth(
+            method="private_key_jwt",
+            client_id=LOGIN_CLIENT_ID,
+            client_secret="",  # nosec B106 - private_key_jwt; no secret used
+            token_endpoint=ORG_TOKEN_ENDPOINT,
+            private_key=OKTA_PRIVATE_KEY,
+            private_key_path=OKTA_PRIVATE_KEY_PATH,
+            kid=OKTA_PRIVATE_KEY_KID,
+            alg=CLIENT_ASSERTION_ALG,
+        )
+        data.update(extra)
+    else:
+        auth = (LOGIN_CLIENT_ID, LOGIN_CLIENT_SECRET) if LOGIN_CLIENT_SECRET else None
     resp = httpx.post(ORG_TOKEN_ENDPOINT, data=data, auth=auth, timeout=30)
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        raise SystemExit(
+            f"Login token exchange failed ({resp.status_code}): {resp.text[:400]}\n"
+            f"  LOGIN_AUTH_METHOD={LOGIN_AUTH_METHOD}, client_id={LOGIN_CLIENT_ID}\n"
+            "  If this says invalid_client, check whether OKTA_LOGIN_CLIENT_ID is the app\n"
+            "  bound under the AI Agent's User access tab, and that LOGIN_AUTH_METHOD\n"
+            "  matches how Okta registered that app."
+        )
     id_token = resp.json()["id_token"]
     who = jwt.decode(id_token, options={"verify_signature": False})
     print(f"Step 0 OK: id_token for {who.get('email') or who.get('sub')} (aud={who.get('aud')})")

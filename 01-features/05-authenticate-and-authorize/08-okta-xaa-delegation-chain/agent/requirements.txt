@@ -1,0 +1,5 @@
+# Added to the AgentCore CLI scaffold's pyproject; the scaffold already brings strands
+# and bedrock-agentcore.
+boto3>=1.43.91
+mcp>=1.9
+strands-agents>=1.0

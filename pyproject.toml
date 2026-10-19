@@ -30,3 +30,7 @@ ignore = [
 # error instead of logging it and carrying on. Same rationale as the E722 entry
 # above, scoped to this directory rather than applied repo-wide.
 "01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming/**/*.py" = ["BLE001"]
+# Same BLE001 rationale for the data-analyst conversational assistant sample: the
+# broad handlers are top-level request handlers, tool error paths and setup
+# scripts that log the failure and return a user-facing message rather than crash.
+"02-use-cases/01-conversational-agents/data-analyst-conversational-assistant/**/*.py" = ["BLE001"]

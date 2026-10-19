@@ -5,5 +5,5 @@ strands-agents-tools==0.2.15
 boto3==1.40.75
 bedrock-agentcore==1.0.6
 bedrock-agentcore-starter-toolkit==0.1.33
-PyJWT==2.10.1
+PyJWT==2.14.0
 pandas==2.3.3

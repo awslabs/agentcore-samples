@@ -1,9 +1,17 @@
 """
-Deploy the advanced MCP server.
+Deploy the advanced MCP server to AgentCore Runtime V2.
 
 Uses direct code deployment (zip to S3) — no Docker required.
 
 Requires `uv` and `zip` on PATH (see the Prerequisites in ../../README.md).
+
+Deploys with platformVersion="V2": the execution environment is prepared and
+snapshotted once, at create time, so every new environment resumes from that
+snapshot with a consistently fast start instead of loading code and
+dependencies from scratch. Create itself takes minutes rather than seconds
+while that snapshot is prepared — CREATING is not a hang. See the README's
+"What Runtime V2 gives you" section for the snapshot semantics this places
+on the server code.
 
 Usage:
     python deploy.py
@@ -25,8 +33,13 @@ CODE_FILES = ["mcp_server.py"]
 # Only the server's dependencies get vendored into the zip. requirements.txt also
 # carries boto3 for the local scripts, which mcp_server.py never imports.
 SERVER_REQUIREMENTS = "requirements-server.txt"
-# Deployments are normally minutes; the ceiling just stops the poll loop from
-# spinning forever if a resource gets stuck.
+# Runtime V2 (platformVersion="V2"). The value is always the literal string "V2".
+PLATFORM_VERSION = "V2"
+# Runtime V2 prepares and snapshots the environment during create, trading a few
+# minutes upfront for a consistently fast start on every session afterwards, so
+# create (and, separately, endpoint creation) takes minutes rather than seconds.
+# The ceiling just stops the poll loop from spinning forever if a resource gets
+# stuck.
 POLL_TIMEOUT_SECONDS = 900
 
 session = Session()
@@ -218,6 +231,7 @@ def deploy_runtime(role_arn: str) -> dict:
             roleArn=role_arn,
             networkConfiguration={"networkMode": "PUBLIC"},
             protocolConfiguration={"serverProtocol": PROTOCOL},
+            platformVersion=PLATFORM_VERSION,
             description="Advanced MCP server with tools, resources, and prompts",
         )
     except control.exceptions.ConflictException:
@@ -247,6 +261,17 @@ def deploy_runtime(role_arn: str) -> dict:
             print("  Run `python cleanup.py` to remove the created resources.")
             sys.exit(1)
         time.sleep(15)
+
+    # CreateAgentRuntime does not echo platformVersion back — GetAgentRuntime is the
+    # only operation that returns it, so confirm it actually took rather than assuming
+    # the create call's input was honored.
+    confirmed = status_resp.get("platformVersion")
+    if confirmed == PLATFORM_VERSION:
+        print(f"✓ Confirmed platformVersion={confirmed}")
+    elif confirmed is None:
+        print("  (platformVersion not present on this GetAgentRuntime response — unconfirmable)")
+    else:
+        sys.exit(f"✗ platformVersion mismatch: requested {PLATFORM_VERSION}, got {confirmed}")
 
     # No create_agent_runtime_endpoint call: AgentCore provisions a DEFAULT endpoint with
     # the runtime, and that is the one an invoke with no `qualifier` reaches. Creating a

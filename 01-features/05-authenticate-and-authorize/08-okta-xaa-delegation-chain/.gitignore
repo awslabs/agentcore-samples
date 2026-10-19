@@ -1,0 +1,31 @@
+# Deployment state and secrets. `.env.*` matters as much as `.env`.
+# config.example.env is the tracked template and is deliberately not matched.
+.env
+.env.*
+
+# ...including at any depth. The CLI scaffold writes its own agentcore/.env.local,
+# which the rules above would miss because they are anchored to this directory.
+**/.env
+**/.env.*
+
+# The Okta AI Agent signing key. Never commit private key material.
+scripts/keys/
+*.pem
+*.p12
+*.key
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+
+# AgentCore CLI scaffold — generated, and it contains deployment state.
+#
+# The CLI LOWERCASES the runtime name, so AGENT_RUNTIME_NAME=xaaTodoAgent produces
+# `xaatodoagent/`. Both spellings are listed because macOS matches either way on a
+# case-insensitive filesystem while Linux does not -- so a rule that only said
+# `xaaTodoAgent/` would silently stop ignoring the scaffold on CI and on contributors'
+# Linux machines. Change these two lines if you change AGENT_RUNTIME_NAME.
+xaatodoagent/
+xaaTodoAgent/

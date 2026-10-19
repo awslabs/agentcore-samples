@@ -13,15 +13,15 @@ Agents that interact with users in real time. Users authenticate through an iden
 | [A2A-multi-agent-incident-response](./01-conversational-agents/A2A-multi-agent-incident-response/) | Multi-agent incident response implemented with three A2A frameworks | IT / DevOps | Runtime, Gateway, Memory, A2A (3 frameworks) |
 | [AWS-operations-agent](./01-conversational-agents/AWS-operations-agent/) | Intelligent AWS operations assistant with Okta authentication and comprehensive monitoring capabilities | Cloud Operations | Runtime, Gateway, Memory, Policy, Observability |
 | [customer-support-assistant-vpc](./01-conversational-agents/customer-support-assistant-vpc/) | Production-ready customer service agent with memory, knowledge base integration, and Google OAuth | Retail / E-commerce | Runtime, Gateway (VPC) |
-| [data-analyst-conversational-assistant](./data-analyst-conversational-assistant/) | Data analysis assistant with Amplify frontend and CDK deployment | Data and Analytics | Runtime, Gateway, Memory, Policy, Identity, Evaluations, Observability |
+| [data-analyst-conversational-assistant](./01-conversational-agents/data-analyst-conversational-assistant/) | Data analysis assistant with Amplify frontend and CDK deployment | Data and Analytics | Runtime, Gateway, Memory, Policy, Identity, Evaluations, Observability |
 | [deep-research-agent](./01-conversational-agents/deep-research-agent/) | Deep research assistant with web search and runtime deployment | Research / Q&A | Gateway (Web Search), Runtime |
 | [device-management-agent](./01-conversational-agents/device-management-agent/) | IoT device management system with Cognito authentication and real-time monitoring | IoT / Smart Home | Runtime, Gateway, Policy, Identity (Cognito) |
 | [finance-personal-assistant](./01-conversational-agents/finance-personal-assistant/) | Personal budget management with multi-agent workflows and guardrails | Personal Finance | Gateway, Policy |
 | [healthcare-appointment-agent](./01-conversational-agents/healthcare-appointment-agent/) | FHIR-compliant healthcare appointment scheduling with patient data integration | Healthcare | Runtime, Gateway, Policy, Observability (FHIR R4) |
 | [lakehouse-agent](./01-conversational-agents/lakehouse-agent/) | Secure data lakehouse assistant with memory and row-level access controls | Data and Analytics | Runtime, Gateway, Memory, Policy (row-level security) |
 | [market-trends-agent](./01-conversational-agents/market-trends-agent/) | Financial market analysis with browser tools and memory integration | Financial Services | Runtime, Memory, Browser, Evaluations, Optimization |
+| [multi-agent-devops-triage-typescript](./01-conversational-agents/multi-agent-devops-triage-typescript/) | Multi-agent DevOps incident triage with the Claude Agent SDK in TypeScript, delegating over A2A | IT / DevOps | Runtime (HTTP + A2A), Gateway (Claude Agent SDK, TypeScript) |
 | [SRE-agent](./01-conversational-agents/SRE-agent/) | Site reliability engineering assistant with multi-agent LangGraph workflows | Site Reliability | Runtime, Gateway, Memory, Observability |
-| [video-games-sales-assistant](./01-conversational-agents/video-games-sales-assistant/) | Conversational video game sales analysis assistant | Retail / Gaming | Runtime, Gateway, Memory |
 
 ### [02-workflow-automation-agents](./02-workflow-automation-agents/) 
 

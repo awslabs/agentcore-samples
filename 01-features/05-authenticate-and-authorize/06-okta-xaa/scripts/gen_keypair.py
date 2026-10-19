@@ -2,7 +2,8 @@
 
 Writes the private key as PEM (used by the agent / test script to sign client
 assertions) and prints the public key as a JWK to register:
-  * on the Okta app (Sign On -> Client Credentials -> Public keys), and
+  * on the Okta AI Agent (Directory -> AI Agents -> your agent -> Client
+  registration -> Public key / Private key), and
   * with the resource app (RESOURCE_CLIENT_PUBLIC_KEYS).
 
 Usage:
@@ -62,6 +63,9 @@ def main() -> None:
     )
     private_path = out / f"{args.name}_private_key.pem"
     private_path.write_bytes(private_pem)
+    # Restrict before anything can read it. Without this the key lands 0644, i.e.
+    # world-readable, which is not a state a signing key should ever be in.
+    private_path.chmod(0o600)
 
     public_jwk = {"kty": "RSA", "use": "sig", "alg": "RS256", "kid": kid, "n": n, "e": e}
     jwk_path = out / f"{args.name}_public_jwk.json"

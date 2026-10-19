@@ -1,0 +1,12 @@
+# Never ship host node_modules into the build context: the Claude Agent SDK
+# resolves its native CLI binary per-platform at install time, so the
+# container must run its own npm ci (see docker/agent.Dockerfile).
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+coverage
+cdk.out
+.env
+.env.*

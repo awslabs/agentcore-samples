@@ -1,0 +1,77 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Todo resource API",
+    "version": "1.0.0",
+    "description": "Per-user todo list, reached with the signed-in user's own authorization."
+  },
+  "paths": {
+    "/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "summary": "Show which user the resource API resolved, and which agent acted for them.",
+        "responses": {
+          "200": {
+            "description": "The resolved identity",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/todos": {
+      "get": {
+        "operationId": "list_todos",
+        "summary": "List the signed-in user's todo items.",
+        "responses": {
+          "200": {
+            "description": "The user's todos",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "add_todo",
+        "summary": "Add a todo item for the signed-in user.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": { "title": { "type": "string", "description": "What to do" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The item that was added",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/todos/{todo_id}/complete": {
+      "post": {
+        "operationId": "complete_todo",
+        "summary": "Mark one of the signed-in user's todo items as done.",
+        "parameters": [
+          {
+            "name": "todo_id",
+            "in": "path",
+            "required": true,
+            "description": "Id of the item to complete",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated item",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    }
+  }
+}

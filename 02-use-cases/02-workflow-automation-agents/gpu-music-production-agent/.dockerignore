@@ -20,4 +20,4 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .DS_Store
-deployment_state.json
+deployment_state.json*

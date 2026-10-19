@@ -37,6 +37,7 @@
 - rahullks
 - rameshv29
 - rohillasandeep
+- Roger Thant (rlthant)
 - satveerkhurpa
 - seanslavichaws
 - Shanicus Yee
@@ -137,3 +138,5 @@
 - Shruthi Rajoli (rajolishruthi)
 - ratnopam
 - Mark Roy (markproy)
+- Bent Krause (krausexb)
+- Georgios Tsoukas (gtsoukasaws)

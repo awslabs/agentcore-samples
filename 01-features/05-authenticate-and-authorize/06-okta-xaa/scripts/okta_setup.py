@@ -12,7 +12,7 @@ What it does NOT do (these are XAA / "Okta for AI Agents" EA features without
 stable public Management API payloads at the time of writing):
   * enable the Cross App Access feature flag,
   * "Enable XAA" on the resource app's Resource Server tab,
-  * register the AI Agent, its key, delegations, and resource connections.
+  * register the AI Agent, its key, User access binding, and resource connections.
 Do those manually per the README ("Okta setup -> Option A").
 
 Auth: uses an Okta API token (SSWS). Create one in the Admin Console under
