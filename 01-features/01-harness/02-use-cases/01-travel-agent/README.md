@@ -35,7 +35,8 @@ travel_agent.py
 │
 └── Part 6: invoke_harness (MCP search) → invoke_harness (code_interpreter)
                ├─ remote_mcp (Exa) → tourism JSON data
-               └─ agentcore_code_interpreter → matplotlib chart
+               └─ agentcore_code_interpreter → sandboxed analysis (text)
+                     └─ VM renders /tmp/tourism_chart.html (HTML/CSS)
 ```
 
 ## Sample Prompts
@@ -74,11 +75,13 @@ Navigate to **CloudWatch → X-Ray → Traces** to see the full agent loop break
 
 **memory provisioning**: memory takes 3-5 minutes to become `ACTIVE`. The script polls with a 10-second interval. Use `--skip-memory` to bypass this during quick testing.
 
-**Same session, different tools**: Parts 6 uses two consecutive `invoke_harness` calls with the same `session_id`. The VM state (files) persists between calls, so the chart generator can read the JSON file from the search step.
+**Same session, different tools**: Part 6 uses two consecutive `invoke_harness` calls with the same `session_id`. The microVM's filesystem persists between calls, so the JSON that the search step writes to `/tmp` is still there for the analysis step to read.
+
+**The code interpreter runs in its own sandbox**: `agentcore_code_interpreter` executes in a *separate* environment from the harness microVM — it cannot read the VM's `/tmp`, and any file it writes there does not appear on the VM. Only the text it prints crosses back. That is why Part 6 passes the data to the sandbox *inline* and has it return the analysis as text, then renders the chart as a self-contained HTML/CSS page on the VM (the same way Parts 2 and 5 produce HTML). Trying to have the sandbox read `/tmp/tourism_data.json` or save a `.png` to the VM would silently produce nothing.
 
 **HTML output handling**: Instead of rendering in a notebook iframe, the script saves HTML files to `/tmp/` on your local machine. Open with `open /tmp/travel_guide.html` (macOS) or `xdg-open` (Linux).
 
-**Browser tool limitations**: The browser tool browses real websites. Results depend on network accessibility and site availability at invocation time.
+**Browser tool limitations**: The browser tool browses real websites, so it needs both the automation-stream permissions (see Troubleshooting) and the target site to be reachable at invocation time. If the permissions are missing the agent silently invents data, so treat a suspiciously fast "success" with caution.
 
 ## Troubleshooting
 
@@ -88,8 +91,8 @@ Navigate to **CloudWatch → X-Ray → Traces** to see the full agent loop break
 ### Issue: Part 4 takes too long
 **Solution**: memory provisioning takes 3-5 minutes. Use `--skip-memory` to skip the memory demo entirely.
 
-### Issue: Browser tool returns no data
-**Solution**: The `agentcore_browser` tool requires internet access from the microVM. If your AWS account uses restricted VPC configurations, outbound browsing may be blocked.
+### Issue: Browser tool returns no data (or made-up data)
+**Solution**: The execution role must allow `bedrock-agentcore:ConnectBrowserAutomationStream` and `bedrock-agentcore:ConnectBrowserLiveViewStream` on the browser resource (`arn:aws:bedrock-agentcore:*:aws:browser/aws.browser.v1` for the built-in browser, which is owned by the `aws` account — not yours). Without them the tool's CDP connection is rejected with `403 Forbidden … not authorized to access automation stream`, and the agent quietly falls back to guessing, so the run looks like it succeeded but the weather is invented. [`utils/iam.py`](../../utils/iam.py) grants these; if you supply your own role, add them there too.
 
 ## AgentCore CLI
 

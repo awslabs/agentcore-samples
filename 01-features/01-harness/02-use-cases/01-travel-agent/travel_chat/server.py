@@ -32,8 +32,33 @@ from sse_starlette.sse import EventSourceResponse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-HARNESS_ARN = os.environ["HARNESS_ARN"]
+# Fail with a usable message instead of a bare KeyError traceback on import when
+# the one required piece of configuration is missing.
+HARNESS_ARN = os.getenv("HARNESS_ARN")
+if not HARNESS_ARN:
+    raise SystemExit(
+        "HARNESS_ARN is not set. Create a harness first (e.g. run travel_agent.py), "
+        "then:\n"
+        '  export HARNESS_ARN="arn:aws:bedrock-agentcore:REGION:ACCOUNT:harness/HARNESS_ID"\n'
+        "  python server.py"
+    )
+
 REGION = os.getenv("AWS_DEFAULT_REGION")
+
+# Match the model the CLI script uses. `model` is optional on InvokeHarness, but
+# passing it explicitly keeps the chat server and travel_agent.py on the same
+# model instead of relying on a server-side default that could differ or change.
+MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+# The three error members the InvokeHarness stream can carry (per the boto3
+# model). They arrive as events rather than raising, so they are checked
+# explicitly while iterating; a failed call raises ClientError and is caught by
+# the surrounding try/except.
+STREAM_ERROR_KEYS = (
+    "internalServerException",
+    "validationException",
+    "runtimeClientError",
+)
 
 
 def make_client():
@@ -82,6 +107,7 @@ async def chat(req: dict):
                 harnessArn=HARNESS_ARN,
                 runtimeSessionId=sid,
                 messages=sessions[sid],
+                model={"bedrockModelConfig": {"modelId": MODEL_ID}},
             )
             full = ""
             for event in resp["stream"]:
@@ -90,11 +116,19 @@ async def chat(req: dict):
                     if txt:
                         full += txt
                         yield {"data": json.dumps({"type": "text_delta", "text": txt})}
+                    continue
+                # The stream carries errors as their own event members; without
+                # this the model turn could fail mid-way (bad request, or the
+                # model hitting its token limit) and the client would just see
+                # the stream end with no error and a truncated or empty reply.
+                err = next((event[k] for k in STREAM_ERROR_KEYS if k in event), None)
+                if err is not None:
+                    raise RuntimeError(str(err))
             if full:
                 sessions[sid].append({"role": "assistant", "content": [{"text": full}]})
             yield {"data": json.dumps({"type": "done"})}
         except Exception as e:
-            logger.error(str(e), exc_info=True)
+            logger.exception("invoke_harness stream failed")
             yield {"data": json.dumps({"type": "error", "message": str(e)})}
 
     return EventSourceResponse(stream())
