@@ -1,0 +1,22 @@
+{
+  "name": "toon_interceptor",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/lambda_function.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Toon format interceptor Lambda for MCP requests and responses",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.939.0",
+    "@toon-format/toon": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
