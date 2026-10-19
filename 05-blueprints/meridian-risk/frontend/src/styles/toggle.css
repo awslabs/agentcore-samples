@@ -1,0 +1,76 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Theme toggle
+   ========================================================================== */
+
+.theme-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px;
+  color: var(--text-lo);
+  transition: color 0.16s;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  color: var(--amber);
+}
+
+.theme-toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border: var(--rule);
+  border-radius: 9px;
+  background: var(--ink-900);
+  transition: border-color 0.16s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover .theme-toggle-track {
+  border-color: var(--amber-dim);
+}
+
+.theme-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--amber);
+  /* Slides to the right edge in the light theme. */
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+}
+
+.theme-toggle[aria-pressed="true"] .theme-toggle-knob {
+  transform: translateX(16px);
+}
+
+.theme-toggle-label {
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  /* Fixed width so the masthead does not reflow when the word changes. */
+  min-width: 38px;
+  text-align: left;
+}
+
+/* Floats above the login form, aligned to the form's right edge. */
+.login-toggle {
+  position: absolute;
+  top: 26px;
+  right: 32px;
+}
+
+.login-form-side {
+  position: relative;
+}
