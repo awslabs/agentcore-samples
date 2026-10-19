@@ -1,0 +1,3 @@
+name: mcp-server-agentcore-runtime
+runtime: nodejs
+description: MCP Server on AgentCore Runtime - Pulumi TypeScript

@@ -1,0 +1,3 @@
+name: end-to-end-weather-agent
+runtime: nodejs
+description: End-to-End Weather Agent - Pulumi TypeScript

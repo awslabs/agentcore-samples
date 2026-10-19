@@ -1,0 +1,18 @@
+[project]
+name = "basic-runtime"
+version = "0.1.0"
+description = "Basic AgentCore Runtime - Pulumi Python"
+requires-python = ">=3.12"
+dependencies = [
+    "pulumi>=3.0.0,<4.0.0",
+    "pulumi-aws>=7.0.0,<8.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "boto3>=1.42.68",
+]
