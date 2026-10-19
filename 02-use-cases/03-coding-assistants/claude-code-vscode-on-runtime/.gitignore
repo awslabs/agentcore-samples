@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+.pytest_cache/
+backup-*/
+
+# Local settings and output (the nested .gitignore files ignore them too).
+deploy/.state.json
+deploy/devbox.env
+local-test/generated/
+local-test/e2e/artifacts/
+
+# Re-include what the samples repo's root .gitignore leaves out: this sample builds its own images.
+!Dockerfile
+!.dockerignore
+!lib/
+!build/

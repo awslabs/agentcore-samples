@@ -1,0 +1,145 @@
+#!/usr/bin/python3 -I
+"""Dev box container entrypoint (runs as root, PID 1). The work is in
+/opt/devbox/lib/devbox/supervisor.py.
+
+Before anything else it prints one line describing how the container was started (uid, groups,
+capabilities, user-namespace mapping, which paths are writable), because AgentCore only reports
+"Container exited before becoming ready" and nothing else. If the supervisor can't run, the box
+doesn't exit: it keeps answering /ping and reports why on /invocations, so the reason is visible
+from the browser (op: status / op: diag) and in the session's log stream."""
+import gc
+import json
+import os
+import sys
+import tempfile
+import time
+import traceback
+
+
+def emit(line):
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            print(line, file=stream, flush=True)
+        except OSError:
+            pass
+
+
+def read(path, limit=400):
+    try:
+        with open(path) as f:
+            return f.read(limit).strip()
+    except OSError as err:
+        return f"unreadable: {err.strerror}"
+
+
+def writable(path):
+    try:
+        with tempfile.NamedTemporaryFile(dir=path):
+            return True
+    except OSError as err:
+        return err.strerror
+
+
+def workspace_mounts():
+    """Every mount at /mnt/workspace, oldest first, as "fstype source" (a microVM starts with a
+    placeholder there and AgentCore mounts EFS over it at the first invocation)."""
+    found = []
+    for line in read("/proc/self/mountinfo", 200000).splitlines():
+        left, sep, right = line.partition(" - ")
+        fields, tail = left.split(), right.split()
+        if sep and len(fields) >= 5 and len(tail) >= 2 and fields[4] == "/mnt/workspace":
+            found.append(f"{tail[0]} {tail[1]}")
+    return found
+
+
+def environment():
+    status = dict(line.split(":", 1) for line in read("/proc/self/status", 4000).splitlines() if ":" in line)
+    return {
+        "uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "groups": os.getgroups(),
+        "capEff": status.get("CapEff", "").strip(), "capBnd": status.get("CapBnd", "").strip(),
+        "noNewPrivs": status.get("NoNewPrivs", "").strip(), "seccomp": status.get("Seccomp", "").strip(),
+        "uidMap": read("/proc/self/uid_map"), "gidMap": read("/proc/self/gid_map"),
+        "writable": {p: writable(p) for p in ("/run", "/etc/devbox", "/etc/claude-code", "/tmp")},
+        "workspace": os.path.ismount("/mnt/workspace"), "workspaceMounts": workspace_mounts(),
+        "argv": sys.argv,
+    }
+
+
+def inherited_listener(port):
+    """A socket this process already has listening on `port`, or None."""
+    import socket
+    for fd in range(3, 256):
+        try:
+            sock = socket.socket(fileno=os.dup(fd))
+        except OSError:
+            continue
+        try:
+            if sock.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN) and sock.getsockname()[1] == port:
+                return sock
+        except OSError:
+            pass
+        sock.close()
+    return None
+
+
+def hold(reason):
+    """The supervisor couldn't run: keep the container alive and say why, instead of exiting."""
+    gc.collect()   # close the supervisor's listening socket, if it opened one, so :8080 can be reused
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    body = json.dumps({"v": 1, "ok": False, "error": "the dev box could not start: " + reason.splitlines()[-1],
+                       "detail": reason[-4000:], "environment": environment()}).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, payload):
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self):
+            self._send(b'{"status":"Healthy"}' if self.path.startswith("/ping") else body)
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length") or 0))
+            self._send(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("0.0.0.0", 8080), Handler, bind_and_activate=False)
+    listening = inherited_listener(8080)
+    if listening is not None:   # the supervisor already owns :8080 (it hands it to the proxy as fd 3)
+        server.socket.close()
+        server.socket = listening
+    else:
+        for _ in range(30):
+            try:
+                server.server_bind()
+                server.server_activate()
+                break
+            except OSError as err:
+                emit(f"[devbox] fallback server can't bind :8080 yet ({err.strerror}); retrying")
+                time.sleep(2)
+        else:
+            while True:
+                time.sleep(3600)
+    emit("[devbox] fallback server on :8080: /ping answers, /invocations reports why the box didn't start")
+    server.serve_forever()
+
+
+emit("[devbox] container start " + json.dumps(environment()))
+sys.path.insert(0, "/opt/devbox/lib")
+try:
+    from devbox.supervisor import main  # noqa: E402
+    code = main()
+    reason = f"the supervisor stopped with exit code {code}"
+except SystemExit as stop:
+    code, reason = stop.code, f"the supervisor stopped with exit code {stop.code}"
+except BaseException:  # noqa: BLE001 - anything at all must end in the fallback, never a silent exit
+    code, reason = 1, traceback.format_exc()
+    emit(reason)
+if code:
+    hold(reason)
+sys.exit(code)
