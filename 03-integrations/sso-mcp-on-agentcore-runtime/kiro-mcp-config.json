@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "enterprise-cloudwatch-v2": {
+      "command": "python",
+      "args": ["enterprise-cloudwatch-mcp-server.py"],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}
