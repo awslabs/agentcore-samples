@@ -105,6 +105,17 @@ python 03-langchain-agent/web_search_langchain.py
 python 01-raw-mcp/cleanup.py --gateway-id <id> --user-pool-id <id> --role-name <name>
 ```
 
+## Common Pitfalls
+
+| Mistake | Why it fails | Correct approach |
+|:--------|:-------------|:-----------------|
+| `from strands.tools.web_search import web_search` | No such module exists in `strands-agents` | Use the MCP-based Gateway approach shown in this sample |
+| `from strands_tools.web_search import web_search` | `strands-agents-tools` does not include a web search tool | Web search is a Gateway connector, not a local tool |
+| `from strands_tools.http_request import http_request; http_request(...)` | `http_request` is a Strands tool — it must be passed to an `Agent`, not called directly | Pass it in the `tools=[]` list and let the agent invoke it |
+| Using `connectorId: "web-search"` outside supported regions | The Web Search connector is region-limited (see availability docs) | Deploy the Gateway in a supported region (e.g., us-east-1) |
+
+> **Key concept:** There is no built-in `web_search` function you can import and call. Web search in AgentCore is an MCP-compliant connector exposed through a Gateway. Your agent discovers it via `tools/list` and invokes it via `tools/call` — see the tutorials above.
+
 ## Documentation
 
 - [Web Search Tool connector](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html)
