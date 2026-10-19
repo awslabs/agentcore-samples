@@ -371,8 +371,11 @@ class RecordTransformer:
         * a record with no name at all gets the deterministic ``<prefix>-<digest>`` form.
 
         Preview did not require names to be unique within a registry and the target registry does; a name shared with
-        another source record is not resolved here -- the load stage's target client refuses the second
-        claimant rather than silently overwriting the first, and that failure is reported per record.
+        another source record is not resolved here, because one record at a time is all this sees. The
+        load stage owns that: it claims transformed identities in staged order, and depending on
+        ``transform.duplicateNames`` either refuses the second claimant rather than silently
+        overwriting the first (``fail``, the default, reported per record) or gives it a distinct name
+        derived from its own source identity (``suffix``, reported as a warning on the record).
         """
         preview_name = _optional_text(preview_record.get("name"))
         if not preview_name:
