@@ -18,6 +18,8 @@ Beyond basic agent and tool hosting, AgentCore runtime provides advanced capabil
 | 10 | [MCP Dynamic Client Registration](10-mcp-dynamic-client-registration/) | Auth0 OAuth + DCR for MCP server authentication | deploy/invoke/cleanup |
 | 11 | [Middleware Support](11-middleware-support/) | Starlette middleware for observability and error handling | deploy/invoke/cleanup |
 | 12 | [Egress-Controlled Code Execution](12-egress-coding-execution/) | Sandbox untrusted code in the microVM with broker-mediated, allowlisted egress | Reference (Docker-based) |
+| 13 | [Async-EC2 Capacity Provider](13-async-ec2-capacity-provider/) | Show how to deploy an async workload in Runtime with Instance capacity provider | deploy/invoke/cleanup  |
+| 14 | [Bring-your-own Warm Pool](14-byo-warm-pool/) | How to create your own warm-pool to reach ms latency with Runtime v2 | deploy --options  |
 
 ## Tutorial Formats
 
