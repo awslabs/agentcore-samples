@@ -47,15 +47,20 @@ run() {
   "$@"
 }
 
-# run_capture: same, but capture stdout into a variable named by $1.
+# run_capture: same, but capture stdout into a variable named by $1 and
+# return the wrapped command's status so required operations fail closed.
 #   usage: run_capture VAR aws sts get-caller-identity --query Account --output text
 run_capture() {
   local __var="$1"; shift
+  local __out __status
   printf '%s    $ %s%s\n' "$_C_DIM" "$*" "$_C_RESET"
-  # A failed command leaves the variable empty; callers check for that and decide
-  # (so this stays safe under `set -e`).
-  local __out; __out="$("$@")" || true
+  if __out="$("$@")"; then
+    __status=0
+  else
+    __status=$?
+  fi
   printf -v "$__var" '%s' "$__out"
+  return "$__status"
 }
 
 # die: fatal error + exit

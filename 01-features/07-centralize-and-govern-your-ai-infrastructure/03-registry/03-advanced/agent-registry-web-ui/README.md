@@ -39,7 +39,7 @@ architecture, verified API surface, and persona model.
 | Tutorial components      | Amazon Cognito (user pool + identity pool), AWS IAM, AWS CloudFormation, Amazon S3 + Amazon CloudFront (optional public site), AWS Lambda (optional sample MCP server) |
 | Tutorial vertical        | Cross-vertical                                                                                           |
 | Example complexity       | Advanced                                                                                                 |
-| SDK used                 | AWS SDK for JavaScript v3 (`@aws-sdk/client-agent-registry*` 3.1126.0), AWS CLI v2, Cloudscape, Vite + React + TypeScript |
+| SDK used                 | AWS SDK for JavaScript v3 (`@aws-sdk/client-agent-registry*` 3.1151.0), AWS CLI v2, Cloudscape, Vite + React + TypeScript |
 
 ## Scope: the three day-to-day personas
 
@@ -121,8 +121,9 @@ Registry administration (create / delete a registry) is intentionally absent —
   [Supported AWS Regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html)).
   The scripts use `AWS_REGION` and default to `us-east-1`.
 - Node.js 18.18+ and npm (`engines.node` in `frontend/package.json`)
-- AWS CLI v2, recent enough to include the `agent-registry-control` commands, configured
-  with credentials (`aws configure`)
+- AWS CLI v2 configured with credentials (`aws configure`). The seed script requires
+  `--custom-metadata-schema-configuration`; AWS CLI v2.38.0 does not provide it,
+  so use a newer CLI build that passes `00-preflight.sh`.
 - `jq` and `zip` (used by `06-sample-mcp-gateway.sh`)
 - Python 3.10+ (only for the optional `deploy/mcp_client_tester.py` and for running the
   sample Lambda locally)
@@ -212,7 +213,18 @@ pending, some draft), creates one user per persona
 (`approver@ / publisher@ / consumer@example.com`), and writes both
 `VITE_REGISTRY_ID` and `VITE_REGISTRY_AUTH_MODE` into `frontend/.env`. The password
 (>=12 chars, upper+lower+digit+symbol) is printed once and saved to
-`deploy/state/persona-password.txt` (chmod 600, gitignored).
+`deploy/state/persona-password.txt` (chmod 600, gitignored). Re-running layer 03 now
+checks that a carried registry still trusts the current Cognito pool and client, then
+reconciles missing or incomplete generated persona users without resetting passwords
+for users that are already confirmed. If the registry belongs to an older Cognito
+foundation, the script fails closed and prints the explicit layer-03 recovery sequence
+instead of seeding users against an incompatible registry.
+
+If sign-in reports **Incorrect username or password** after re-running the foundation
+or config layers, run `./deploy/setup/03-registry.sh up`. It repairs missing generated
+personas from the saved password. If that password file is missing or invalid, the
+script stops rather than silently generating a credential that differs from the one
+you are using.
 
 It also prints the registry's MCP endpoint and the `initiate-auth` command that mints
 a bearer token for it — the same pair the app shows under "Connect your tools".
@@ -528,9 +540,10 @@ For example, this filter matches the approved `pii-redaction-skill` and
 Search indexing is eventually consistent, so a newly approved record can take a
 short time to appear in filtered results.
 
-Use AWS CLI v2.38.0 or later. `00-preflight.sh` verifies that the installed CLI
-accepts `--custom-metadata-schema-configuration` before deployment. The frontend
-pins both Agent Registry SDK clients to version `3.1151.0`.
+AWS CLI v2.38.0 does **not** include this option. Use a newer AWS CLI v2 build
+that `00-preflight.sh` confirms accepts
+`--custom-metadata-schema-configuration` before deployment. The frontend pins
+both Agent Registry SDK clients to version `3.1151.0`.
 
 Deployments created before custom metadata support must be recreated because the
 schema is configured when the registry is created:

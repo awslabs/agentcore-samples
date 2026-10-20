@@ -14,24 +14,148 @@ source "$(dirname "$0")/_lib.sh"
 SEED="$DEPLOY_DIR/seed-registry.sh"
 ACTION="${1:-up}"
 
+load_saved_persona_password() {
+  local pw_file="$STATE_DIR/persona-password.txt" pw_problem
+  [ -s "$pw_file" ] || die "saved persona password is missing; restore $pw_file or recreate layer 03"
+  PERSONA_PASSWORD="$(cat "$pw_file")"
+  pw_problem="$(LC_ALL=C bash -c '
+    p="$1"; prob=""
+    [ ${#p} -ge 12 ] || prob="must be at least 12 characters"
+    case "$p" in *[A-Z]*) ;; *) prob="must have an uppercase character";; esac
+    case "$p" in *[a-z]*) ;; *) prob="must have a lowercase character";; esac
+    case "$p" in *[0-9]*) ;; *) prob="must have a digit";; esac
+    case "$p" in *[!A-Za-z0-9]*) ;; *) prob="must have a symbol";; esac
+    printf "%s" "$prob"
+  ' _ "$PERSONA_PASSWORD")"
+  [ -z "$pw_problem" ] || die "saved persona password $pw_problem; restore a valid generated password or recreate layer 03"
+}
+
+load_persona_status() {
+  local email="$1" err_file
+  err_file="$(mktemp)"
+  if PERSONA_STATUS="$(aws cognito-idp admin-get-user --user-pool-id "$USER_POOL_ID" \
+      --username "$email" --query UserStatus --output text 2>"$err_file")"; then
+    rm -f "$err_file"
+  elif grep -q 'UserNotFoundException' "$err_file"; then
+    PERSONA_STATUS=""
+    rm -f "$err_file"
+  else
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    die "could not inspect generated persona $email"
+  fi
+}
+
+reconcile_persona_users() {
+  local spec email group user_status groups need_password=0
+  local specs=(
+    "approver@example.com:AgentRegistryApprover"
+    "publisher@example.com:AgentRegistryPublisher"
+    "consumer@example.com:AgentRegistryConsumer"
+  )
+
+  # Resolve and validate the saved credential before the first write whenever a
+  # missing or incomplete user needs it. Confirmed users keep their current password.
+  for spec in "${specs[@]}"; do
+    email="${spec%%:*}"
+    load_persona_status "$email"
+    user_status="$PERSONA_STATUS"
+    if [ -z "$user_status" ] || [ "$user_status" != "CONFIRMED" ]; then
+      need_password=1
+    fi
+  done
+  [ "$need_password" = "0" ] || load_saved_persona_password
+
+  for spec in "${specs[@]}"; do
+    email="${spec%%:*}"; group="${spec#*:}"
+    load_persona_status "$email"
+    user_status="$PERSONA_STATUS"
+    if [ -z "$user_status" ]; then
+      info "Creating missing generated persona $email"
+      aws cognito-idp admin-create-user --user-pool-id "$USER_POOL_ID" \
+        --username "$email" --message-action SUPPRESS \
+        --user-attributes Name=email,Value="$email" Name=email_verified,Value=true >/dev/null
+      user_status="FORCE_CHANGE_PASSWORD"
+    fi
+    if [ "$user_status" != "CONFIRMED" ]; then
+      info "Completing generated persona $email"
+      # Do not use run here: its command echo would expose the saved password.
+      aws cognito-idp admin-set-user-password --user-pool-id "$USER_POOL_ID" \
+        --username "$email" --password "$PERSONA_PASSWORD" --permanent >/dev/null \
+        || die "could not apply the saved persona password to $email"
+    fi
+    groups="$(aws cognito-idp admin-list-groups-for-user --user-pool-id "$USER_POOL_ID" \
+      --username "$email" --query 'Groups[].GroupName' --output text)"
+    if ! grep -qw "$group" <<<"$groups"; then
+      info "Adding $email to $group"
+      run aws cognito-idp admin-add-user-to-group --user-pool-id "$USER_POOL_ID" \
+        --username "$email" --group-name "$group" >/dev/null
+    fi
+    ok "$email is CONFIRMED and belongs to $group"
+  done
+  unset PERSONA_PASSWORD
+}
+
+load_registry_status() {
+  local err_file
+  err_file="$(mktemp)"
+  if PREV_STATUS="$(aws agent-registry-control get-registry --registry-id "$PREV_REGISTRY_ID" \
+      --query status --output text 2>"$err_file")"; then
+    rm -f "$err_file"
+  elif grep -q 'ResourceNotFoundException' "$err_file"; then
+    PREV_STATUS=""
+    rm -f "$err_file"
+  else
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    die "could not inspect registry $PREV_REGISTRY_ID; refusing to seed a replacement"
+  fi
+}
+
+verify_existing_registry() {
+  local registry_json registry_status actual_mode expected_discovery actual_discovery client_allowed
+  registry_json="$(aws agent-registry-control get-registry --registry-id "$PREV_REGISTRY_ID" --output json)" \
+    || die "could not inspect registry $PREV_REGISTRY_ID"
+  registry_status="$(jq -r '.status // empty' <<<"$registry_json")"
+  [ "$registry_status" = "READY" ] || die "registry $PREV_REGISTRY_ID is $registry_status; wait for READY and rerun layer 03"
+
+  actual_mode="$(jq -r '.discoveryConfiguration.authorizerType // empty' <<<"$registry_json")"
+  [ "$actual_mode" = "$REGISTRY_AUTH_MODE" ] || die "registry authorization mode does not match current state. Run ./03-registry.sh down, then ./03-registry.sh up after reviewing the destructive impact."
+  if [ "$actual_mode" = "CUSTOM_JWT" ]; then
+    expected_discovery="https://cognito-idp.${AWS_REGION}.amazonaws.com/${USER_POOL_ID}/.well-known/openid-configuration"
+    actual_discovery="$(jq -r '.discoveryConfiguration.authorizerConfiguration.customJWTAuthorizer.discoveryUrl // empty' <<<"$registry_json")"
+    client_allowed="$(jq -r --arg client "$USER_POOL_CLIENT_ID" '(.discoveryConfiguration.authorizerConfiguration.customJWTAuthorizer.allowedClients // []) | index($client) != null' <<<"$registry_json")"
+    if [ "$actual_discovery" != "$expected_discovery" ] || [ "$client_allowed" != "true" ]; then
+      die "registry JWT authorizer belongs to a different Cognito foundation. Existing state was preserved. Recovery requires ./03-registry.sh down followed by ./03-registry.sh up; review that destructive registry replacement before running it."
+    fi
+  fi
+  ok "existing registry authorizer matches the current Cognito foundation"
+}
+
 registry_up() {
   step "Layer 03 UP - Seed registry + records + persona users"
   [ -f "$STATE_FILE" ] || die "missing $STATE_FILE - run ./02-config.sh up first"
   [ -f "$SEED" ] || die "missing $SEED"
+  need jq
+  load_state_ids
+  : "${USER_POOL_ID:?USER_POOL_ID missing from state - run ./02-config.sh up first}"
+  : "${USER_POOL_CLIENT_ID:?USER_POOL_CLIENT_ID missing from state - run ./02-config.sh up first}"
+  REGISTRY_AUTH_MODE="${REGISTRY_AUTH_MODE:-CUSTOM_JWT}"
   # Re-run safety: seeding always creates a NEW registry and overwrites REGISTRY_ID in
   # state, which would strand the previous one (teardown only knows the state id).
   PREV_REGISTRY_ID="$(grep -E '^REGISTRY_ID=' "$STATE_FILE" | tail -1 | cut -d= -f2 || true)"
   PREV_STATUS=""
   if [ -n "$PREV_REGISTRY_ID" ]; then
-    PREV_STATUS="$(aws agent-registry-control get-registry --registry-id "$PREV_REGISTRY_ID" \
-      --query status --output text 2>/dev/null || true)"
+    load_registry_status
   fi
   case "$PREV_STATUS" in
     ""|None|*FAILED*|DELETING) SKIP_SEED=0 ;;
     *) SKIP_SEED=1 ;;
   esac
   if [ "$SKIP_SEED" = "1" ]; then
-    ok "registry $PREV_REGISTRY_ID from state already exists ($PREV_STATUS) - not seeding again"
+    verify_existing_registry
+    reconcile_persona_users
+    ok "registry $PREV_REGISTRY_ID from state is ready and generated personas are reconciled"
     info "To recreate it (e.g. to change REGISTRY_AUTH_MODE), run ./03-registry.sh down first."
   else
     info "Creates the registry '${REGISTRY_NAME:-AgentRegistryDemo}' (CUSTOM_JWT authorizer bound to this"

@@ -4,7 +4,7 @@
 #
 # Orchestrator - run every layer's up (in order) or down (in reverse).
 #   ./99-all.sh up     01 foundation -> 02 config -> 03 registry -> 06 sample gateway -> 05 site
-#   ./99-all.sh down   05 site -> 06 sample gateway -> 03 registry -> 02 config -> 01 foundation
+#   ./99-all.sh down   05 site -> 04 local -> 06 sample gateway -> 03 registry -> 02 config -> 01 foundation
 #
 # Layer 06 runs BEFORE 05 on the way up so the site is built with the sample
 # gateway's credential-provider ARN already in frontend/.env.
@@ -47,6 +47,7 @@ case "$ACTION" in
     # rest, but remember the failure and exit non-zero at the end.
     rc=0
     bash "$HERE/05-site.sh" down || { err "05-site down reported a problem"; rc=1; }
+    bash "$HERE/04-run-local.sh" down || { err "04-run-local down reported a problem"; rc=1; }
     if [ "${SKIP_SAMPLE:-0}" != "1" ]; then
       # Before 03: the sample record lives in the registry that layer deletes.
       bash "$HERE/06-sample-mcp-gateway.sh" down || { err "06-sample-mcp-gateway down reported a problem"; rc=1; }

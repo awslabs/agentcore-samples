@@ -18,25 +18,110 @@ set -euo pipefail
 source "$(dirname "$0")/_lib.sh"
 ACTION="${1:-up}"
 
+valid_cloudfront_id() {
+  [ -n "${1:-}" ] && [ "$1" != "None" ] && [[ "$1" =~ ^[A-Z0-9]+$ ]]
+}
+
+valid_cloudfront_domain() {
+  [ -n "${1:-}" ] && [ "$1" != "None" ] && [[ "$1" =~ ^[A-Za-z0-9-]+\.cloudfront\.net$ ]]
+}
+
+remove_site_state_keys() {
+  [ -f "$STATE_FILE" ] || return 0
+  local pattern="$1" tmp
+  tmp="$(mktemp "$STATE_DIR/outputs.env.XXXXXX")"
+  if grep -vE "$pattern" "$STATE_FILE" > "$tmp"; then :; else
+    [ "$?" -eq 1 ] || { rm -f "$tmp"; die "could not update $STATE_FILE"; }
+  fi
+  mv "$tmp" "$STATE_FILE"
+}
+
+record_site_state() {
+  local tmp
+  mkdir -p "$STATE_DIR"
+  tmp="$(mktemp "$STATE_DIR/outputs.env.XXXXXX")"
+  if [ -f "$STATE_FILE" ]; then
+    grep -vE '^SITE_(OAC_ID|DIST_ID|DOMAIN|BUCKET)=' "$STATE_FILE" > "$tmp" || [ "$?" -eq 1 ] || {
+      rm -f "$tmp"; die "could not update $STATE_FILE";
+    }
+  fi
+  {
+    printf 'SITE_BUCKET=%s\n' "$BUCKET"
+    printf 'SITE_OAC_ID=%s\n' "$SITE_OAC_ID"
+    printf 'SITE_DIST_ID=%s\n' "$SITE_DIST_ID"
+    printf 'SITE_DOMAIN=%s\n' "$SITE_DOMAIN"
+  } >> "$tmp"
+  mv "$tmp" "$STATE_FILE"
+}
+
+valid_oac_configuration() {
+  local output="$1" expected_id="$2" returned_id signing_protocol signing_behavior origin_type extra
+  [[ "$output" != *$'\n'* ]] || return 1
+  IFS=$'\t' read -r returned_id signing_protocol signing_behavior origin_type extra <<< "$output"
+  [ "$output" = "$returned_id"$'\t'"$signing_protocol"$'\t'"$signing_behavior"$'\t'"$origin_type" ] &&
+    valid_cloudfront_id "$returned_id" && [ "$returned_id" = "$expected_id" ] &&
+    [ "$signing_protocol" = "sigv4" ] && [ "$signing_behavior" = "always" ] &&
+    [ "$origin_type" = "s3" ] && [ -z "$extra" ]
+}
+
+validate_discovered_oac() {
+  local oac_id="$1" err_file configuration
+  err_file="$(mktemp)"
+  if configuration="$(aws cloudfront get-origin-access-control --id "$oac_id" \
+      --query '[OriginAccessControl.Id,OriginAccessControl.OriginAccessControlConfig.SigningProtocol,OriginAccessControl.OriginAccessControlConfig.SigningBehavior,OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType]' \
+      --output text 2>"$err_file")"; then
+    rm -f "$err_file"
+    valid_oac_configuration "$configuration" "$oac_id" ||
+      die "could not validate discovered OAC $oac_id; AWS returned a malformed or insecure signing configuration, refusing to reuse it"
+  else
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    die "could not validate discovered OAC $oac_id; refusing to reuse it"
+  fi
+}
+
+validate_site_oac_state() {
+  [ -n "${SITE_OAC_ID:-}" ] && [ "$SITE_OAC_ID" != "None" ] || return 0
+  valid_cloudfront_id "$SITE_OAC_ID" || die "recorded OAC ID is malformed; refusing to modify AWS resources"
+
+  local err_file configuration
+  err_file="$(mktemp)"
+  if configuration="$(aws cloudfront get-origin-access-control --id "$SITE_OAC_ID" \
+      --query '[OriginAccessControl.Id,OriginAccessControl.OriginAccessControlConfig.SigningProtocol,OriginAccessControl.OriginAccessControlConfig.SigningBehavior,OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType]' \
+      --output text 2>"$err_file")"; then
+    rm -f "$err_file"
+    valid_oac_configuration "$configuration" "$SITE_OAC_ID" ||
+      die "could not validate OAC $SITE_OAC_ID; AWS returned a malformed or insecure signing configuration, refusing to modify AWS resources"
+  elif grep -Fq 'An error occurred (NoSuchOriginAccessControl) when calling the GetOriginAccessControl operation' "$err_file"; then
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    warn "recorded OAC $SITE_OAC_ID no longer exists; clearing stale local state"
+    remove_site_state_keys '^SITE_OAC_ID='
+    SITE_OAC_ID=""
+  else
+    cat "$err_file" >&2
+    rm -f "$err_file"
+    die "could not validate OAC $SITE_OAC_ID; refusing to modify AWS resources"
+  fi
+}
+
 validate_site_distribution_state() {
-  [ -n "${SITE_DIST_ID:-}" ] && [ "$SITE_DIST_ID" != "None" ] || return
+  [ -n "${SITE_DIST_ID:-}" ] && [ "$SITE_DIST_ID" != "None" ] || return 0
+  valid_cloudfront_id "$SITE_DIST_ID" || die "recorded distribution ID is malformed; refusing to modify AWS resources"
 
   local err_file domain
   err_file="$(mktemp)"
   if domain="$(aws cloudfront get-distribution --id "$SITE_DIST_ID" \
       --query 'Distribution.DomainName' --output text 2>"$err_file")"; then
     rm -f "$err_file"
-    if [ -z "$domain" ] || [ "$domain" = "None" ]; then
-      die "could not inspect distribution $SITE_DIST_ID; AWS returned no domain, refusing to create a replacement"
-    fi
+    valid_cloudfront_domain "$domain" ||
+      die "could not inspect distribution $SITE_DIST_ID; AWS returned an empty or malformed domain, refusing to create a replacement"
     SITE_DOMAIN="$domain"
-  elif grep -q 'An error occurred (NoSuchDistribution)' "$err_file"; then
-    warn "recorded distribution $SITE_DIST_ID no longer exists; clearing stale local state"
+  elif grep -Fq 'An error occurred (NoSuchDistribution) when calling the GetDistribution operation' "$err_file"; then
+    cat "$err_file" >&2
     rm -f "$err_file"
-    if [ -f "$STATE_FILE" ]; then
-      grep -vE '^SITE_(DIST_ID|DOMAIN)=' "$STATE_FILE" > "$STATE_FILE.tmp" || true
-      mv "$STATE_FILE.tmp" "$STATE_FILE"
-    fi
+    warn "recorded distribution $SITE_DIST_ID no longer exists; clearing stale local state"
+    remove_site_state_keys '^SITE_(DIST_ID|DOMAIN)='
     SITE_DIST_ID=""
     SITE_DOMAIN=""
   else
@@ -49,12 +134,20 @@ validate_site_distribution_state() {
 site_up() {
   step "Layer 05 UP - Deploy the static site (S3 + CloudFront + OAC)"
   [ -f "$FRONTEND_ENV" ] || die "missing $FRONTEND_ENV - run ./02-config.sh up first"
-  run_capture ACCOUNT aws sts get-caller-identity --query Account --output text
-  PART="$(aws_partition)"
+  if ! run_capture ACCOUNT aws sts get-caller-identity --query Account --output text; then
+    die "could not determine the AWS account; refusing to deploy"
+  fi
+  [[ "$ACCOUNT" =~ ^[0-9]{12}$ ]] || die "AWS returned an invalid account ID; refusing to deploy"
+  if ! run_capture CALLER_ARN aws sts get-caller-identity --query Arn --output text; then
+    die "could not determine the AWS partition; refusing to deploy"
+  fi
+  PART="$(printf '%s' "$CALLER_ARN" | cut -d: -f2)"
+  [[ "$PART" =~ ^aws(-cn|-us-gov)?$ ]] || die "AWS returned an invalid caller ARN; refusing to deploy"
   BUCKET="${SITE_BUCKET:-${APP_NAME}-site-$ACCOUNT}"; OAC_NAME="${APP_NAME}-oac"
   info "Account=$ACCOUNT Region=$AWS_REGION Bucket=$BUCKET"
   SITE_OAC_ID=""; SITE_DIST_ID=""; SITE_DOMAIN=""
   load_state_ids; SITE_OAC_ID="${SITE_OAC_ID:-}"; SITE_DIST_ID="${SITE_DIST_ID:-}"; SITE_DOMAIN="${SITE_DOMAIN:-}"
+  validate_site_oac_state
   validate_site_distribution_state
 
   step "Building the production bundle"
@@ -71,21 +164,41 @@ site_up() {
     info "creating bucket $BUCKET"
     if [ "$AWS_REGION" = "us-east-1" ]; then run aws s3api create-bucket --bucket "$BUCKET" --region us-east-1
     else run aws s3api create-bucket --bucket "$BUCKET" --region "$AWS_REGION" --create-bucket-configuration "LocationConstraint=$AWS_REGION"; fi
-    run aws s3api put-public-access-block --bucket "$BUCKET" --public-access-block-configuration \
-      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
   fi
+  # Apply all four controls on every run, including when reusing an existing bucket.
+  run aws s3api put-public-access-block --bucket "$BUCKET" --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
   step "Syncing frontend/dist -> s3://$BUCKET"
   run aws s3 sync "$FRONTEND_DIR/dist" "s3://$BUCKET" --delete && ok "objects uploaded"
 
   step "Ensuring a CloudFront Origin Access Control exists"
-  [ -z "$SITE_OAC_ID" ] && SITE_OAC_ID="$(aws cloudfront list-origin-access-controls \
-    --query "OriginAccessControlList.Items[?Name=='$OAC_NAME'].Id | [0]" --output text 2>/dev/null || true)"
-  if [ -z "$SITE_OAC_ID" ] || [ "$SITE_OAC_ID" = "None" ]; then
-    run_capture SITE_OAC_ID aws cloudfront create-origin-access-control \
-      --origin-access-control-config "Name=$OAC_NAME,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=s3" \
-      --query 'OriginAccessControl.Id' --output text
+  if [ -z "$SITE_OAC_ID" ]; then
+    if ! run_capture DISCOVERED_OAC_ID aws cloudfront list-origin-access-controls \
+        --query "OriginAccessControlList.Items[?Name=='$OAC_NAME'].Id | [0]" --output text; then
+      die "could not list origin access controls; refusing to create one"
+    fi
+    if [ "$DISCOVERED_OAC_ID" = "None" ]; then
+      SITE_OAC_ID=""
+    elif valid_cloudfront_id "$DISCOVERED_OAC_ID"; then
+      validate_discovered_oac "$DISCOVERED_OAC_ID"
+      SITE_OAC_ID="$DISCOVERED_OAC_ID"
+    else
+      die "could not discover the OAC; AWS returned an empty or malformed ID, refusing to create one"
+    fi
+  fi
+  if [ -z "$SITE_OAC_ID" ]; then
+    if ! run_capture SITE_OAC_ID aws cloudfront create-origin-access-control \
+        --origin-access-control-config "Name=$OAC_NAME,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=s3" \
+        --query 'OriginAccessControl.Id' --output text; then
+      die "could not create the origin access control; refusing to create a distribution"
+    fi
+    valid_cloudfront_id "$SITE_OAC_ID" ||
+      die "AWS returned an empty or malformed OAC ID; refusing to create a distribution"
     ok "created OAC $SITE_OAC_ID"
-  else ok "reusing OAC $SITE_OAC_ID"; fi
+  else
+    valid_cloudfront_id "$SITE_OAC_ID" || die "OAC ID is malformed; refusing to create a distribution"
+    ok "reusing OAC $SITE_OAC_ID"
+  fi
 
   step "Ensuring a CloudFront distribution exists"
   if [ -z "$SITE_DIST_ID" ] || [ "$SITE_DIST_ID" = "None" ]; then
@@ -104,12 +217,20 @@ site_up() {
     { "ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10 } ] },
   "PriceClass": "PriceClass_100" }
 JSON
-    run_capture DJSON aws cloudfront create-distribution --distribution-config "file://$DIST_CFG" \
-      --query '{Id:Distribution.Id,Domain:Distribution.DomainName}' --output json
-    SITE_DIST_ID="$(printf '%s' "$DJSON" | tr -d ' \n' | sed -n 's/.*"Id":"\([^"]*\)".*/\1/p')"
-    SITE_DOMAIN="$(printf '%s' "$DJSON" | tr -d ' \n' | sed -n 's/.*"Domain":"\([^"]*\)".*/\1/p')"
+    if ! run_capture DJSON aws cloudfront create-distribution --distribution-config "file://$DIST_CFG" \
+        --query '{Id:Distribution.Id,Domain:Distribution.DomainName}' --output json; then
+      die "could not create the CloudFront distribution; refusing to apply policy or record site state"
+    fi
+    DJSON_COMPACT="$(printf '%s' "$DJSON" | tr -d '[:space:]')"
+    SITE_DIST_ID="$(printf '%s' "$DJSON_COMPACT" | sed -n 's/^{"Id":"\([^"]*\)","Domain":"[^"]*"}$/\1/p')"
+    SITE_DOMAIN="$(printf '%s' "$DJSON_COMPACT" | sed -n 's/^{"Id":"[^"]*","Domain":"\([^"]*\)"}$/\1/p')"
+    [ "$DJSON_COMPACT" = "{\"Id\":\"$SITE_DIST_ID\",\"Domain\":\"$SITE_DOMAIN\"}" ] &&
+      valid_cloudfront_id "$SITE_DIST_ID" && valid_cloudfront_domain "$SITE_DOMAIN" ||
+      die "AWS returned empty or malformed distribution identifiers; refusing to apply policy or record site state"
     ok "created distribution $SITE_DIST_ID ($SITE_DOMAIN)"
   else
+    valid_cloudfront_id "$SITE_DIST_ID" && valid_cloudfront_domain "$SITE_DOMAIN" ||
+      die "saved distribution identifiers are malformed; refusing dependent operations"
     ok "reusing distribution $SITE_DIST_ID ($SITE_DOMAIN)"
     info "invalidating the edge cache"
     run aws cloudfront create-invalidation --distribution-id "$SITE_DIST_ID" --paths '/*' \
@@ -132,8 +253,7 @@ JSON
   fi
 
   step "Recording site ids in deploy/state/outputs.env"
-  [ -f "$STATE_FILE" ] && { grep -vE '^SITE_(OAC_ID|DIST_ID|DOMAIN|BUCKET)=' "$STATE_FILE" > "$STATE_FILE.tmp" || true; mv "$STATE_FILE.tmp" "$STATE_FILE"; }
-  { echo "SITE_BUCKET=$BUCKET"; echo "SITE_OAC_ID=$SITE_OAC_ID"; echo "SITE_DIST_ID=$SITE_DIST_ID"; echo "SITE_DOMAIN=$SITE_DOMAIN"; } >> "$STATE_FILE"
+  record_site_state
   ok "recorded SITE_* ids"
 
   info "Waiting for the distribution to reach Deployed (can take ~10-15 min)..."

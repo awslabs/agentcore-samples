@@ -44,7 +44,18 @@ The seed script creates the registry with the schema from `deploy/custom-metadat
 
 Layer 03 also writes `VITE_REGISTRY_ID` and `VITE_REGISTRY_AUTH_MODE` into
 `frontend/.env`; the SPA must agree with the registry, since the two modes use different
-credentials for discovery.
+credentials for discovery. On a rerun, layer 03 verifies that a carried registry's JWT
+authorizer still references the current Cognito pool and SPA client. It then creates
+only missing generated persona users, completes unconfirmed generated users, and adds
+missing persona group membership. It does not reset an already-confirmed user's
+password. The repair uses `deploy/state/persona-password.txt`; if that saved credential
+is absent or invalid, the script stops with recovery guidance instead of inventing a
+new password.
+
+If the registry's immutable JWT discovery URL belongs to an older foundation, layer 03
+fails closed and preserves its ID for teardown. Replacing that demo registry requires
+reviewing the destructive impact, then running `./03-registry.sh down` followed by
+`./03-registry.sh up`.
 
 ```bash
 ./04-run-local.sh          # local validation (optional)
