@@ -21,6 +21,7 @@ Usage:
 import json
 import os
 import sys
+import time
 from typing import Any
 
 import boto3
@@ -636,8 +637,6 @@ class GatewaySetup:
         Returns:
             True if gateway is active/ready, False if timeout
         """
-        import time
-
         print("\n⏳ Checking gateway status...")
         start_time = time.time()
 
@@ -664,6 +663,93 @@ class GatewaySetup:
 
         print("⚠️  Timeout waiting for gateway to be active")
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Gateway target readiness. Creating a target returns at once, but the
+# gateway then connects to the MCP server and fetches its tool list; if that
+# fetch fails the target goes FAILED and the gateway serves no tools. So wait
+# for READY, re-synchronize once if it fails, and stop loudly if it still
+# fails. Every TargetStatus value is mapped to "ready", "failed" or "wait".
+# ─────────────────────────────────────────────────────────────────────────
+TARGET_READY_TIMEOUT_SECONDS = 180
+TARGET_POLL_SECONDS = 10
+TARGET_FAILED_STATUSES = ("FAILED", "SYNCHRONIZE_UNSUCCESSFUL", "UPDATE_UNSUCCESSFUL", "DELETING")
+# Everything else is a wait state: CREATING, UPDATING, SYNCHRONIZING and the
+# three *_PENDING_AUTH states (which cannot be synchronized until they finish).
+
+
+def find_target_id(client, gateway_id: str, target_name: str) -> str:
+    """Return the id of the named target on the gateway, or raise if absent."""
+    token = None
+    while True:
+        kwargs = {"gatewayIdentifier": gateway_id}
+        if token:
+            kwargs["nextToken"] = token
+        page = client.list_gateway_targets(**kwargs)
+        for item in page.get("items", []):
+            if item.get("name") == target_name:
+                return item["targetId"]
+        token = page.get("nextToken")
+        if not token:
+            raise RuntimeError(f"Gateway target {target_name} not found on gateway {gateway_id}")
+
+
+def _poll_target(client, gateway_id: str, target_id: str, target_name: str, timeout_seconds: int):
+    """Poll until READY, a failed status, or the timeout. Returns (outcome, status, reasons)."""
+    start = time.time()
+    while True:
+        target = client.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
+        status = (target.get("status") or "UNKNOWN").strip().upper()
+        reasons = target.get("statusReasons") or []
+        elapsed = int(time.time() - start)
+        print(f"   Target {target_name} status: {status} ({elapsed}s elapsed)")
+        if status == "READY":
+            return "ready", status, reasons
+        if status in TARGET_FAILED_STATUSES:
+            return "failed", status, reasons
+        if time.time() - start >= timeout_seconds:
+            return "timeout", status, reasons
+        time.sleep(TARGET_POLL_SECONDS)
+
+
+def wait_for_target_ready(
+    client, gateway_id: str, target_id: str, target_name: str, timeout_seconds: int = TARGET_READY_TIMEOUT_SECONDS
+) -> None:
+    """Wait for the target to be READY; re-synchronize once if it fails; raise if it cannot get there."""
+    print(f"\n⏳ Waiting for gateway target {target_name} to reach READY (up to {timeout_seconds}s)...")
+    outcome, status, reasons = _poll_target(client, gateway_id, target_id, target_name, timeout_seconds)
+    if outcome == "ready":
+        print(f"✅ Gateway target {target_name} is READY")
+        return
+    if outcome == "timeout":
+        raise RuntimeError(
+            f"Gateway target {target_name} not ready after {timeout_seconds}s (last status: {status}). "
+            "It may still finish on its own; check it with "
+            f"`aws bedrock-agentcore-control get-gateway-target --gateway-identifier {gateway_id} "
+            f"--target-id {target_id}` and re-run this step once it is READY."
+        )
+
+    print(f"⚠️  WARNING: gateway target {target_name} is {status}. Reasons reported by AWS: {reasons}")
+    print("   Re-synchronizing the target once (the gateway fetches the MCP server's tool list again)...")
+    synchronize = getattr(client, "synchronize_gateway_targets", None)
+    if synchronize is None:
+        raise RuntimeError(
+            "This boto3 version has no synchronize_gateway_targets. Upgrade it (pip install -U boto3) "
+            f"and re-run this step. Target {target_name} is {status}: {reasons}"
+        )
+    synchronize(gatewayIdentifier=gateway_id, targetIdList=[target_id])
+
+    outcome, status, reasons = _poll_target(client, gateway_id, target_id, target_name, timeout_seconds)
+    if outcome == "ready":
+        print(f"✅ Gateway target {target_name} is READY after a re-sync (the first tool-list fetch failed).")
+        return
+    if outcome == "timeout":
+        raise RuntimeError(
+            f"Gateway target {target_name} not ready after {timeout_seconds}s following a re-sync "
+            f"(last status: {status})."
+        )
+    raise RuntimeError(f"Gateway target {target_name} is still {status} after a re-sync. Reasons: {reasons}")
 
 
 def get_runtime_mcp_url(runtime_arn: str, region: str) -> str:
@@ -778,6 +864,9 @@ def main():
                     oauth_provider_arn=oauth_provider_arn,
                     scopes=target_scopes,
                 )
+                # The target must be READY (tool list fetched) before anything calls the gateway.
+                target_id = find_target_id(setup.client, gateway_response["gatewayId"], "lakehouse-mcp-target")
+                wait_for_target_ready(setup.client, gateway_response["gatewayId"], target_id, "lakehouse-mcp-target")
         else:
             print("\n⚠️  Gateway not active yet. You can create the target later.")
 

@@ -58,6 +58,12 @@ ENCRYPTION_POLICY_NAME = f"{COLLECTION_NAME}-encryption"
 NETWORK_POLICY_NAME = f"{COLLECTION_NAME}-network"
 DATA_ACCESS_POLICY_NAME = f"{COLLECTION_NAME}-data"
 
+# How long to wait for a new collection to reach ACTIVE, and how often to check.
+# Creation usually takes 3-5 minutes but has been seen to take over 10, so the
+# wait allows 15. Every poll prints the status and the elapsed time.
+COLLECTION_WAIT_SECONDS = 900
+COLLECTION_POLL_SECONDS = 15
+
 
 class SSMConfig:
     """Minimal config loader / persister for AOSS collection setup."""
@@ -238,34 +244,57 @@ def ensure_collection(aoss, collection_name: str) -> dict:
         collection_id = create_response["createCollectionDetail"]["id"]
         print(f"   ✅ Create initiated; id={collection_id}")
 
-    # Wait for ACTIVE
-    print("   ⏳ Waiting for collection to reach ACTIVE status...")
-    deadline = time.time() + 600  # 10 minutes
+    return wait_for_collection_active(aoss, collection_name, collection_id)
+
+
+def wait_for_collection_active(aoss, collection_name: str, collection_id: str) -> dict:
+    """
+    Poll the collection until it is ACTIVE. Returns {id, arn, endpoint}.
+
+    Prints the status and elapsed time on every poll. Raises at once if the
+    collection fails or is being deleted. If it is still being created when
+    the wait runs out, raises an error that says how to check it and that
+    re-running this script is safe.
+    """
+    wait_minutes = COLLECTION_WAIT_SECONDS // 60
+    print(f"   ⏳ Waiting up to {wait_minutes} minutes for the collection to reach ACTIVE status...")
+    start = time.time()
+    deadline = start + COLLECTION_WAIT_SECONDS
     last_status = None
     while time.time() < deadline:
         details = aoss.batch_get_collection(ids=[collection_id])
         items = details.get("collectionDetails", [])
+        elapsed = int(time.time() - start)
         if not items:
-            print("   ⚠️  batch_get_collection returned no details; retrying...")
+            print(f"   ⚠️  batch_get_collection returned no details ({elapsed}s elapsed); retrying...")
             time.sleep(10)
             continue
         item = items[0]
         status = item.get("status")
-        if status != last_status:
-            print(f"   Status: {status}")
-            last_status = status
+        last_status = status
+        print(f"   Status: {status} ({elapsed}s elapsed)")
         if status == "ACTIVE":
             return {
                 "id": item["id"],
                 "arn": item["arn"],
                 "endpoint": item["collectionEndpoint"],
             }
-        if status == "FAILED":
-            raise RuntimeError(f"Collection {collection_name} reached FAILED status")
-        time.sleep(15)
+        if status in ("FAILED", "UPDATE_FAILED"):
+            raise RuntimeError(f"Collection {collection_name} (id {collection_id}) reached {status} status")
+        if status == "DELETING":
+            raise RuntimeError(
+                f"Collection {collection_name} (id {collection_id}) is being deleted. "
+                "Wait for the delete to finish, then re-run this script."
+            )
+        time.sleep(COLLECTION_POLL_SECONDS)
 
     raise RuntimeError(
-        f"Collection {collection_name} did not reach ACTIVE within 10 minutes (last status: {last_status})"
+        f"Collection {collection_name} (id {collection_id}) is still {last_status} after "
+        f"{wait_minutes} minutes. It is still being created on the AWS side and usually finishes "
+        "on its own. Check its status with:\n"
+        f"    aws opensearchserverless batch-get-collection --ids {collection_id}\n"
+        "Once it shows ACTIVE, re-run this step. It is safe to re-run: it adopts the existing "
+        "collection, then creates the data-access policy and stores the SSM parameters."
     )
 
 
