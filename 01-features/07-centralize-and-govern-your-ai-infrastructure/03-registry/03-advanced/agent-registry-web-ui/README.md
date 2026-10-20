@@ -152,8 +152,7 @@ agent-registry-web-ui/
 ├── README.md
 ├── DESIGN.md                       # architecture, verified API surface, persona model
 ├── docs/
-│   ├── architecture.png / .svg
-│   └── screenshots/                # browse.png, detail.png
+│   └── architecture.png / .svg
 ├── deploy/
 │   ├── cognito-stack.yaml          # Cognito + persona IAM roles (CloudFormation)
 │   ├── seed-registry.sh            # registry + records + persona users (called by 03)
@@ -258,12 +257,6 @@ is synchronized from the gateway — see
 [Sample MCP server](#sample-mcp-server-on-agentcore-gateway).
 
 Or run every layer at once with `./99-all.sh up` (`SKIP_SAMPLE=1` leaves step 6 out).
-
-### Screenshots
-
-| Registries & records | Record detail |
-|:---:|:---:|
-| ![Browse](docs/screenshots/browse.png) | ![Detail](docs/screenshots/detail.png) |
 
 ## Sample Walkthrough
 
