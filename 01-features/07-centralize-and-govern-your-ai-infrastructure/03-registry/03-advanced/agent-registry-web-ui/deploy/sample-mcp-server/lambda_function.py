@@ -54,7 +54,7 @@ def _echo(event: dict) -> dict:
         raise ValueError("`message` is required")
     return {
         "echoed": message,
-        "receivedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "receivedAt": datetime.datetime.now(datetime.UTC).isoformat(),
     }
 
 
