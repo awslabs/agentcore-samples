@@ -3,8 +3,7 @@
 import type { CustomMetadataSchemaConfiguration } from "@aws-sdk/client-agent-registry-control";
 import Alert from "@cloudscape-design/components/alert";
 import Box from "@cloudscape-design/components/box";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
+import ExpandableSection from "@cloudscape-design/components/expandable-section";
 import Spinner from "@cloudscape-design/components/spinner";
 import Table from "@cloudscape-design/components/table";
 import Tabs from "@cloudscape-design/components/tabs";
@@ -29,14 +28,13 @@ const TYPE_LABELS: Record<FieldType, string> = {
   boolean: "Boolean",
 };
 
-const HEADER = (
-  <Header
-    variant="h2"
-    description="Fields a record can carry, per record type. Read-only."
-  >
-    Custom metadata schema
-  </Header>
-);
+const schemaHeader = {
+  headerText: "Custom metadata schema",
+  headerDescription:
+    "View field definitions. Edit the schema in the AWS Console or when provisioning this sample.",
+  variant: "container" as const,
+  defaultExpanded: false,
+};
 
 /**
  * Read-only view of the registry's custom metadata schema (Req 9). One tab per
@@ -46,9 +44,9 @@ const HEADER = (
 export default function CustomMetadataSchema({ config, loadError, loading }: Props) {
   if (loading) {
     return (
-      <Container header={HEADER}>
+      <ExpandableSection {...schemaHeader}>
         <Spinner /> Loading schema…
-      </Container>
+      </ExpandableSection>
     );
   }
 
@@ -67,12 +65,12 @@ export default function CustomMetadataSchema({ config, loadError, loading }: Pro
       (config.recordTypeSchemaOverrides?.length ?? 0) > 0);
   if (!hasSchema) {
     return (
-      <Container header={HEADER}>
+      <ExpandableSection {...schemaHeader}>
         <Box color="text-status-inactive">
-          This registry defines no custom metadata schema. An Operator sets the
-          schema outside the app, when the registry is created.
+          This registry defines no custom metadata schema. Edit the schema in
+          the AWS Console or when provisioning this sample.
         </Box>
-      </Container>
+      </ExpandableSection>
     );
   }
 
@@ -91,7 +89,7 @@ export default function CustomMetadataSchema({ config, loadError, loading }: Pro
   }
 
   return (
-    <Container header={HEADER}>
+    <ExpandableSection {...schemaHeader}>
       <Tabs
         tabs={parsed.map(({ type, fields }) => ({
           id: type,
@@ -132,6 +130,6 @@ export default function CustomMetadataSchema({ config, loadError, loading }: Pro
           ),
         }))}
       />
-    </Container>
+    </ExpandableSection>
   );
 }

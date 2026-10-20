@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { CustomMetadataSchemaConfiguration } from "@aws-sdk/client-agent-registry-control";
 import ContentLayout from "@cloudscape-design/components/content-layout";
@@ -68,6 +68,32 @@ const STATUS_OPTIONS = [
   { label: "Deprecated", value: "DEPRECATED" },
 ];
 
+const DISCOVERY_DEBOUNCE_MS = 300;
+
+type DiscoverySnapshot = {
+  requestId: number;
+  query: string;
+  type: string | undefined;
+  metaFields: MetadataField[];
+  metaFilters: FilterSelections;
+};
+
+/** An empty type selection permits every row; otherwise require an exact type. */
+export function matchesSelectedType(
+  record: { recordType?: string },
+  selectedType: string | undefined,
+): boolean {
+  return !selectedType || record.recordType === selectedType;
+}
+
+/** Apply the selected-type invariant at every rendered-result commit boundary. */
+export function filterResultsBySelectedType<T extends { recordType?: string }>(
+  records: T[],
+  selectedType: string | undefined,
+): T[] {
+  return records.filter((record) => matchesSelectedType(record, selectedType));
+}
+
 export default function RegistryDetailPage() {
   const { registryId = "" } = useParams();
   const navigate = useNavigate();
@@ -101,6 +127,15 @@ export default function RegistryDetailPage() {
   const [typeFilter, setTypeFilter] = useState(RECORD_TYPES[0]);
   const [results, setResults] = useState<DiscoverableRecord[]>([]);
   const [searching, setSearching] = useState(false);
+  const latestDiscoveryRequestRef = useRef(0);
+  const discoveryTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const invalidateDiscoveryRequests = useCallback(() => {
+    latestDiscoveryRequestRef.current += 1;
+    if (discoveryTimerRef.current) {
+      clearTimeout(discoveryTimerRef.current);
+      discoveryTimerRef.current = undefined;
+    }
+  }, []);
   // Custom metadata filter selections; cleared whenever the record type changes.
   const [metaFilters, setMetaFilters] = useState<FilterSelections>({});
   const searchMode = query.trim() !== "";
@@ -132,44 +167,69 @@ export default function RegistryDetailPage() {
     { text: registryId, href: `/registries/${registryId}` },
   ]);
 
-  const runSearch = useCallback(async () => {
-    if (!clients) return;
-    setSearching(true);
-    setError(null);
-    const type = typeFilter.value || undefined;
-    try {
-      if (query.trim()) {
-        // NL search, narrowed by record type and custom metadata (one filter doc).
-        setResults(
-          await searchRecords(
-            clients,
-            registryId,
-            query.trim(),
-            buildSearchFilter(type ?? "", metaFields, metaFilters),
-          ),
-        );
-      } else {
-        // List mode supports no custom metadata conditions (Req 10.10).
-        setResults(await listDiscoverable(clients, registryId, type));
-      }
-    } catch (e) {
-      // Selections stay as they are so the user can adjust and retry (Req 12.3).
-      setError(toFriendlyError(e, capabilities?.persona));
-    } finally {
-      setSearching(false);
-    }
-  }, [
-    clients,
-    registryId,
-    query,
-    typeFilter.value,
-    metaFields,
-    metaFilters,
-    capabilities?.persona,
-  ]);
+  const createDiscoverySnapshot = useCallback((): DiscoverySnapshot => {
+    const requestId = latestDiscoveryRequestRef.current + 1;
+    latestDiscoveryRequestRef.current = requestId;
+    return {
+      requestId,
+      query: query.trim(),
+      type: typeFilter.value || undefined,
+      metaFields: [...metaFields],
+      metaFilters: { ...metaFilters },
+    };
+  }, [query, typeFilter.value, metaFields, metaFilters]);
 
-  /** Req 8.7. Same labels and formatting as the record detail page, joined compactly. */
-  const metadataSummary = (r: DiscoverableRecord): string => {
+  const runSearch = useCallback(
+    async (snapshot: DiscoverySnapshot) => {
+      if (!clients) return;
+      const isCurrent = () =>
+        snapshot.requestId === latestDiscoveryRequestRef.current;
+
+      if (!isCurrent()) return;
+      setSearching(true);
+      setError(null);
+      try {
+        const discovered = snapshot.query
+          ? await searchRecords(
+              clients,
+              registryId,
+              snapshot.query,
+              buildSearchFilter(
+                snapshot.type ?? "",
+                snapshot.metaFields,
+                snapshot.metaFilters,
+              ),
+            )
+          : await listDiscoverable(
+              clients,
+              registryId,
+              snapshot.type,
+              true,
+            );
+        const typeMatched = filterResultsBySelectedType(discovered, snapshot.type);
+        if (isCurrent()) setResults(typeMatched);
+      } catch (e) {
+        // Selections stay as they are so the user can adjust and retry (Req 12.3).
+        if (isCurrent()) {
+          setError(toFriendlyError(e, capabilities?.persona));
+        }
+      } finally {
+        if (isCurrent()) setSearching(false);
+      }
+    },
+    [clients, registryId, capabilities?.persona],
+  );
+
+  const refreshSearch = useCallback(() => {
+    if (discoveryTimerRef.current) {
+      clearTimeout(discoveryTimerRef.current);
+      discoveryTimerRef.current = undefined;
+    }
+    void runSearch(createDiscoverySnapshot());
+  }, [createDiscoverySnapshot, runSearch]);
+
+  /** Req 8.7. Use bold keys and normal values for scannable table metadata. */
+  const metadataSummary = (r: DiscoverableRecord) => {
     let fields: MetadataField[] | undefined;
     if (!schemaFailed) {
       const parsed = parseSchema(config, r.recordType ?? "");
@@ -177,25 +237,68 @@ export default function RegistryDetailPage() {
     }
     const items = displayValues(fields, r.customMetadata);
     if (items.length === 0) return "-";
-    return items
-      .map((i) => `${i.label}: ${i.kind === "link" ? i.href : i.text}`)
-      .join("; ");
+    return (
+      <SpaceBetween size="xxs">
+        {items.map((item, index) => (
+          <Box key={`${item.label}-${index}`}>
+            <Box variant="span" fontWeight="bold">
+              {item.label}:&nbsp;
+            </Box>
+            <Box variant="span" fontWeight="normal">
+              {item.kind === "link" ? item.href : item.text}
+            </Box>
+          </Box>
+        ))}
+      </SpaceBetween>
+    );
   };
 
-  // Reactively re-run discovery when the tab, query, or type filter changes.
-  // Debounced so typing in the search box doesn't fire a request per keystroke.
+  // Reactively re-run discovery when the tab or discovery inputs change.
+  // A snapshot prevents an older completion from updating a newer search.
   useEffect(() => {
-    if (mode !== "discover") return;
-    const t = setTimeout(() => void runSearch(), 300);
-    return () => clearTimeout(t);
-  }, [mode, query, typeFilter.value, runSearch]);
+    if (mode !== "discover") {
+      invalidateDiscoveryRequests();
+      return;
+    }
+
+    const snapshot = createDiscoverySnapshot();
+    setResults([]);
+    setError(null);
+    setSearching(false);
+    discoveryTimerRef.current = setTimeout(() => {
+      discoveryTimerRef.current = undefined;
+      void runSearch(snapshot);
+    }, DISCOVERY_DEBOUNCE_MS);
+
+    return () => {
+      if (discoveryTimerRef.current) {
+        clearTimeout(discoveryTimerRef.current);
+        discoveryTimerRef.current = undefined;
+      }
+    };
+  }, [
+    mode,
+    query,
+    typeFilter.value,
+    metaFilters,
+    createDiscoverySnapshot,
+    invalidateDiscoveryRequests,
+    runSearch,
+  ]);
+
+  useEffect(
+    () => () => {
+      latestDiscoveryRequestRef.current += 1;
+      if (discoveryTimerRef.current) clearTimeout(discoveryTimerRef.current);
+    },
+    [],
+  );
 
   const filtered = records.filter((r) => {
     const matchesText = [r.name, r.recordType, r.status].some((v) =>
       (v ?? "").toLowerCase().includes(filterText.toLowerCase()),
     );
-    const matchesType =
-      !recordsType.value || r.recordType === recordsType.value;
+    const matchesType = matchesSelectedType(r, recordsType.value);
     const matchesStatus =
       !recordsStatus.value || r.status === recordsStatus.value;
     return matchesText && matchesType && matchesStatus;
@@ -237,15 +340,12 @@ export default function RegistryDetailPage() {
           </Alert>
         )}
 
-        <CustomMetadataSchema
-          config={config}
-          loadError={loadError}
-          loading={schemaLoading}
-        />
-
         <SegmentedControl
           selectedId={mode}
-          onChange={({ detail }) => setMode(detail.selectedId)}
+          onChange={({ detail }) => {
+            invalidateDiscoveryRequests();
+            setMode(detail.selectedId);
+          }}
           options={[
             ...(canListAll
               ? [{ id: "records", text: "Manage (all records)" }]
@@ -355,7 +455,10 @@ export default function RegistryDetailPage() {
               <div style={{ minWidth: 360 }}>
                 <Input
                   value={query}
-                  onChange={({ detail }) => setQuery(detail.value)}
+                  onChange={({ detail }) => {
+                    invalidateDiscoveryRequests();
+                    setQuery(detail.value);
+                  }}
                   placeholder="Natural-language search, e.g. 'restart unhealthy tasks'"
                   type="search"
                 />
@@ -363,6 +466,7 @@ export default function RegistryDetailPage() {
               <Select
                 selectedOption={typeFilter}
                 onChange={({ detail }) => {
+                  invalidateDiscoveryRequests();
                   setTypeFilter(detail.selectedOption as typeof typeFilter);
                   setMetaFilters({}); // Req 10.3
                 }}
@@ -371,7 +475,7 @@ export default function RegistryDetailPage() {
               <Button
                 iconName="refresh"
                 loading={searching}
-                onClick={() => void runSearch()}
+                onClick={refreshSearch}
                 ariaLabel="Refresh results"
               />
             </SpaceBetween>
@@ -379,7 +483,10 @@ export default function RegistryDetailPage() {
               <CustomMetadataFilters
                 fields={metaFields}
                 value={metaFilters}
-                onChange={setMetaFilters}
+                onChange={(nextFilters) => {
+                  invalidateDiscoveryRequests();
+                  setMetaFilters(nextFilters);
+                }}
               />
             )}
             <Table<DiscoverableRecord>
@@ -427,6 +534,12 @@ export default function RegistryDetailPage() {
             />
           </SpaceBetween>
         )}
+
+        <CustomMetadataSchema
+          config={config}
+          loadError={loadError}
+          loading={schemaLoading}
+        />
       </SpaceBetween>
     </ContentLayout>
   );

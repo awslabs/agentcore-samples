@@ -113,6 +113,7 @@ export async function listDiscoverable(
   c: Clients,
   registryId: string,
   recordType?: string,
+  includeCustomMetadata = false,
 ): Promise<DiscoverableRecord[]> {
   const out: DiscoverableRecord[] = [];
   let nextToken: string | undefined;
@@ -132,7 +133,9 @@ export async function listDiscoverable(
       out.push(...recordsOf(payload));
       nextToken = nextTokenOf(payload);
     } while (nextToken);
-    return out;
+    return includeCustomMetadata
+      ? hydrateDiscoverableMetadata(c, registryId, out)
+      : out;
   }
 
   const filters = recordType
@@ -152,10 +155,44 @@ export async function listDiscoverable(
     );
     nextToken = res.nextToken;
   } while (nextToken);
-  return out;
+  return includeCustomMetadata
+    ? hydrateDiscoverableMetadata(c, registryId, out)
+    : out;
 }
 
-/** Fetch full discoverable records (with descriptors) by id. */
+/** Fetch metadata omitted by list-discoverable summaries without changing list order. */
+async function hydrateDiscoverableMetadata(
+  c: Clients,
+  registryId: string,
+  summaries: DiscoverableRecord[],
+): Promise<DiscoverableRecord[]> {
+  const recordIds = summaries.flatMap((record) =>
+    record.recordId ? [record.recordId] : [],
+  );
+  if (recordIds.length === 0) return summaries;
+
+  const records = (
+    await Promise.all(
+      Array.from({ length: Math.ceil(recordIds.length / 100) }, (_, index) =>
+        batchGetDiscoverable(
+          c,
+          registryId,
+          recordIds.slice(index * 100, (index + 1) * 100),
+        ),
+      ),
+    )
+  ).flat();
+  const byId = new Map(records.map((record) => [record.recordId, record]));
+
+  return summaries.map((summary) => {
+    const record = byId.get(summary.recordId);
+    return record?.customMetadata === undefined
+      ? summary
+      : { ...summary, customMetadata: record.customMetadata };
+  });
+}
+
+/** Fetch full discoverable records (with descriptors and custom metadata) by id. */
 export async function batchGetDiscoverable(
   c: Clients,
   registryId: string,

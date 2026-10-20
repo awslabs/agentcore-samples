@@ -455,6 +455,37 @@ describe("discovery over SigV4 (AWS_IAM registry)", () => {
     });
   });
 
+  it("listDiscoverable hydrates summaries with custom metadata", async () => {
+    const { clients, data } = fakeClients({
+      ListDiscoverableRegistryRecordsCommand: [
+        { registryRecords: [{ recordId: "record-1", name: "summary" }] },
+      ],
+      BatchGetDiscoverableRegistryRecordCommand: [
+        {
+          registryRecords: [
+            {
+              recordId: "record-1",
+              name: "summary",
+              customMetadata: { owner: "platform-team", handlesPii: false },
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(listDiscoverable(clients, "reg-1", undefined, true)).resolves.toEqual([
+      {
+        recordId: "record-1",
+        name: "summary",
+        customMetadata: { owner: "platform-team", handlesPii: false },
+      },
+    ]);
+    expect(data[1]).toEqual({
+      command: "BatchGetDiscoverableRegistryRecordCommand",
+      input: { entries: [{ registryId: "reg-1", recordIds: ["record-1"] }] },
+    });
+  });
+
   it("batchGetDiscoverable short-circuits on an empty id list (no call)", async () => {
     const { clients, data } = fakeClients();
     const out = await batchGetDiscoverable(clients, "reg-1", []);

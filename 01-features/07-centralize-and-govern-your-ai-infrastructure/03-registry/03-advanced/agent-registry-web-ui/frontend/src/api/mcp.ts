@@ -122,6 +122,12 @@ export async function callMcpTool<T>(
   }
   const text = textOf(payload.result?.content);
   if (!text) return {} as T;
+  if (
+    tool === "search_discoverable_registry_records" &&
+    text === "No matching registry records found."
+  ) {
+    return [] as T;
+  }
   try {
     return JSON.parse(text) as T;
   } catch {
