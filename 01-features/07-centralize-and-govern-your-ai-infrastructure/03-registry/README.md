@@ -25,6 +25,7 @@ AWS Agent registry lets you discover and manage agents, tools, and resources acr
 | `01-advanced/registry-push-sync-lambda/` | Lambda + EventBridge pipeline to auto-sync registry on runtime updates |
 | `01-advanced/registry-skills-dynamic-discovery/` | AGENT_SKILLS record type: dynamic skill discovery with Strands agent |
 | `01-advanced/registry-synchronize-mcpserver/` | URL-based sync: public MCP, OAuth-protected, and IAM-protected servers |
+| `05-custom-metadata-in-registry/` | Custom metadata schema, validation, two-check approval via EventBridge + SQS, and metadata-filtered search |
 
 ## How This Tree Is Organized
 
@@ -35,7 +36,7 @@ by concern: authentication (OAuth, DCR), automation (Lambda sync), runtime integ
 
 ## Finding Things
 
-- **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`
+- **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`; Governance metadata: `05-custom-metadata-in-registry`
 - **By role** → Consumer: `consumer-discovery-semantic-search`, `kiro/*`; Publisher: `00-getting-started/step-by-step`, `publish-agentcore-tools-in-registry`; Admin: `admin-approval-workflow`
 - **By complexity** → Beginner: `00-getting-started/`; Intermediate: `consumer-discovery`, `admin-approval`, `registry-synchronize`; Advanced: `discovery-and-invocation-at-runtime`, `registry-push-sync-lambda`
 
@@ -70,6 +71,10 @@ python 01-advanced/registry-push-sync-lambda/deploy_lambda_push_sync.py
 python 01-advanced/publish-agentcore-tools-in-registry/publish_agentcore_a2a_mcp_in_registry.py
 python 01-advanced/discovery-and-invocation-at-runtime/discovery_and_invocation_at_runtime.py
 python 01-advanced/kiro-registry-dcr-auth0/dcr_registry_search_mcp_in_kiro.py
+
+# Custom metadata (each .sh runs the matching steps/*.py; see the folder README)
+cd 05-custom-metadata-in-registry && ./setup.sh && ./00_setup.sh && ./01_define_schema.sh && ./02_register.sh \
+  && ./03_enrich_and_submit.sh && ./04_approve.sh && ./05_discover.sh && ./99_cleanup.sh
 ```
 
 ## Documentation
