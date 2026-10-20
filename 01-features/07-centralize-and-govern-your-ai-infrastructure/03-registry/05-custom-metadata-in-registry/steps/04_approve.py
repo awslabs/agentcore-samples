@@ -1,5 +1,11 @@
-"""Blog Step 4, approver: read the pending-approval event from Amazon SQS, run the automated check,
-then ask the approver yes/no. --yes / --no answer the prompt for CI."""
+"""Step 4 (approver): decide on the record using its custom metadata.
+
+1. Wait for the pending-approval event on the SQS queue (sent by the EventBridge rule).
+2. Show that the approver role can't edit the metadata, so it can't fake a scan result.
+3. Automated check: COMPLIANT, scan PASSED, cmdbId present, data public or internal.
+   If any check fails, reject with a reason that names the failed checks.
+4. Otherwise ask the approver y/N. --yes or --no answers without prompting.
+"""
 
 import json
 import sys
@@ -38,6 +44,7 @@ def ask(prompt):
         return ""
 
 
+# Rerun guard: if the record was already decided, there is no event left to wait for.
 current = cp.get_registry_record(registryId=registry_id, recordId=need("record_id", "02_register"))
 if current["status"] != "PENDING_APPROVAL":
     print(f"{current['name']} is {current['status']} ({current.get('statusReason')}); nothing to approve")
@@ -46,8 +53,9 @@ if current["status"] != "PENDING_APPROVAL":
 print(f"waiting for a pending-approval event on {QUEUE_NAME} ...")
 event, receipt_handle = next_event()
 record_id = event["detail"]["registryRecordId"]
-print(f"event: {event['detail-type']}  record={record_id}")
-print(json.dumps(event, indent=2))
+# Print only the event's detail; the full envelope includes your account ID.
+print(f"event: {event['detail-type']}")
+print(json.dumps(event["detail"], indent=2))
 
 record = cp.get_registry_record(registryId=registry_id, recordId=record_id)
 meta, compliance = record["customMetadata"], record["customMetadataSchemaComplianceStatus"]

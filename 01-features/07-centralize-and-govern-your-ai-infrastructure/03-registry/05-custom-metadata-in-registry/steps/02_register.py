@@ -1,4 +1,9 @@
-"""Blog Step 2, publisher: register payments-ledger-mcp. The schema rejects a bad value, then accepts the fix."""
+"""Step 2 (publisher): register an MCP server record with custom metadata.
+
+The first attempt sends environment=production, which isn't an allowed value, so the registry
+rejects it with a ValidationException. The second attempt sends prod and the record is created
+as a COMPLIANT draft. securityScanStatus starts as PENDING because no scan has run yet.
+"""
 
 import json
 import uuid

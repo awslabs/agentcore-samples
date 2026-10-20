@@ -1,4 +1,7 @@
-"""Blog Step 5, consumer: search approved records with a query plus custom metadata filters."""
+"""Step 5 (consumer): find approved records with a search query plus custom metadata filters.
+
+Only APPROVED records are returned, so the record appears only after step 4 approves it.
+"""
 
 import time
 

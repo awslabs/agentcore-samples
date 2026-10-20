@@ -1,5 +1,9 @@
-"""Blog Step 3, enrichment automation (runs as the publisher's pipeline role): add scan, CMDB and
-classification results, then submit for approval. --fail-scan makes the scan stub return FAILED."""
+"""Step 3 (enrichment automation in the publisher's pipeline): add tool results, then submit.
+
+Reads the record, adds the security scan result, CMDB ID and data classification, writes the full
+metadata map back, and submits the record for approval. The three lookups are stubs to replace
+with your own tools. Run with --fail-scan to make the scan return FAILED.
+"""
 
 import json
 import sys
@@ -29,13 +33,16 @@ record_id = need("record_id", "02_register")
 cp = client("publisher", "agent-registry-control")
 print("   (enrichment automation in the publisher pipeline)")
 
+# Rerun guard: only a DRAFT record can be enriched and submitted.
 current = cp.get_registry_record(registryId=registry_id, recordId=record_id)["status"]
 if current != "DRAFT":
     print(f"{RECORD_NAME} is {current}, not DRAFT; nothing to submit")
     raise SystemExit(0)
 
+# UpdateRegistryRecord replaces the whole customMetadata map, so read the publisher's values
+# first and write them back together with the new ones.
 record = cp.get_registry_record(registryId=registry_id, recordId=record_id)
-scan = run_security_scan(record)  # Replace this stub with your scanner call.
+scan = run_security_scan(record)
 metadata = {
     **record["customMetadata"],
     "cmdbId": get_cmdb_id(record),

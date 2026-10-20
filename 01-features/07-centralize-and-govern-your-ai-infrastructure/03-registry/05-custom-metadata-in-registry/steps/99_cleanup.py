@@ -1,5 +1,5 @@
-"""Base credentials: delete the demo records, registry, EventBridge rule, SQS queue and persona roles.
-Only touches the names in common.py. Safe to re-run."""
+"""Delete everything the sample created: the record, the registry, the EventBridge rule, the SQS
+queue and the four IAM roles."""
 
 import time
 

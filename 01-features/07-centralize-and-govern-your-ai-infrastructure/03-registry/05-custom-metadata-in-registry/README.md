@@ -65,7 +65,7 @@ This sample follows one MCP server, `payments-ledger-mcp`, from schema definitio
   | Service | Permissions |
   |:---|:---|
   | AWS Agent Registry | `agent-registry:*` on the sample's registry (the persona roles get narrower policies) |
-  | AWS IAM | `CreateRole`, `UpdateAssumeRolePolicy`, `PutRolePolicy`, `DeleteRolePolicy`, `DeleteRole` |
+  | AWS IAM | `CreateRole`, `TagRole`, `UpdateAssumeRolePolicy`, `PutRolePolicy`, `DeleteRolePolicy`, `DeleteRole` |
   | AWS STS | `AssumeRole` on the `cm-demo-*` roles, `GetCallerIdentity` |
   | Amazon SQS | `CreateQueue`, `GetQueueUrl`, `GetQueueAttributes`, `SetQueueAttributes`, `DeleteQueue` |
   | Amazon EventBridge | `PutRule`, `PutTargets`, `RemoveTargets`, `DeleteRule` |
@@ -97,9 +97,23 @@ This sample follows one MCP server, `payments-ledger-mcp`, from schema definitio
 ./99_cleanup.sh             # delete everything, including the roles
 ```
 
-Each `.sh` runs the matching file in `steps/`. To see the automated rejection, run `./03_enrich_and_submit.sh --fail-scan`. `./04_approve.sh --yes` or `--no` answers the prompt without asking. Set `BASE_PROFILE=<name>` or `REGION=<region>` to change the profile or Region.
+Each `.sh` activates `.venv` and runs the matching file in `steps/`, which you can also run directly with `python steps/<file>.py` after `pip install -r requirements.txt`. To see the automated rejection, run `./03_enrich_and_submit.sh --fail-scan`. `./04_approve.sh --yes` or `--no` answers the prompt without asking. Set `BASE_PROFILE=<name>` or `REGION=<region>` to change the profile or Region.
 
 The scanner, CMDB and classification calls in `steps/03_enrich_and_submit.py` are stubs to replace with your own tools.
+
+## Files
+
+| File | What it does |
+|:---|:---|
+| `steps/common.py` | Assumes each persona's IAM role, waits for asynchronous state changes, and saves IDs to `.state/state.json` (gitignored) so later steps can read them |
+| `steps/00_setup.py` | Creates the four persona roles, the SQS queue and the EventBridge rule |
+| `steps/01_define_schema.py` | Admin: creates the registry with the custom metadata schema |
+| `steps/02_register.py` | Publisher: shows a rejected value, then registers the record |
+| `steps/03_enrich_and_submit.py` | Automation: adds scan, CMDB and classification values, then submits |
+| `steps/04_approve.py` | Approver: reads the SQS event, runs the automated check, then asks y/N |
+| `steps/05_discover.py` | Consumer: searches with custom metadata filters |
+| `steps/99_cleanup.py` | Deletes everything the sample created |
+| `images/flow.drawio` | Source of the diagram above |
 
 ## Documentation
 

@@ -1,4 +1,8 @@
-"""Blog Step 1, admin: create the registry with the custom metadata schema every record must follow."""
+"""Step 1 (admin): create a registry with a custom metadata schema.
+
+The schema lists the fields every record in this registry may carry, their types and allowed
+values, and which fields are required. The registry validates every record write against it.
+"""
 
 import json
 

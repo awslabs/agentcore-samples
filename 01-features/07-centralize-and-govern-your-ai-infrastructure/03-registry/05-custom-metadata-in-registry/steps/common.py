@@ -1,4 +1,10 @@
-"""Shared by every step: persona clients, waits, and the .state/state.json helpers."""
+"""Shared helpers for every step.
+
+- Persona sessions: assume the step's IAM role from your base AWS profile.
+- Waits: registries and records change state asynchronously, so steps poll until they settle.
+- .state/state.json: IDs one step creates and later steps read (registry ID, record ID, queue URL).
+  It's in .gitignore because it holds IDs from your account.
+"""
 
 import json
 import os

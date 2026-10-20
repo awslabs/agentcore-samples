@@ -1,4 +1,10 @@
-"""Base credentials: the four persona roles, the approver queue, and the EventBridge rule."""
+"""Step 0 (base credentials): create what the other steps need.
+
+- Four IAM roles, one per persona (admin, publisher, approver, consumer). Each step assumes one
+  of them, so you can see which persona is allowed to do what.
+- An Amazon EventBridge rule that matches AWS Agent Registry's "Registry Record State changed to
+  Pending Approval" event, and an Amazon SQS queue that receives it for the approver.
+"""
 
 import json
 import time
