@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
-# Build output
+# Build output and generated visual artifacts
 dist/
 build/
 *.tsbuildinfo
+docs/screenshots/
 # Local environment / secrets (never commit real values)
 .env
 .env.local
