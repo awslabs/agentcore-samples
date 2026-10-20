@@ -84,7 +84,7 @@ This sample follows one MCP server, `payments-ledger-mcp`, from schema definitio
 
 `99_cleanup.sh` deletes all of them.
 
-## Running the scripts
+## Usage
 
 ```bash
 ./setup.sh                  # once: .venv with boto3 from requirements.txt
@@ -94,12 +94,35 @@ This sample follows one MCP server, `payments-ledger-mcp`, from schema definitio
 ./03_enrich_and_submit.sh   # automation: add evidence, submit for approval
 ./04_approve.sh             # approver: automated check, then asks y/N
 ./05_discover.sh            # consumer: filtered search
-./99_cleanup.sh             # delete everything, including the roles
 ```
 
 Each `.sh` activates `.venv` and runs the matching file in `steps/`, which you can also run directly with `python steps/<file>.py` after `pip install -r requirements.txt`. To see the automated rejection, run `./03_enrich_and_submit.sh --fail-scan`. `./04_approve.sh --yes` or `--no` answers the prompt without asking. Set `BASE_PROFILE=<name>` or `REGION=<region>` to change the profile or Region.
 
 The scanner, CMDB and classification calls in `steps/03_enrich_and_submit.py` are stubs to replace with your own tools.
+
+## Sample output
+
+This sample has no agent, so there are no prompts. These are the key lines each step prints (IDs omitted):
+
+```
+02_register  ValidationException: Custom metadata validation failed for record type MCP: /environment:
+             does not have a value in the enumeration ["prod", "staging", "dev"]
+             payments-ledger-mcp: status=DRAFT customMetadataSchemaComplianceStatus=COMPLIANT
+03_enrich    payments-ledger-mcp: status=PENDING_APPROVAL customMetadataSchemaComplianceStatus=COMPLIANT
+04_approve   AccessDeniedException: the approver can't edit metadata, only approve or reject
+             PASS  securityScanStatus=PASSED   PASS  cmdbId=CI-20417   ...
+             Approve payments-ledger-mcp? [y/N] y
+             payments-ledger-mcp: status=APPROVED statusReason='prod, payments, internal data, CMDB CI-20417, scan PASSED'
+05_discover  payments-ledger-mcp (MCP): environment=prod, businessUnit=payments, ..., securityScanStatus=PASSED
+```
+
+## Clean up
+
+```bash
+./99_cleanup.sh
+```
+
+This deletes the registry record, the registry, the EventBridge rule, the SQS queue and the four IAM roles. If you run `00_setup.sh` again within a minute, it waits 60 seconds, because SQS won't reuse a deleted queue name sooner.
 
 ## Files
 
