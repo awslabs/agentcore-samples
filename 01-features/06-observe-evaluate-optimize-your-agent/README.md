@@ -96,7 +96,7 @@ python observe/data_protection.py --cleanup
 
 ## evaluate/ — Automated Agent evaluation
 
-Four evaluation approaches across the full evaluation maturity curve:
+Evaluation approaches across the full evaluation maturity curve:
 
 | Sub-folder | Approach | Description |
 |:-----------|:---------|:------------|
@@ -104,6 +104,7 @@ Four evaluation approaches across the full evaluation maturity curve:
 | `llm-as-a-judge-evaluation/` | LLM as Judge | On-demand and online evaluation using built-in LLM evaluators |
 | `custom-code-based-evaluation/` | Custom Code | Lambda-based evaluators with domain-specific business logic |
 | `skills-evaluation/` | Agent Skills | Built-in skill selection and instruction-following evaluation |
+| `typescript-agents/` | TypeScript Agents | LangGraph.js agent evaluated on-demand, with a dataset, in batch, and online |
 
 All evaluation samples use an **HR Assistant agent** as the demo agent.
 
