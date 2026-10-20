@@ -13,9 +13,18 @@ import json
 import time
 
 from botocore.exceptions import ClientError
-
-from common import (AGENT_DIR, AGENT_NAME, EXECUTION_ROLE_NAME, REPO_NAME, clients,
-                    find_runtime, image_tag, log, run, wait_until_ready)
+from common import (
+    AGENT_DIR,
+    AGENT_NAME,
+    EXECUTION_ROLE_NAME,
+    REPO_NAME,
+    clients,
+    find_runtime,
+    image_tag,
+    log,
+    run,
+    wait_until_ready,
+)
 
 
 def trust_policy(acct, region):
@@ -104,13 +113,14 @@ def build_and_push(ecr, repo_uri, tag):
 
 
 def create_or_update(acc, role_arn, image_uri, idle_s, max_s):
-    spec = dict(
-        agentRuntimeArtifact={"containerConfiguration": {"containerUri": image_uri}},
-        roleArn=role_arn,
-        networkConfiguration={"networkMode": "PUBLIC"},
-        protocolConfiguration={"serverProtocol": "HTTP"},
-        lifecycleConfiguration={"idleRuntimeSessionTimeout": idle_s, "maxLifetime": max_s},
-        platformVersion="V2")
+    spec = {
+        "agentRuntimeArtifact": {"containerConfiguration": {"containerUri": image_uri}},
+        "roleArn": role_arn,
+        "networkConfiguration": {"networkMode": "PUBLIC"},
+        "protocolConfiguration": {"serverProtocol": "HTTP"},
+        "lifecycleConfiguration": {"idleRuntimeSessionTimeout": idle_s, "maxLifetime": max_s},
+        "platformVersion": "V2",
+    }
     existing = find_runtime({"bedrock-agentcore-control": acc})
     if existing is None:
         log(f"creating runtime {AGENT_NAME} on platform version V2")
@@ -137,7 +147,7 @@ def main():
     acct = c["sts"].get_caller_identity()["Account"]
 
     repo_uri = ensure_repo(ecr)
-    role_arn, role_created = ensure_role(iam, acct, region)
+    role_arn, _role_created = ensure_role(iam, acct, region)
     image_uri = build_and_push(ecr, repo_uri, image_tag())
 
     # a new IAM role takes a few seconds to propagate; retry while the service can't assume it

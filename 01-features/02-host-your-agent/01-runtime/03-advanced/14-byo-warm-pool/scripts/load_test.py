@@ -170,7 +170,7 @@ def conversation(i, mode, a, cl, submitted_at):
         rec["queued_ttfm_ms"] = rec["queue_ms"] + rec["ttfm_ms"]
         if a.hold_ms:
             time.sleep(a.hold_ms / 1000)   # keep the session IN_USE, like a real conversation
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure anywhere in the conversation is a recorded sample, not a crash
         rec["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
     finally:
         if sid:
@@ -181,7 +181,7 @@ def conversation(i, mode, a, cl, submitted_at):
                 else:
                     cl.ac.stop_runtime_session(agentRuntimeArn=a.runtime_arn, runtimeSessionId=sid,
                                                qualifier=a.endpoint)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - cleanup best-effort, recorded rather than raised
                 rec["release_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
     return rec
 
@@ -201,7 +201,7 @@ def warmup_broker(concurrency, a, cl):
         try:
             broker(cl, a.broker, {"action": "__warmup__", "userId": "warmup",
                                   "arn": a.runtime_arn, "endpoint": a.endpoint})
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort warmup, a failed ping shouldn't abort the test
             pass
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
         list(ex.map(ping, range(concurrency)))
@@ -225,7 +225,7 @@ def run_phase(exec_mode, a, cl, label=None, concurrency=None, conversations=None
         while not stop.is_set():
             try:
                 depth.append((round(time.perf_counter() - t0, 1), pool_depth(cl, a)))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - a missed depth sample shouldn't abort the test
                 pass
             stop.wait(a.sample_s)
 

@@ -16,7 +16,6 @@ import uuid
 
 import boto3
 from boto3.dynamodb.conditions import Key
-
 from common import DEFAULT_ENDPOINT, get_pool, pool_key, stop_session, table
 
 POOL_MANAGER_FUNCTION = os.environ["POOL_MANAGER_FUNCTION"]
@@ -28,8 +27,8 @@ def _kick(payload):
     try:
         lam.invoke(FunctionName=POOL_MANAGER_FUNCTION, InvocationType="Event",
                   Payload=json.dumps(payload).encode())
-    except Exception:
-        pass   # the schedule and the stream are still there as backstops
+    except Exception:  # noqa: BLE001, S110 - the schedule and the stream are still there as backstops
+        pass
 
 
 def claim(user_id, arn, endpoint, claim_candidates):

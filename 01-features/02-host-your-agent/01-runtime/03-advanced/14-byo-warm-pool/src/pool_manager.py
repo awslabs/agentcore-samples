@@ -24,8 +24,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
 from boto3.dynamodb.conditions import Key
-
-from common import agent_pools, agentcore, get_global_config, get_pool, pool_key, stop_session, table
+from common import (
+    agent_pools,
+    agentcore,
+    get_global_config,
+    get_pool,
+    pool_key,
+    stop_session,
+    table,
+)
 
 control = boto3.client("bedrock-agentcore-control")
 
@@ -36,7 +43,7 @@ def endpoint_state(arn, endpoint):
     try:
         ep = control.get_agent_runtime_endpoint(agentRuntimeId=runtime_id, endpointName=endpoint)
         return ep.get("liveVersion"), ep.get("status")
-    except Exception as exc:   # don't block refills on a control-plane hiccup
+    except Exception as exc:  # noqa: BLE001 - don't block refills on a control-plane hiccup
         print(json.dumps({"endpoint_lookup_error": f"{arn}#{endpoint}", "error": str(exc)}))
         return None, None
 
@@ -124,7 +131,7 @@ def replenish_one(arn, endpoint):
     live_version, _ = endpoint_state(arn, endpoint)
     try:
         session_id, ms = warm(arn, endpoint)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - one failed fast-path replenish, logged, not fatal
         result = {"replenish_one_error": f"{arn}#{endpoint}", "error": str(exc)}
         print(json.dumps(result))
         return result
@@ -168,7 +175,7 @@ def run_once():
             s = summary[pool_key(arn, endpoint)]
             try:
                 session_id, ms = fut.result()
-            except Exception as exc:   # failed warm-up: the next run tries again
+            except Exception as exc:  # noqa: BLE001 - failed warm-up: the next run tries again
                 s["failed"] += 1
                 print(json.dumps({"warmup_error": f"{arn}#{endpoint}", "error": str(exc)}))
                 continue
@@ -245,7 +252,7 @@ def handler(event, context):
         try:   # free the lock on failure so the next trigger isn't blocked for the whole lease
             table.delete_item(Key=LOCK_KEY, ConditionExpression="#o = :o",
                               ExpressionAttributeNames={"#o": "owner"}, ExpressionAttributeValues={":o": owner})
-        except Exception:
-            pass
+        except Exception as unlock_exc:  # noqa: BLE001 - lock still expires on its own via the lease TTL
+            print(json.dumps({"lock_release_error": str(unlock_exc)}))
         raise
     return passes[-1] if len(passes) == 1 else {"passes": passes}

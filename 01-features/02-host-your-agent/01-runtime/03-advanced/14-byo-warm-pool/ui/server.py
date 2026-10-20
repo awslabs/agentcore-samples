@@ -127,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "mode must be cold or pool"})
         try:
             self._send(200, run(req["mode"], str(req.get("prompt") or "Hello")[:2000]))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - surface any failure as a 500, never crash the server
             self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
 
     def log_message(self, *_):
