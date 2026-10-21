@@ -109,6 +109,12 @@ REMEDY_INBOUND_TOKEN = (
     "the gateway authorizer does not accept. Mint a fresh one and check its iss and aud against the "
     "authorizer's discoveryUrl and allowedAudience."
 )
+REMEDY_INBOUND_AUDIENCE = (
+    "The gateway authorizer accepted the token's signature but not its claims. Despite the insufficient_scope "
+    "wording this is usually the audience: the token's aud is not in the authorizer's allowedAudience. A "
+    "Microsoft Entra v2.0 access token carries the application's client ID as aud, not its api:// Application "
+    "ID URI. allowedClients against a token with no client_id claim is refused the same way."
+)
 REMEDY_PROVIDER_NOT_FOUND = (
     "The credential provider named on the target does not exist where the gateway looked. Check the "
     "providerArn on the target, and that the provider lives in the same Region as the gateway."
@@ -173,6 +179,12 @@ FAILURE_SIGNATURES = (
     ("is not a member of workspace", WORKSPACE_MEMBERSHIP, REMEDY_WORKSPACE_MEMBERSHIP),
     ("no target found for capability", TARGET_NOT_FOUND, REMEDY_TARGET_NOT_FOUND),
     ("inbound token is invalid", INBOUND_TOKEN, REMEDY_INBOUND_TOKEN),
+    # The authorizer's own refusals, which arrive at initialize: 401 / -32001 for a missing or unverifiable
+    # token, and 403 / -32002 insufficient_scope for a signed token whose claims it rejects. Matched on the
+    # gateway's phrasing rather than the bare word, which a downstream scope error could also carry.
+    ("requires higher privileges than provided by the access token", INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE),
+    ("invalid bearer token", INBOUND_TOKEN, REMEDY_INBOUND_TOKEN),
+    ("missing bearer token", INBOUND_TOKEN, REMEDY_INBOUND_TOKEN),
     ("credential provider not found", PROVIDER_NOT_FOUND, REMEDY_PROVIDER_NOT_FOUND),
     ("rate limited", TRANSIENT, REMEDY_TRANSIENT),
     ("token exchange encountered a service error", TRANSIENT, REMEDY_TRANSIENT),
@@ -281,6 +293,15 @@ def extract_text(response: dict) -> str | None:
     return None
 
 
+def error_text(response: dict) -> str | None:
+    """The message of a JSON-RPC error envelope, which carries no result content for extract_text to find."""
+    error = response.get("error")
+    if not isinstance(error, dict):
+        return None
+    message = error.get("message")
+    return message if isinstance(message, str) and message else json.dumps(error)
+
+
 def is_error(response: dict) -> bool:
     """True when the MCP result is an error, or the JSON-RPC envelope itself carries one.
 
@@ -377,6 +398,10 @@ def _sse_payloads(body: str):
             continue
 
 
+class HandshakeRefused(Exception):
+    """initialize itself was answered with an error, so no tool call can tell us anything."""
+
+
 class GatewayUnreachable(Exception):
     """The gateway URL could not be reached at all — DNS, connection or socket timeout."""
 
@@ -423,6 +448,8 @@ def negotiate(url: str, token: str, requested_version: str) -> str:
         },
     }
     response = mcp_post(url, token, payload, protocol_version=None)
+    if is_error(response):
+        raise HandshakeRefused(error_text(response) or extract_text(response) or "initialize returned an error")
     return (response.get("result") or {}).get("protocolVersion") or requested_version
 
 
@@ -461,7 +488,14 @@ def run_check(
     subject_claim: str = "email",
 ) -> dict:
     """Run the identity probe and return a verdict dictionary."""
-    negotiated = negotiate(url, token, requested_version)
+    try:
+        negotiated = negotiate(url, token, requested_version)
+    except HandshakeRefused as refused:
+        # The authorizer refuses a bad inbound token here, before any tool runs. Report it now: carrying on
+        # to tools/call meets the same refusal and used to surface as UNKNOWN with no detail.
+        text = str(refused)
+        verdict, remedy = classify_failure(text)
+        return {"verdict": verdict, "remedy": remedy, "detail": text, "protocol_version": None}
     payload = {
         "jsonrpc": "2.0",
         "id": 2,
@@ -474,6 +508,7 @@ def run_check(
     response = mcp_post(url, token, payload, protocol_version=negotiated, timeout=QUERY_TIMEOUT)
     text = extract_text(response)
     if is_error(response):
+        text = text or error_text(response)
         verdict, remedy = classify_failure(text or json.dumps(response.get("error") or {}))
         return {"verdict": verdict, "remedy": remedy, "detail": text, "protocol_version": negotiated}
     identity = extract_identity(text)

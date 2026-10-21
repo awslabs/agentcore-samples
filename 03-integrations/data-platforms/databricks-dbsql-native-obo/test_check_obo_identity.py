@@ -48,6 +48,13 @@ from check_obo_identity import (
     subject_from_token,
 )
 
+# Captured from a live gateway: initialize with a validly signed token whose aud is not in allowedAudience.
+# HTTP 403 with WWW-Authenticate: Bearer error="insufficient_scope", and id 0 rather than the request's.
+WRONG_AUDIENCE_MESSAGE = (
+    "insufficient_scope - The request requires higher privileges than provided by the access token."
+)
+WRONG_AUDIENCE_REFUSAL = {"jsonrpc": "2.0", "id": 0, "error": {"code": -32002, "message": WRONG_AUDIENCE_MESSAGE}}
+
 
 def _jwt(payload: dict) -> str:
     """Build an unsigned token with the given payload. Nothing verifies it; the script only reads it."""
@@ -148,6 +155,17 @@ class ClassifyFailure(unittest.TestCase):
         )
         self.assertEqual(verdict, INBOUND_TOKEN)
         self.assertNotIn("public-client", remedy)
+
+    def test_wrong_audience_is_an_inbound_token_failure_with_the_audience_remedy(self):
+        verdict, remedy = classify_failure(WRONG_AUDIENCE_MESSAGE)
+        self.assertEqual(verdict, INBOUND_TOKEN)
+        self.assertIn("allowedAudience", remedy)
+
+    def test_the_authorizers_401_messages_are_inbound_token_failures(self):
+        for text in ("Invalid Bearer token", "Missing Bearer token"):
+            with self.subTest(text=text):
+                verdict, _ = classify_failure(text)
+                self.assertEqual(verdict, INBOUND_TOKEN)
 
     def test_credential_provider_not_found_beats_the_catch_all(self):
         verdict, remedy = classify_failure("Token exchange failed: credential provider not found.")
@@ -687,6 +705,42 @@ class SubjectClaimCli(unittest.TestCase):
         with patched, contextlib.redirect_stdout(buffer):
             main(argv)
         self.assertIn("subject : user@example.com", buffer.getvalue())
+
+
+class HandshakeRefusal(unittest.TestCase):
+    """The authorizer refuses a bad inbound token at initialize. The check must say so, and stop there."""
+
+    def _run(self, *responses):
+        post = mock.Mock(side_effect=list(responses))
+        with mock.patch("check_obo_identity.mcp_post", post):
+            result = run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+        return result, post
+
+    def test_a_wrong_audience_at_initialize_is_inbound_token_with_its_message(self):
+        result, post = self._run(WRONG_AUDIENCE_REFUSAL)
+        self.assertEqual(result["verdict"], INBOUND_TOKEN)
+        self.assertEqual(result["detail"], WRONG_AUDIENCE_MESSAGE)
+        self.assertIn("allowedAudience", result["remedy"])
+        self.assertEqual(post.call_count, 1, "a refused handshake must not go on to tools/call")
+
+    def test_a_refused_handshake_reports_no_negotiated_version(self):
+        result, _ = self._run(WRONG_AUDIENCE_REFUSAL)
+        self.assertIsNone(result["protocol_version"])
+
+    def test_a_tool_call_error_envelope_keeps_its_message_as_detail(self):
+        tool_error = {"jsonrpc": "2.0", "id": 2, "error": {"code": -32600, "message": "something nobody has seen"}}
+        result, _ = self._run({"result": {"protocolVersion": "2025-06-18"}}, tool_error)
+        self.assertEqual(result["verdict"], UNKNOWN)
+        self.assertEqual(result["detail"], "something nobody has seen")
+
+    def test_main_exits_with_the_inbound_token_code(self):
+        argv = ["--gateway-url", "https://gw.invalid/mcp", "--target-name", "tgt", "--token", "tok", "--json"]
+        buffer = io.StringIO()
+        patched = mock.patch("check_obo_identity.mcp_post", side_effect=[WRONG_AUDIENCE_REFUSAL])
+        with patched, contextlib.redirect_stdout(buffer):
+            code = main(argv)
+        self.assertEqual(code, EXIT_CODES[INBOUND_TOKEN])
+        self.assertEqual(json.loads(buffer.getvalue())["detail"], WRONG_AUDIENCE_MESSAGE)
 
 
 if __name__ == "__main__":
