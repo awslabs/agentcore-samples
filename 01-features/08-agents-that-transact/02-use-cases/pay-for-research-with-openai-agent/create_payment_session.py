@@ -19,12 +19,7 @@ def parse_budget(raw: str) -> str:
         raise argparse.ArgumentTypeError("budget must be a decimal amount") from exc
     if not value.is_finite() or value <= 0:
         raise argparse.ArgumentTypeError("budget must be finite and greater than zero")
-    try:
-        if value != value.quantize(Decimal("0.000001")):
-            raise argparse.ArgumentTypeError("budget must have at most six decimal places")
-    except InvalidOperation as exc:
-        raise argparse.ArgumentTypeError("budget is too large") from exc
-    # Preserve sub-cent limits: rounding 0.001 to cents would silently create zero.
+    # Preserve the supplied precision without rounding sub-cent budgets.
     return format(value, "f")
 
 

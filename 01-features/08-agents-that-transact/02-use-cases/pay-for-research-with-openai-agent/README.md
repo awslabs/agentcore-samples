@@ -48,6 +48,9 @@ HTTP requests and exposes them as a function tool.
 
 [framework-integrations]: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-framework-integrations.html
 
+AgentCore Payments calls the wallet provider directly. It retrieves the provider
+access token from AgentCore Identity through `GetResourcePaymentToken`.
+
 ### Files
 
 - `pay_for_research.py` — configure Bedrock, build the three agents, and run research.
@@ -196,9 +199,9 @@ python create_payment_session.py --budget 0.01 --expiry-minutes 15
 export PAYMENT_SESSION_ID=<printed-session-id>
 ```
 
-Choose the maximum you are willing to spend. Budgets preserve sub-cent values
-with up to six decimal places; expiry must be 15–480 minutes. A session limits
-spending but does not fund the wallet.
+Choose the maximum you are willing to spend. The script accepts a positive,
+finite decimal budget and preserves its precision without rounding. Expiry must
+be 15–480 minutes. A session limits spending but does not fund the wallet.
 
 For the GA budget and expiry options, see
 [Create a payment session](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-create-session.html).
