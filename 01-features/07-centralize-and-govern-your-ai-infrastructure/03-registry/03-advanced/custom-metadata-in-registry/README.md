@@ -155,17 +155,17 @@ excluded by the filter: payments-ledger-sandbox-mcp (environment=dev)
 $ ./05_agent_discover.sh
 tools: search_discoverable_registry_records, list_discoverable_registry_records, batch_get_discoverable_registry_record
 model: us.anthropic.claude-sonnet-5-5
-tool call: search_discoverable_registry_records {"searchQuery": "payments ledger lookups", "filter": {"$and": [{"recordType": {"$eq": "MCP"}}, {"customMetadata.environment": {"$eq": "prod"}}, {"customMetadata.securityScanStatus": {"$eq": "PASSED"}}]}}
+tool call: search_discoverable_registry_records {"searchQuery": "payments ledger lookups", "filter": {"$and": [{"recordType": {"$eq": "MCP"}}, {"customMetadata.environment": {"$eq": "prod"}}, {"customMetadata.businessUnit": {"$eq": "payments"}}, {"customMetadata.securityScanStatus": {"$eq": "PASSED"}}]}}
 tool result: 1 records: payments-ledger-mcp (environment=prod, businessUnit=payments, securityScanStatus=PASSED, dataClassification=internal)
 tool call: search_discoverable_registry_records {"searchQuery": "payments ledger lookups"}
 tool result: 2 records: payments-ledger-mcp (environment=prod, businessUnit=payments, securityScanStatus=PASSED, dataClassification=internal); payments-ledger-sandbox-mcp (environment=dev, businessUnit=payments, securityScanStatus=PASSED, dataClassification=internal)
 
 answer:
 **Match: `payments-ledger-mcp`** (version 1.0.0, status APPROVED)
+
 - **Description:** Read-only MCP server for payments ledger lookups.
 ...
-**Near miss (found by searching without the filter):**
-- `payments-ledger-sandbox-mcp` is ruled out by `environment`, which is `dev` instead of `prod`. ...
+**Near miss:** I also ran the search without the filter. It returned `payments-ledger-sandbox-mcp`, which the filter rules out because its `environment` is dev, not prod. ...
 ```
 
 ## Clean up
