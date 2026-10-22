@@ -141,3 +141,4 @@
 - Mark Roy (markproy)
 - Bent Krause (krausexb)
 - Georgios Tsoukas (gtsoukasaws)
+- Marcio da Ros Gomes (marcio-rg)

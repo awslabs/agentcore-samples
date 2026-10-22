@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+# Build output and generated visual artifacts
+dist/
+build/
+*.tsbuildinfo
+docs/screenshots/
+# Local environment / secrets (never commit real values)
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+# Keep the placeholder template (the repo root .gitignore ignores .env.*)
+!.env.example
+# Deploy state (stack outputs, generated persona password)
+deploy/state/
+# IaC state
+*.tfstate
+*.tfstate.*
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+deploy/.venv/
+# Editor / OS / agent tooling
+.DS_Store
+.kiro/
+.agents/
+*.log
+coverage/

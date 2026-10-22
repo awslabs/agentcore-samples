@@ -1,0 +1,25 @@
+{
+  "defaultSchema": {
+    "type": "object",
+    "properties": {
+      "owner": { "type": "string" },
+      "dataClassification": { "type": "string", "enum": ["public", "internal", "confidential"] },
+      "runbookUrl": { "type": "string", "format": "uri" },
+      "handlesPii": { "type": "boolean" }
+    },
+    "required": ["owner"]
+  },
+  "recordTypeSchemaOverrides": [
+    {
+      "recordType": "AGENT",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "dataClassification": { "type": "string", "enum": ["public", "internal", "confidential", "restricted"] },
+          "modelFamily": { "type": "string" }
+        },
+        "required": ["dataClassification", "modelFamily"]
+      }
+    }
+  ]
+}
