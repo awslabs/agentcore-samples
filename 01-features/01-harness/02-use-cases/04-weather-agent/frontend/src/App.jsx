@@ -101,6 +101,21 @@ function App() {
           }
           return msgs;
         });
+      } else if (event.type === 'redacted') {
+        // The guardrail found PII in the finished answer, and `event.content` is
+        // the screened text for the WHOLE turn. A turn is rendered as several
+        // assistant bubbles when the agent pauses to call a tool, so every one of
+        // them has to go: replacing only the last would leave the earlier bubbles
+        // showing the unscreened text (and would repeat the preamble, since the
+        // screened text already contains it). Collapse this turn's assistant
+        // bubbles into one screened bubble, keeping the tool markers for context.
+        allText = event.content;
+        setMessages(prev => {
+          const lastUser = prev.map(m => m.role).lastIndexOf('user');
+          const head = prev.slice(0, lastUser + 1);
+          const tools = prev.slice(lastUser + 1).filter(m => m.role !== 'assistant');
+          return [...head, ...tools, { role: 'assistant', content: event.content, redacted: true }];
+        });
       } else if (event.type === 'tool') {
         currentChunk = '';
         setMessages(prev => [...prev, { role: 'tool', content: `Using tool: ${event.name}` }]);
@@ -262,6 +277,9 @@ function App() {
             {messages.map((msg, i) => (
               <div key={i} className={`message ${msg.role}`}>
                 {msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
+                {msg.redacted && (
+                  <div className="redacted-note">Guardrail redacted PII in this response</div>
+                )}
               </div>
             ))}
             {streaming && messages[messages.length - 1]?.role === 'user' && (

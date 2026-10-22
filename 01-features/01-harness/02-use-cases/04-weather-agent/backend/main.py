@@ -5,17 +5,16 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 
+from agent import invoke_agent
+from evaluation import run_batch_evaluation
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
-
-from resources import ensure_resources
-from agent import invoke_agent
 from observability import get_recent_traces, get_transaction_search_status
-from evaluation import run_batch_evaluation
-from skills import generate_weather_report
 from optimization import run_optimization
+from pydantic import BaseModel
+from resources import ensure_resources
+from skills import generate_weather_report
+from sse_starlette.sse import EventSourceResponse
 
 # Global state
 _state: dict = {}
@@ -90,16 +89,39 @@ async def chat(req: ChatRequest):
 
     async def generate():
         full_text = ""
+        failed = False
         yield json.dumps({"type": "session_id", "session_id": session_id})
 
+        # The guardrail is passed in so the finished answer is actually screened.
+        # It used to be created, billed and shown in the UI header while never
+        # being applied to a single response.
         for event in invoke_agent(
-            _state["harness_arn"], _state["gateway_arn"], session_id, req.message
+            _state["harness_arn"],
+            _state["gateway_arn"],
+            session_id,
+            req.message,
+            guardrail_id=_state.get("guardrail_id"),
+            guardrail_version=_state.get("guardrail_version"),
         ):
             if event["type"] == "text":
                 full_text += event["content"]
+            elif event["type"] == "redacted":
+                # Store the screened text, not the raw text: otherwise the PII
+                # the guardrail just removed would be handed straight back to the
+                # model as history on the next turn, and shown by /api/sessions.
+                full_text = event["content"]
+            elif event["type"] == "error":
+                failed = True
             yield json.dumps(event)
 
-        _sessions[session_id].append({"role": "assistant", "content": full_text})
+        # Only record a reply that exists. A turn that failed produced no text,
+        # and appending it anyway left an empty assistant message in the session
+        # — which /api/sessions then reported as the session's `last_message`,
+        # showing a blank entry for a turn that never worked.
+        if full_text:
+            _sessions[session_id].append({"role": "assistant", "content": full_text})
+        elif failed:
+            _sessions[session_id].append({"role": "assistant", "content": "(no response — the turn failed)"})
 
     return EventSourceResponse(generate(), media_type="text/event-stream")
 
@@ -144,9 +166,7 @@ async def optimize():
     if not _state.get("harness_name"):
         raise HTTPException(503, "Resources not ready")
 
-    result = await asyncio.to_thread(
-        run_optimization, _state["harness_name"]
-    )
+    result = await asyncio.to_thread(run_optimization, _state["harness_name"])
     return result
 
 
@@ -160,4 +180,5 @@ async def sessions():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8000)
