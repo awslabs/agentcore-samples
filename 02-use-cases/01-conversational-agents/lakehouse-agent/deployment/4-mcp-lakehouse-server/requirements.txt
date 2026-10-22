@@ -1,5 +1,0 @@
-bedrock-agentcore>=1.0.0
-bedrock-agentcore-starter-toolkit
-boto3>=1.34.0
-mcp>=1.9.0
-requests>=2.31.0
