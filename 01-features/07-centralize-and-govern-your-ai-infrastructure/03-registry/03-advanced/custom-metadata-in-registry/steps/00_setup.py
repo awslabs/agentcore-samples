@@ -139,7 +139,7 @@ def put_role(role, principal, policy):
     )
     try:
         arn = iam.create_role(
-            RoleName=role, AssumeRolePolicyDocument=trust, Tags=[{"Key": "project", "Value": "cm-demo"}]
+            RoleName=role, AssumeRolePolicyDocument=trust, Tags=[{"Key": "project", "Value": "anycompany-registry"}]
         )["Role"]["Arn"]
         print(f"created role {role}")
     except iam.exceptions.EntityAlreadyExistsException:

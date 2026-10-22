@@ -18,7 +18,7 @@ from botocore.exceptions import ClientError
 REGION = os.environ.get("REGION", "us-east-1")
 BASE_PROFILE = os.environ.get("BASE_PROFILE", "default")
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-5-5")
-PREFIX = "cm-demo"
+PREFIX = "anycompany-registry"
 REGISTRY_NAME = "anycompany-governed-registry"
 RECORD_NAME = "payments-ledger-mcp"
 RULE_NAME = f"{PREFIX}-pending-approval"

@@ -40,10 +40,10 @@ This sample registers five MCP servers against one schema. An AWS Lambda functio
 
 | Persona | IAM role | Can | Cannot |
 |:---|:---|:---|:---|
-| Admin | `cm-demo-admin` | Create, update and delete the registry and its schema | Write records, approve |
-| Publisher pipeline | `cm-demo-publisher` | Create, update and submit records | Approve, change the schema |
-| Approval function (AWS Lambda) | `cm-demo-approval-function` | Read records, approve or reject | Edit custom metadata, so it can't change the evidence it judges |
-| Consumer and agent | `cm-demo-consumer` | Search approved records through the API or the registry MCP endpoint, invoke the Amazon Bedrock model | See unapproved records, write anything |
+| Admin | `anycompany-registry-admin` | Create, update and delete the registry and its schema | Write records, approve |
+| Publisher pipeline | `anycompany-registry-publisher` | Create, update and submit records | Approve, change the schema |
+| Approval function (AWS Lambda) | `anycompany-registry-approval-function` | Read records, approve or reject | Edit custom metadata, so it can't change the evidence it judges |
+| Consumer and agent | `anycompany-registry-consumer` | Search approved records through the API or the registry MCP endpoint, invoke the Amazon Bedrock model | See unapproved records, write anything |
 
 ### Records
 
@@ -79,8 +79,8 @@ Only `payments-ledger-mcp` passes the approval checks and the consumer's filters
   | Service | Permissions |
   |:---|:---|
   | AWS Agent Registry | `ListRegistries`, `GetRegistry`, `DeleteRegistry`, `ListRegistryRecords`, `GetRegistryRecord`, `DeleteRegistryRecord` (cleanup; the steps run as the persona roles) |
-  | AWS IAM | `CreateRole`, `GetRole`, `TagRole`, `UpdateAssumeRolePolicy`, `PutRolePolicy`, `DeleteRolePolicy`, `DeleteRole`, `PassRole` on `cm-demo-approval-function` |
-  | AWS STS | `AssumeRole` on the `cm-demo-*` roles, `GetCallerIdentity` |
+  | AWS IAM | `CreateRole`, `GetRole`, `TagRole`, `UpdateAssumeRolePolicy`, `PutRolePolicy`, `DeleteRolePolicy`, `DeleteRole`, `PassRole` on `anycompany-registry-approval-function` |
+  | AWS STS | `AssumeRole` on the `anycompany-registry-*` roles, `GetCallerIdentity` |
   | AWS Lambda | `CreateFunction`, `GetFunction`, `UpdateFunctionCode`, `AddPermission`, `DeleteFunction` |
   | Amazon EventBridge | `PutRule`, `PutTargets`, `RemoveTargets`, `DeleteRule` |
   | Amazon CloudWatch Logs | `DeleteLogGroup` |
@@ -94,10 +94,10 @@ Only `payments-ledger-mcp` passes the approval checks and the consumer's filters
 |:---|:---|:---|
 | Registry | `anycompany-governed-registry` | Holds the custom metadata schema and the records |
 | Registry records | `payments-ledger-mcp`, `payments-ledger-sandbox-mcp`, `marketing-analytics-mcp`, `refunds-mcp`, `customer-pii-mcp` | The MCP servers being governed |
-| IAM roles | `cm-demo-admin`, `cm-demo-publisher`, `cm-demo-consumer`, `cm-demo-approval-function` | One per persona, plus the approval function's execution role |
-| Lambda function | `cm-demo-approval-function` | Approves or rejects each submitted record (`lambda/approval_check.py`) |
-| CloudWatch log group | `/aws/lambda/cm-demo-approval-function` | One JSON line per decision |
-| EventBridge rule | `cm-demo-pending-approval` | Matches `aws.agent-registry` "Registry Record State changed to Pending Approval" and invokes the function |
+| IAM roles | `anycompany-registry-admin`, `anycompany-registry-publisher`, `anycompany-registry-consumer`, `anycompany-registry-approval-function` | One per persona, plus the approval function's execution role |
+| Lambda function | `anycompany-registry-approval-function` | Approves or rejects each submitted record (`lambda/approval_check.py`) |
+| CloudWatch log group | `/aws/lambda/anycompany-registry-approval-function` | One JSON line per decision |
+| EventBridge rule | `anycompany-registry-pending-approval` | Matches `aws.agent-registry` "Registry Record State changed to Pending Approval" and invokes the function |
 
 `00_setup.sh` bundles boto3 into the function's .zip because the Lambda runtime's built-in boto3 doesn't include AWS Agent Registry yet. `99_cleanup.sh` deletes all of these resources.
 
@@ -134,7 +134,7 @@ payments-ledger-mcp: status=DRAFT customMetadataSchemaComplianceStatus=COMPLIANT
 ...one line for each of the five records
 
 $ ./03_enrich_and_submit.sh
-waiting for cm-demo-approval-function to decide
+waiting for anycompany-registry-approval-function to decide
 record                       | status   | statusReason
 payments-ledger-mcp          | APPROVED | prod, payments, internal data, CMDB CI-20417, scan PASSED
 payments-ledger-sandbox-mcp  | APPROVED | dev, payments, internal data, CMDB CI-20418, scan PASSED

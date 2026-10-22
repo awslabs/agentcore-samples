@@ -1,6 +1,6 @@
 """Approval function (AWS Lambda): approve or reject a record from its custom metadata.
 
-The EventBridge rule cm-demo-pending-approval invokes this function for every AWS Agent Registry
+The EventBridge rule anycompany-registry-pending-approval invokes this function for every AWS Agent Registry
 "Registry Record State changed to Pending Approval" event in the account. The event's detail holds
 plain IDs (registryId, registryRecordId); its resources list holds the record ARN.
 
