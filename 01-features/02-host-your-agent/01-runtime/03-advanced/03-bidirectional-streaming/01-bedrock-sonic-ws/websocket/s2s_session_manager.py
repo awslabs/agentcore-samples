@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class S2sSessionManager:
-    """Manages bidirectional streaming with AWS Bedrock using asyncio"""
+    """Manages bidirectional streaming with Amazon Bedrock using asyncio"""
 
     def __init__(self, region, model_id):
         """Initialize the stream manager."""

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-WebSocket Helper Functions for AWS Bedrock AgentCore
+WebSocket Helper Functions for Amazon Bedrock AgentCore
 
-This module provides utilities for creating WebSocket connections to AWS Bedrock AgentCore
+This module provides utilities for creating WebSocket connections to Amazon Bedrock AgentCore
 with various authentication methods (SigV4 headers, SigV4 query parameters, OAuth).
 """
 
