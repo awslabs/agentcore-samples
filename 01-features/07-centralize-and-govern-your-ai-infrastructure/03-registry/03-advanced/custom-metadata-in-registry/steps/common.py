@@ -2,8 +2,8 @@
 
 - Persona sessions: assume the step's IAM role from your base AWS profile.
 - Waits: registries and records change state asynchronously, so steps poll until they settle.
-- .state/state.json: IDs one step creates and later steps read (registry ID, record ID, queue URL).
-  It's in .gitignore because it holds IDs from your account.
+- .state/state.json: IDs one step creates and later steps read (registry ID, record IDs, approval
+  function ARN, EventBridge rule ARN). It's in .gitignore because it holds IDs from your account.
 """
 
 import json
@@ -17,13 +17,16 @@ from botocore.exceptions import ClientError
 
 REGION = os.environ.get("REGION", "us-east-1")
 BASE_PROFILE = os.environ.get("BASE_PROFILE", "default")
+MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-5-5")
 PREFIX = "cm-demo"
 REGISTRY_NAME = "anycompany-governed-registry"
 RECORD_NAME = "payments-ledger-mcp"
-QUEUE_NAME = f"{PREFIX}-approver-queue"
 RULE_NAME = f"{PREFIX}-pending-approval"
-PERSONAS = ("admin", "publisher", "approver", "consumer")
+FUNCTION_NAME = f"{PREFIX}-approval-function"
+LOG_GROUP = f"/aws/lambda/{FUNCTION_NAME}"
+PERSONAS = ("admin", "publisher", "consumer")
 STATE_FILE = Path(__file__).resolve().parent.parent / ".state" / "state.json"
+LAMBDA_DIR = Path(__file__).resolve().parent.parent / "lambda"
 
 
 @lru_cache
@@ -38,6 +41,9 @@ def account_id():
 
 def role_name(persona):
     return f"{PREFIX}-{persona}"
+
+
+FUNCTION_ROLE = role_name("approval-function")
 
 
 @lru_cache
