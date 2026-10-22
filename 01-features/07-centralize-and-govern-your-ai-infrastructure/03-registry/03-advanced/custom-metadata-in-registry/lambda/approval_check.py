@@ -13,7 +13,9 @@ The function:
    it checked or the checks that failed.
 
 Its role can read records and set their status but can't call UpdateRegistryRecord, so it can't
-change the evidence it judges.
+change the evidence it judges. The role's policy covers every registry in the account (the registry
+doesn't exist when 00_setup creates the role), so the REGISTRY_NAME check in step 1 is what limits
+the function to the sample's registry.
 """
 
 import json

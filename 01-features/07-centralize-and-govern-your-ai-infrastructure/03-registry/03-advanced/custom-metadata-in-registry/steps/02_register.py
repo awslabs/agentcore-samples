@@ -6,9 +6,10 @@ values, and each is created as a COMPLIANT draft. securityScanStatus starts as P
 scan has run yet.
 
 There are five so later steps have something to exclude: the approval function rejects
-refunds-mcp (its scan fails) and customer-pii-mcp (restricted data), and the consumer's filters
-on environment and businessUnit leave out payments-ledger-sandbox-mcp (dev) and
-marketing-analytics-mcp (marketing). Only payments-ledger-mcp passes everything.
+refunds-mcp (its scan fails) and customer-pii-mcp (restricted data). The consumer's search for
+"ledger lookup" returns payments-ledger-sandbox-mcp too, and the environment filter leaves it out
+(dev). marketing-analytics-mcp is approved but doesn't match the query, so it shows that approval
+alone doesn't make a record appear. Only payments-ledger-mcp passes everything.
 """
 
 import json

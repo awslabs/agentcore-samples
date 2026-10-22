@@ -110,6 +110,10 @@ def policy_for(persona, acct):
 
 
 def function_policy(acct):
+    # registry/* because the registry doesn't exist yet when this runs (step 01 creates it), so
+    # this role could change record status in any registry in the account. The function's
+    # REGISTRY_NAME check is what keeps it to the sample's registry. In your own setup, scope
+    # Resource to your registry's ARN once it exists.
     reg = f"arn:aws:agent-registry:{REGION}:{acct}:registry/*"
     log_group = f"arn:aws:logs:{REGION}:{acct}:log-group:{LOG_GROUP}"
     return {

@@ -84,10 +84,9 @@ Only `payments-ledger-mcp` passes the approval checks and the consumer's filters
   | AWS Lambda | `CreateFunction`, `GetFunction`, `UpdateFunctionCode`, `AddPermission`, `DeleteFunction` |
   | Amazon EventBridge | `PutRule`, `PutTargets`, `RemoveTargets`, `DeleteRule` |
   | Amazon CloudWatch Logs | `DeleteLogGroup` |
-  | Amazon Bedrock | `InvokeModel` (`00_setup.sh` checks that the model responds) |
 
 - A Region where [AWS Agent Registry is available](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html). The default is `us-east-1`.
-- Access to `us.anthropic.claude-sonnet-5-5` enabled in Amazon Bedrock (step 05 uses it; set `MODEL_ID` to use another).
+- Access to `us.anthropic.claude-sonnet-5-5` enabled in Amazon Bedrock, and `bedrock:InvokeModel` for your credentials. Step 05 uses the model, and `00_setup.sh` checks that it responds. Set `MODEL_ID` to use another.
 
 ## AWS Resources Created
 
