@@ -1,10 +1,9 @@
-"""Unit tests for payload parsing — the one piece of real logic in the Phase 1
-stub. No AWS, no runtime; pure-function tests."""
+"""Unit tests for the pure parsing helpers: parse_payload (a dict, a JSON string, the
+`agentcore dev` wrapper, a plain-text prompt) and to_cents. No AWS, no runtime."""
 
 import json
 
 import pytest
-
 from parsing import parse_payload
 
 pytestmark = pytest.mark.unit
@@ -47,3 +46,15 @@ def test_real_payload_with_prompt_key_not_clobbered():
 def test_non_str_non_dict_coerced_to_prompt(bad):
     out = parse_payload(bad)
     assert "prompt" in out
+
+
+def test_to_cents_is_an_integer_the_policy_can_compare():
+    from parsing import to_cents
+
+    assert to_cents(15.9) == 1590
+    assert to_cents(1250.0) == 125000
+    assert to_cents(1999.99) == 199999
+    assert to_cents(2000) == 200000
+    assert to_cents("44.91") == 4491
+    assert to_cents(None) is None
+    assert isinstance(to_cents(15.9), int)

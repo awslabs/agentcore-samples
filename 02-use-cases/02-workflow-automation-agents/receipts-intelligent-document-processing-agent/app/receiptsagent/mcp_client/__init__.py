@@ -1,1 +1,0 @@
-"""receiptsagent.mcp_client"""

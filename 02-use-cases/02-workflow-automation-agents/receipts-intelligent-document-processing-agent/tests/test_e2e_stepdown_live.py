@@ -1,4 +1,4 @@
-"""Phase 6 sub-step 2 end-to-end: in-agent 503 step-down (spec §6.3).
+"""End-to-end: in-agent 503 step-down (ADR-0010, path 1).
 
 Uses the env-gated fault-injection hook (ALLOW_FAULT_INJECTION=true on the Runtime)
 to make the extractor's first model attempt fail with a simulated 503, and asserts
@@ -18,15 +18,15 @@ import pytest
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 STACK = os.environ.get("RECEIPTS_STACK", "AgentCore-ReceiptsAgent-dev")
 
-# DEFERRED (2026-06-23). The in-agent 503 step-down LOGIC is real and unit-tested
+# SKIPPED. The in-agent 503 step-down LOGIC is real and unit-tested
 # (see tests/test_ladder.py: classify_model_error + next_rung, no mocks). What is
 # NOT trustworthy is *live-simulating* a Bedrock 503: a real 503 is a capacity event
 # we can't trigger on demand, and our env-gated fault-injection hook only proves the
 # hook works, not that production behaves the same (it's effectively circular). The
 # live run also surfaced a reporting inconsistency (rung stepped to L1 but the
-# returned `model` field still read L0's model) worth investigating when revisited.
-# Decision (with the user): keep the unit-verified logic, defer this live e2e until
-# we either find a real fault-injection path or accept unit coverage as sufficient.
+# returned `model` field still read L0's model); see the known-issue note in
+# app/receiptsagent/main.py. The logic stays unit-verified, and this live test stays
+# skipped until there is a real fault-injection path.
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.skip(reason="deferred: can't faithfully simulate a live Bedrock 503; logic is unit-tested"),
@@ -37,7 +37,7 @@ def _runtime_arn():
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip(f"stack {STACK} not deployed")
     for o in outs:
         if o["OutputKey"].startswith("RuntimeArn"):

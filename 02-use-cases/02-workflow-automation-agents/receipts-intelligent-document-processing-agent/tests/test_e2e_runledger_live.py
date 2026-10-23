@@ -31,7 +31,7 @@ def _runtime_arn():
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName="AgentCore-ReceiptsAgent-dev")["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip("stack not deployed")
     for o in outs:
         if o["OutputKey"].startswith("RuntimeArn"):

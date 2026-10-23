@@ -1,5 +1,5 @@
 """Unit tests for the account-level ladder controller's pure decision logic
-(Phase 6 sub-step 3). Tests `decide_next_rung` only — no AWS, no mocks. The AWS I/O
+(ADR-0010, path 2). Tests `decide_next_rung` only — no AWS, no mocks. The AWS I/O
 (read latest config, cooldown, write new version) is exercised live by
 tests/test_e2e_controller_live.py."""
 
