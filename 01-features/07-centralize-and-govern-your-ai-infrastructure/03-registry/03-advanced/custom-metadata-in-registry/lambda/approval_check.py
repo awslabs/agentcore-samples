@@ -28,7 +28,7 @@ REGISTRY_NAME = os.environ["REGISTRY_NAME"]
 
 
 def failed_checks(record):
-    meta, compliance = record.get("customMetadata", {}), record.get("customMetadataSchemaComplianceStatus")
+    meta, compliance = (record.get("customMetadata") or {}), record.get("customMetadataSchemaComplianceStatus")
     failed = []
     if compliance != "COMPLIANT":
         failed.append(f"customMetadataSchemaComplianceStatus={compliance}")
@@ -44,7 +44,7 @@ def failed_checks(record):
 def reason_for(record, failed):
     if failed:
         return "Automated check failed: " + ", ".join(failed)
-    m = record["customMetadata"]
+    m = record.get("customMetadata") or {}
     return (
         f"{m['environment']}, {m['businessUnit']}, {m['dataClassification']} data, "
         f"CMDB {m['cmdbId']}, scan {m['securityScanStatus']}"
@@ -68,7 +68,7 @@ def handler(event, context):
     failed = failed_checks(record)
     decision, reason = ("REJECTED" if failed else "APPROVED"), reason_for(record, failed)[:255]
     cp.update_registry_record_status(registryId=registry_id, recordId=record_id, status=decision, statusReason=reason)
-    meta = record["customMetadata"]
+    meta = record.get("customMetadata") or {}
     print(
         json.dumps(
             {
