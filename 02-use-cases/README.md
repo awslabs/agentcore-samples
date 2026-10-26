@@ -35,6 +35,7 @@ Agents that run without a user in the loop. They are triggered by events such as
 | [intelligent-event-agent](./02-workflow-automation-agents/intelligent-event-agent/) | Event automation agent with runtime, memory, and gateway integration | General / Events | Runtime, Memory, Gateway *(in development)* |
 | [multi-isv-orchestration](./02-workflow-automation-agents/multi-isv-orchestration/) | Multi-system workflow orchestration across enterprise CRM and ERP services | Enterprise CRM + ERP | Gateway (multi-target), Identity (Cognito + CustomOauth2) |
 | [gpu-music-production-agent](./02-workflow-automation-agents/gpu-music-production-agent/) | Collaborative music production with local GPU inference, mastering, and compliance screening | Media & Entertainment | Runtime (EC2 capacity provider, GPU), Memory; local model inference, collocated agents on a shared volume |
+| [agent-registry-arrival-signal](./02-workflow-automation-agents/agent-registry-arrival-signal/) | A standing orchestrator discovers and invokes newly approved peer agents through AWS Agent Registry, over an event-driven push path and a capability-search pull path | General / Platform | Runtime, A2A, Agent Registry (push and pull) |
 
 ### [03-coding-assistants](./03-coding-assistants/) 
 
