@@ -1,0 +1,16 @@
+#!/usr/bin/python3 -I
+"""Claude Code in the tmux session "claude": attach to it, or start it resuming the last session.
+Run it from VS Code (the folder-open task does) or from AgentCore's terminal; it sets
+up the person's environment itself. The work is in /opt/devbox/lib/devbox/claude_terminal.py."""
+import os
+import sys
+
+# The image's library; next to this file's rootfs when it runs from a source checkout (tests).
+for lib in ("/opt/devbox/lib", os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../opt/devbox/lib")):
+    if os.path.isdir(os.path.join(lib, "devbox")):
+        sys.path.insert(0, lib)
+        break
+
+from devbox.claude_terminal import main  # noqa: E402
+
+sys.exit(main())

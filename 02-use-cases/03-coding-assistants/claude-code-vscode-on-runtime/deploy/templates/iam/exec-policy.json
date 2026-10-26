@@ -1,0 +1,50 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PullTheBoxImageOnly",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+      "Resource": "arn:aws:ecr:{{REGION}}:{{ACCOUNT_ID}}:repository/devbox-box"
+    },
+    {
+      "Sid": "RegistrySignIn",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "OwnRuntimeLogGroups",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:DescribeLogStreams"],
+      "Resource": "arn:aws:logs:{{REGION}}:{{ACCOUNT_ID}}:log-group:/aws/bedrock-agentcore/runtimes/{{RUNTIME_NAME}}-*"
+    },
+    {
+      "Sid": "OwnRuntimeLogStreams",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:{{REGION}}:{{ACCOUNT_ID}}:log-group:/aws/bedrock-agentcore/runtimes/{{RUNTIME_NAME}}-*:log-stream:*"
+    },
+    {
+      "Sid": "FindLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "arn:aws:logs:{{REGION}}:{{ACCOUNT_ID}}:log-group:*"
+    },
+    {
+      "Sid": "MountOwnEfsFolderOnly",
+      "Effect": "Allow",
+      "Action": ["elasticfilesystem:ClientMount", "elasticfilesystem:ClientWrite"],
+      "Resource": "{{FILE_SYSTEM_ARN}}",
+      "Condition": {
+        "ArnEquals": { "elasticfilesystem:AccessPointArn": "{{ACCESS_POINT_ARN}}" }
+      }
+    },
+    {
+      "Sid": "DescribeOwnEfsFolderOnly",
+      "Effect": "Allow",
+      "Action": ["elasticfilesystem:DescribeAccessPoints", "elasticfilesystem:DescribeMountTargets"],
+      "Resource": ["{{FILE_SYSTEM_ARN}}", "{{ACCESS_POINT_ARN}}"]
+    }
+  ]
+}

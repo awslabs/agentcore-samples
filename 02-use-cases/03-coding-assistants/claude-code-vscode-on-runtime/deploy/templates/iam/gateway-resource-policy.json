@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "ClaudeCodeTierRolesMayCallTheGateway",
+    "Effect": "Allow",
+    "Principal": { "AWS": "*" },
+    "Action": "bedrock-agentcore:InvokeGateway",
+    "Resource": "{{GATEWAY_ARN}}",
+    "Condition": {
+      "StringEquals": { "aws:PrincipalAccount": "{{ACCOUNT_ID}}" },
+      "ArnLike": { "aws:PrincipalArn": "arn:aws:iam::{{ACCOUNT_ID}}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ClaudeCode-*" }
+    }
+  }]
+}

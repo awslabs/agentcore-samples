@@ -1,0 +1,6 @@
+# Only the handler and the built bundle go into the image.
+*
+!src/handler.mjs
+!src/limits.mjs
+!dist/
+!dist/**

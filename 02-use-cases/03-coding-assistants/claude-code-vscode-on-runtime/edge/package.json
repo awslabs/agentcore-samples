@@ -1,0 +1,16 @@
+{
+  "name": "devbox-edge",
+  "private": true,
+  "description": "Static edge Lambda for the remote dev box: loader page, WebSocket shim, Service Worker, pinned VS Code web assets and the patched webview shell.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "build/build.sh",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:browser": "node --test --test-concurrency=1 --test-timeout=300000 \"test/browser/*.test.mjs\"",
+    "image": "docker buildx build --platform linux/arm64 --load -t devbox-edge:dev .",
+    "test:image": "node test/image/rie-smoke.mjs",
+    "local:workbench": "node src/local-server.mjs --site workbench --port 9402",
+    "local:webview": "node src/local-server.mjs --site webview --port 9403"
+  }
+}

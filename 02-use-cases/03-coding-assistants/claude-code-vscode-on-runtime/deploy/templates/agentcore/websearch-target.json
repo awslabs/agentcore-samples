@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "connector": {
+      "source": { "connectorId": "web-search", "version": "1.2.0" },
+      "configurations": [
+        {
+          "name": "WebSearch",
+          "parameterValues": {
+            "domainFilter": { "exclude": ["pastebin.com"] }
+          }
+        }
+      ]
+    }
+  }
+}

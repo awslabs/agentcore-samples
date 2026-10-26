@@ -1,0 +1,13 @@
+{
+  "name": "devbox-fake-okta",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fake Okta OIDC provider for the dev box local test (no dependencies)",
+  "type": "module",
+  "main": "server.mjs",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}

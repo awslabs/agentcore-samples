@@ -1,0 +1,15 @@
+{
+  "name": "devbox-local-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless Chrome end-to-end test of the local dev box stack",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 e2e.test.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "25.12.0"
+  }
+}

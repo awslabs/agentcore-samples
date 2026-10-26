@@ -27,6 +27,7 @@ Agents that help developers write, execute, or fix code. Tasks are typically lon
 |--------|----------|------------|-------------------|
 | [text-to-python-ide](./text-to-python-ide/) | Full-stack IDE where users describe what they want in plain text and the agent writes and runs the Python code | Intermediate | Runtime, Code Interpreter, Memory, Policy (Guardrails) |
 | [claude-code-gateway-mcp-server](./claude-code-gateway-mcp-server/) | Consolidate multiple MCP servers behind one AgentCore Gateway endpoint for use with Claude Code | Intermediate | Gateway, Identity |
+| [claude-code-vscode-on-runtime](./claude-code-vscode-on-runtime/) | A governed browser dev box per developer: VS Code and Claude Code in their own AgentCore Runtime microVM, with files on EFS and models set by their Okta group | Advanced | Runtime, Gateway, Identity (custom JWT) |
 
 ## See also
 
