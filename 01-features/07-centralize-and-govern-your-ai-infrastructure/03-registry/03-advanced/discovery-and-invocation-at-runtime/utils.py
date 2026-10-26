@@ -3,13 +3,13 @@ Utility functions for 05_agentic_consumer_discovery.ipynb
 Keeps the notebook focused on API calls and Registry showcase.
 """
 
-import json
-import io
-import zipfile
-import time
 import base64
-import requests
+import io
+import json
+import time
+import zipfile
 
+import requests
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Step 1 helpers — Lambda, Cognito, Gateway, A2A agent setup
@@ -266,21 +266,22 @@ def write_agent_files():
 # Step 3 helpers — Registry metadata parsing and dynamic tool creation
 # ═══════════════════════════════════════════════════════════════════════════════
 
-import uuid  # noqa: E402
-from strands import tool  # noqa: E402
-from strands.tools.mcp import MCPClient  # noqa: E402
+import uuid
+
+from strands import tool
+from strands.tools.mcp import MCPClient
 
 
 def parse_server_metadata(record):
     """Extract connection metadata (URL, protocol, tool names) from a Registry record."""
     descriptors = record.get("descriptors", {})
     # Derive protocol from descriptor keys (API no longer returns protocol field)
-    if "mcp" in descriptors:
+    if "mcpServer" in descriptors:
         protocol = "MCP"
-    elif "a2a" in descriptors:
+    elif "a2aAgentCard" in descriptors:
         protocol = "A2A"
     else:
-        protocol = record.get("descriptorType", "")
+        protocol = record.get("recordType", "")
     meta = {
         "protocol": protocol,
         "record_name": record.get("name", ""),
@@ -291,26 +292,26 @@ def parse_server_metadata(record):
     }
 
     if protocol == "MCP":
-        mcp = descriptors.get("mcp", {})
+        mcp = descriptors.get("mcpServer", {})
         try:
-            server = json.loads(mcp.get("server", {}).get("inlineContent", "{}"))
-        except Exception:
+            server = json.loads(mcp.get("data", "{}"))
+        except Exception:  # noqa: BLE001
             server = {}
         url = server.get("websiteUrl", "")
         if url:
             meta["transport_type"] = "streamable_http"
             meta["url"] = url
         try:
-            tools = json.loads(mcp.get("tools", {}).get("inlineContent", "{}"))
+            tools = json.loads(mcp.get("additionalData", {}).get("tools", {}).get("data", "{}"))
             meta["tool_names"] = [t["name"] for t in tools.get("tools", [])]
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     elif protocol == "A2A":
         try:
-            card = json.loads(descriptors.get("a2a", {}).get("agentCard", {}).get("inlineContent", "{}"))
+            card = json.loads(descriptors.get("a2aAgentCard", {}).get("data", "{}"))
             meta["url"] = card.get("url")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     return meta
@@ -376,7 +377,7 @@ def create_a2a_tool_from_metadata(meta, session, region):
                 if texts:
                     return "\n".join(texts)
             return json.dumps(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return f"Error: {e}"
 
     _invoke.__name__ = record_name.replace("-", "_").lower()

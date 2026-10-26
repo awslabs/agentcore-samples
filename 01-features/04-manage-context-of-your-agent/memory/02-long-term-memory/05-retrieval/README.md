@@ -47,8 +47,10 @@ Each hit returns:
 The same flow expressed with the AWS CLI:
 
 ```bash
-# 1. Create memory + extract a few facts (see standard-usage.py for setup).
-export MEMORY_ID=<id>
+# 1. Create memory + extract a few facts first (see standard-usage.py for setup).
+#    It prints the memoryId when it finishes — paste that id here. Quote it, so an
+#    unreplaced placeholder fails on the API call instead of as a shell redirect.
+export MEMORY_ID="<the memoryId printed by standard-usage.py>"
 
 # 2. Semantic retrieval — relevance-ranked
 aws bedrock-agentcore retrieve-memory-records \
@@ -61,10 +63,15 @@ aws bedrock-agentcore list-memory-records \
   --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
   --namespace "/users/user-alex/facts/"
 
-# 4. GetMemoryRecord — fetch one record in full
+# 4. GetMemoryRecord — fetch one record in full. Take the first id from the list
+#    above rather than pasting one by hand.
+RECORD_ID=$(aws bedrock-agentcore list-memory-records \
+  --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
+  --namespace "/users/user-alex/facts/" --no-paginate \
+  --query 'memoryRecordSummaries[0].memoryRecordId' --output text)
 aws bedrock-agentcore get-memory-record \
   --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
-  --memory-record-id <id-from-list>
+  --memory-record-id "$RECORD_ID"
 
 # 5. Teardown
 aws bedrock-agentcore-control delete-memory \

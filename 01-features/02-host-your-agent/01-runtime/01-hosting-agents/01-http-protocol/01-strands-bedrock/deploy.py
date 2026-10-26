@@ -1,15 +1,16 @@
 """
-Deploy a Strands + Bedrock agent to AgentCore Runtime using direct code deployment.
+Deploy a Strands + Bedrock agent to AgentCore New Runtime using direct code deployment.
 
 Steps:
 1. Create an IAM execution role with AgentCore permissions
 2. Install arm64 dependencies with uv, zip with agent code, upload to S3
-3. Create an AgentCore Runtime with codeConfiguration
-4. Wait for READY, create endpoint, save config
+3. Create an AgentCore Runtime with codeConfiguration and platformVersion="V2"
+4. Wait for READY (minutes on New Runtime), confirm the platform version, create endpoint
 
 Prerequisites:
     - uv installed (https://docs.astral.sh/uv/getting-started/installation/)
     - AWS CLI configured with credentials
+    - boto3 >= 1.43.95 (first public release that models platformVersion)
 
 Usage:
     python deploy.py
@@ -29,6 +30,12 @@ from boto3.session import Session
 
 AGENT_NAME = f"strands_bedrock_{int(time.time()) % 100000}"
 PROTOCOL = "HTTP"
+
+# AgentCore Runtime platform version. "V2" prepares the execution environment
+# once, at create/update time, and snapshots it; new execution environments
+# resume from that snapshot instead of loading your code on every cold start.
+# This field must be set explicitly — omitting it does not give you New Runtime.
+PLATFORM_VERSION = "V2"
 PYTHON_RUNTIME = "PYTHON_3_13"
 ENTRY_POINT = "agent.py"
 
@@ -270,14 +277,18 @@ def create_runtime(role_arn: str) -> dict:
         roleArn=role_arn,
         networkConfiguration={"networkMode": "PUBLIC"},
         protocolConfiguration={"serverProtocol": PROTOCOL},
-        description="Strands agent with Bedrock model — tutorial example",
+        platformVersion=PLATFORM_VERSION,
+        description="Strands agent with Bedrock model on New Runtime — tutorial example",
     )
 
     runtime_id = response["agentRuntimeId"]
     runtime_arn = response["agentRuntimeArn"]
     print(f"  ✓ Runtime created: {runtime_id}")
 
-    print("  Waiting for runtime to be ready...")
+    # On New Runtime the snapshot is prepared during create, so this wait is measured in
+    # minutes rather than seconds. The loop below has no timeout, so it simply
+    # waits; budget accordingly in any automation that wraps this script.
+    print("  Waiting for runtime to be ready (New Runtime prepares a snapshot — expect minutes)...")
     while True:
         status_resp = control.get_agent_runtime(agentRuntimeId=runtime_id)
         status = status_resp["status"]
@@ -288,6 +299,18 @@ def create_runtime(role_arn: str) -> dict:
             print(f"  ✗ Failed: {status_resp.get('failureReason', 'Unknown')}")
             sys.exit(1)
         time.sleep(15)
+
+    # create_agent_runtime does not echo platformVersion back, so read it from
+    # get_agent_runtime. The service returns the persisted value verbatim with no
+    # default, so an absent field means "unknown" rather than a specific version.
+    reported = control.get_agent_runtime(agentRuntimeId=runtime_id).get("platformVersion")
+    if reported == PLATFORM_VERSION:
+        print(f"  ✓ Confirmed platformVersion={reported}")
+    elif reported is None:
+        print("  ! Service did not report platformVersion; could not confirm from the API")
+    else:
+        print(f"  ✗ Requested platformVersion={PLATFORM_VERSION} but service reports {reported}")
+        sys.exit(1)
 
     return {"runtime_id": runtime_id, "runtime_arn": runtime_arn}
 
@@ -305,7 +328,7 @@ def create_endpoint(runtime_id: str) -> dict:
     )
     print(f"  ✓ Endpoint created: {response['agentRuntimeEndpointArn']}")
 
-    print("  Waiting for endpoint to be ready...")
+    print("  Waiting for endpoint to be ready (also longer on New Runtime)...")
     while True:
         eps = control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
         for ep in eps.get("runtimeEndpoints", []):

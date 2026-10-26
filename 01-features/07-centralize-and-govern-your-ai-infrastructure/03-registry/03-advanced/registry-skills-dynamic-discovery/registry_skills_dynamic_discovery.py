@@ -20,17 +20,18 @@ Prerequisites:
     - AWS_DEFAULT_REGION set (or defaults to session region)
 """
 
-from boto3.session import Session
 import json
-import time
 import os
+import time
+
+from boto3.session import Session
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 boto_session = Session()
 AWS_REGION = boto_session.region_name
 
-registry_client = boto_session.client("bedrock-agentcore-control", region_name=AWS_REGION)
-search_client = boto_session.client("bedrock-agentcore", region_name=AWS_REGION)
+registry_client = boto_session.client("agent-registry-control", region_name=AWS_REGION)
+search_client = boto_session.client("agent-registry", region_name=AWS_REGION)
 
 print(f"Session ready | Region: {AWS_REGION}")
 
@@ -56,7 +57,7 @@ def wait_for_record_draft(registry_id, record_id, interval=3):
         if status == "DRAFT":
             return resp
         if status.endswith("_FAILED"):
-            raise Exception(f"Record failed: {status}")
+            raise Exception(f"Record failed: {status}")  # noqa: TRY002
         time.sleep(interval)
 
 
@@ -71,7 +72,7 @@ def wait_for_registry(registry_id, interval=5):
             return resp
         if status.endswith("_FAILED"):
             print(f"  {C.RED}❌ Registry Status: {status}{C.RESET}")
-            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")
+            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")  # noqa: TRY002
         print(f"  {C.YELLOW}⏳ Registry Status: {status}{C.RESET}")
         time.sleep(interval)
 
@@ -92,7 +93,7 @@ print(f"\n{C.BOLD}=== 1. Create Agent Registry ==={C.RESET}")
 create_registry_response = registry_client.create_registry(
     name="Skills_Registry",
     description="Registry for Skills",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 
 REGISTRY_ARN = create_registry_response["registryArn"]
@@ -135,11 +136,11 @@ skill_record_response = registry_client.create_registry_record(
         "images, and OCR on scanned PDFs to make them searchable. "
         "If the user mentions a .pdf file or asks to produce one, use this skill."
     ),
-    descriptorType="AGENT_SKILLS",
+    recordType="SKILL",
     descriptors={
-        "agentSkills": {
-            "skillMd": {"inlineContent": load_skill_md(skill_md_path)},
-            "skillDefinition": {"inlineContent": skill_definition_schema},
+        "agentSkillsDefinition": {
+            "data": skill_definition_schema,
+            "additionalData": {"skillMd": {"data": load_skill_md(skill_md_path)}},
         }
     },
     recordVersion="1.0",
@@ -158,7 +159,7 @@ for rec in records_response["registryRecords"]:
     status = rec["status"]
     sc = C.GREEN if status == "APPROVED" else C.YELLOW if status in ("DRAFT", "PENDING_APPROVAL") else C.RED
     print(
-        f"  {sc}[{status}]{C.RESET} {rec['name']} | {C.CYAN}{rec['descriptorType']}{C.RESET} | {C.DIM}{rec['recordId']}{C.RESET}"
+        f"  {sc}[{status}]{C.RESET} {rec['name']} | {C.CYAN}{rec['recordType']}{C.RESET} | {C.DIM}{rec['recordId']}{C.RESET}"
     )
 
 # ── 3. Approve Skill Record ───────────────────────────────────────────────────
@@ -182,11 +183,17 @@ print(f"\n{C.BOLD}=== 4. Dynamic Skill Discovery and Execution ==={C.RESET}")
 print(f"  {C.YELLOW}⏳ Waiting 100s for search index...{C.RESET}")
 time.sleep(100)
 
-from strands import Agent, tool  # noqa: E402
-from strands.models import BedrockModel  # noqa: E402
-from strands_tools import file_read  # noqa: E402
-from utils.python_exec_tool import python_exec, run_shell  # noqa: E402
-from utils.skill_loader import load_skill_from_registry  # noqa: E402
+import sys
+
+sys.path.insert(0, script_dir)
+if "utils" in sys.modules:
+    del sys.modules["utils"]
+
+from strands import Agent, tool
+from strands.models import BedrockModel
+from strands_tools import file_read
+from utils.python_exec_tool import python_exec, run_shell
+from utils.skill_loader import load_skill_from_registry
 
 
 @tool
@@ -203,7 +210,7 @@ def search_and_load_skill(query: str) -> str:
     Returns:
         The skill's SKILL.md content with instructions for completing the task.
     """
-    response = search_client.search_registry_records(
+    response = search_client.search_discoverable_registry_records(
         registryIds=[REGISTRY_ARN],
         searchQuery=query,
         maxResults=5,
@@ -216,7 +223,7 @@ def search_and_load_skill(query: str) -> str:
 
     print(f"Found {len(records)} skill(s) matching '{query}':")
     for i, rec in enumerate(records):
-        print(f"  {i + 1}. {rec.get('name', 'unknown')} [{rec.get('descriptorType', '')}]")
+        print(f"  {i + 1}. {rec.get('name', 'unknown')} [{rec.get('recordType', '')}]")
     print(f"\nLoading top result: {records[0].get('name', 'unknown')}...")
 
     skill_dir, skill_md = load_skill_from_registry(response, record_index=0)
@@ -235,7 +242,7 @@ print(f"  {C.GREEN}✅ search_and_load_skill tool ready.{C.RESET}")
 # ── 4.2 Create the Agent ──────────────────────────────────────────────────────
 print(f"\n{C.BOLD}=== 4.2 Create the Agent ==={C.RESET}")
 
-MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-4-6"
 
 model = BedrockModel(model_id=MODEL_ID, region_name=AWS_REGION)
 agent = Agent(
@@ -244,7 +251,9 @@ agent = Agent(
     system_prompt=(
         "You are an agent with access to the AWS Agent Registry. "
         "When asked to perform a task, search the registry for a relevant skill. "
-        "If found, load the skill and use its instructions to complete the task."
+        "If a skill is found and loaded, you MUST follow its SKILL.md instructions exactly "
+        "to complete the task. Use only the libraries and approach described in the skill instructions. "
+        "Do NOT improvise or use alternative libraries."
     ),
 )
 

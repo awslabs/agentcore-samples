@@ -1,0 +1,11 @@
+# Normalise line endings so the Glue job scripts and shell scripts stay LF everywhere.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+*.png binary
+*.whl binary

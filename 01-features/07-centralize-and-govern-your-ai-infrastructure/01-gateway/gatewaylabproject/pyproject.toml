@@ -10,4 +10,7 @@ dependencies = [
     "strands-agents",
     "fastapi",
     "uvicorn",
+    "openai",
+    "anthropic",
+    "litellm>=1.89.0",
 ]

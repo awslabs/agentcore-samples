@@ -83,7 +83,7 @@ Navigate to **CloudWatch → X-Ray → Traces** to see the full agent loop break
 ## Troubleshooting
 
 ### Issue: memory creation fails with `ConflictException`
-**Solution**: A memory named `TravelGuideMemory` already exists. The script handles this by listing and reusing it. If you want a fresh memory, delete the old one first.
+**Solution**: A memory named `TravelGuideMemory` already exists — usually left behind by an earlier run that did not finish cleaning up. The script only deletes memories it created itself, so it will not silently reuse and then delete one it does not own; it prints a warning and skips the memory demo. Delete the leftover memory (`aws bedrock-agentcore-control delete-memory --memory-id <id>`), or re-run with `--skip-memory`.
 
 ### Issue: Part 4 takes too long
 **Solution**: memory provisioning takes 3-5 minutes. Use `--skip-memory` to skip the memory demo entirely.
@@ -93,10 +93,14 @@ Navigate to **CloudWatch → X-Ray → Traces** to see the full agent loop break
 
 ## AgentCore CLI
 
-Create and deploy a travel agent harness via the CLI (preview channel):
+Create and deploy a travel agent harness via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name travelguideagent --model-provider bedrock
 agentcore deploy
 ```

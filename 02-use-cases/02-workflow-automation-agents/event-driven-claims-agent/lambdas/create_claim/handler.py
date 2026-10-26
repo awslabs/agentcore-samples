@@ -18,13 +18,18 @@ def handler(event, context):
     if not policy_number or not description:
         return json.dumps({"error": "policy_number and description are required"})
 
+    if len(description) > 5000:
+        return json.dumps({"error": "description exceeds 5000 character limit"})
+
+    if estimated_amount < 0 or estimated_amount > 10_000_000:
+        return json.dumps({"error": "estimated_amount must be between 0 and 10,000,000"})
+
+    # Agent's dual-agent architecture determines routing; Lambda executes what the agent decides
+    status = event.get("status", "pending_review")
+    decision = event.get("decision", "agent_routed")
+
     claim_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
     timestamp = datetime.now(timezone.utc).isoformat()
-
-    if estimated_amount < 10000:
-        status, decision = "approved", "auto_approved"
-    else:
-        status, decision = "pending_review", "escalated"
 
     item = {
         "claim_id": claim_id,

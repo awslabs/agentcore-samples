@@ -1,0 +1,401 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Insurance Claims Demo — HITL Review Tasks (DynamoDB + API Gateway + Lambda)'
+
+# Deployed as stack `insurance-claims-demo-hitl` (same stack that previously held
+# only the table — the ReviewTasksTable logical id/name are unchanged so the
+# table is NOT recreated). Adds the review-tasks data-plane API:
+#   POST   /reviews                  (AWS_IAM)  — backend/agent creates a task
+#   GET    /reviews?status=OPEN      (Cognito)  — adjuster queue
+#   GET    /reviews/{task_id}        (Cognito)  — adjuster detail
+#   POST   /reviews/{task_id}/resolve(Cognito)  — adjuster decision
+# Adjuster endpoints additionally require the `adjuster` Cognito group (checked
+# in-Lambda). Creation is a privileged backend action (IAM-signed), not a user
+# action, so it has no Cognito authorizer.
+
+Parameters:
+  StackPrefix:
+    Type: String
+    Default: insurance-claims-demo
+    Description: Prefix for resource names (matches the Cognito stack prefix)
+
+  CognitoStackName:
+    Type: String
+    Default: insurance-claims-demo
+    Description: Cognito stack name, for importing the User Pool ARN
+
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: 'Allowed CORS origin'
+
+Resources:
+  # ----- Review tasks table (unchanged logical id/name => no recreation) -----
+  ReviewTasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${StackPrefix}-review-tasks'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ----- Lambda execution role -----
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ReviewTasksTable.Arn
+                  - !Sub '${ReviewTasksTable.Arn}/index/*'
+        - PolicyName: AgentCoreMemoryWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateEvent
+                Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/{{resolve:ssm:/insurance-claims-demo/memory_id}}'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/insurance-claims-demo/memory_id'
+
+  # ----- Lambda functions -----
+  CreateReviewFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-create-review'
+      Runtime: python3.12
+      Handler: create_review.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/create_review/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReviewTasksTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  ListReviewsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-list-reviews'
+      Runtime: python3.12
+      Handler: list_reviews.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/list_reviews/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReviewTasksTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  GetReviewFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-get-review'
+      Runtime: python3.12
+      Handler: get_review.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/get_review/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReviewTasksTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  ResolveReviewFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-resolve-review'
+      Runtime: python3.12
+      Handler: resolve_review.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: lambdas/resolve_review/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReviewTasksTable
+          MEMORY_ID_SSM_PARAM: /insurance-claims-demo/memory_id
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Timeout: 30
+
+  # ----- API Gateway -----
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${StackPrefix}-reviews-api'
+      Description: HITL review-tasks API for the insurance claims demo
+
+  ApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref RestApi
+      ProviderARNs:
+        - Fn::ImportValue: !Sub '${CognitoStackName}-pool-arn'
+
+  ReviewsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: reviews
+
+  ReviewIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref ReviewsResource
+      PathPart: '{task_id}'
+
+  ResolveResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref ReviewIdResource
+      PathPart: resolve
+
+  # POST /reviews  (IAM — backend/agent creates a task)
+  CreateReviewMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ReviewsResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateReviewFunction.Arn}/invocations'
+
+  # GET /reviews  (Cognito + adjuster)
+  ListReviewsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ReviewsResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListReviewsFunction.Arn}/invocations'
+
+  # GET /reviews/{task_id}  (Cognito + adjuster)
+  GetReviewMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ReviewIdResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetReviewFunction.Arn}/invocations'
+
+  # POST /reviews/{task_id}/resolve  (Cognito + adjuster)
+  ResolveReviewMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ResolveResource
+      HttpMethod: POST
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResolveReviewFunction.Arn}/invocations'
+
+  # CORS preflight for the browser-facing (Cognito) endpoints
+  ReviewsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ReviewsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ReviewIdOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ReviewIdResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ResolveOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ResolveResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+            ResponseTemplates:
+              application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # ----- Lambda invoke permissions for API Gateway -----
+  CreateReviewPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateReviewFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  ListReviewsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListReviewsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  GetReviewPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetReviewFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  ResolveReviewPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResolveReviewFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - CreateReviewMethod
+      - ListReviewsMethod
+      - GetReviewMethod
+      - ResolveReviewMethod
+      - ReviewsOptionsMethod
+      - ReviewIdOptionsMethod
+      - ResolveOptionsMethod
+    Properties:
+      RestApiId: !Ref RestApi
+      Description: !Sub 'Deployment ${AWS::StackName}'
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+
+Outputs:
+  ApiUrl:
+    Description: Reviews API base URL
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub '${StackPrefix}-reviews-api-url'
+
+  ReviewTasksTableName:
+    Description: DynamoDB table for HITL review tasks
+    Value: !Ref ReviewTasksTable
+    Export:
+      Name: !Sub '${StackPrefix}-review-tasks-table'

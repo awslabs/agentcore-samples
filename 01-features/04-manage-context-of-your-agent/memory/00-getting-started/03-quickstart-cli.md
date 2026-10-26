@@ -74,12 +74,22 @@ aws bedrock-agentcore list-events \
 Fetch a single event by ID:
 
 ```bash
+# Take the first id from the list above rather than pasting one by hand.
+# --no-paginate keeps --query on one page, so the result is just the id.
+EVENT_ID=$(aws bedrock-agentcore list-events \
+  --region "$AWS_REGION" \
+  --memory-id "$MEMORY_ID" \
+  --actor-id "$ACTOR_ID" \
+  --session-id "$SESSION_ID" \
+  --no-paginate \
+  --query 'events[0].eventId' --output text)
+
 aws bedrock-agentcore get-event \
   --region "$AWS_REGION" \
   --memory-id "$MEMORY_ID" \
   --actor-id "$ACTOR_ID" \
   --session-id "$SESSION_ID" \
-  --event-id <event-id-from-list-events>
+  --event-id "$EVENT_ID"
 ```
 
 ## 4. Add a built-in semantic strategy
@@ -95,7 +105,7 @@ aws bedrock-agentcore-control update-memory \
     "addMemoryStrategies": [{
       "semanticMemoryStrategy": {
         "name": "UserFacts",
-        "namespaces": ["/users/{actorId}/facts"]
+        "namespaceTemplates": ["/users/{actorId}/facts/"]
       }
     }]
   }'

@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+cdk.out/
+outputs.json
+.DS_Store
+node_modules/
+build/
+.vscode/
+scripts/evals_results/
+scripts/eval_output*
+
+.ash/

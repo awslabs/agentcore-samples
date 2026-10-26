@@ -1,0 +1,26 @@
+[
+  {
+    "tool_count": 50,
+    "approach": "all_tools",
+    "latency_seconds": 6.126076936721802,
+    "input_tokens": 3967,
+    "output_tokens": 0,
+    "tools_loaded": 50
+  },
+  {
+    "tool_count": 50,
+    "approach": "semantic_search",
+    "latency_seconds": 9.186340808868408,
+    "input_tokens": 790,
+    "output_tokens": 0,
+    "tools_loaded": 10
+  },
+  {
+    "tool_count": 50,
+    "approach": "regex_search",
+    "latency_seconds": 8.044486045837402,
+    "input_tokens": 790,
+    "output_tokens": 0,
+    "tools_loaded": 10
+  }
+]

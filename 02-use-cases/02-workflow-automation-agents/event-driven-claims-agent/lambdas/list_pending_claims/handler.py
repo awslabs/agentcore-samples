@@ -1,15 +1,25 @@
 import json
+import logging
+import os
+
 import boto3
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
+
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table("ClaimsAgent-Claims")
+table = dynamodb.Table(os.environ.get("CLAIMS_TABLE", "ClaimsAgent-Claims"))
 
 
 def handler(event, context):
-    """List all claims with pending_review status."""
+    """List all claims with pending_review status using GSI (avoids full table scan)."""
     try:
-        response = table.scan(FilterExpression=Attr("status").eq("pending_review"))
+        # Use status-index GSI for efficient query instead of scan
+        response = table.query(
+            IndexName="status-index",
+            KeyConditionExpression=Key("status").eq("pending_review"),
+        )
         claims = response.get("Items", [])
         if not claims:
             return json.dumps({"message": "No pending claims to review.", "claims": []})
@@ -27,4 +37,5 @@ def handler(event, context):
             )
         return json.dumps({"message": f"Found {len(result)} pending claim(s).", "claims": result})
     except Exception as e:
+        logger.error("Failed to list pending claims", extra={"error": str(e)})
         return json.dumps({"error": str(e)})

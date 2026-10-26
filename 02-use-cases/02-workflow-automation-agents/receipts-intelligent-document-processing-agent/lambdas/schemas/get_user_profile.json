@@ -1,0 +1,1 @@
+[{"name": "get_user_profile", "description": "Read a user's expense profile (cost center, default category, preferred currency, reimbursement policy) by user id.", "inputSchema": {"type": "object", "properties": {"user_id": {"type": "string", "description": "The end-user id whose profile to read"}}, "required": ["user_id"]}}]

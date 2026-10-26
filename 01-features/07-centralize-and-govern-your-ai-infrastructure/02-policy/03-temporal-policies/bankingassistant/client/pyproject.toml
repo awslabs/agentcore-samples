@@ -1,0 +1,10 @@
+[project]
+name = "banking-client"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "strands-agents",
+    "strands-agents-tools",
+    "mcp",
+    "boto3",
+]

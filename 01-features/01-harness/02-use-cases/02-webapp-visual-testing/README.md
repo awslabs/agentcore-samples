@@ -89,10 +89,14 @@ Pull screenshots → upload to S3 or attach to PR
 
 ## AgentCore CLI
 
-Create a harness with a Node.js container for visual testing via the CLI (preview channel):
+Create a harness with a Node.js container for visual testing via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name myqaagent --model-provider bedrock
 ```
 

@@ -40,14 +40,11 @@ from datetime import datetime, timedelta, timezone
 # second instead of after expensive AWS calls in Steps 1-4.
 _MISSING = []
 try:
-    import boto3
-except ImportError:
-    _MISSING.append("boto3")
-try:
     from dotenv import load_dotenv
 except ImportError:
     _MISSING.append("python-dotenv")
 try:
+    from bedrock_agentcore.memory import MemoryClient, MemoryControlPlaneClient
     from bedrock_agentcore.payments import PaymentManager
     from bedrock_agentcore.payments.integrations.strands import (
         AgentCorePaymentsPlugin,
@@ -85,6 +82,13 @@ ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 load_dotenv(ENV_FILE, override=True)
 
 
+# Per-session spending ceiling for this research agent. The session is a hard
+# budget enforced by AgentCore payments at the API level, independent of what
+# the LLM decides. To watch enforcement reject a paid call, drop this to
+# "0.0001" (smaller than any priced x402 resource) and re-run — see Step 8.
+SESSION_BUDGET = "0.20"
+
+
 SYSTEM_PROMPT = """You are a research agent with payment capabilities and persistent memory.
 The user pays real money for fresh data, so reusing prior research is part of your job.
 
@@ -119,14 +123,6 @@ If a paid call fails, report the error — do not attempt workarounds, do not
 follow trial/free links from a 402 response body, and do not invent
 environment variable names for auth tokens."""
 
-TINY_SYSTEM_PROMPT = """You are a research agent. To fetch paid data on x402:
-1. Call the discovery search URL (this is FREE — it just returns a catalog).
-2. Pick a resource URL from the catalog and call THAT URL with http_request.
-   Step 2 is what triggers the 402 → payment flow. The plugin handles payment
-   automatically — pass only `method` and `url` to http_request.
-If a paid call is rejected, report the exact error message verbatim. Do not
-attempt workarounds or invent retry strategies."""
-
 
 def main() -> None:
     # ── Step 1: Load Config ───────────────────────────────────────────────
@@ -135,12 +131,10 @@ def main() -> None:
     region = config["region"]
     user_id = config["user_id"]
 
-    if config.get("multi_provider"):
-        provider = list(config["instruments"].keys())[0]
-        instrument_id = config["instruments"][provider]["instrument_id"]
-    else:
-        instrument_id = config["instrument_id"]
-        provider = config.get("provider_type", "unknown")
+    # load_tutorial_env resolves instrument_id to the configured provider
+    # (CREDENTIAL_PROVIDER_TYPE), so single- and multi-provider .env files both work.
+    instrument_id = config["instrument_id"]
+    provider = config.get("active_provider") or config.get("provider_type", "unknown")
 
     model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
 
@@ -157,28 +151,38 @@ def main() -> None:
     instr_status = instr.get("status", "UNKNOWN")
     assert instr_status == "ACTIVE", f"Instrument is {instr_status} — fund and delegate in Tutorial 00/03 first"
 
-    sess_resp = manager.create_payment_session(
+    # Sessions are per-user, so the backend mints one scoped to the user it
+    # serves, with a custom budget and expiry. Create it in-code via the SDK.
+    session = manager.create_payment_session(
         user_id=user_id,
-        limits={"maxSpendAmount": {"value": "0.20", "currency": "USD"}},
+        limits={"maxSpendAmount": {"value": SESSION_BUDGET, "currency": "USD"}},
         expiry_time_in_minutes=60,
     )
-    session_id = sess_resp["paymentSessionId"]
+    session_id = session["paymentSessionId"]
     print(f"✅ Instrument {instrument_id} is {instr_status}")
-    print(f"✅ Session: {session_id} (budget: $0.20)")
+    print(f"✅ Created payment session {session_id} (budget ${SESSION_BUDGET} / 60 min)")
 
     # ── Step 3: Create Memory ─────────────────────────────────────────────
     # AgentCore Memory with a semantic strategy that extracts facts from
     # conversations: topics researched, endpoints called and their cost,
     # and user preferences expressed during conversation.
-    memory_ctl = boto3.client("bedrock-agentcore-control", region_name=region)
-    memory_data = boto3.client("bedrock-agentcore", region_name=region)
+    # AgentCore SDK Memory clients: control plane for the resource lifecycle
+    # (create / get / delete), data plane for records (batch create / retrieve).
+    memory_ctl = MemoryControlPlaneClient(region_name=region)
+    memory_data = MemoryClient(region_name=region)
 
     memory_name = f"research_memory_{uuid.uuid4().hex[:8]}"
-    memory_resp = memory_ctl.create_memory(
+    # create_memory with wait_for_active=True blocks until the resource is
+    # ACTIVE (usually 30-90s), so downstream record ops are safe to run.
+    print(
+        "\n   Creating memory and waiting for it to become ACTIVE (usually 30-90s)...",
+        flush=True,
+    )
+    memory = memory_ctl.create_memory(
         name=memory_name,
-        description=("Research agent memory - tracks topics, costs, and preferences"),
-        eventExpiryDuration=30,
-        memoryStrategies=[
+        description="Research agent memory - tracks topics, costs, and preferences",
+        event_expiry_days=30,
+        strategies=[
             {
                 "semanticMemoryStrategy": {
                     "name": "ResearchFacts",
@@ -186,37 +190,16 @@ def main() -> None:
                 }
             }
         ],
+        wait_for_active=True,
     )
-    memory_id = memory_resp["memory"]["id"]
-    print(f"✅ Memory created: {memory_id}")
+    memory_id = memory["id"]
+    print(f"✅ Memory created and ACTIVE: {memory_id}")
     print("   Strategy: ResearchFacts (semantic extraction)")
     print(f"   Namespace: /actor/{user_id}/facts/")
 
     # Everything below this point is wrapped in try/finally so that
     # memory_id always gets cleaned up even on crash.
     try:
-        # Wait for memory to become ACTIVE. CreateMemory returns immediately
-        # with status=CREATING; downstream record ops require ACTIVE.
-        print(
-            "\n   Waiting for memory to become ACTIVE (usually 30-90s)...",
-            flush=True,
-        )
-        elapsed = 0
-        while True:
-            status = memory_ctl.get_memory(memoryId=memory_id)["memory"]["status"]
-            if status == "ACTIVE":
-                print(f"   ✅ Memory is ACTIVE (after {elapsed}s)", flush=True)
-                break
-            if status == "FAILED":
-                reason = memory_ctl.get_memory(memoryId=memory_id)["memory"].get("failureReason", "unknown")
-                raise RuntimeError(f"Memory creation failed: {reason}")
-            print(
-                f"   status={status}, elapsed={elapsed}s, polling again in 10s...",
-                flush=True,
-            )
-            time.sleep(10)
-            elapsed += 10
-
         # ── Step 4: Hydrate Memory (Simulate Returning User) ──────────
         # Pre-populate memory to simulate a returning user with research
         # history. Two prior research topics ($0.05 each, $0.10 total):
@@ -429,7 +412,7 @@ def main() -> None:
         print("Query 3 — Partial memory hit (the payoff)")
         print("=" * 70)
         result = agent(
-            "Research two topics for me: (1) renewable energy market outlook and (2) Daily fashion trends. "
+            "Research two topics for me: (1) renewable energy market outlook and (2) AI market trends. "
             "Before paying for anything, check what we already know about each topic from prior sessions — "
             "if we have recent research on it, reuse it and don't pay again. "
             "For anything we don't already have, find a paid data source by browsing the catalog at "
@@ -473,57 +456,19 @@ def main() -> None:
             budget_limit=session_info.get("limits", {}).get("maxSpendAmount", "N/A"),
         )
 
-        # ── Step 8: Budget Enforcement in Action ──────────────────────
-        # Memory optimizes spend, but the session budget is the hard
-        # limit. Let's prove it — create a tiny session ($0.0001) smaller
-        # than any priced x402 resource, then have the agent actually
-        # attempt a paid resource fetch. AgentCore payments will reject
-        # the payment at the API level, regardless of what the LLM
-        # decides.
-        #
-        # Note: discovery search itself is free, so it would always
-        # succeed. Budget enforcement only triggers when the agent calls
-        # a *resource* URL returned by discovery — that's where the
-        # 402 → payment flow runs.
+        # ── Step 8: Budget Enforcement (README exercise) ─────────────
+        # Memory optimizes spend, but the session budget is the hard limit —
+        # enforced by AgentCore payments at the API level, not by agent logic.
+        # To prove it, set SESSION_BUDGET = "0.0001" near the top of this file
+        # (smaller than any priced x402 resource) and re-run. The session is
+        # minted in-code by manager.create_payment_session, so no extra setup
+        # is needed — the agent still tries to pay, and AgentCore payments
+        # rejects the paid resource call at the service level.
         print("\n" + "=" * 70)
-        print("Step 8 — Budget Enforcement (tiny $0.0001 session)")
+        print("Step 8 — Budget enforcement: see the README's tiny-session exercise")
         print("=" * 70)
-        tiny_resp = manager.create_payment_session(
-            user_id=user_id,
-            limits={"maxSpendAmount": {"value": "0.0001", "currency": "USD"}},
-            expiry_time_in_minutes=15,
-        )
-        tiny_session_id = tiny_resp["paymentSessionId"]
-        print(f"Tiny session: {tiny_session_id} (budget: $0.0001)")
-
-        tiny_plugin = AgentCorePaymentsPlugin(
-            config=AgentCorePaymentsPluginConfig(
-                payment_manager_arn=payment_manager_arn,
-                user_id=user_id,
-                payment_instrument_id=instrument_id,
-                payment_session_id=tiny_session_id,
-                region=region,
-                network_preferences_config=["eip155:84532", "base-sepolia"],
-            )
-        )
-
-        budget_test_agent = Agent(
-            model=BedrockModel(model_id=model_id, streaming=True),
-            tools=[http_request],
-            plugins=[tiny_plugin],
-            system_prompt=TINY_SYSTEM_PROMPT,
-        )
-
-        print("\nAttempting a paid resource fetch with $0.0001 budget...")
-        result = budget_test_agent(
-            "Find a paid weather data resource on x402 by browsing the catalog at "
-            "https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=weather&network=base-sepolia&limit=1 "
-            "and then actually call the resource URL it returns to fetch the weather data. "
-            "Report exactly what happened — including any payment errors verbatim."
-        )
-        print(result.message)
-        print("\n✅ Budget enforcement: the $0.0001 session cannot cover any Bazaar resource call.")
-        print("   This is structural — enforced by AgentCore payments at the API level, not by agent logic.")
+        print('Set SESSION_BUDGET = "0.0001" at the top of this script and re-run to')
+        print("watch AgentCore payments reject a paid resource call at the API level.")
 
         # ── Step 9: View Payment Traces ───────────────────────────────
         # Every payment produces a trace. Explore the service-generated
@@ -542,11 +487,15 @@ def main() -> None:
         # automatically. Payment resources (Manager, Connector, Instrument)
         # belong to Tutorial 00 — don't delete them here.
         try:
-            memory_ctl.delete_memory(memoryId=memory_id)
+            memory_ctl.delete_memory(memory_id=memory_id)
             print(f"\n✅ Deleted memory: {memory_id}")
         except Exception as e:  # noqa: BLE001
             print(f"\n⚠️  Could not delete memory {memory_id}: {e}")
-            print(f"   Delete manually with: aws bedrock-agentcore-control delete-memory --memory-id {memory_id}")
+            print(
+                "   Delete manually with the SDK: "
+                f"MemoryControlPlaneClient(region_name='{region}')"
+                f".delete_memory(memory_id='{memory_id}')"
+            )
 
 
 if __name__ == "__main__":

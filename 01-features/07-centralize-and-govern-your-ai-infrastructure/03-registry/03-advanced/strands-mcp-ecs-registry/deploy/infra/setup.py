@@ -72,7 +72,7 @@ def create_registry(registry_client) -> tuple[str, str]:
     resp = registry_client.create_registry(
         name="financial-skills-registry",
         description="Registry for financial skills and MCP tools",
-        approvalConfiguration={"autoApproval": False},
+        approvalConfiguration={"autoApprovalRules": []},
     )
     arn = resp["registryArn"]
     rid = arn.split("/")[-1]
@@ -117,23 +117,26 @@ def publish_mcp_record(registry_client, registry_id: str, apigw_url: str, region
             "get_kpi_benchmarks (industry benchmark thresholds and formulas). "
             "Server endpoint: " + apigw_url
         ),
-        descriptorType="MCP",
-        synchronizationType="URL",
-        synchronizationConfiguration={
-            "fromUrl": {
-                "url": apigw_url,
-                "credentialProviderConfigurations": [
-                    {
-                        "credentialProviderType": "IAM",
-                        "credentialProvider": {
-                            "iamCredentialProvider": {
-                                "roleArn": task_role_arn,
-                                "service": "execute-api",
-                                "region": region,
+        recordType="MCP",
+        descriptors={
+            "mcpServer": {
+                "source": {
+                    "fromUrl": {
+                        "url": apigw_url,
+                        "credentialProviderConfigurations": [
+                            {
+                                "credentialProviderType": "IAM",
+                                "credentialProvider": {
+                                    "iamCredentialProvider": {
+                                        "roleArn": task_role_arn,
+                                        "service": "execute-api",
+                                        "region": region,
+                                    }
+                                },
                             }
-                        },
+                        ],
                     }
-                ],
+                }
             }
         },
         recordVersion="1.0",
@@ -159,11 +162,11 @@ def publish_skill_record(registry_client, registry_id: str, skills_root: str) ->
             "Use for Gross Margin %, EBITDA Margin %, Operating Expense Ratio, "
             "Revenue Growth % QoQ, quarterly performance review, or P&L analysis."
         ),
-        descriptorType="AGENT_SKILLS",
+        recordType="SKILL",
         descriptors={
-            "agentSkills": {
-                "skillMd": {"inlineContent": skill_md},
-                "skillDefinition": {"inlineContent": json.dumps({"packages": []})},
+            "agentSkillsDefinition": {
+                "data": json.dumps({"packages": []}),
+                "additionalData": {"skillMd": {"data": skill_md}},
             }
         },
         recordVersion="1.0",
@@ -217,7 +220,7 @@ def main():
         raise SystemExit("--apigw-url must start with https://")
 
     session = Session(region_name=args.region)
-    registry_client = session.client("bedrock-agentcore-control")
+    registry_client = session.client("agent-registry-control")
     s3_client = session.client("s3")
     ssm_client = session.client("ssm")
 

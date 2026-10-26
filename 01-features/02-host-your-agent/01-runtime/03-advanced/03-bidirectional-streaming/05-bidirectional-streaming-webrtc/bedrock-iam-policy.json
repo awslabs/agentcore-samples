@@ -4,7 +4,7 @@
         {
             "Effect": "Allow",
             "Action": "bedrock:InvokeModelWithBidirectionalStream",
-            "Resource": "arn:aws:bedrock:us-west-2:ACCOUNT_ID:foundation-model/amazon.nova-2-sonic-v1:0"
+            "Resource": "arn:aws:bedrock:AWS_REGION:ACCOUNT_ID:foundation-model/amazon.nova-2-sonic-v1:0"
         }
     ]
 }

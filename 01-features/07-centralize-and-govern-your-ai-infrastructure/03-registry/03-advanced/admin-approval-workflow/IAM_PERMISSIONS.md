@@ -19,46 +19,46 @@ Create IAM user or role with the following permissions.
             "Sid": "AllowCreatingAndListingRegistries",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistry",
-                "bedrock-agentcore:ListRegistries"
+                "agent-registry:CreateRegistry",
+                "agent-registry:ListRegistries"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:*"]
         },
         {
             "Sid": "AllowGetUpdateDeleteRegistry",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistry",
-                "bedrock-agentcore:UpdateRegistry",
-                "bedrock-agentcore:DeleteRegistry"
+                "agent-registry:GetRegistry",
+                "agent-registry:UpdateRegistry",
+                "agent-registry:DeleteRegistry"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*"]
         },
         {
             "Sid": "AllowCreatingAndListingRegistryRecords",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistryRecord",
-                "bedrock-agentcore:ListRegistryRecords"
+                "agent-registry:CreateRegistryRecord",
+                "agent-registry:ListRegistryRecords"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*"]
         },
         {
             "Sid": "AllowRecordLevelOperations",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistryRecord",
-                "bedrock-agentcore:UpdateRegistryRecord",
-                "bedrock-agentcore:DeleteRegistryRecord",
-                "bedrock-agentcore:SubmitRegistryRecordForApproval"
+                "agent-registry:GetRegistryRecord",
+                "agent-registry:UpdateRegistryRecord",
+                "agent-registry:DeleteRegistryRecord",
+                "agent-registry:SubmitRegistryRecordForApproval"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
         },
         {
             "Sid": "AllowApproveRejectDeprecateRecords",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:UpdateRegistryRecordStatus"],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
+            "Action": ["agent-registry:UpdateRegistryRecordStatus"],
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
         },
         {
             "Sid": "AdditionalPermissionForRegistryManagedWorkloadIdentity",
@@ -79,34 +79,34 @@ Create IAM user or role with the following permissions.
         {
             "Sid": "AllowListingAllRegistries",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:ListRegistries"],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:*"]
+            "Action": ["agent-registry:ListRegistries"],
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:*"]
         },
         {
             "Sid": "AllowGetRegistry",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:GetRegistry"],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*"]
+            "Action": ["agent-registry:GetRegistry"],
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*"]
         },
         {
             "Sid": "AllowCreatingAndListingRegistryRecords",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistryRecord",
-                "bedrock-agentcore:ListRegistryRecords"
+                "agent-registry:CreateRegistryRecord",
+                "agent-registry:ListRegistryRecords"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*"]
         },
         {
             "Sid": "AllowRecordLevelOperations",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistryRecord",
-                "bedrock-agentcore:UpdateRegistryRecord",
-                "bedrock-agentcore:DeleteRegistryRecord",
-                "bedrock-agentcore:SubmitRegistryRecordForApproval"
+                "agent-registry:GetRegistryRecord",
+                "agent-registry:UpdateRegistryRecord",
+                "agent-registry:DeleteRegistryRecord",
+                "agent-registry:SubmitRegistryRecordForApproval"
             ],
-            "Resource": ["arn:aws:bedrock-agentcore:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
+            "Resource": ["arn:aws:agent-registry:*:YOUR_ACCOUNT_ID:registry/*/record/*"]
         }
     ]
 }

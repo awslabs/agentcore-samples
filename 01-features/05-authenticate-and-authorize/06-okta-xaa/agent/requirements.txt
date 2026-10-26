@@ -1,0 +1,5 @@
+strands-agents>=1.30.0
+bedrock-agentcore>=1.4.0
+PyJWT[crypto]>=2.9.0
+httpx>=0.27.0
+boto3>=1.40.0

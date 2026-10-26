@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OBO Use Case 2 — Result (Okta)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    .muted { color: #666; }
+    .box { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fafafa; }
+    .err { background: #fde8e8; border-color: #f3b5b5; }
+    .ok { background: #ecfdf5; border-color: #86efac; }
+    pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; }
+    a { color: #0b63ce; }
+  </style>
+</head>
+<body>
+  <h1>Result</h1>
+  <p class="muted">You asked: <em>{{ prompt }}</em></p>
+
+  {% if error %}
+    <div class="box err">
+      <h3>✗ Something went wrong</h3>
+      <pre>{{ error }}</pre>
+    </div>
+  {% else %}
+    <div class="box ok">
+      <h3>✓ Agent responded</h3>
+      {% if result.answer %}
+        <p style="font-size: 1.1rem; line-height: 1.5;">{{ result.answer }}</p>
+      {% else %}
+        <pre>{{ result | tojson(indent=2) }}</pre>
+      {% endif %}
+      <details style="margin-top: 1rem;">
+        <summary class="muted" style="cursor: pointer; font-size: 0.85rem;">Show raw response</summary>
+        <pre style="margin-top: 0.5rem; font-size: 0.75rem;">{{ result | tojson(indent=2) }}</pre>
+      </details>
+    </div>
+  {% endif %}
+
+  <p><a href="/">← back to home</a></p>
+</body>
+</html>

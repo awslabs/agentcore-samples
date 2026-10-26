@@ -21,11 +21,12 @@ Prerequisites:
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from seed_records import create_registry, seed, delete_registry, _cp_client  # noqa: E402
+from seed_records import _cp_client, create_registry, delete_registry, seed
 
 
 # ── ANSI colors ────────────────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ print(f"  {C.GREEN}✅ Registry created{C.RESET}")
 print(f"  {C.BOLD}Registry ID:{C.RESET} {C.CYAN}{registry_id}{C.RESET}")
 print(f"  {C.BOLD}Status:{C.RESET}      {registry['status']}")
 print(
-    f"  {C.BOLD}MCP URL:{C.RESET}     {C.CYAN}https://bedrock-agentcore.{REGION}.amazonaws.com/registry/{registry_id}/mcp{C.RESET}"
+    f"  {C.BOLD}MCP URL:{C.RESET}     {C.CYAN}https://agent-registry.{REGION}.api.aws/registry/{registry_id}/mcp{C.RESET}"
 )
 
 # ── Step 3: Seed Registry with Sample Capability Records ──────────────────────
@@ -87,7 +88,7 @@ for reg in cp.list_registries()["registries"]:
 
 # ── Step 4: Connect Registry as MCP Server in Kiro ────────────────────────────
 print(f"\n{C.BOLD}=== Step 4: Connect Registry as MCP Server in Kiro ==={C.RESET}")
-mcp_url = f"https://bedrock-agentcore.{REGION}.amazonaws.com/registry/{registry_id}/mcp/"
+mcp_url = f"https://agent-registry.{REGION}.api.aws/registry/{registry_id}/mcp/"
 print(f"""
   Add the following to your Kiro MCP configuration (.kiro/settings/mcp.json):
 

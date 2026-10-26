@@ -1,0 +1,3 @@
+[FORMAT]
+# Match ruff's default line length so the two tools don't conflict.
+max-line-length=120

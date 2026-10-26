@@ -3,7 +3,7 @@ Zero to Registry in 10 Minutes — Admin Setup & IAM Governance Guide
 
 Walks an IT/DevOps Admin through standing up an AWS Agent Registry from scratch:
   - Configure IAM policies for Admin, Publisher, and Consumer personas
-  - Create a registry with governance-first manual approval (autoApproval: false)
+  - Create a registry with governance-first manual approval
   - Register all three record types: MCP server, A2A agent, CUSTOM skill
   - Prove governance guardrails (Publisher cannot self-approve, Consumer is read-only)
   - Approve records and verify semantic search
@@ -13,7 +13,7 @@ Usage:
 
 Prerequisites:
     - boto3 >= 1.42.87  (pip install boto3)
-    - AWS credentials with IAM management + STS + bedrock-agentcore permissions
+    - AWS credentials with IAM management + STS + agent-registry permissions
     - AWS_DEFAULT_REGION set (default: us-west-2)
 
 Resources created:
@@ -22,10 +22,11 @@ Resources created:
     - 3 IAM users: registry-admin-demo, registry-publisher-demo, registry-consumer-demo
 """
 
-import os
-import boto3
 import json
+import os
 import time
+
+import boto3
 from botocore.exceptions import ClientError
 
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
@@ -34,8 +35,8 @@ AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
 session = boto3.Session(region_name=AWS_REGION)
 ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
 
-cp_client = session.client("bedrock-agentcore-control")
-dp_client = session.client("bedrock-agentcore")
+cp_client = session.client("agent-registry-control")
+dp_client = session.client("agent-registry")
 iam_client = session.client("iam")
 
 
@@ -73,11 +74,11 @@ RECORD_NAMES = {}
 print(f"Session ready | Region: {AWS_REGION} | Account: {ACCOUNT_ID[:4]}****{ACCOUNT_ID[-4:]}")
 
 # ── Step 1: Create registry ───────────────────────────────────────────────────
-print("\n── Step 1: Create Registry (autoApproval: false) ──")
+print("\n── Step 1: Create Registry (manual approval) ──")
 create_resp = cp_client.create_registry(
     name="enterprise_agent_registry",
     description="Enterprise registry for MCP servers, A2A agents, and custom resources. Manual approval required.",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 REGISTRY_ARN = create_resp["registryArn"]
 REGISTRY_ID = REGISTRY_ARN.split("/")[-1]
@@ -95,46 +96,46 @@ ADMIN_POLICY = {
             "Sid": "AllowCreatingAndListingRegistries",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistry",
-                "bedrock-agentcore:ListRegistries",
+                "agent-registry:CreateRegistry",
+                "agent-registry:ListRegistries",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:*"],
         },
         {
             "Sid": "AllowGetUpdateDeleteRegistry",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistry",
-                "bedrock-agentcore:UpdateRegistry",
-                "bedrock-agentcore:DeleteRegistry",
+                "agent-registry:GetRegistry",
+                "agent-registry:UpdateRegistry",
+                "agent-registry:DeleteRegistry",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
         {
             "Sid": "AllowCreatingAndListingRegistryRecords",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistryRecord",
-                "bedrock-agentcore:ListRegistryRecords",
+                "agent-registry:CreateRegistryRecord",
+                "agent-registry:ListRegistryRecords",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
         {
             "Sid": "AllowRecordLevelOperations",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistryRecord",
-                "bedrock-agentcore:UpdateRegistryRecord",
-                "bedrock-agentcore:DeleteRegistryRecord",
-                "bedrock-agentcore:SubmitRegistryRecordForApproval",
+                "agent-registry:GetRegistryRecord",
+                "agent-registry:UpdateRegistryRecord",
+                "agent-registry:DeleteRegistryRecord",
+                "agent-registry:SubmitRegistryRecordForApproval",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
         },
         {
             "Sid": "AllowApproveRejectDeprecateRecords",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:UpdateRegistryRecordStatus"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
+            "Action": ["agent-registry:UpdateRegistryRecordStatus"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
         },
     ],
 }
@@ -145,34 +146,34 @@ PUBLISHER_POLICY = {
         {
             "Sid": "AllowListingAllRegistries",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:ListRegistries"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:*"],
+            "Action": ["agent-registry:ListRegistries"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:*"],
         },
         {
             "Sid": "AllowGetRegistry",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:GetRegistry"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Action": ["agent-registry:GetRegistry"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
         {
             "Sid": "AllowCreatingAndListingRegistryRecords",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:CreateRegistryRecord",
-                "bedrock-agentcore:ListRegistryRecords",
+                "agent-registry:CreateRegistryRecord",
+                "agent-registry:ListRegistryRecords",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
         {
             "Sid": "AllowRecordLevelOperations",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:GetRegistryRecord",
-                "bedrock-agentcore:UpdateRegistryRecord",
-                "bedrock-agentcore:DeleteRegistryRecord",
-                "bedrock-agentcore:SubmitRegistryRecordForApproval",
+                "agent-registry:GetRegistryRecord",
+                "agent-registry:UpdateRegistryRecord",
+                "agent-registry:DeleteRegistryRecord",
+                "agent-registry:SubmitRegistryRecordForApproval",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*/record/*"],
         },
     ],
 }
@@ -183,29 +184,33 @@ CONSUMER_POLICY = {
         {
             "Sid": "AllowListingAllRegistries",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:ListRegistries"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:*"],
+            "Action": ["agent-registry:ListRegistries"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:*"],
         },
         {
             "Sid": "AllowGetRegistry",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:GetRegistry"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Action": ["agent-registry:GetRegistry"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
         {
             "Sid": "AllowSearchingForApprovedRecords",
             "Effect": "Allow",
-            "Action": ["bedrock-agentcore:SearchRegistryRecords"],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Action": [
+                "agent-registry:SearchDiscoverableRegistryRecords",
+                "agent-registry:ListDiscoverableRegistryRecords",
+                "agent-registry:BatchGetDiscoverableRegistryRecords",
+            ],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:*"],
         },
         {
             "Sid": "AllowListingAndGettingRecords",
             "Effect": "Allow",
             "Action": [
-                "bedrock-agentcore:ListRegistryRecords",
-                "bedrock-agentcore:GetRegistryRecord",
+                "agent-registry:ListRegistryRecords",
+                "agent-registry:GetRegistryRecord",
             ],
-            "Resource": [f"arn:aws:bedrock-agentcore:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
+            "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:registry/*"],
         },
     ],
 }
@@ -254,7 +259,7 @@ print("\n  Waiting 10s for IAM policy propagation...")
 time.sleep(10)
 
 
-def get_client_for_user(user_name, service="bedrock-agentcore-control"):
+def get_client_for_user(user_name, service="agent-registry-control"):
     creds = user_credentials[user_name]
     s = boto3.Session(
         aws_access_key_id=creds["access_key"],
@@ -267,7 +272,7 @@ def get_client_for_user(user_name, service="bedrock-agentcore-control"):
 publisher_cp = get_client_for_user("registry-publisher-demo")
 admin_cp = get_client_for_user("registry-admin-demo")
 consumer_cp = get_client_for_user("registry-consumer-demo")
-consumer_dp = get_client_for_user("registry-consumer-demo", service="bedrock-agentcore")
+consumer_dp = get_client_for_user("registry-consumer-demo", service="agent-registry")
 
 # ── Step 4: Create records (MCP, A2A, CUSTOM) ─────────────────────────────────
 print("\n── Step 4: Create Records ──")
@@ -275,41 +280,42 @@ print("\n── Step 4: Create Records ──")
 mcp_rec = publisher_cp.create_registry_record(
     registryId=REGISTRY_ID,
     name="enterprise_code_review_mcp",
-    descriptorType="MCP",
+    displayName="Enterprise Code Review MCP",
+    recordType="MCP",
     descriptors={
-        "mcp": {
-            "server": {
-                "inlineContent": json.dumps(
-                    {
-                        "name": "io.enterprise/code-review",
-                        "description": "MCP server for automated code review with security scanning",
-                        "version": "2.1.0",
-                        "packages": [
-                            {
-                                "registryType": "npm",
-                                "identifier": "@enterprise/code-review-mcp",
-                                "version": "2.1.0",
-                                "transport": {"type": "stdio"},
-                            }
-                        ],
-                    }
-                )
-            },
-            "tools": {
-                "inlineContent": json.dumps(
-                    {
-                        "tools": [
-                            {
-                                "name": "review_code",
-                                "description": "Analyze code for security issues",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {"code": {"type": "string"}},
-                                },
-                            }
-                        ]
-                    }
-                )
+        "mcpServer": {
+            "data": json.dumps(
+                {
+                    "name": "io.enterprise/code-review",
+                    "description": "MCP server for automated code review with security scanning",
+                    "version": "2.1.0",
+                    "packages": [
+                        {
+                            "registryType": "npm",
+                            "identifier": "@enterprise/code-review-mcp",
+                            "version": "2.1.0",
+                            "transport": {"type": "stdio"},
+                        }
+                    ],
+                }
+            ),
+            "additionalData": {
+                "tools": {
+                    "data": json.dumps(
+                        {
+                            "tools": [
+                                {
+                                    "name": "review_code",
+                                    "description": "Analyze code for security issues",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {"code": {"type": "string"}},
+                                    },
+                                }
+                            ]
+                        }
+                    ),
+                }
             },
         }
     },
@@ -322,38 +328,36 @@ print(f"  ✅ MCP: {RECORD_IDS['mcp']} — DRAFT")
 a2a_rec = publisher_cp.create_registry_record(
     registryId=REGISTRY_ID,
     name="enterprise_compliance_agent",
-    descriptorType="A2A",
+    displayName="Enterprise Compliance Agent",
+    recordType="AGENT",
     descriptors={
-        "a2a": {
-            "agentCard": {
-                "schemaVersion": "0.3",
-                "inlineContent": json.dumps(
-                    {
-                        "protocolVersion": "0.3",
-                        "name": "enterprise-compliance-agent",
-                        "description": "A2A agent for compliance policy validation and audit checks",
-                        "version": "1.0.0",
-                        "url": "https://compliance-agent.internal.example.com/a2a",
-                        "capabilities": {"streaming": True},
-                        "skills": [
-                            {
-                                "id": "validate_compliance",
-                                "name": "Compliance Validation",
-                                "description": "Validates resources against compliance policies.",
-                                "tags": ["compliance"],
-                            },
-                            {
-                                "id": "audit_check",
-                                "name": "Audit Check",
-                                "description": "Runs audit checks on infrastructure.",
-                                "tags": ["audit"],
-                            },
-                        ],
-                        "defaultInputModes": ["text/plain"],
-                        "defaultOutputModes": ["text/plain"],
-                    }
-                ),
-            }
+        "a2aAgentCard": {
+            "data": json.dumps(
+                {
+                    "protocolVersion": "0.3",
+                    "name": "enterprise-compliance-agent",
+                    "description": "A2A agent for compliance policy validation and audit checks",
+                    "version": "1.0.0",
+                    "url": "https://compliance-agent.internal.example.com/a2a",
+                    "capabilities": {"streaming": True},
+                    "skills": [
+                        {
+                            "id": "validate_compliance",
+                            "name": "Compliance Validation",
+                            "description": "Validates resources against compliance policies.",
+                            "tags": ["compliance"],
+                        },
+                        {
+                            "id": "audit_check",
+                            "name": "Audit Check",
+                            "description": "Runs audit checks on infrastructure.",
+                            "tags": ["audit"],
+                        },
+                    ],
+                    "defaultInputModes": ["text/plain"],
+                    "defaultOutputModes": ["text/plain"],
+                }
+            ),
         }
     },
     recordVersion="1.0",
@@ -365,10 +369,11 @@ print(f"  ✅ A2A: {RECORD_IDS['a2a']} — DRAFT")
 custom_rec = publisher_cp.create_registry_record(
     registryId=REGISTRY_ID,
     name="enterprise_data_pipeline_skill",
-    descriptorType="CUSTOM",
+    displayName="Enterprise Data Pipeline Skill",
+    recordType="CUSTOM",
     descriptors={
         "custom": {
-            "inlineContent": json.dumps(
+            "data": json.dumps(
                 {
                     "name": "data-pipeline-orchestrator",
                     "description": "Custom skill for orchestrating cross-account data pipelines",
@@ -420,8 +425,8 @@ test_action(
     lambda: consumer_cp.create_registry_record(
         registryId=REGISTRY_ID,
         name="shouldFail",
-        descriptorType="MCP",
-        descriptors={"mcp": {"server": {"inlineContent": "{}"}}},
+        recordType="CUSTOM",
+        descriptors={"custom": {"data": "{}"}},
         recordVersion="1.0",
     ),
 )
@@ -498,13 +503,29 @@ queries = [
 ]
 for q in queries:
     try:
-        results = consumer_dp.search_registry_records(registryIds=[REGISTRY_ARN], searchQuery=q, maxResults=5)
+        results = dp_client.search_discoverable_registry_records(
+            registryIds=[REGISTRY_ARN], searchQuery=q, maxResults=5
+        )
         for r in results.get("registryRecords", []):
-            print(f"  🔍 '{q}' → [{r.get('descriptorType')}] {r['name']}")
+            print(f"  🔍 '{q}' → [{r.get('recordType')}] {r['name']}")
         if not results.get("registryRecords"):
             print(f"  🔍 '{q}' → no results yet (index may still propagate)")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error: {e}")
+
+# Batch get
+print("\n── Batch Get Verification ──")
+all_record_ids = list(RECORD_IDS.values())
+batch_resp = dp_client.batch_get_discoverable_registry_records(
+    entries=[{"registryId": REGISTRY_ID, "recordIds": all_record_ids}]
+)
+for r in batch_resp.get("registryRecords", []):
+    print(f"  📦 [{r.get('recordType')}] {r['name']} — {list(r.get('descriptors', {}).keys())}")
+errors = batch_resp.get("errors", [])
+if errors:
+    print(f"  ⚠️  {len(errors)} error(s): {errors}")
+else:
+    print(f"  ✅ Retrieved {len(batch_resp['registryRecords'])} records, 0 errors")
 
 print("\n✅ End-to-end registry demo complete.")
 

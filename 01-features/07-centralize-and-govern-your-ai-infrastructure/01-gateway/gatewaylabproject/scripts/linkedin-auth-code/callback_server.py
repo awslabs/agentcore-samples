@@ -8,10 +8,10 @@ CompleteResourceTokenAuth to complete session binding.
 Optionally opens the authorization URL in the browser.
 
 Usage (admin target creation - Method 1):
-    uv run python scripts/github-auth-code/callback_server.py --user-id "<user-id>" --auth-url "<url>"
+    uv run python scripts/linkedin-auth-code/callback_server.py --user-id "<user-id>" --auth-url "<url>"
 
 Usage (gateway user tool invocation):
-    uv run python scripts/github-auth-code/callback_server.py --user-token "<jwt>" --auth-url "<url>"
+    uv run python scripts/linkedin-auth-code/callback_server.py --user-token "<jwt>" --auth-url "<url>"
 """
 
 import argparse
@@ -44,7 +44,7 @@ async def callback(request: Request):
             userIdentifier=user_identifier,
             sessionUri=session_uri,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Session binding error: {e}")
         return HTMLResponse(
             content="<h1>Session Binding Failed</h1><p>An error occurred during session binding. Check the console for details.</p>",

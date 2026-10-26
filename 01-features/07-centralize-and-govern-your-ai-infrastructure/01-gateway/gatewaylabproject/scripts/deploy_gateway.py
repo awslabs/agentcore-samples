@@ -3,13 +3,15 @@
 Used by tutorials that need features the AgentCore CLI doesn't yet support
 (streamingConfiguration, sessionConfiguration, supportedVersions).
 
-Requires COGNITO_STACK_NAME in environment.
+Requires COGNITO_STACK_NAME in environment for the default CUSTOM_JWT authorizer.
+With --authorizer-type AWS_IAM, no Cognito (or any IdP) is needed.
 
 Usage:
     uv run python scripts/deploy_gateway.py --name streaming-gateway --streaming
     uv run python scripts/deploy_gateway.py --name session-gateway --sessions
     uv run python scripts/deploy_gateway.py --name elicitation-gateway --streaming --sessions
     uv run python scripts/deploy_gateway.py --name my-gateway --streaming --sessions --search-type SEMANTIC
+    uv run python scripts/deploy_gateway.py --name iam-gateway --authorizer-type AWS_IAM
 """
 
 import argparse
@@ -47,6 +49,13 @@ def main():
     )
     parser.add_argument("--name", required=True, help="Gateway name")
     parser.add_argument(
+        "--authorizer-type",
+        default="CUSTOM_JWT",
+        choices=["CUSTOM_JWT", "AWS_IAM"],
+        help="Inbound authorizer. CUSTOM_JWT (default) uses Cognito; AWS_IAM uses "
+        "SigV4 and needs no Cognito.",
+    )
+    parser.add_argument(
         "--streaming", action="store_true", help="Enable response streaming"
     )
     parser.add_argument("--sessions", action="store_true", help="Enable sessions")
@@ -75,6 +84,12 @@ def main():
         help="Add lambda:InvokeFunction permission to gateway role",
     )
     parser.add_argument(
+        "--websearch-targets",
+        action="store_true",
+        help="Add Web Search Tool connector permissions to the gateway role "
+        "(bedrock-agentcore:InvokeGateway + InvokeWebSearch)",
+    )
+    parser.add_argument(
         "--env-file",
         default=None,
         help="Path to .env file for reading/writing (default: scripts/<name>/.env)",
@@ -94,23 +109,31 @@ def main():
 
     load_env(env_file)
 
-    cognito_stack = get_required_env("COGNITO_STACK_NAME")
-
     region = boto3.Session().region_name
     admin = GatewayBoto3Client(region=region)
     control = admin.client
-    cfn = boto3.client("cloudformation", region_name=region)
 
-    outputs = {
-        o["OutputKey"]: o["OutputValue"]
-        for o in cfn.describe_stacks(StackName=cognito_stack)["Stacks"][0]["Outputs"]
-    }
-    discovery_url = outputs["DiscoveryUrl"]
-    gw_client_id = outputs["GatewayClientId"]
+    # CUSTOM_JWT needs the Cognito stack outputs; AWS_IAM needs no IdP at all.
+    discovery_url = None
+    gw_client_id = None
+    if args.authorizer_type == "CUSTOM_JWT":
+        cognito_stack = get_required_env("COGNITO_STACK_NAME")
+        cfn = boto3.client("cloudformation", region_name=region)
+        outputs = {
+            o["OutputKey"]: o["OutputValue"]
+            for o in cfn.describe_stacks(StackName=cognito_stack)["Stacks"][0][
+                "Outputs"
+            ]
+        }
+        discovery_url = outputs["DiscoveryUrl"]
+        gw_client_id = outputs["GatewayClientId"]
 
     print(f"--- Creating gateway IAM role for '{args.name}' ---")
     role_arn = admin.create_gateway_role(
-        args.name, oauth_targets=True, lambda_targets=args.lambda_targets
+        args.name,
+        oauth_targets=True,
+        lambda_targets=args.lambda_targets,
+        websearch_targets=args.websearch_targets,
     )
 
     mcp_config: dict = {"supportedVersions": ["2025-11-25"]}
@@ -137,16 +160,19 @@ def main():
         "name": args.name,
         "roleArn": role_arn,
         "protocolType": "MCP",
-        "authorizerType": "CUSTOM_JWT",
-        "authorizerConfiguration": {
+        "authorizerType": args.authorizer_type,
+        "protocolConfiguration": {"mcp": mcp_config},
+        "exceptionLevel": "DEBUG",
+    }
+
+    # AWS_IAM has no authorizerConfiguration; CUSTOM_JWT carries the Cognito config.
+    if args.authorizer_type == "CUSTOM_JWT":
+        create_kwargs["authorizerConfiguration"] = {
             "customJWTAuthorizer": {
                 "allowedClients": [gw_client_id],
                 "discoveryUrl": discovery_url,
             }
-        },
-        "protocolConfiguration": {"mcp": mcp_config},
-        "exceptionLevel": "DEBUG",
-    }
+        }
 
     if args.interceptor_arn:
         create_kwargs["interceptorConfigurations"] = [

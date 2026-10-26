@@ -11,6 +11,7 @@
 - aurbac
 - bergjaak
 - bioerrorlog
+- Bharathi Srinivasan
 - chanbi
 - crupakheti
 - danystinson
@@ -22,6 +23,7 @@
 - Grace Lang
 - Hari Tripathi
 - Joshua Samuel
+- Naga Gaddamu(nagagaddamu)
 - khastation
 - manchandakp
 - madhurprash
@@ -35,6 +37,7 @@
 - rahullks
 - rameshv29
 - rohillasandeep
+- Roger Thant (rlthant)
 - satveerkhurpa
 - seanslavichaws
 - Shanicus Yee
@@ -75,7 +78,6 @@
 - Bhuvan Annamreddi
 - Sparsh Wadhwa (SparshWadhwa)
 - Lana Zhang
-- Bharathi Srinivasan
 - Trevor Schiavone
 - Antonio Rodriguez (rodzanto)
 - otamaryx
@@ -117,7 +119,27 @@
 - Cristiano Scandura (scandura)
 - palbiren
 - Gui Ruggiero (guiruggiero)
+- Julia Furst Morgado (juliafmorgado)
 - Visakh Madathil (vmmadathil)
 - JobRamos (jobdram)
+- Neha Thakur (nehabthakur)
+- Will Matos (wilmatos)
+- Senthil Mohan (skmohan)
+- Guruprasad Seeryada (svguru)
+- Fabio Balancin (balancin)
+- Varun Gunda (vvargu)
+- tsubasakong
+- Chris Wajule (ggChris2)
+- Anil Nadiminti (aniloncloud)
+- Deepak Singh (deepaxs)
+- Irene Arroyo Delgado (iiarroyo)
+- rmncardoso
+- mccartnick
+- ach1ntya
+- Shruthi Rajoli (rajolishruthi)
+- ratnopam
+- Mark Roy (markproy)
+- Bent Krause (krausexb)
+- Georgios Tsoukas (gtsoukasaws)
+- Olawale Olaleye (berry2012)
 - Srividya Ponnada (psrivi)
-- Bharathi Srinivasan (bhrsrini)

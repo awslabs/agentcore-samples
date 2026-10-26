@@ -39,7 +39,7 @@ After synchronization, the record will be created in CREATING status. After abou
 ## Prerequisites
 
 - AWS account with IAM credentials that have permissions for AWS Agent registry, AgentCore runtime, Cognito, and IAM role management
-- Python 3.10+ with boto3 >= 1.42.87 (with `bedrock-agentcore-control` service support)
+- Python 3.10+ with boto3 >= 1.42.87 (with `agent-registry-control` service support)
 - AWS CLI v2 configured with an appropriate profile
 - `bedrock-agentcore-starter-toolkit` for deploying MCP servers to AgentCore runtime
 

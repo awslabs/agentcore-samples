@@ -40,7 +40,7 @@ The long-term counterparts live in [`../../../../02-long-term-memory/examples/si
 ## See also
 
 - [AgentCore memory documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html)
-- [Concepts primer](../../../00-getting-started/01-memory-concepts.md)
+- [Concepts primer](../../../../00-getting-started/01-memory-concepts.md)
 
 ## Running the Python Scripts
 

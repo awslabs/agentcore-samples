@@ -1,0 +1,7 @@
+# Pylint config for this project. This directory is its own git root, so pylint
+# does not discover the monorepo-root pyproject.toml (it stops walking up at the
+# .git boundary). This file matches ruff's line-length (120) so the two linters
+# agree on C0301. Ruff ignores this file; a pyproject.toml here would instead
+# hijack ruff's config and revert its line-length to the default.
+[FORMAT]
+max-line-length=120

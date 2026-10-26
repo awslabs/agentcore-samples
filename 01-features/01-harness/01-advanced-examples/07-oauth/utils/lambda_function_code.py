@@ -1,10 +1,9 @@
 """
 Simple order management Lambda function for AgentCore Gateway target.
-Exposes get_order and update_order tools.
+Exposes get_order and update_order_status tools.
 """
 
 import json
-
 
 # Mock order database
 ORDERS = {

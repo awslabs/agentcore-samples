@@ -1,0 +1,4 @@
+httpx>=0.27.0
+PyJWT[crypto]>=2.9.0
+python-dotenv>=1.0.0
+boto3>=1.40.0

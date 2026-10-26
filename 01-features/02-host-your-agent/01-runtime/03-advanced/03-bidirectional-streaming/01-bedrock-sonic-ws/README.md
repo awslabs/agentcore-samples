@@ -6,7 +6,7 @@ A bidirectional voice agent using the **Nova Sonic S2S API directly** via the AW
 
 ```bash
 # Navigate to the bidirectional streaming tutorial root
-cd 06-workshops/01-AgentCore-runtime/06-bi-directional-streaming
+cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
 
 # Create and activate a virtual environment
 python3 -m venv .venv
@@ -35,12 +35,24 @@ python utils/deploy.py 01-bedrock-sonic-ws
 ./utils/start_client.sh 01-bedrock-sonic-ws
 ```
 
+The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
+
 ### Try It Out
 
 - Speak naturally — the agent responds in real time
 - Interrupt the agent mid-response (barge-in)
-- Use text input for testing
 - Ask "What's the date today?" to test tool integration
+- Use text input as an alternative to speaking, in a separate session
+
+> **Keep audio flowing during a voice session.** Nova Sonic ends the stream with a
+> `ValidationException` ("Timed out waiting for audio bytes or interactive content")
+> if there is a long gap in audio input. This sample does not re-establish the stream
+> afterwards, so the session stops responding and further audio is logged as
+> `Received event audioInput but no active stream manager`.
+>
+> In practice: start speaking within a few seconds of connecting, and don't switch to
+> the text box mid-conversation. If a session does go quiet, click **End Conversation**
+> and start a new one.
 
 ### Cleanup
 
@@ -157,3 +169,5 @@ The server supports two modes:
 - **EC2 mode**: Fetches credentials from IMDS (IMDSv2 preferred, falls back to IMDSv1) with automatic background refresh before expiration
 
 The `S2sSessionManager` uses `EnvironmentCredentialsResolver` from the AWS SDK, which reads credentials from environment variables that the server keeps up to date.
+
+**Credentials are also refreshed at the start of every session**, not only at application startup. This is required on AgentCore Runtime V2, where anything captured at startup is frozen into the deploy-time snapshot -- see [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2).

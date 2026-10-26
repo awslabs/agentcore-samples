@@ -1,0 +1,14 @@
+# Agent framework
+claude-agent-sdk>=0.1.3
+
+# Instrumentation (auto-discovered by ADOT — no explicit code needed)
+openinference-instrumentation-claude-agent-sdk>=0.1.3
+
+# AgentCore Runtime
+bedrock-agentcore>=0.1.0
+
+# Evaluation SDK
+bedrock-agentcore[evaluation]>=0.1.0
+
+# AWS SDK
+boto3>=1.34.0

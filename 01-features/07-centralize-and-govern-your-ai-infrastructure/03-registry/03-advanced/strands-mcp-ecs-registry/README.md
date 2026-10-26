@@ -235,7 +235,7 @@ Your AWS user/role needs the following permissions to deploy the stack and run t
         "iam:*",
         "logs:*",
         "cloudfront:*",
-        "bedrock-agentcore:*"
+        "agent-registry:*"
       ],
       "Resource": "*"
     }
@@ -330,7 +330,7 @@ python deploy/infra/setup.py \
 ```
 
 > **Why a Python script and not CloudFormation?**
-> The AWS Agent Registry (`bedrock-agentcore-control`) does not have CloudFormation resource types yet. `setup.py` handles all registry operations via direct boto3 API calls. Once CloudFormation support is added, this step can be folded into the stack.
+> The AWS Agent Registry (`agent-registry-control`) does not have CloudFormation resource types yet. `setup.py` handles all registry operations via direct boto3 API calls. Once CloudFormation support is added, this step can be folded into the stack.
 
 ### 6. Register Additional Skills
 
@@ -387,13 +387,13 @@ The agent uses semantic search to match your natural language query to the most 
 
 **"Unable to assume the provided IAM role" during registry setup**
 
-The AgentCore registry crawler calls `sts:AssumeRole` on the role specified in `credentialProviderConfigurations`. The role's trust policy must explicitly allow `bedrock-agentcore.amazonaws.com` as a service principal — without this, the crawler cannot authenticate to fetch the MCP server manifest.
+The AgentCore registry crawler calls `sts:AssumeRole` on the role specified in `credentialProviderConfigurations`. The role's trust policy must explicitly allow `agent-registry.amazonaws.com` as a service principal — without this, the crawler cannot authenticate to fetch the MCP server manifest.
 
 ```yaml
 # In the agent task role's AssumeRolePolicyDocument:
 - Effect: Allow
   Principal:
-    Service: bedrock-agentcore.amazonaws.com
+    Service: agent-registry.amazonaws.com
   Action: sts:AssumeRole
 ```
 
@@ -440,11 +440,11 @@ aws logs tail /ecs/financial-agent/agent --follow
 aws logs tail /ecs/financial-agent/chat --follow
 
 # List registry records
-aws bedrock-agentcore-control list-registry-records \
+aws agent-registry-control list-registry-records \
   --registry-id <REGISTRY_ID> --region us-east-1
 
 # Search registry
-aws bedrock-agentcore search-registry-records \
+aws agent-registry search-discoverable-registry-records \
   --search-query "financial KPIs" \
   --registry-ids "<REGISTRY_ARN>" \
   --region us-east-1
@@ -458,15 +458,15 @@ Clean up in the order below to avoid dependency errors. Registry records must be
 
 ```bash
 # List all records
-aws bedrock-agentcore-control list-registry-records \
+aws agent-registry-control list-registry-records \
   --registry-id <REGISTRY_ID> --region us-east-1
 
 # Delete each record
-aws bedrock-agentcore-control delete-registry-record \
+aws agent-registry-control delete-registry-record \
   --registry-id <REGISTRY_ID> --record-id <RECORD_ID> --region us-east-1
 
 # Then delete the registry itself
-aws bedrock-agentcore-control delete-registry \
+aws agent-registry-control delete-registry \
   --registry-id <REGISTRY_ID> --region us-east-1
 ```
 

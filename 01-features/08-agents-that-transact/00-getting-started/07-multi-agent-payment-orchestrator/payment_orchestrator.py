@@ -19,6 +19,7 @@ import os
 import json
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from bedrock_agentcore.payments import PaymentManager
 from bedrock_agentcore.payments.integrations.strands import (
     AgentCorePaymentsPlugin,
     AgentCorePaymentsPluginConfig,
@@ -27,11 +28,12 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.tools import tool
 from strands_tools import http_request
-import boto3
 
 app = BedrockAgentCoreApp()
 
-PAYMENT_MANAGER_ARN = os.environ["PAYMENT_MANAGER_ARN"]
+# Read at import time but do NOT hard-fail here — a missing var must not crash the
+# runtime container on start. It is validated per-request in handle_request instead.
+PAYMENT_MANAGER_ARN = os.environ.get("PAYMENT_MANAGER_ARN", "")
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
 
@@ -49,6 +51,19 @@ def handle_request(payload, context=None):
             - discovery_session_id: Session B (discovery agent budget)
             - discovery_instrument_id: Privy instrument
     """
+    # agentcore invoke wraps the JSON arg as {"prompt": "<json-string>"} — unwrap it.
+    raw_prompt = payload.get("prompt", "")
+    if isinstance(raw_prompt, str) and raw_prompt.strip().startswith("{"):
+        try:
+            inner = json.loads(raw_prompt)
+            if "research_session_id" in inner or "research_instrument_id" in inner:
+                payload = inner
+        except json.JSONDecodeError:
+            pass
+
+    if not PAYMENT_MANAGER_ARN:
+        return {"error": "PAYMENT_MANAGER_ARN is not set in the runtime environment."}
+
     prompt = payload.get("prompt", "Hello")
     user_id = payload.get("user_id", "default-user")
 
@@ -76,6 +91,7 @@ def handle_request(payload, context=None):
             payment_instrument_id=research_instrument_id,
             payment_session_id=research_session_id,
             region=REGION,
+            network_preferences_config=["eip155:84532", "base-sepolia"],
         )
     )
 
@@ -86,12 +102,13 @@ def handle_request(payload, context=None):
             payment_instrument_id=discovery_instrument_id,
             payment_session_id=discovery_session_id,
             region=REGION,
+            network_preferences_config=["eip155:84532", "base-sepolia"],
         )
     )
 
     # --- Budget check tool (orchestrator only) ---
 
-    dp_client = boto3.client("bedrock-agentcore", region_name=REGION)
+    manager = PaymentManager(payment_manager_arn=PAYMENT_MANAGER_ARN, region_name=REGION)
 
     @tool
     def check_budgets() -> str:
@@ -105,12 +122,10 @@ def handle_request(payload, context=None):
             ("research_agent", research_session_id),
             ("discovery_agent", discovery_session_id),
         ]:
-            info = dp_client.get_payment_session(
-                paymentManagerArn=PAYMENT_MANAGER_ARN,
-                paymentSessionId=sid,
-                userId=user_id,
+            sess = manager.get_payment_session(
+                user_id=user_id,
+                payment_session_id=sid,
             )
-            sess = info
             results[label] = {
                 "session_id": sid,
                 "available": sess.get("availableLimits", {}).get("availableSpendAmount", "N/A"),

@@ -5,10 +5,9 @@ This module extends the MCP StreamableHTTPTransport to add AWS SigV4 request sig
 for authentication with MCP servers that authenticate using AWS IAM.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Generator
 
 import httpx
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -139,6 +138,9 @@ async def streamablehttp_client_with_sigv4(
             - write_stream: Stream for sending messages to the server
             - get_session_id_callback: Function to retrieve the current session ID
     """
+
+    if not url.rstrip("/").endswith("/mcp"):
+        url = url.rstrip("/") + "/mcp"
 
     async with streamablehttp_client(
         url=url,

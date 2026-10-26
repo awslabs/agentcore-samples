@@ -46,6 +46,22 @@ Response flows back to user
 Three auth mechanisms, zero secrets in the invoke call. The harness handles all token
 exchange automatically from the `outboundAuth.oauth` configuration.
 
+## Required IAM Permissions
+
+Unlike the other samples in this folder, this one provisions Cognito, Lambda and IAM
+resources as well as AgentCore ones, so the identity you run it as needs a broader set of
+permissions. Running under a restricted role (an EC2 instance profile, a CI role) commonly
+fails at Step 1a with `AccessDeniedException` on `cognito-idp:ListUserPools` — the first
+call the script makes, used to detect an already-existing pool so re-runs are idempotent.
+
+| Service | Actions |
+|:--------|:--------|
+| `cognito-idp` | `ListUserPools`, `CreateUserPool`, `DeleteUserPool`, `DescribeUserPool`, `ListUserPoolClients`, `CreateUserPoolClient`, `DescribeUserPoolClient`, `CreateResourceServer`, `CreateUserPoolDomain`, `DeleteUserPoolDomain`, `AdminCreateUser`, `AdminSetUserPassword`, `InitiateAuth` |
+| `lambda` | `CreateFunction`, `GetFunction`, `DeleteFunction` |
+| `iam` | `CreateRole`, `GetRole`, `DeleteRole`, `CreatePolicy`, `DeletePolicy`, `AttachRolePolicy`, `DetachRolePolicy`, `ListAttachedRolePolicies`, `ListPolicyVersions`, `CreatePolicyVersion`, `DeletePolicyVersion` |
+| `bedrock-agentcore-control` | `CreateHarness`, `GetHarness`, `ListHarnesses`, `DeleteHarness`, `CreateGateway`, `GetGateway`, `ListGateways`, `DeleteGateway`, `CreateGatewayTarget`, `GetGatewayTarget`, `ListGatewayTargets`, `DeleteGatewayTarget`, `CreateOauth2CredentialProvider`, `GetOauth2CredentialProvider`, `DeleteOauth2CredentialProvider` |
+| `sts` | `GetCallerIdentity` |
+
 ## Infrastructure Setup
 
 The script provisions resources via helper functions in `utils/setup_helpers.py`. All helpers
@@ -99,12 +115,35 @@ export HARNESS_USER_PASS="TestPassword123!"
 ### Issue: HTTP 403 when invoking harness
 **Solution**: The bearer token may be expired. Re-authenticate with `cognito.initiate_auth` to get a fresh token.
 
+### Issue: `AccessDeniedException` on `cognito-idp:ListUserPools` at Step 1a
+**Solution**: The identity running the script cannot list Cognito pools. This is the very
+first API call, so the script fails before creating anything. Add the permissions in
+[Required IAM Permissions](#required-iam-permissions) — a restricted EC2 instance role or CI
+role usually will not have them by default.
+
+### Issue: `AccessDeniedException` on `bedrock-agentcore:ListEvents` during invoke
+**Solution**: Creating a harness auto-provisions a managed memory (`harness_<name>_*`), and
+the first invoke reads it. The execution role therefore needs the memory and event actions —
+see the `Memory` and `MemoryAccountScoped` statements in `create_harness_execution_role`.
+Note that `CreateMemory` and `ListMemories` are account-scoped and must be granted on `"*"`;
+granting them on `memory/*` evaluates to an implicit deny.
+
+### Issue: The run prints the "What just happened?" summary but no order details
+**Solution**: You are on a version of this sample from before the stream errors were
+surfaced. `InvokeHarness` returns HTTP 200 and then reports agent-side failures as error
+frames *inside* the event stream, so a run that failed could still print the success summary.
+The script now raises on those frames instead.
+
 ## AgentCore CLI
 
-The CLI supports both inbound JWT auth and outbound OAuth2 credential providers via the preview channel:
+The CLI supports both inbound JWT auth and outbound OAuth2 credential providers via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name myauthagent --model-provider bedrock
 ```
 
@@ -129,8 +168,10 @@ The `cleanup_all` function deletes all resources in reverse order: harness, gate
 
 ```bash
 pip install -r ../../requirements.txt
-pip install requests
 ```
+
+`requests` is already listed in that file — this sample calls the harness invoke endpoint
+over HTTPS directly, because boto3 does not support bearer-token invocation.
 
 ```bash
 export HARNESS_USER_NAME="testuser"

@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cognito User Pool with self-service signup enabled. For testing AgentCore Gateway JWT flows. No admin user setup required.'
+
+Parameters:
+  CallbackURLs:
+    Type: CommaDelimitedList
+    Default: 'http://localhost:3000/callback,http://localhost:8501/,http://localhost:8080/callback'
+    Description: 'Allowed redirect URIs after a successful login (comma-separated)'
+
+  LogoutURLs:
+    Type: CommaDelimitedList
+    Default: 'http://localhost:3000/,http://localhost:8501/,http://localhost:8080/'
+    Description: 'Allowed logout redirect URIs (comma-separated)'
+
+Resources:
+  # User Pool — self-service signup enabled, no admin gating
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    # This UserPool is provisioned for tutorial / lab walkthroughs only — it is
+    # not intended for production. The MFA-off and "no advanced security"
+    # findings are intentional so the notebooks stay self-serve runnable for
+    # readers without an SES sender or a Cognito Plus tier; the password
+    # policy is intentionally relaxed (no symbols required) so the demo
+    # passwords in the tutorial code remain accept-able by the pool.
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F78
+            reason: 'Tutorial/demo Cognito pool — MFA is intentionally OFF so the lab can be run by readers without setting up an MFA channel. Not for production.'
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-COG1
+            reason: 'Tutorial password policy is intentionally minimal (no symbols required) so the demo credentials in the notebook keep working. Not for production.'
+          - id: AwsSolutions-COG2
+            reason: 'Tutorial/demo Cognito pool — MFA is intentionally OFF so the notebooks are self-serve runnable. Not for production.'
+          - id: AwsSolutions-COG3
+            reason: 'Advanced security mode left at default for this tutorial pool — readers may not have access to the Cognito Plus tier required to enable it.'
+          - id: AwsSolutions-COG8
+            reason: 'Advanced security mode left at default for this tutorial pool — readers may not have access to the Cognito Plus tier required to enable ENFORCED mode.'
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-pool'
+
+      # Self-service signup
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+
+      # Sign in with email
+      UsernameAttributes:
+        - email
+
+      # Email verification code is sent on signup; user verifies themselves
+      AutoVerifiedAttributes:
+        - email
+
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+      EmailVerificationMessage: 'Your verification code is {####}'
+      EmailVerificationSubject: 'Verify your email for elicitation testing'
+
+      MfaConfiguration: 'OFF'
+
+      UserPoolTags:
+        Application: elicitation
+        Purpose: 'Self-service signup for JWT testing'
+
+  # Hosted UI domain for signup / login pages
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${AWS::StackName}-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  # Resource server — required for client_credentials (Cognito mandates a custom scope)
+  ResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: !Sub 'api'
+      Name: !Sub 'api resource server'
+      Scopes:
+        - ScopeName: 'mcp'
+          ScopeDescription: 'Invoke the MCP server'
+        - ScopeName: 'gateway'
+          ScopeDescription: 'Invoke the gateway'
+
+  # Public web client — auth code + PKCE, plus password grant for dev/CLI testing
+  WebClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-web'
+      UserPoolId: !Ref UserPool
+
+      # Public client (PKCE) — no client secret
+      GenerateSecret: false  # pragma: allowlist secret  -- CFN property, not a credential
+
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+
+      SupportedIdentityProviders:
+        - COGNITO
+
+      CallbackURLs: !Ref CallbackURLs
+      LogoutURLs: !Ref LogoutURLs
+
+      # Programmatic auth flows for testing without a browser
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: 'ENABLED'
+
+  # M2M client for inbound to the MCP server
+  # Gateway uses these credentials (client_credentials grant) to mint a JWT
+  # whose client_id is whitelisted by the MCP server's CUSTOM_JWT authorizer.
+  # Note: user context is NOT preserved across this hop — propagate via headers if needed.
+  MCPClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-mcp'
+      UserPoolId: !Ref UserPool
+
+      GenerateSecret: true  # pragma: allowlist secret  -- CFN property, not a credential
+
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - !Sub 'api/mcp'
+
+      SupportedIdentityProviders:
+        - COGNITO
+
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: 'ENABLED'
+
+  # M2M client for inbound auth to the Gateway.
+  # The notebook uses these credentials (client_credentials grant) to mint a JWT
+  # whose client_id is whitelisted by the Gateway's CUSTOM_JWT authorizer.
+  GatewayClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-gateway'
+      UserPoolId: !Ref UserPool
+
+      GenerateSecret: true  # pragma: allowlist secret  -- CFN property, not a credential
+
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - !Sub 'api/gateway'
+
+      SupportedIdentityProviders:
+        - COGNITO
+
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: 'ENABLED'
+
+Outputs:
+  StackName:
+    Value: !Ref AWS::StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+
+  UserPoolId:
+    Description: 'Cognito User Pool ID'
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolArn:
+    Description: 'Cognito User Pool ARN'
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolArn'
+
+  WebClientId:
+    Description: 'Public web client ID (use this in your app)'
+    Value: !Ref WebClient
+    Export:
+      Name: !Sub '${AWS::StackName}-WebClientId'
+
+  HostedUIDomain:
+    Description: 'Cognito hosted UI base URL'
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-HostedUIDomain'
+
+  SignupUrl:
+    Description: 'Open this in a browser to self-signup (uses first callback URL)'
+    Value: !Sub
+      - 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/signup?client_id=${WebClient}&response_type=code&scope=openid+email+profile&redirect_uri=${FirstCallback}'
+      - FirstCallback: !Select [0, !Ref CallbackURLs]
+
+  LoginUrl:
+    Description: 'Hosted UI login page'
+    Value: !Sub
+      - 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${WebClient}&response_type=code&scope=openid+email+profile&redirect_uri=${FirstCallback}'
+      - FirstCallback: !Select [0, !Ref CallbackURLs]
+
+  TokenEndpoint:
+    Description: 'OAuth 2.0 token endpoint'
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/token'
+    Export:
+      Name: !Sub '${AWS::StackName}-TokenEndpoint'
+
+  Issuer:
+    Description: 'Token issuer (iss claim)'
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+    Export:
+      Name: !Sub '${AWS::StackName}-Issuer'
+
+  DiscoveryUrl:
+    Description: 'OIDC discovery URL — use this in the Gateway / Runtime CUSTOM_JWT authorizer'
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/openid-configuration'
+    Export:
+      Name: !Sub '${AWS::StackName}-DiscoveryUrl'
+
+  PasswordGrantExample:
+    Description: 'Example: get a JWT via password grant (after self-signup + email verify)'
+    Value: !Sub |
+      curl -s -X POST https://cognito-idp.${AWS::Region}.amazonaws.com/ \
+        -H "Content-Type: application/x-amz-json-1.1" \
+        -H "X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth" \
+        -d '{
+          "AuthFlow":"USER_PASSWORD_AUTH",
+          "ClientId":"${WebClient}",
+          "AuthParameters":{"USERNAME":"<your-email>","PASSWORD":"<your-password>"}
+        }'
+
+  MCPClientId:
+    Description: 'M2M client ID — whitelist this in MCP server CUSTOM_JWT allowedClients'
+    Value: !Ref MCPClient
+    Export:
+      Name: !Sub '${AWS::StackName}-MCPClientId'
+
+  MCPScope:
+    Description: 'Scope to request when minting MCP-bound tokens'
+    Value: !Sub 'api/mcp'
+    Export:
+      Name: !Sub '${AWS::StackName}-MCPScope'
+
+  ResourceServerIdentifier:
+    Description: 'Resource server identifier (scope prefix)'
+    Value: !Ref ResourceServer
+    Export:
+      Name: !Sub '${AWS::StackName}-ResourceServerIdentifier'
+
+  MCPClientSecretCommand:
+    Description: 'Run this to fetch the MCP client secret (CFN does not surface it directly)'
+    Value: !Sub |
+      aws cognito-idp describe-user-pool-client \
+        --user-pool-id ${UserPool} \
+        --client-id ${MCPClient} \
+        --region ${AWS::Region} \
+        --query 'UserPoolClient.ClientSecret' --output text
+
+  MCPClientCredentialsExample:
+    Description: 'Example: Gateway mints an MCP-bound token via client_credentials'
+    Value: !Sub |
+      curl -s -X POST https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/token \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -u "${MCPClient}:<MCP_CLIENT_SECRET>" \
+        -d "grant_type=client_credentials&scope=api/mcp"
+
+  GatewayClientId:
+    Description: 'M2M client ID for inbound auth to the Gateway — whitelist in Gateway CUSTOM_JWT allowedClients'
+    Value: !Ref GatewayClient
+    Export:
+      Name: !Sub '${AWS::StackName}-GatewayClientId'
+
+  GatewayScope:
+    Description: 'Scope to request when minting Gateway-bound tokens'
+    Value: !Sub 'api/gateway'
+    Export:
+      Name: !Sub '${AWS::StackName}-GatewayScope'
+
+  GatewayClientSecretCommand:
+    Description: 'Run this to fetch the Gateway client secret (CFN does not surface it directly)'
+    Value: !Sub |
+      aws cognito-idp describe-user-pool-client \
+        --user-pool-id ${UserPool} \
+        --client-id ${GatewayClient} \
+        --region ${AWS::Region} \
+        --query 'UserPoolClient.ClientSecret' --output text

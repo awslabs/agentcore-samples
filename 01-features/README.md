@@ -18,9 +18,10 @@ AgentCore services work together or independently with any open-source framework
 | **evaluations** | Automated, data-driven agent assessment with on-demand and online evaluation using built-in and custom evaluators. |
 | **policy** | Deterministic control over agent behavior using natural language or Cedar policies. Intercepts every tool call before execution via the gateway. |
 | **registry** | Centralized catalog for discovering and managing agents, MCP servers, tools, and skills across your organization. Governed publishing and approval workflow with semantic search. |
-| **payments** | Microtransaction payments for agents via the x402 protocol — wallet integration, configurable spending limits, and end-to-end observability. |
+| **payments** | Microtransaction payments for agents via the x402, MPP protocol — wallet integration, configurable spending limits, and end-to-end observability. |
 | **code interpreter** | Isolated sandbox for agents to execute Python, JavaScript, and TypeScript code. |
 | **browser** | Managed cloud browser for agents to interact with web applications, navigate sites, fill forms, and extract information. |
+| **web search** | Real-time web search as a managed MCP connector through AgentCore gateway. Agents discover and invoke it via standard MCP protocol — no search APIs to provision. |
 | **harness** | Serverless agent orchestration layer — model, tools, system prompt, and context management in a single API call, without managing a runtime. |
 
 ![AgentCore map](../00-getting-started/images/agentcore-map.png)
@@ -78,7 +79,7 @@ data = boto3.client('bedrock-agentcore', region_name='us-west-2')
 |:--|:-------|:--------------|
 | 01 | [harness](01-harness/) | Serverless agent orchestration environment — model, tools, sandbox, and session management in a single API call |
 | 02 | [host your agent](02-host-your-agent/) | Deploy agents and MCP tool servers on AgentCore runtime; multi-protocol (HTTP, MCP, A2A, AG-UI), streaming, sessions, async, VPC, and coding agents |
-| 03 | [connect your agent to anything](03-connect-your-agent-to-anything/) | Built-in managed tools: sandboxed Python code execution (Code Interpreter) and headless browser automation (Browser Tool) |
+| 03 | [connect your agent to anything](03-connect-your-agent-to-anything/) | Built-in managed tools: sandboxed Python code execution (Code Interpreter), headless browser automation (Browser Tool), and real-time web search (Web Search Tool) |
 | 04 | [manage context of your agent](04-manage-context-of-your-agent/) | Short-term session memory and long-term persistent memory for context-aware agents |
 | 05 | [authenticate and authorize](05-authenticate-and-authorize/) | Inbound auth (Cognito, Entra ID, Okta, PingFederate) and outbound auth (OAuth2, API keys, 3LO, M2M, OBO) |
 | 06 | [observe, evaluate, and optimize](06-observe-evaluate-optimize-your-agent/) | Trace and debug with OpenTelemetry, evaluate with LLM-as-a-judge and ground-truth evaluators, optimize prompts and tool descriptions |
@@ -90,7 +91,11 @@ data = boto3.client('bedrock-agentcore', region_name='us-west-2')
 The AgentCore CLI is an alternative to boto3 for creating, deploying, and managing AgentCore resources. Install it:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### Scaffold and deploy an agent

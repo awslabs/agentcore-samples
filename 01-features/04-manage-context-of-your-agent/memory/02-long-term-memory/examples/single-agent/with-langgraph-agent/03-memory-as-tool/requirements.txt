@@ -1,0 +1,8 @@
+boto3
+bedrock_agentcore
+# LangGraph v1.0+: create_agent lives in the `langchain` package (>=1.0); `langgraph` is
+# the underlying runtime.
+langchain>=1.0
+langgraph>=1.0
+langchain_aws
+langchain_core

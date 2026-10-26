@@ -1,0 +1,13 @@
+[project]
+name = "authorization-code-flow"
+version = "0.1.0"
+description = "Auth code flow with MCP targets on Amazon Bedrock AgentCore Gateway"
+requires-python = ">=3.12"
+
+dependencies = [
+    "boto3>=1.43.88",
+    "botocore>=1.43.88",
+    "requests",
+    "fastapi",
+    "uvicorn",
+]

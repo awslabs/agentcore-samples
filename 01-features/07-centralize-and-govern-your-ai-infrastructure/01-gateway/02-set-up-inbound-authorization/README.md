@@ -4,10 +4,11 @@ Configure authorization for inbound requests to your Amazon Bedrock AgentCore ga
 
 ## Tutorials
 
-| Section       | Description                                        |
-| :------------ | :------------------------------------------------- |
-| [http](http/) | Set up inbound authorization for HTTP tool targets |
-| [mcp](mcp/)   | Set up inbound authorization for MCP tool targets  |
+| Section                 | Description                                              |
+| :---------------------- | :------------------------------------------------------- |
+| [http](http/)           | Set up inbound authorization for HTTP tool targets       |
+| [mcp](mcp/)             | Set up inbound authorization for MCP tool targets        |
+| [inference](inference/) | Set up inbound authorization for inference (LLM) targets |
 
 ## Documentation
 

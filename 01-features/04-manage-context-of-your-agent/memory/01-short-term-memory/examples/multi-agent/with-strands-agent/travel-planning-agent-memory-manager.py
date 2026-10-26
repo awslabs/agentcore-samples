@@ -109,13 +109,13 @@ try:
     memory_id = memory["id"]
     logger.info("✅ Successfully created memory:")
     logger.info(f"   Memory ID: {memory_id}")
-    logger.info(f"   Memory Name: {memory['name']}")
+    logger.info(f"   Memory Name: {memory_name}")
     logger.info(f"   Memory Status: {memory['status']}")
 except ClientError as e:
     if e.response["Error"]["Code"] == "ValidationException" and "already exists" in str(e):
         logger.info(f"Memory '{memory_name}' already exists, retrieving ID...")
         memories = memory_client.list_memories()
-        memory_id = next((m["id"] for m in memories if m["name"] == memory_name), None)
+        memory_id = next((m["id"] for m in memories if m["id"].startswith(memory_name)), None)
         if not memory_id:
             raise RuntimeError(f"Memory '{memory_name}' not found after conflict")
         memory = {"id": memory_id, "name": memory_name}
@@ -405,7 +405,7 @@ new_travel_agent("Can you remind me about flights talked about before?")
 # ### Install the CLI
 #
 # ```bash
-# npm install -g @aws/agentcore@0.11.0
+# npm install -g @aws/agentcore@0.30.0
 # agentcore --version   # should print 0.11.0
 # ```
 #

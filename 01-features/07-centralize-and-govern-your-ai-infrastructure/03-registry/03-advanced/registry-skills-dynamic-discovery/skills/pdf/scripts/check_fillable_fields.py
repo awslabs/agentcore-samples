@@ -1,6 +1,6 @@
 import sys
-from pypdf import PdfReader
 
+from pypdf import PdfReader
 
 reader = PdfReader(sys.argv[1])
 if reader.get_fields():

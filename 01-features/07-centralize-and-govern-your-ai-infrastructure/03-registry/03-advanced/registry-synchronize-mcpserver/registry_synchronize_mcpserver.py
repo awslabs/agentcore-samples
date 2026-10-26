@@ -1,10 +1,9 @@
 """
 Synchronize metadata in AWS Agent Registry from MCP Server
 
-Demonstrates URL-based synchronization (synchronizationType="URL") for three
-scenarios:
+Demonstrates URL-based synchronization for three scenarios:
   1. List available registries
-  2. Create a registry (IAM auth, autoApproval: false)
+  2. Create a registry (IAM auth, no auto-approval rules)
   3. Synchronize a public unprotected MCP server (AWS Knowledge MCP)
   4. Synchronize an OAuth-protected MCP server deployed on AgentCore Runtime
   5. Synchronize an IAM-protected MCP server deployed on AgentCore Runtime
@@ -29,20 +28,26 @@ Note:
     The Cognito OAuth setup in section 4 creates real AWS resources.
 """
 
-import os
-import boto3
 import json
+import os
 import time
+
+import boto3
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 os.environ["AWS_SDK_LOAD_CONFIG"] = "1"
 
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+
 session = boto3.Session(region_name=AWS_REGION)
-rg_client = session.client("bedrock-agentcore-control")
+registry_client = session.client("agent-registry-control")
+
+# AgentCore Identity client (for OAuth credential providers and runtime management)
+identity_client = session.client("bedrock-agentcore-control")
 iam_client = session.client("iam")
 
 ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
+
 TIMESTAMP = int(time.time())
 
 print(f"Session ready | Account: {ACCOUNT_ID} | Region: {AWS_REGION}")
@@ -58,7 +63,7 @@ def pp(response):
 
 def wait_for_registry(registry_id, interval=5):
     while True:
-        resp = rg_client.get_registry(registryId=registry_id)
+        resp = registry_client.get_registry(registryId=registry_id)
         status = resp["status"]
         print(f"  Registry Status: {status}")
         if status == "READY":
@@ -66,7 +71,7 @@ def wait_for_registry(registry_id, interval=5):
             print(json.dumps(resp, indent=2, default=str))
             return resp
         if status.endswith("_FAILED"):
-            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")
+            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")  # noqa: TRY002
         time.sleep(interval)
 
 
@@ -75,7 +80,7 @@ def wait_for_record(registry_id, record_id, interval=10, max_wait=120):
     while elapsed < max_wait:
         time.sleep(interval)
         elapsed += interval
-        record = rg_client.get_registry_record(registryId=registry_id, recordId=record_id)
+        record = registry_client.get_registry_record(registryId=registry_id, recordId=record_id)
         status = record["status"]
         print(f"  Record Status: {status}")
         if status in ("DRAFT", "PENDING_APPROVAL", "APPROVED", "ACTIVE"):
@@ -92,7 +97,7 @@ def wait_for_record(registry_id, record_id, interval=10, max_wait=120):
 # ── 1. List Registries ────────────────────────────────────────────────────────
 print("\n=== 1. List Registries ===")
 
-registries = rg_client.list_registries()
+registries = registry_client.list_registries()
 print(f"Found {len(registries['registries'])} registries:\n")
 for reg in registries["registries"]:
     print(f"  [{reg['status']}] {reg['name']} ({reg['registryId']})")
@@ -100,10 +105,10 @@ for reg in registries["registries"]:
 # ── 2. Create Registry ────────────────────────────────────────────────────────
 print("\n=== 2. Create Registry with IAM permissions ===")
 
-create_resp = rg_client.create_registry(
+create_resp = registry_client.create_registry(
     name=f"RegistryforMCPServer_{TIMESTAMP}",
     description="Registry to publish MCP server records",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 
 REGISTRY_ARN = create_resp["registryArn"]
@@ -121,12 +126,11 @@ print("\n=== 3. Synchronize record from Public MCP server ===")
 MCP_PUBLIC_URL = "https://knowledge-mcp.global.api.aws"
 
 print("Creating registry record from public AWS Knowledge MCP server...")
-record_response = rg_client.create_registry_record(
+record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="aws_knowledge_mcp_server",
-    descriptorType="MCP",
-    synchronizationType="URL",
-    synchronizationConfiguration={"fromUrl": {"url": MCP_PUBLIC_URL}},
+    recordType="MCP",
+    descriptors={"mcpServer": {"source": {"fromUrl": {"url": MCP_PUBLIC_URL}}}},
 )
 
 print("Registry record created successfully!")
@@ -260,7 +264,7 @@ print(f"✓ Discovery URL: {COGNITO_DISCOVERY_URL}")
 
 # 4.4 Create AgentCore OAuth2 Credential Provider
 print("\n4.4 Create AgentCore OAuth2 Credential Provider...")
-oauth_resp = rg_client.create_oauth2_credential_provider(
+oauth_resp = identity_client.create_oauth2_credential_provider(
     name=f"mcp_json_provider_{TIMESTAMP}",
     credentialProviderVendor="CustomOauth2",
     oauth2ProviderConfigInput={
@@ -276,7 +280,7 @@ print(f"✓ OAuth Provider ARN: {OAUTH_PROVIDER_ARN}")  # codeql[py/clear-text-l
 
 # 4.5 Deploy MCP server to AgentCore Runtime with OAuth
 print("\n4.5 Deploy MCP server to AgentCore Runtime with OAuth...")
-from bedrock_agentcore_starter_toolkit import Runtime  # noqa: E402
+from bedrock_agentcore_starter_toolkit import Runtime
 
 if os.path.exists("Dockerfile"):
     os.remove("Dockerfile")
@@ -315,26 +319,29 @@ print(f"✓ MCP Server URL: {MCP_SERVER_URL}")
 
 # 4.6 Publish to Registry with OAuth synchronization
 print("\n4.6 Publish to Registry with OAuth synchronization...")
-record_response = rg_client.create_registry_record(
+record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name=f"mcp_json_oauth_{TIMESTAMP}",
-    descriptorType="MCP",
-    synchronizationType="URL",
-    synchronizationConfiguration={
-        "fromUrl": {
-            "url": MCP_SERVER_URL,
-            "credentialProviderConfigurations": [
-                {
-                    "credentialProviderType": "OAUTH",
-                    "credentialProvider": {
-                        "oauthCredentialProvider": {
-                            "providerArn": OAUTH_PROVIDER_ARN,
-                            "grantType": "CLIENT_CREDENTIALS",
-                            "scopes": ["mcp-server/invoke"],
+    recordType="MCP",
+    descriptors={
+        "mcpServer": {
+            "source": {
+                "fromUrl": {
+                    "url": MCP_SERVER_URL,
+                    "credentialProviderConfigurations": [
+                        {
+                            "credentialProviderType": "OAUTH",
+                            "credentialProvider": {
+                                "oauthCredentialProvider": {
+                                    "providerArn": OAUTH_PROVIDER_ARN,
+                                    "grantType": "CLIENT_CREDENTIALS",
+                                    "scopes": ["mcp-server/invoke"],
+                                }
+                            },
                         }
-                    },
+                    ],
                 }
-            ],
+            }
         }
     },
 )
@@ -452,7 +459,7 @@ trust_policy = {
     "Statement": [
         {
             "Effect": "Allow",
-            "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+            "Principal": {"Service": "agent-registry.amazonaws.com"},
             "Action": "sts:AssumeRole",
         }
     ],
@@ -493,26 +500,29 @@ time.sleep(10)
 
 # 5.5 Synchronize record with IAM auth
 print("\n5.5 Synchronize records to Registry with IAM authentication...")
-record_response = rg_client.create_registry_record(
+record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name=f"mcp_iam_record_{TIMESTAMP}",
-    descriptorType="MCP",
-    synchronizationType="URL",
-    synchronizationConfiguration={
-        "fromUrl": {
-            "url": MCP_IAM_URL,
-            "credentialProviderConfigurations": [
-                {
-                    "credentialProviderType": "IAM",
-                    "credentialProvider": {
-                        "iamCredentialProvider": {
-                            "roleArn": IAM_ROLE_ARN,
-                            "service": "bedrock-agentcore",
-                            "region": AWS_REGION,
+    recordType="MCP",
+    descriptors={
+        "mcpServer": {
+            "source": {
+                "fromUrl": {
+                    "url": MCP_IAM_URL,
+                    "credentialProviderConfigurations": [
+                        {
+                            "credentialProviderType": "IAM",
+                            "credentialProvider": {
+                                "iamCredentialProvider": {
+                                    "roleArn": IAM_ROLE_ARN,
+                                    "service": "bedrock-agentcore",
+                                    "region": AWS_REGION,
+                                }
+                            },
                         }
-                    },
+                    ],
                 }
-            ],
+            }
         }
     },
 )
@@ -525,7 +535,7 @@ wait_for_record(REGISTRY_ID, IAM_RECORD_ID)
 
 # ── 6. List all records ───────────────────────────────────────────────────────
 print("\n=== 6. List all records ===")
-records = rg_client.list_registry_records(registryId=REGISTRY_ID)
+records = registry_client.list_registry_records(registryId=REGISTRY_ID)
 print(f"Found {len(records['registryRecords'])} records:\n")
 for rec in records["registryRecords"]:
     print(f"  [{rec['status']}] {rec['name']} | {rec['recordId']}")
@@ -535,33 +545,33 @@ print("\n=== 7. Cleanup ===")
 
 # Delete registry records
 try:
-    records = rg_client.list_registry_records(registryId=REGISTRY_ID)
+    records = registry_client.list_registry_records(registryId=REGISTRY_ID)
     for rec in records["registryRecords"]:
-        rg_client.delete_registry_record(registryId=REGISTRY_ID, recordId=rec["recordId"])
+        registry_client.delete_registry_record(registryId=REGISTRY_ID, recordId=rec["recordId"])
         print(f"✓ Deleted record: {rec['recordId']}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  Records cleanup: {e}")
 
 # Delete registry
 try:
-    rg_client.delete_registry(registryId=REGISTRY_ID)
+    registry_client.delete_registry(registryId=REGISTRY_ID)
     print(f"✓ Deleted registry: {REGISTRY_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  Registry cleanup: {e}")
 
 # Delete AgentCore Runtimes
 for rid, rname in [(RUNTIME_ID, "OAuth"), (RUNTIME_ID2, "IAM")]:
     try:
-        rg_client.delete_agent_runtime(agentRuntimeId=rid)
+        identity_client.delete_agent_runtime(agentRuntimeId=rid)
         print(f"✓ Deleted {rname} runtime: {rid}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  {rname} runtime cleanup: {e}")
 
 # Delete OAuth2 Credential Provider
 try:
-    rg_client.delete_oauth2_credential_provider(name=f"mcp_json_provider_{TIMESTAMP}")
+    identity_client.delete_oauth2_credential_provider(name=f"mcp_json_provider_{TIMESTAMP}")
     print("✓ Deleted OAuth provider")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  OAuth provider cleanup: {e}")
 
 # Delete Cognito resources
@@ -570,7 +580,7 @@ try:
     print("✓ Deleted Cognito domain")
     cognito.delete_user_pool(UserPoolId=USER_POOL_ID)
     print(f"✓ Deleted Cognito pool: {USER_POOL_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  Cognito cleanup: {e}")
 
 # Delete IAM role
@@ -578,7 +588,7 @@ try:
     iam_client.delete_role_policy(RoleName=IAM_ROLE_NAME, PolicyName="InvokeAgentCoreRuntime")
     iam_client.delete_role(RoleName=IAM_ROLE_NAME)
     print(f"✓ Deleted IAM role: {IAM_ROLE_NAME}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  IAM role cleanup: {e}")
 
 # Delete local server files

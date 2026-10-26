@@ -1,0 +1,7 @@
+# Mirrors the repo-root ruff config for this sample. E402/E722/F401/F811/F841
+# are relaxed for tutorial-style code (as at the repo root); BLE001/SIM103 are
+# added for the eval scripts' intentional broad catches in retry/polling loops.
+line-length = 120
+
+[lint]
+ignore = ["E402", "E722", "F401", "F811", "F841", "BLE001", "SIM103"]

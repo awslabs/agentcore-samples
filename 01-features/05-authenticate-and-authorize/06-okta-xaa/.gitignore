@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local data
+*.db
+*.sqlite3
+
+# OS
+.DS_Store
+
+# AgentCore build artifacts
+.agentcore/
+Dockerfile.bak
+
+# Generated AgentCore CLI project (run `agentcore create` yourself)
+xaatodoagent/
+
+# Lambda packaging artifacts
+resource-app/build/
+resource-app/function*.zip
+
+# Private keys and generated key material (never commit)
+keys/
+*.pem
+*_private_key*

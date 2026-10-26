@@ -1,11 +1,8 @@
 # HTTP Targets
 
-> [!NOTE]
-> AgentCore runtime targets for gateway are in public preview. Features and APIs may change before general availability.
-
-![arch](../../images/architecture.png)
-
 For HTTP targets, the gateway sends traffic directly to the target without aggregation or protocol translation. Unlike MCP targets, HTTP targets do not support capability synchronization or semantic tool search. Clients address each target individually through path-based routing.
+
+![http](./images/agents.png)
 
 ![architecture](../../images/proxy.png)
 
@@ -13,9 +10,10 @@ You can attach different AgentCore identity Credential Providers to each HTTP ta
 
 ## Tutorials
 
-| Section                                 | Description                                            |
-| :-------------------------------------- | :----------------------------------------------------- |
-| [agentcore-runtime](agentcore-runtime/) | Attach an AgentCore runtime endpoint as an HTTP target |
+| Section                       | Description                                                                |
+| :---------------------------- | :------------------------------------------------------------------------- |
+| [agents](agents/)             | Attach A2A and HTTP agents (on AgentCore runtime or third-party) as targets |
+| [mcp-servers](mcp-servers/)   | Attach MCP servers (on AgentCore runtime or public) as HTTP targets         |
 
 ## Documentation
 

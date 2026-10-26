@@ -1,0 +1,17 @@
+{
+  "name": "okta",
+  "displayName": "Okta",
+  "vendor": "CustomOauth2",
+  "providerConfigKey": "customOauth2ProviderConfig",
+  "discoveryUrlMustContain": "/oauth2/",
+  "discoveryUrlExample": "https://<OKTA_DOMAIN>/oauth2/<AS_ID>/.well-known/openid-configuration",
+  "resourcePrefix": "okta",
+  "audienceNote": "the authorization server's `audiences` value (e.g. api://default); it becomes the token aud. Must be a CUSTOM authorization server -- the org server issues opaque access tokens the portal and gateway cannot validate",
+  "portalCallbackHint": [
+    "    Add this URI to the portal app's Sign-in redirect URIs:",
+    "      <PORTAL_CALLBACK_URL>",
+    "    Console: Applications -> agentcore-consent-portal-login -> General ->",
+    "    Sign-in redirect URIs -> Edit. (deploy/02_create_portal.py attempts",
+    "    this automatically when OKTA_ADMIN_TOKEN is set.)"
+  ]
+}

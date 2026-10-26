@@ -40,6 +40,7 @@ This folder contains framework and protocol integrations that demonstrate how to
 * **[Arize](./observability/arize/)**: LLM observability and evaluation with Arize Phoenix
 * **[Braintrust](./observability/braintrust/)**: AI evaluation and observability platform integration
 * **[Datadog](./observability/datadog/)**: Infrastructure and LLM monitoring with Datadog
+* **[Dash0](./3p-observability/dash0/)**: OpenTelemetry-native observability platform with traces, metrics, and logs via OTLP HTTP
 * **[Dynatrace](./observability/dynatrace/)**: Application performance monitoring integration with travel agent example
 * **[Honeycomb](./observability/honeycomb/)**: Distributed tracing and observability with Honeycomb
 * **[Instana](./observability/instana/)**: IBM Instana application performance monitoring

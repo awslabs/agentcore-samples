@@ -54,7 +54,8 @@ The same flow expressed with the AWS CLI:
 ```bash
 # CloudWatch metrics: namespace AWS/Bedrock-AgentCore.
 # Streaming health is dimensioned by Operation=MemoryStreamEvent + Resource=<memory ARN>.
-export MEMORY_ARN=arn:aws:bedrock-agentcore:$AWS_REGION:<acct>:memory/mem-abc
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export MEMORY_ARN="arn:aws:bedrock-agentcore:$AWS_REGION:$ACCOUNT_ID:memory/<your-memory-id>"
 
 # 1. Sum streaming successes over the last hour
 aws cloudwatch get-metric-statistics --region "$AWS_REGION" \

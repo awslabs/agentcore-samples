@@ -42,7 +42,7 @@ print("""
 ║         Provider Setup: Stripe (Privy)                                     ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-MANUAL STEPS (complete in your browser before running the credential cells):
+MANUAL STEPS (complete in your browser before running the credential prompts):
 
 Step 1 — Create a Privy App
 ────────────────────────────
@@ -86,9 +86,9 @@ print("""
 
 MANUAL STEPS in the Privy dashboard:
   1. In the Privy dashboard, make sure your app is selected in the left sidebar.
-  2. Go to Wallet Infrastructure → Authorization.
-  3. Choose New key.
-  4. Enter a name (e.g. Demo app key).
+  2. Go to Wallet infrastructure → Keys and quorums.
+  3. Choose New key (or "Create key").
+  4. Enter a name (e.g. agentcore-payment-key).
   5. Choose Continue. Privy generates a P-256 keypair and displays the ID + Private Key.
   6. Copy BOTH values.
   7. Choose Save and close.
@@ -193,7 +193,7 @@ print("""
   3. Enter http://localhost:3000
   4. Choose Save.
 
-  PRODUCTION NOTE: Use HTTPS for production origins. Never reuse dev apps for prod.
+  NOTE: For a deployed app, use HTTPS origins and a separate Privy app from your dev one.
 
 3e. Log in to verify the Privy reference frontend works:
 ─────────────────────────────────────────────────────────

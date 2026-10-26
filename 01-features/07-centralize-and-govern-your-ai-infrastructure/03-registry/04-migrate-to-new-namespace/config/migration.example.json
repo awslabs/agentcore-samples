@@ -1,0 +1,14 @@
+{
+  "_comment": "Everything this tool needs. 'agent-registry-migration init' writes this file for you; edit it here only if you prefer. Every other setting has a safe default -- see 'Configuration' in the README. Nothing is written to a target registry unless you run with --live.",
+  "engine": {
+    "account": "111111111111",
+    "region": "us-west-2"
+  },
+  "registries": [
+    {
+      "id": "registry-1",
+      "source": { "accountId": "111111111111", "region": "us-west-2", "registryId": "<preview-registry-id>" },
+      "target": { "accountId": "111111111111", "region": "us-west-2", "registryId": "<new-registry-id>" }
+    }
+  ]
+}

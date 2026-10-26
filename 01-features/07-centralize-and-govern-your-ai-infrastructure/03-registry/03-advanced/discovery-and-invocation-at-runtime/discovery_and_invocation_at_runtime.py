@@ -28,14 +28,15 @@ Architecture:
                   └─ Customer Support A2A Agent (Runtime, IAM SigV4)
 """
 
-import boto3
 import json
-import time
 import os
 import subprocess
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from urllib.parse import quote
+
+import boto3
 
 # ── 1.0 Install dependencies ──────────────────────────────────────────────────
 subprocess.check_call(
@@ -56,7 +57,7 @@ subprocess.check_call(
     ]
 )
 
-import boto3 as _b3  # noqa: E402
+import boto3 as _b3
 
 assert tuple(int(x) for x in _b3.__version__.split(".")) >= (1, 42, 87), (
     f"boto3 >= 1.42.87 required, got {_b3.__version__}"
@@ -64,8 +65,8 @@ assert tuple(int(x) for x in _b3.__version__.split(".")) >= (1, 42, 87), (
 print(f"boto3 {_b3.__version__} — native AgentCore Registry support ✓")
 
 # ── Imports ───────────────────────────────────────────────────────────────────
-from bedrock_agentcore_starter_toolkit import Runtime  # noqa: E402
-from utils import (  # noqa: E402
+from bedrock_agentcore_starter_toolkit import Runtime
+from utils import (
     ORDER_MANAGEMENT_LAMBDA_CODE,
     ORDER_TOOL_SCHEMAS,
     make_lambda_zip,
@@ -85,10 +86,11 @@ cognito_client = session.client("cognito-idp")
 sm_client = session.client("secretsmanager")
 
 cp_client = session.client("bedrock-agentcore-control")
+registry_client = session.client("agent-registry-control")
 agentcore_client = session.client("bedrock-agentcore")
-dp_client = session.client("bedrock-agentcore")  # search_registry_records on dp
+dp_client = session.client("agent-registry")  # search_discoverable_registry_records
 
-timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
 MODEL_ID = "us.anthropic.claude-sonnet-4-6"
 print(f"Account: {account_id} | Region: {region} | Timestamp: {timestamp}")
 
@@ -312,11 +314,11 @@ registry_records = {
         "tools": ORDER_TOOL_SCHEMAS,
     },
     "pricing_agent": {
-        "protocol": "A2A",
+        "protocol": "AGENT",
         "description": "Pricing only - discount tiers, promo codes, price history. Never handles returns or refunds",
     },
     "customer_support_agent": {
-        "protocol": "A2A",
+        "protocol": "AGENT",
         "description": "Returns and refunds only - return eligibility, refund calculation, complaints, escalations",
     },
 }
@@ -336,17 +338,17 @@ print("═" * 70)
 print("\n=== 2. Create Registry and Register Records ===")
 
 # 2a. Create Registry
-reg = cp_client.create_registry(
+reg = registry_client.create_registry(
     name="OrderManagementRegistry",
     description="Registry for Order Management & Customer Service — agent discovers tools and agents via semantic search",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 REGISTRY_ARN = reg["registryArn"]
 REGISTRY_ID = REGISTRY_ARN.split("/")[-1]
 print(f"Registry: {REGISTRY_ID}")
 
 while True:
-    r = cp_client.get_registry(registryId=REGISTRY_ID)
+    r = registry_client.get_registry(registryId=REGISTRY_ID)
     if r["status"] == "READY":
         print("Registry status: READY")
         break
@@ -368,9 +370,9 @@ def build_mcp_descriptors(name, description, gateway_url, tools):
     )
     tools_content = json.dumps({"tools": tools})
     return {
-        "mcp": {
-            "server": {"schemaVersion": "2025-12-11", "inlineContent": server_content},
-            "tools": {"protocolVersion": "2025-06-18", "inlineContent": tools_content},
+        "mcpServer": {
+            "data": server_content,
+            "additionalData": {"tools": {"data": tools_content}},
         }
     }
 
@@ -397,14 +399,7 @@ def build_a2a_descriptors(name, description, agent_arn):
             }
         ],
     }
-    return {
-        "a2a": {
-            "agentCard": {
-                "schemaVersion": "0.3.0",
-                "inlineContent": json.dumps(agent_card),
-            }
-        }
-    }
+    return {"a2aAgentCard": {"data": json.dumps(agent_card)}}
 
 
 record_ids = []
@@ -414,11 +409,11 @@ for name, cfg in registry_records.items():
     else:
         descriptors = build_a2a_descriptors(name, cfg["description"], agent_arns[name])
 
-    resp = cp_client.create_registry_record(
+    resp = registry_client.create_registry_record(
         registryId=REGISTRY_ID,
         name=name,
         description=cfg["description"],
-        descriptorType=cfg["protocol"],
+        recordType=cfg["protocol"],
         descriptors=descriptors,
         recordVersion="1.0",
     )
@@ -432,7 +427,7 @@ print(f"\nTotal records: {len(record_ids)}")
 print("\nWaiting for records to be ready for approval...")
 for rid in record_ids:
     while True:
-        rec = cp_client.get_registry_record(registryId=REGISTRY_ID, recordId=rid)
+        rec = registry_client.get_registry_record(registryId=REGISTRY_ID, recordId=rid)
         status = rec.get("status", "UNKNOWN")
         if status in ("DRAFT", "PENDING_APPROVAL"):
             break
@@ -441,12 +436,12 @@ for rid in record_ids:
     print(f"  {rec['name']}: {status}")
 
 for rid in record_ids:
-    rec = cp_client.get_registry_record(registryId=REGISTRY_ID, recordId=rid)
+    rec = registry_client.get_registry_record(registryId=REGISTRY_ID, recordId=rid)
     status = rec.get("status")
     if status == "DRAFT":
-        cp_client.submit_registry_record_for_approval(registryId=REGISTRY_ID, recordId=rid)
+        registry_client.submit_registry_record_for_approval(registryId=REGISTRY_ID, recordId=rid)
     if status in ("DRAFT", "PENDING_APPROVAL"):
-        cp_client.update_registry_record_status(
+        registry_client.update_registry_record_status(
             registryId=REGISTRY_ID,
             recordId=rid,
             status="APPROVED",
@@ -458,7 +453,7 @@ for rid in record_ids:
 print("\nWaiting for search index to propagate all records...")
 for attempt in range(12):
     time.sleep(10)
-    resp = dp_client.search_registry_records(
+    resp = dp_client.search_discoverable_registry_records(
         registryIds=[REGISTRY_ARN],
         searchQuery="order pricing support",
         maxResults=10,
@@ -478,12 +473,18 @@ for query in [
     "return refund customer support",
     "cancel order update",
 ]:
-    resp = dp_client.search_registry_records(registryIds=[REGISTRY_ARN], searchQuery=query, maxResults=3)
+    resp = dp_client.search_discoverable_registry_records(registryIds=[REGISTRY_ARN], searchQuery=query, maxResults=3)
     hits = resp.get("registryRecords", [])
     print(f"\n'{query}' -> {len(hits)} results:")
     for h in hits:
         descriptors = h.get("descriptors", {})
-        dtype = "MCP" if "mcp" in descriptors else "A2A" if "a2a" in descriptors else h.get("descriptorType", "?")
+        dtype = (
+            "MCP"
+            if "mcpServer" in descriptors
+            else "AGENT"
+            if "a2aAgentCard" in descriptors
+            else h.get("recordType", "?")
+        )
         print(f"  - {h['name']} ({dtype})")
 
 # ── 3. Deploy Orchestrator Agent ──────────────────────────────────────────────
@@ -517,7 +518,7 @@ session = boto3.Session()
 _sm = session.client("secretsmanager", region_name=REGION)
 CLIENT_SECRET = _sm.get_secret_value(SecretId=os.environ["CLIENT_SECRET_NAME"])["SecretString"]
 
-dp_client = session.client("bedrock-agentcore", region_name=REGION)
+dp_client = session.client("agent-registry", region_name=REGION)
 
 
 @tool
@@ -540,7 +541,7 @@ def discover_and_execute(request: str) -> str:
     ]
     all_records = {}
     for q in search_queries:
-        results = dp_client.search_registry_records(
+        results = dp_client.search_discoverable_registry_records(
             registryIds=[REGISTRY_ARN], searchQuery=q, maxResults=5,
         ).get("registryRecords", [])
         for rec in results:
@@ -698,8 +699,8 @@ if orch_role_arn:
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": "bedrock-agentcore:SearchRegistryRecords",
-                        "Resource": f"arn:aws:bedrock-agentcore:*:{account_id}:registry/*",
+                        "Action": "agent-registry:SearchDiscoverableRegistryRecords",
+                        "Resource": f"arn:aws:agent-registry:*:{account_id}:registry/*",
                     }
                 ],
             }
@@ -713,7 +714,7 @@ print(f"✓ Orchestrator status: {agent_info['status']}")
 print("\n=== 4. End-to-End Demos ===")
 print("Each demo triggers the orchestrator to: search Registry → instantiate tools → execute\n")
 
-from utils import invoke_orchestrator  # noqa: E402
+from utils import invoke_orchestrator
 
 # Demo 1: Order Status (MCP Tool)
 print("─── Demo 1: Order Status — MCP Tool Invocation ───")

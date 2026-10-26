@@ -46,7 +46,7 @@ Logs AgentCore gateway Control Plane (CreateGateway, ListGateway, DeleteGateaway
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Node.js >= 22.7.5
-- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore`
+- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md)
 - Bedrock model access for `global.anthropic.claude-haiku-4-5-20251001-v1:0` (if using Strands demo)
@@ -136,7 +136,7 @@ echo "gateway ID: $GATEWAY_ID"
 
 GATEWAY_URL=$(aws bedrock-agentcore-control get-gateway \
   --gateway-identifier $GATEWAY_ID \
-  --query 'gatewayUrl' --output text)
+  --query 'gatewayUrl' --output text)/mcp
 echo "gateway URL: $GATEWAY_URL"
 
 GATEWAY_ARN=$(aws bedrock-agentcore-control get-gateway \

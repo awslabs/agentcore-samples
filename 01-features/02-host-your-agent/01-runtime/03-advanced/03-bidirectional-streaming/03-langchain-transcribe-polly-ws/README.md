@@ -6,7 +6,7 @@ A bidirectional voice agent using the "sandwich" pattern: **STT → Agent → TT
 
 ```bash
 # Navigate to the bidirectional streaming tutorial root
-cd 06-workshops/01-AgentCore-runtime/06-bi-directional-streaming
+cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
 
 # Create and activate a virtual environment
 python3 -m venv .venv
@@ -34,6 +34,8 @@ python utils/deploy.py 03-langchain-transcribe-polly-ws
 # Start the web client
 ./utils/start_client.sh 03-langchain-transcribe-polly-ws
 ```
+
+The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. This sample also provisions MCP Gateways before the runtime. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
 
 ### Cleanup
 

@@ -1,0 +1,232 @@
+{
+  "name": "ClaimsAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "claimsagent",
+      "description": "Event-driven dual-agent claims processor with confidence-based routing",
+      "build": "Container",
+      "entrypoint": "main.py",
+      "codeLocation": "app/claimsagent",
+      "envVars": [
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+          "value": "true"
+        },
+        {
+          "name": "AGENT_MODEL_ID",
+          "value": "global.anthropic.claude-sonnet-4-6"
+        },
+        {
+          "name": "FAST_MODEL_ID",
+          "value": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        },
+        {
+          "name": "AUTO_APPROVE_THRESHOLD",
+          "value": "80"
+        },
+        {
+          "name": "AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER",
+          "value": "cognito-gateway-m2m"
+        },
+        {
+          "name": "AGENTCORE_GATEWAY_OAUTH_SCOPES",
+          "value": "agentcore/invoke"
+        }
+      ],
+      "networkMode": "PUBLIC",
+      "instrumentation": {
+        "enableOtel": true
+      },
+      "protocol": "HTTP"
+    }
+  ],
+  "memories": [
+    {
+      "name": "ClaimsAgentMemory",
+      "eventExpiryDuration": 90,
+      "strategies": [
+        {
+          "type": "SEMANTIC",
+          "name": "semantic_strategy",
+          "namespaces": [
+            "claims/{actorId}/facts"
+          ]
+        },
+        {
+          "type": "SUMMARIZATION",
+          "name": "summary_strategy",
+          "namespaces": [
+            "claims/{actorId}/{sessionId}"
+          ]
+        }
+      ]
+    }
+  ],
+  "credentials": [
+    {
+      "authorizerType": "OAuthCredentialProvider",
+      "name": "cognito-gateway-m2m",
+      "discoveryUrl": "https://cognito-idp.PLACEHOLDER_REGION.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+      "scopes": [
+        "agentcore/invoke"
+      ],
+      "vendor": "CustomOauth2"
+    }
+  ],
+  "evaluators": [
+    {
+      "name": "ClaimsQualityEvaluator",
+      "level": "SESSION",
+      "description": "Evaluates claims processing quality including decision accuracy and routing correctness",
+      "config": {
+        "llmAsAJudge": {
+          "model": "global.anthropic.claude-sonnet-4-6",
+          "instructions": "Given the following agent session context:\n\n{context}\n\nTool calls made:\n{actual_tool_trajectory}\n\nEvaluate the claims agent response for: 1) correct policy lookup, 2) accurate coverage assessment, 3) appropriate confidence scoring, 4) correct routing decision (auto-approve vs human review). Rate the overall claims processing quality.",
+          "ratingScale": {
+            "numerical": [
+              {
+                "value": 1,
+                "label": "Poor",
+                "definition": "Major errors in processing"
+              },
+              {
+                "value": 2,
+                "label": "Below Average",
+                "definition": "Some errors or missing steps"
+              },
+              {
+                "value": 3,
+                "label": "Average",
+                "definition": "Correct but could be more thorough"
+              },
+              {
+                "value": 4,
+                "label": "Good",
+                "definition": "Accurate processing with clear reasoning"
+              },
+              {
+                "value": 5,
+                "label": "Excellent",
+                "definition": "Perfect processing with comprehensive analysis"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "onlineEvalConfigs": [
+    {
+      "name": "ClaimsEvaluation",
+      "agent": "claimsagent",
+      "evaluators": [
+        "Builtin.Helpfulness",
+        "Builtin.Correctness",
+        "Builtin.ToolSelectionAccuracy"
+      ],
+      "samplingRate": 100,
+      "description": "Online evaluation for claims agent (3 built-in metrics)"
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "ClaimsGateway",
+      "description": "MCP Gateway for claims processing tools: policy lookup, claim creation, human review, notifications, and claim resolution",
+      "targets": [
+        {
+          "name": "policy-lookup",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_POLICY_LOOKUP",
+            "toolSchemaFile": "lambdas/schemas/policy_lookup.json"
+          }
+        },
+        {
+          "name": "create-claim",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_CREATE_CLAIM",
+            "toolSchemaFile": "lambdas/schemas/create_claim.json"
+          }
+        },
+        {
+          "name": "human-review",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_HUMAN_REVIEW",
+            "toolSchemaFile": "lambdas/schemas/human_review.json"
+          }
+        },
+        {
+          "name": "notification",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_NOTIFICATION",
+            "toolSchemaFile": "lambdas/schemas/notification.json"
+          }
+        },
+        {
+          "name": "list-pending-claims",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_LIST_PENDING",
+            "toolSchemaFile": "lambdas/schemas/list_pending_claims.json"
+          }
+        },
+        {
+          "name": "resolve-claim",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_RESOLVE_CLAIM",
+            "toolSchemaFile": "lambdas/schemas/resolve_claim.json"
+          }
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.PLACEHOLDER_REGION.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+          "allowedClients": [
+            "PLACEHOLDER_CLIENT_ID"
+          ]
+        }
+      },
+      "enableSemanticSearch": true,
+      "exceptionLevel": "NONE",
+      "policyEngineConfiguration": {
+        "policyEngineName": "ClaimsPolicyEngine",
+        "mode": "ENFORCE"
+      }
+    }
+  ],
+  "policyEngines": [
+    {
+      "name": "ClaimsPolicyEngine",
+      "description": "Cedar policy engine for claims processing authorization — AllowAll + BlockExcessiveClaims ($100k threshold)",
+      "policies": [
+        {
+          "name": "ClaimsAllowAllTools",
+          "description": "Permit all tool calls on the claims gateway for authenticated agents",
+          "statement": "permit(principal, action, resource is AgentCore::Gateway);",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        },
+        {
+          "name": "ClaimsBlockExcessiveAmount",
+          "description": "Forbid creating claims with estimated amount >= $100,000 — routes to human review",
+          "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has \"toolName\" && context.toolName == \"create-claim\" && context has \"input\" && context.input has \"estimated_amount\" && context.input.estimated_amount >= 100000 };",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        }
+      ]
+    }
+  ],
+  "configBundles": [],
+  "abTests": [],
+  "httpGateways": [],
+  "harnesses": []
+}

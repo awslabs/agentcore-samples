@@ -1,15 +1,16 @@
 import os
+
 import boto3
+import uvicorn
+from fastapi import FastAPI
 from strands import Agent, tool
 from strands.models import BedrockModel
 from strands.multiagent.a2a import A2AServer
-from fastapi import FastAPI
-import uvicorn
 from utils import (
-    parse_server_metadata,
-    create_mcp_client_from_metadata,
     create_a2a_tool_from_metadata,
+    create_mcp_client_from_metadata,
     fetch_oauth_token,
+    parse_server_metadata,
 )
 
 REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
@@ -24,7 +25,7 @@ session = boto3.Session()
 _sm = session.client("secretsmanager", region_name=REGION)
 CLIENT_SECRET = _sm.get_secret_value(SecretId=os.environ["CLIENT_SECRET_NAME"])["SecretString"]
 
-dp_client = session.client("bedrock-agentcore", region_name=REGION)
+dp_client = session.client("agent-registry", region_name=REGION)
 
 
 @tool
@@ -47,7 +48,7 @@ def discover_and_execute(request: str) -> str:
     ]
     all_records = {}
     for q in search_queries:
-        results = dp_client.search_registry_records(
+        results = dp_client.search_discoverable_registry_records(
             registryIds=[REGISTRY_ARN],
             searchQuery=q,
             maxResults=5,
@@ -105,7 +106,7 @@ def discover_and_execute(request: str) -> str:
         for c in started_clients:
             try:
                 c.stop()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
 

@@ -1,0 +1,13 @@
+# Runtime-generated config with account IDs and ARNs — never commit
+agent_config.json
+
+# Evaluation output (may contain ARNs and session IDs)
+results/
+
+# Node.js build artifacts
+hr-assistant/node_modules/
+hr-assistant/dist/
+
+# Python cache
+__pycache__/
+*.pyc

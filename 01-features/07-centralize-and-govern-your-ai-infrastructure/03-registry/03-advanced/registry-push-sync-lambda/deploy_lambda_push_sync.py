@@ -28,13 +28,14 @@ Prerequisites:
     - Edit configuration section below before running
 """
 
-import boto3
 import json
-import time
 import os
-import zipfile
 import subprocess
 import tempfile
+import time
+import zipfile
+
+import boto3
 
 # ── Edit these values ──────────────────────────────────────────────────────────
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
@@ -74,14 +75,16 @@ print(f"Account: {ACCOUNT_ID} | Region: {AWS_REGION}")
 # ── 2. Create Registry and MCP Server Record ──────────────────────────────────
 print("\n=== 2. Create Registry and MCP Server Record ===")
 
-registry_cp = session.client("bedrock-agentcore-control", region_name=AWS_REGION)
+registry_cp = session.client("agent-registry-control", region_name=AWS_REGION)
 
 try:
     reg_resp = registry_cp.create_registry(
         name=REGISTRY_NAME,
         description=f"Agent Registry for push sync — {REGISTRY_NAME}",
+        discoveryConfiguration={"authorizerType": "AWS_IAM"},
+        approvalConfiguration={"autoApprovalRules": []},
     )
-    REGISTRY_ID = reg_resp.get("registryId") or reg_resp.get("registryArn", "").split("/")[-1]
+    REGISTRY_ID = reg_resp["registryArn"].split("/")[-1]
     print(f"Created registry: {REGISTRY_NAME} → ID: {REGISTRY_ID}")
 except Exception as e:
     if "already exists" in str(e).lower() or "conflict" in str(e).lower():
@@ -98,12 +101,12 @@ if not REGISTRY_ID:
     raise ValueError("Failed to create or find registry.")
 
 print(f"Waiting for registry {REGISTRY_ID} to become READY...")
-while True:
+for _ in range(24):
     reg_status = registry_cp.get_registry(registryId=REGISTRY_ID).get("status", "")
     if reg_status == "READY":
         break
     if reg_status.endswith("_FAILED"):
-        raise Exception(f"Registry failed: {reg_status}")
+        raise Exception(f"Registry failed: {reg_status}")  # noqa: TRY002
     print(f"  Registry status: {reg_status} — waiting...")
     time.sleep(5)
 print(f"Using REGISTRY_ID: {REGISTRY_ID} (status: {reg_status})")
@@ -139,14 +142,11 @@ try:
         registryId=REGISTRY_ID,
         name=MCP_SERVER_NAME,
         description=MCP_SERVER_DESCRIPTION,
-        descriptorType="MCP",
+        recordType="MCP",
         recordVersion="1.0",
         descriptors={
-            "mcp": {
-                "server": {
-                    "schemaVersion": "2025-12-11",
-                    "inlineContent": server_schema,
-                }
+            "mcpServer": {
+                "data": server_schema,
             }
         },
     )
@@ -175,7 +175,7 @@ while True:
     if current_status in ("DRAFT", "APPROVED", "PENDING_APPROVAL"):
         break
     if current_status.endswith("_FAILED"):
-        raise Exception(f"Record failed: {current_status}")
+        raise Exception(f"Record failed: {current_status}")  # noqa: TRY002
     time.sleep(3)
 print(f"Record {RECORD_ID} ({record.get('name', '?')}) — status: {current_status}")
 
@@ -297,9 +297,9 @@ iam.put_role_policy(
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "bedrock-agentcore:ListRegistryRecords",
-                        "bedrock-agentcore:GetRegistryRecord",
-                        "bedrock-agentcore:UpdateRegistryRecord",
+                        "agent-registry:ListRegistryRecords",
+                        "agent-registry:GetRegistryRecord",
+                        "agent-registry:UpdateRegistryRecord",
                         "bedrock-agentcore:GetResourceOauth2Token",
                         "bedrock-agentcore:GetWorkloadAccessToken",
                         "secretsmanager:GetSecretValue",
@@ -499,7 +499,7 @@ try:
                 print(msg)
     else:
         print("No log streams found (Lambda has not been invoked yet)")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Could not fetch logs: {e}")
 
 # ── 11. Cleanup ───────────────────────────────────────────────────────────────
@@ -539,7 +539,7 @@ print("Uncomment the cleanup block below to delete all created resources.")
 #     print(f"Role cleanup: {e}")
 #
 # try:
-#     reg_cleanup = session.client("bedrock-agentcore-control", region_name=AWS_REGION)
+#     reg_cleanup = session.client("agent-registry-control", region_name=AWS_REGION)
 #     if RECORD_ID:
 #         reg_cleanup.delete_registry_record(registryId=REGISTRY_ID, recordId=RECORD_ID)
 #         print(f"Deleted registry record: {RECORD_ID}")

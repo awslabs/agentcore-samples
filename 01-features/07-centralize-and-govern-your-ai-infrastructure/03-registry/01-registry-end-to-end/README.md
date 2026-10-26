@@ -76,10 +76,10 @@ AWS Agent registry provides a governance-first approach where every record must 
 
 | Resource                        | Type                              | Purpose                                          |
 |:--------------------------------|:----------------------------------|:-------------------------------------------------|
-| Agent registry                  | `bedrock-agentcore:registry`      | Central registry with manual approval workflow   |
-| MCP Server Record               | `bedrock-agentcore:record`        | Code review MCP tool server (DRAFT → APPROVED)   |
-| A2A Agent Record                | `bedrock-agentcore:record`        | Compliance agent with inline card (DRAFT → APPROVED) |
-| CUSTOM Skill Record             | `bedrock-agentcore:record`        | Data pipeline skill (DRAFT → APPROVED)           |
+| Agent registry                  | `agent-registry:registry`      | Central registry with manual approval workflow   |
+| MCP Server Record               | `agent-registry:record`        | Code review MCP tool server (DRAFT → APPROVED)   |
+| A2A Agent Record                | `agent-registry:record`        | Compliance agent with inline card (DRAFT → APPROVED) |
+| CUSTOM Skill Record             | `agent-registry:record`        | Data pipeline skill (DRAFT → APPROVED)           |
 | IAM User (Admin)                | `AWS::IAM::User`                  | Full registry access + approval authority         |
 | IAM User (Publisher)            | `AWS::IAM::User`                  | Create/submit records, no approval authority      |
 | IAM User (Consumer)             | `AWS::IAM::User`                  | Read-only access + semantic search                |

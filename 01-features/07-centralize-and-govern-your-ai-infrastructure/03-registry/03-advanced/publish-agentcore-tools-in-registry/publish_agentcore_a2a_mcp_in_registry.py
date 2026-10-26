@@ -21,22 +21,29 @@ Note:
     to agents/a2a/ before deployment.
 """
 
-from boto3.session import Session
 import json
+import os
 import time
 import uuid
-import os
+
 import requests
+from bedrock_agentcore_starter_toolkit import Runtime
+from boto3.session import Session
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-from bedrock_agentcore_starter_toolkit import Runtime
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 boto_session = Session()
 AWS_REGION = boto_session.region_name
 
-registry_client = boto_session.client("bedrock-agentcore-control", region_name=AWS_REGION)
-search_client = boto_session.client("bedrock-agentcore", region_name=AWS_REGION)
+registry_client = boto_session.client(
+    "agent-registry-control",
+    region_name=AWS_REGION,
+)
+search_client = boto_session.client(
+    "agent-registry",
+    region_name=AWS_REGION,
+)
 
 os.makedirs("agents/mcp", exist_ok=True)
 os.makedirs("agents/a2a", exist_ok=True)
@@ -70,7 +77,7 @@ def wait_for_record_draft(registry_id, record_id, interval=3):
         if status == "DRAFT":
             return resp
         if status.endswith("_FAILED"):
-            raise Exception(f"Record failed: {status}")
+            raise Exception(f"Record failed: {status}")  # noqa: TRY002
         time.sleep(interval)
 
 
@@ -85,7 +92,7 @@ def signed_mcp_post(url, payload):
     SigV4Auth(credentials, "bedrock-agentcore", AWS_REGION).add_auth(req)
     resp = requests.post(url, headers=dict(req.headers), data=data, timeout=30)
     text = resp.text.strip()
-    if text.startswith("{") or text.startswith("["):
+    if text.startswith(("{", "[")):
         return json.loads(text)
     for line in text.splitlines():
         if line.startswith("data:"):
@@ -112,7 +119,7 @@ def signed_a2a_post(url, payload):
     SigV4Auth(credentials, "bedrock-agentcore", AWS_REGION).add_auth(req)
     resp = requests.post(url, headers=dict(req.headers), data=data, timeout=30)
     text = resp.text.strip()
-    if text.startswith("{") or text.startswith("["):
+    if text.startswith(("{", "[")):
         return json.loads(text)
     for line in text.splitlines():
         if line.startswith("data:"):
@@ -129,7 +136,7 @@ def wait_for_registry(registry_id, interval=5):
             return resp
         if status.endswith("_FAILED"):
             print(f"  {C.RED}❌ Registry Status: {status}{C.RESET}")
-            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")
+            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")  # noqa: TRY002
         print(f"  {C.YELLOW}⏳ Registry Status: {status}{C.RESET}")
         time.sleep(interval)
 
@@ -420,7 +427,7 @@ print(f"\n{C.BOLD}=== 3. Register in the Agent Registry ==={C.RESET}")
 create_registry_response = registry_client.create_registry(
     name="agentcore-tools-registry",
     description="Registry to store A2A Agents and MCP Servers deployed on AgentCore",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 
 REGISTRY_ARN = create_registry_response["registryArn"]
@@ -459,18 +466,12 @@ mcp_record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="order_mcp_server",
     description="MCP server with order management tools",
-    descriptorType="MCP",
+    recordType="MCP",
     recordVersion="1.0",
     descriptors={
-        "mcp": {
-            "server": {
-                "schemaVersion": "2025-12-11",
-                "inlineContent": mcp_server_schema,
-            },
-            "tools": {
-                "protocolVersion": "2025-11-25",
-                "inlineContent": mcp_tool_schema,
-            },
+        "mcpServer": {
+            "data": mcp_server_schema,
+            "additionalData": {"tools": {"data": mcp_tool_schema}},
         }
     },
 )
@@ -487,16 +488,9 @@ a2a_record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="order_a2a_agent",
     description="A2A agent for managing customer orders conversationally",
-    descriptorType="A2A",
+    recordType="AGENT",
     recordVersion="1.0",
-    descriptors={
-        "a2a": {
-            "agentCard": {
-                "schemaVersion": a2a_agent_card.get("protocolVersion", "0.3.0"),
-                "inlineContent": a2a_agent_card_schema,
-            }
-        }
-    },
+    descriptors={"a2aAgentCard": {"data": a2a_agent_card_schema}},
 )
 
 A2A_RECORD_ID = a2a_record_response["recordArn"].split("/")[-1]
@@ -541,7 +535,7 @@ print(f"  {C.YELLOW}⏳ Waiting for search index to update (100s)...{C.RESET}")
 time.sleep(100)
 
 # Search for order management tools
-search_response = search_client.search_registry_records(
+search_response = search_client.search_discoverable_registry_records(
     registryIds=[REGISTRY_ARN], searchQuery="order management", maxResults=5
 )
 search_response.pop("ResponseMetadata", None)
@@ -553,11 +547,11 @@ print(f"Found {len(records)} record(s):\n")
 for rec in records:
     status = rec.get("status", "N/A")
     sc = C.GREEN if status == "APPROVED" else C.YELLOW
-    print(f"  {sc}[{status}]{C.RESET} {C.CYAN}{rec.get('name', 'N/A')}{C.RESET} ({rec.get('descriptorType', 'N/A')})")
+    print(f"  {sc}[{status}]{C.RESET} {C.CYAN}{rec.get('name', 'N/A')}{C.RESET} ({rec.get('recordType', 'N/A')})")
     print(f"    {rec.get('description', '')}")
 
-    mcp_desc = rec.get("descriptors", {}).get("mcp", {})
-    tool_schema = mcp_desc.get("tools", {}).get("inlineContent", "")
+    mcp_desc = rec.get("descriptors", {}).get("mcpServer", {})
+    tool_schema = mcp_desc.get("additionalData", {}).get("tools", {}).get("data", "")
     if tool_schema:
         try:
             tools = json.loads(tool_schema).get("tools", [])
@@ -567,8 +561,8 @@ for rec in records:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    a2a_desc = rec.get("descriptors", {}).get("a2a", {})
-    card_content = a2a_desc.get("agentCard", {}).get("inlineContent", "")
+    a2a_desc = rec.get("descriptors", {}).get("a2aAgentCard", {})
+    card_content = a2a_desc.get("data", "")
     if card_content:
         try:
             card = json.loads(card_content)
@@ -586,11 +580,13 @@ for query in [
     "track shipment status",
     "create new order for customer",
 ]:
-    response = search_client.search_registry_records(registryIds=[REGISTRY_ARN], searchQuery=query, maxResults=3)
+    response = search_client.search_discoverable_registry_records(
+        registryIds=[REGISTRY_ARN], searchQuery=query, maxResults=3
+    )
     records = response.get("registryRecords", [])
     print(f"{C.BOLD}'{query}'{C.RESET} → {len(records)} result(s)")
     for rec in records:
-        print(f"  • {rec.get('name', 'N/A')} ({rec.get('descriptorType', 'N/A')})")
+        print(f"  • {rec.get('name', 'N/A')} ({rec.get('recordType', 'N/A')})")
     print()
 
 # ── 6. Cleanup ────────────────────────────────────────────────────────────────
@@ -602,7 +598,7 @@ for agent_id, agent_name in [(mcp_agent_id, "MCP"), (a2a_agent_id, "A2A")]:
     try:
         agentcore_client.delete_agent_runtime(agentRuntimeId=agent_id)
         print(f"  {C.GREEN}✅ Deleted {agent_name} runtime: {C.DIM}{agent_id}{C.RESET}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  {C.RED}❌ Failed to delete {agent_name} runtime: {e}{C.RESET}")
 
 records = registry_client.list_registry_records(registryId=REGISTRY_ID)

@@ -2,9 +2,9 @@
 
 ## Overview
 Amazon Bedrock AgentCore Tools provide enterprise-grade capabilities that enhance AI agents' ability to perform complex 
-tasks securely and efficiently. This suite includes two primary tools: 
+tasks securely and efficiently. This suite includes tools such as: 
 
-- Amazon Bedrock AgentCore Code Interpreter and 
+- Amazon Bedrock AgentCore Code Interpreter
 - Amazon Bedrock AgentCore Browser Tool
 
 ## Amazon Bedrock AgentCore Code Interpreter

@@ -2,12 +2,13 @@
 
 import os
 import uuid as _uuid
-from datetime import datetime
-from strands import Agent, tool
-from strands.multiagent.a2a import A2AServer
+from datetime import datetime, timezone
+
+import uvicorn
 from a2a.types import AgentSkill
 from fastapi import FastAPI
-import uvicorn
+from strands import Agent, tool
+from strands.multiagent.a2a import A2AServer
 
 runtime_url = os.environ.get("AGENTCORE_RUNTIME_URL", "http://127.0.0.1:9000/")
 host, port = "0.0.0.0", 9000  # nosec B104
@@ -20,7 +21,7 @@ def create_order(customer_name: str, product: str, quantity: int) -> str:
     return (
         f"Order created successfully. Order ID: {order_id}, Customer: {customer_name}, "
         f"Product: {product}, Quantity: {quantity}, Status: PENDING, "
-        f"Created: {datetime.now().isoformat()}"
+        f"Created: {datetime.now(tz=timezone.utc).isoformat()}"
     )
 
 
@@ -38,7 +39,7 @@ def cancel_order(order_id: str, reason: str) -> str:
     """Cancel an existing order with a reason."""
     return (
         f"Order {order_id} cancelled successfully. Reason: {reason}, "
-        f"Status: CANCELLED, Cancelled: {datetime.now().isoformat()}"
+        f"Status: CANCELLED, Cancelled: {datetime.now(tz=timezone.utc).isoformat()}"
     )
 
 

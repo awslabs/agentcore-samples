@@ -1,0 +1,34 @@
+{
+  "_comment": "Production shape: this stack creates NO IAM roles. You create the Glue execution role yourself and name it here (the README lists the exact policy it needs), and every registry in another account must name the role the engine may assume for it. Job artifacts are not uploaded by the stack in this mode either -- `agent-registry-migration deploy` publishes them for you. Everything not listed here keeps its default.",
+  "engine": {
+    "account": "111111111111",
+    "region": "us-west-2",
+    "createIamRoles": false,
+    "glueRoleArn": "arn:aws:iam::111111111111:role/AgentRegistryMigrationGlueRole"
+  },
+  "registries": [
+    {
+      "id": "same-account",
+      "source": { "accountId": "111111111111", "region": "us-west-2", "registryId": "<preview-registry-id>" },
+      "target": { "accountId": "111111111111", "region": "us-west-2", "registryId": "<new-registry-id>" }
+    },
+    {
+      "id": "another-account",
+      "_comment": "A registry in another account needs a role in THAT account that the Glue role may assume. Include externalId only if the role's trust policy requires one -- the engine sends it only when it is set here, and the values must match. See 'The access role in each other account' in the README.",
+      "source": {
+        "accountId": "222222222222",
+        "region": "eu-west-1",
+        "registryId": "<preview-registry-id>",
+        "roleArn": "arn:aws:iam::222222222222:role/AgentRegistryMigrationAccess",
+        "externalId": "agent-registry-migration-default"
+      },
+      "target": {
+        "accountId": "222222222222",
+        "region": "eu-west-1",
+        "registryId": "<new-registry-id>",
+        "roleArn": "arn:aws:iam::222222222222:role/AgentRegistryMigrationAccess",
+        "externalId": "agent-registry-migration-default"
+      }
+    }
+  ]
+}

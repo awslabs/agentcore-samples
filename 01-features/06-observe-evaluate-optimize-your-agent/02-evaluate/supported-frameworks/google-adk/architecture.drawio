@@ -1,0 +1,46 @@
+<mxfile>
+  <diagram name="Google ADK Evaluation" id="adk-eval-arch">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="600">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <!-- evaluate.py -->
+        <mxCell id="2" value="evaluate.py&#xa;(invoke + evaluate)" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.general_SDK;labelBackgroundColor=none;sketch=0;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="50" y="200" width="120" height="120" as="geometry" />
+        </mxCell>
+        <!-- AgentCore Runtime -->
+        <mxCell id="3" value="AgentCore Runtime&#xa;(Google ADK)&#xa;+ LiteLLM → Bedrock&#xa;+ ADOT auto-instrumentation&#xa;+ OpenInference" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;labelBackgroundColor=none;sketch=0;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="170" width="170" height="170" as="geometry" />
+        </mxCell>
+        <!-- CloudWatch -->
+        <mxCell id="4" value="CloudWatch Logs&#xa;(OTel spans + events)&#xa;CHAIN → AGENT → LLM + TOOL" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;labelBackgroundColor=none;sketch=0;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="620" y="100" width="140" height="130" as="geometry" />
+        </mxCell>
+        <!-- AgentCore Evaluation Service -->
+        <mxCell id="5" value="AgentCore Evaluations&#xa;- On-demand (API)&#xa;- Online (config)&#xa;- Built-in + Custom evaluators" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;labelBackgroundColor=none;sketch=0;fontStyle=1;fontSize=11;fillColor=#E8F5E9;" vertex="1" parent="1">
+          <mxGeometry x="620" y="300" width="160" height="140" as="geometry" />
+        </mxCell>
+        <!-- Bedrock Model (via LiteLLM) -->
+        <mxCell id="6" value="Amazon Bedrock&#xa;(Claude via LiteLLM)" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;labelBackgroundColor=none;sketch=0;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="420" width="130" height="100" as="geometry" />
+        </mxCell>
+        <!-- Arrows -->
+        <mxCell id="10" value="invoke" edge="1" source="2" target="3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="spans (CHAIN/AGENT/TOOL/LLM)" edge="1" source="3" target="4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="reads + evaluates" edge="1" source="4" target="5" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="LiteLLM route" edge="1" source="3" target="6" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="scores" style="dashed=1;" edge="1" source="5" target="2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "create_change_request",
+    "description": "Record a corrective action against a ticket. Stamps the user's record with last_incident_at and increments incident_count. Returns a change_id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ticket_id": {
+          "type": "string",
+          "description": "Ticket ID being resolved."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID of the requester."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable summary of the corrective action."
+        },
+        "action": {
+          "type": "string",
+          "description": "Machine-readable action key (e.g. apply_smb_gateway_override)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Justification (from the runbook) for taking this corrective action. Provide this whenever a runbook supports the change."
+        }
+      },
+      "required": ["ticket_id", "user_id", "summary"]
+    }
+  }
+]

@@ -34,13 +34,12 @@ Prerequisites:
 import os
 import sys
 
-import boto3
+import botocore.exceptions
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import client_token, load_tutorial_env, print_summary, wait_for_status
-
 from bedrock_agentcore.payments import PaymentManager
+from utils import client_token, load_tutorial_env, print_summary, wait_for_status
 
 ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(ENV_FILE, override=True)
@@ -52,21 +51,14 @@ REGION = config["region"]
 USER_ID = config["user_id"]
 NETWORK = os.environ.get("NETWORK", "ETHEREUM")
 
-# SDK client for instrument + session operations
+# SDK client for all payment data-plane operations (instruments, balances, sessions)
 manager = PaymentManager(payment_manager_arn=PAYMENT_MANAGER_ARN, region_name=REGION)
 
-# boto3 client for GetPaymentInstrumentBalance (not in SDK)
-dp_client = boto3.client("bedrock-agentcore", region_name=REGION)
-
-# Get connector ID
-if config.get("multi_provider"):
-    PROVIDER = list(config["instruments"].keys())[0]
-    CONNECTOR_ID = config["instruments"][PROVIDER]["connector_id"]
-    INSTRUMENT_ID = config["instruments"][PROVIDER]["instrument_id"]
-else:
-    CONNECTOR_ID = config.get("connector_id")
-    INSTRUMENT_ID = config.get("instrument_id")
-    PROVIDER = config.get("provider_type", "unknown")
+# load_tutorial_env resolves connector_id / instrument_id to the provider you
+# configured (CREDENTIAL_PROVIDER_TYPE), so single- and multi-provider .env files both work.
+CONNECTOR_ID = config.get("connector_id")
+INSTRUMENT_ID = config.get("instrument_id")
+PROVIDER = config.get("active_provider") or config.get("provider_type", "unknown")
 
 print_summary("Config", provider=PROVIDER, instrument=INSTRUMENT_ID)
 
@@ -82,7 +74,7 @@ print("\n── Section 1: Create Embedded Wallet ──")
 print("Backend operation: provision wallet for a new user")
 
 # For this tutorial, reuse the developer's LINKED_EMAIL as the end-user identity.
-# In production, pass each user's real email here.
+# In your own application, pass each user's own email here.
 NEW_USER_ID = "tutorial-03-user"
 NEW_EMAIL = os.environ.get("LINKED_EMAIL", "tutorial03@example.com")
 
@@ -101,23 +93,12 @@ inst = manager.create_payment_instrument(
 NEW_INSTRUMENT_ID = inst["paymentInstrumentId"]
 NEW_WALLET = inst["paymentInstrumentDetails"]["embeddedCryptoWallet"]["walletAddress"]
 
-if inst.get("status") != "ACTIVE":
-    print("Waiting for instrument to become ACTIVE...")
-    wait_for_status(
-        dp_client.get_payment_instrument,
-        "ACTIVE",
-        paymentManagerArn=PAYMENT_MANAGER_ARN,
-        paymentConnectorId=CONNECTOR_ID,
-        paymentInstrumentId=NEW_INSTRUMENT_ID,
-        userId=NEW_USER_ID,
-    )
-
 print_summary(
     "New Instrument Created",
     instrument_id=NEW_INSTRUMENT_ID,
     wallet_address=NEW_WALLET,
     network=NETWORK,
-    status="ACTIVE",
+    status=inst.get("status", "unknown"),
 )
 
 redirect_url = inst["paymentInstrumentDetails"]["embeddedCryptoWallet"].get("redirectUrl")
@@ -154,7 +135,7 @@ print()
 print("Provider-specific steps:")
 print()
 print("  Coinbase CDP:")
-print("    1. Open the WalletHub URL (printed above, or from Setup Tutorial 00 Step 7a)")
+print("    1. Open the WalletHub URL (printed above, or from Setup Tutorial 00 Step 3)")
 print("    2. Log in with LINKED_EMAIL")
 print("    3. Consent to delegated signing")
 print("    (Or: CDP Portal → Wallets → Embedded Wallet → Policies → Enable Delegated Signing)")
@@ -166,6 +147,19 @@ print("    3. Confirm the wallet address matches the one printed in Section 1")
 print("    4. Choose 'Connect agent' → 'Give access'")
 print()
 print("  Without delegation: ProcessPayment fails with a signing error.")
+
+input("\nPress Enter after funding and delegating in Sections 2 and 3... ")
+
+# ── Section 3b: Wait for ACTIVE (instrument is funded + delegated) ───────────
+print("\n── Section 3b: Wait for ACTIVE ──")
+print("Waiting for instrument to become ACTIVE (funded and delegated)...")
+wait_for_status(
+    manager.get_payment_instrument,
+    "ACTIVE",
+    user_id=NEW_USER_ID,
+    payment_instrument_id=NEW_INSTRUMENT_ID,
+)
+print("  ✅ Instrument is ACTIVE (funded and delegated)")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PART 2 — Backend Operations
@@ -184,20 +178,19 @@ for label, inst_id, user_id in [
     ("New instrument", NEW_INSTRUMENT_ID, NEW_USER_ID),
 ]:
     try:
-        resp = dp_client.get_payment_instrument_balance(
-            paymentManagerArn=PAYMENT_MANAGER_ARN,
-            paymentConnectorId=CONNECTOR_ID,
-            paymentInstrumentId=inst_id,
-            userId=user_id,
+        resp = manager.get_payment_instrument_balance(
+            payment_connector_id=CONNECTOR_ID,
+            payment_instrument_id=inst_id,
             chain=chain,
             token="USDC",
+            user_id=user_id,
         )
         balance = resp.get("tokenBalance", {})
         amount = int(balance.get("amount", "0")) / 1_000_000
         print(f"  {label}: {amount:.2f} USDC on {chain}")
         if amount == 0:
             print("     Fund at: https://faucet.circle.com/")
-    except Exception as e:
+    except botocore.exceptions.ClientError as e:
         print(f"  {label}: balance check failed — {e}")
 
 # ── Section 5: Multi-Network Wallets (reference) ──────────────────────────────

@@ -50,7 +50,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 # ── JWT validation ─────────────────────────────────────────────────────────────
 
-_jwks_cache: Optional[dict] = None
+_jwks_cache: dict | None = None
 
 
 def _get_jwks() -> dict:
@@ -80,7 +80,7 @@ def _verify_token(token: str) -> dict:
 
 
 def require_auth(
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),  # noqa: B008
 ) -> tuple[dict, str]:
     """Returns (claims, raw_token). Token is forwarded to agent."""
     if not COGNITO_JWKS_URL:
@@ -101,7 +101,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    user: Optional[str] = None
+    user: str | None = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -161,19 +161,21 @@ async def chat_stream(
 
     async def generate():
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                async with client.stream(
+            async with (
+                httpx.AsyncClient(timeout=180.0) as client,
+                client.stream(
                     "POST",
                     f"{AGENT_URL}/invoke/stream",
                     json={"message": req.message, "history": req.history},
                     headers=headers,
-                ) as resp:
-                    resp.raise_for_status()
-                    # Pass raw bytes straight through — do NOT use aiter_lines()
-                    # because it strips blank lines, destroying \n\n SSE delimiters.
-                    async for chunk in resp.aiter_bytes():
-                        if chunk:
-                            yield chunk
+                ) as resp,
+            ):
+                resp.raise_for_status()
+                # Pass raw bytes straight through — do NOT use aiter_lines()
+                # because it strips blank lines, destroying \n\n SSE delimiters.
+                async for chunk in resp.aiter_bytes():
+                    if chunk:
+                        yield chunk
         except httpx.HTTPStatusError as exc:
             yield f"event: error\ndata: {json.dumps({'text': f'Agent error {exc.response.status_code}'})}\n\n".encode()
         except httpx.RequestError:

@@ -1,0 +1,2526 @@
+{
+  "tools": [
+    {
+      "name": "atlassianUserInfo",
+      "description": "Get current user info",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "title": "Get current user info",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getAccessibleAtlassianResources",
+      "description": "Get cloudId to make tool calls. When a link is provided (e.g. https://site.atlassian.net/*), try passing the site hostname (e.g. site.atlassian.net) as cloudId to other tools first; if that fails, use this tool to list accessible resources.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "title": "List accessible resources",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluencePage",
+      "description": "Get a Confluence page or blog post by ID, including body content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for page/comment body. Use \"html\" to write or read Confluence content as structured HTML. HTML supports standard blocks plus Confluence HTML+ data-type nodes: panels, status, task/decision lists, expands, layouts, cards, media, dates, mentions, macros/extensions, and sync blocks. HTML is round-trip safe and preserves inline comments and existing local IDs. It must follow valid ADF nesting rules: inline-only task/decision items, headings, and captions; no self-nesting panels, expands, tables, or blockquotes. Invalid HTML will be rejected with a descriptive error so you can retry. Use \"markdown\" for simplified plain text. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Retrieve Confluence page",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "searchConfluenceUsingCql",
+      "description": "Search Confluence content (pages, blog posts, comments, attachments) using CQL (Confluence Query Language). CQL is specific to Confluence and is not interchangeable with JQL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "cql": {
+            "type": "string",
+            "description": "CQL (Confluence Query Language) query string. CQL is specific to Confluence and is not JQL. Common fields: title, text, space, type, creator, contributor, label, ancestor, parent, lastmodified, created, mention, watcher, space.title, space.key. Use space key (not name) for the space field; use space.title ~ \"name\" for name search. Content types: page, blogpost, comment, attachment. Escape inner quotes with backslash: title ~ \"Q2 \\\"planning\\\" review\". Examples: title ~ \"meeting notes\" AND type = page | space.title ~ \"Engineering\" AND lastmodified >= now(\"-2w\") AND type = page | creator = currentUser() AND type = page | text ~ \"Q2 \\\"planning\\\" review\" AND type = page"
+          },
+          "cqlcontext": {
+            "type": "string",
+            "description": "CQL context for narrowing search scope (e.g., spaceKey)"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "expand": {
+            "type": "string",
+            "description": "Properties to expand"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 25, max: 250)"
+          },
+          "prev": {
+            "type": "boolean",
+            "description": "Include previous page link"
+          },
+          "next": {
+            "type": "boolean",
+            "description": "Include next page link"
+          }
+        },
+        "required": [
+          "cloudId",
+          "cql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Search Confluence with CQL",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluenceSpaces",
+      "description": "Get spaces",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              }
+            ],
+            "description": "Space IDs"
+          },
+          "keys": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Space keys"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "description": "Space type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived"
+            ],
+            "description": "Space status"
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Space labels"
+          },
+          "favourite": {
+            "type": "boolean",
+            "description": "Favorite spaces only"
+          },
+          "favoritedBy": {
+            "type": "string",
+            "description": "User favorites"
+          },
+          "expand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Properties to expand"
+          },
+          "start": {
+            "type": "number",
+            "description": "Start index"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 25, max: 250)"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get spaces",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getPagesInConfluenceSpace",
+      "description": "Get pages or blog posts in a space",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 25, max: 250)"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "deleted",
+              "trashed"
+            ],
+            "description": "Page status"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title filter"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date",
+              "modified-date",
+              "-modified-date",
+              "title",
+              "-title"
+            ],
+            "description": "Sort order"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "spaceId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get pages in space",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluencePageFooterComments",
+      "description": "Get footer comments for a page or blog post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max comments"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "trashed",
+              "deleted",
+              "historical",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Comment status"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "includeReplies": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also return reply comments"
+          },
+          "repliesPerComment": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get page comments",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluencePageInlineComments",
+      "description": "Get inline comments for a page or blog post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max comments"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "trashed",
+              "deleted",
+              "historical",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Comment status"
+          },
+          "resolutionStatus": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "open",
+              "dangling",
+              "reopened"
+            ],
+            "default": "open",
+            "description": "Resolution status"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "includeReplies": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also return reply comments"
+          },
+          "repliesPerComment": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "List page inline comments",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluenceCommentChildren",
+      "description": "Get reply(child) comments for a comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "commentId": {
+            "type": "string",
+            "description": "Parent comment ID"
+          },
+          "commentType": {
+            "type": "string",
+            "enum": [
+              "footer",
+              "inline"
+            ],
+            "description": "Comment type"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max replies"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "commentId",
+          "commentType"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get comment replies",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluencePageDescendants",
+      "description": "Get child pages of specified page",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max descendants"
+          },
+          "depth": {
+            "type": "number",
+            "description": "Max depth"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "List page descendants",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createConfluencePage",
+      "description": "Create a Confluence page or blog post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "title": {
+            "type": "string",
+            "description": "Page or blog post title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Status (draft for unpublished)"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent page ID (pages only, ignored for blogs)"
+          },
+          "body": {
+            "type": "string",
+            "description": "Page/comment body. When contentFormat is \"html\", use standard HTML for headings (<h1>-<h6>), paragraphs (<p>), tables (<table>/<thead>/<tbody>/<tr>/<th>/<td>), links (<a href=\"URL\">), code (<pre><code class=\"language-python\">), and lists (<ul>/<ol>/<li>). Confluence-specific HTML+ uses data-type attributes, not CSS classes: panels <div data-type=\"panel-info|panel-warning|panel-note|panel-success|panel-error\"><p>text</p></div>; status <span data-type=\"status\" data-color=\"green|red|yellow|blue|neutral|purple\">Label</span>; task list <ul data-type=\"task-list\"><li data-type=\"task-item\"><input type=\"checkbox\"> Item</li></ul>; decision list <ul data-type=\"decision-list\"><li data-type=\"decision-item\" data-state=\"DECIDED|UNDECIDED\">text</li></ul>; expand <details><summary>Title</summary><p>content</p></details>; layout <section data-type=\"layout-two-equal|layout-three-equal\"><div data-type=\"column\"><p>Column</p></div></section>; inline card <a href=\"URL\" data-card-appearance=\"inline\">text</a>; date <time datetime=\"YYYY-MM-DD\">label</time>; mention <span data-type=\"mention\" data-user-id=\"ACCOUNT_ID\">@Name</span>; inline placeholder <span data-type=\"placeholder\">prompt</span>; macro/extension <div data-type=\"extension|bodied-extension|multi-bodied-extension\" data-extension-key=\"KEY\" data-extension-type=\"TYPE\" data-parameters=\"JSON\"></div>; sync block <div data-type=\"sync-block|bodied-sync-block\" data-resource-id=\"ID\"></div>; media group <div data-type=\"media-group\"><div data-type=\"media\" data-media-type=\"file\" data-id=\"MEDIA_ID\" data-collection=\"COLLECTION\">file.pdf</div></div>; inline media <span data-type=\"media-inline\" data-media-id=\"MEDIA_ID\" data-media-collection=\"COLLECTION\">file.pdf</span>. For native Confluence macros use data-extension-type=\"com.atlassian.confluence.macro.core\" and never storage XML (<ac:structured-macro>). Omit macroId. Do not invent opaque IDs: only copy data-user-id, data-id, data-collection, data-media-id, data-media-collection, data-resource-id, and data-local-id from existing content or tool output; omit data-local-id on new nodes. Preserve existing data-local-id when editing fetched HTML. Tables support data-number-column, data-layout=\"default|center|wide|full-width\", data-display-mode=\"fixed\", data-width, row/col spans, data-colwidth, and cell data-background. Breakout supports data-breakout=\"wide|full-width\" on details, pre, section, and sync blocks. Follow ADF nesting: task/decision items, headings, and captions are inline-only; list items cannot contain headings/tables/panels/expands; panels cannot contain tables/expands/blockquotes/panels; table cells can contain headings, panels, lists, media, blockquote, decision list, and nested expand (<details data-type=\"nested-expand\">) but not nested tables or normal expand. Never wrap content in <html>, <head>, or <body> tags."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for page/comment body. Use \"html\" to write or read Confluence content as structured HTML. HTML supports standard blocks plus Confluence HTML+ data-type nodes: panels, status, task/decision lists, expands, layouts, cards, media, dates, mentions, macros/extensions, and sync blocks. HTML is round-trip safe and preserves inline comments and existing local IDs. It must follow valid ADF nesting rules: inline-only task/decision items, headings, and captions; no self-nesting panels, expands, tables, or blockquotes. Invalid HTML will be rejected with a descriptive error so you can retry. Use \"markdown\" for simplified plain text. Defaults vary by tool when omitted."
+          },
+          "isPrivate": {
+            "type": "boolean",
+            "description": "Make private"
+          },
+          "subtype": {
+            "type": "string",
+            "enum": [
+              "live"
+            ],
+            "description": "Page subtype (pages only, ignored for blogs)"
+          }
+        },
+        "required": [
+          "cloudId",
+          "spaceId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Confluence page",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "updateConfluencePage",
+      "description": "Update a Confluence page or blog post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Page status"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent page ID (pages only, ignored for blogs)"
+          },
+          "body": {
+            "type": "string",
+            "description": "Page/comment body. When contentFormat is \"html\", use standard HTML for headings (<h1>-<h6>), paragraphs (<p>), tables (<table>/<thead>/<tbody>/<tr>/<th>/<td>), links (<a href=\"URL\">), code (<pre><code class=\"language-python\">), and lists (<ul>/<ol>/<li>). Confluence-specific HTML+ uses data-type attributes, not CSS classes: panels <div data-type=\"panel-info|panel-warning|panel-note|panel-success|panel-error\"><p>text</p></div>; status <span data-type=\"status\" data-color=\"green|red|yellow|blue|neutral|purple\">Label</span>; task list <ul data-type=\"task-list\"><li data-type=\"task-item\"><input type=\"checkbox\"> Item</li></ul>; decision list <ul data-type=\"decision-list\"><li data-type=\"decision-item\" data-state=\"DECIDED|UNDECIDED\">text</li></ul>; expand <details><summary>Title</summary><p>content</p></details>; layout <section data-type=\"layout-two-equal|layout-three-equal\"><div data-type=\"column\"><p>Column</p></div></section>; inline card <a href=\"URL\" data-card-appearance=\"inline\">text</a>; date <time datetime=\"YYYY-MM-DD\">label</time>; mention <span data-type=\"mention\" data-user-id=\"ACCOUNT_ID\">@Name</span>; inline placeholder <span data-type=\"placeholder\">prompt</span>; macro/extension <div data-type=\"extension|bodied-extension|multi-bodied-extension\" data-extension-key=\"KEY\" data-extension-type=\"TYPE\" data-parameters=\"JSON\"></div>; sync block <div data-type=\"sync-block|bodied-sync-block\" data-resource-id=\"ID\"></div>; media group <div data-type=\"media-group\"><div data-type=\"media\" data-media-type=\"file\" data-id=\"MEDIA_ID\" data-collection=\"COLLECTION\">file.pdf</div></div>; inline media <span data-type=\"media-inline\" data-media-id=\"MEDIA_ID\" data-media-collection=\"COLLECTION\">file.pdf</span>. For native Confluence macros use data-extension-type=\"com.atlassian.confluence.macro.core\" and never storage XML (<ac:structured-macro>). Omit macroId. Do not invent opaque IDs: only copy data-user-id, data-id, data-collection, data-media-id, data-media-collection, data-resource-id, and data-local-id from existing content or tool output; omit data-local-id on new nodes. Preserve existing data-local-id when editing fetched HTML. Tables support data-number-column, data-layout=\"default|center|wide|full-width\", data-display-mode=\"fixed\", data-width, row/col spans, data-colwidth, and cell data-background. Breakout supports data-breakout=\"wide|full-width\" on details, pre, section, and sync blocks. Follow ADF nesting: task/decision items, headings, and captions are inline-only; list items cannot contain headings/tables/panels/expands; panels cannot contain tables/expands/blockquotes/panels; table cells can contain headings, panels, lists, media, blockquote, decision list, and nested expand (<details data-type=\"nested-expand\">) but not nested tables or normal expand. Never wrap content in <html>, <head>, or <body> tags."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for page/comment body. Use \"html\" to write or read Confluence content as structured HTML. HTML supports standard blocks plus Confluence HTML+ data-type nodes: panels, status, task/decision lists, expands, layouts, cards, media, dates, mentions, macros/extensions, and sync blocks. HTML is round-trip safe and preserves inline comments and existing local IDs. It must follow valid ADF nesting rules: inline-only task/decision items, headings, and captions; no self-nesting panels, expands, tables, or blockquotes. Invalid HTML will be rejected with a descriptive error so you can retry. Use \"markdown\" for simplified plain text. Defaults vary by tool when omitted."
+          },
+          "versionMessage": {
+            "type": "string",
+            "description": "Version message"
+          },
+          "includeBody": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, include the page body in the response; if false, omit it to reduce payload size."
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Update Confluence page",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createConfluenceFooterComment",
+      "description": "Create a footer comment on a page or blog post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw)"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "parentCommentId": {
+            "type": "string",
+            "description": "Parent comment ID for replies"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "Attachment ID to include"
+          },
+          "customContentId": {
+            "type": "string",
+            "description": "Custom content ID to include"
+          },
+          "body": {
+            "type": "string",
+            "description": "Page/comment body. When contentFormat is \"html\", use standard HTML for headings (<h1>-<h6>), paragraphs (<p>), tables (<table>/<thead>/<tbody>/<tr>/<th>/<td>), links (<a href=\"URL\">), code (<pre><code class=\"language-python\">), and lists (<ul>/<ol>/<li>). Confluence-specific HTML+ uses data-type attributes, not CSS classes: panels <div data-type=\"panel-info|panel-warning|panel-note|panel-success|panel-error\"><p>text</p></div>; status <span data-type=\"status\" data-color=\"green|red|yellow|blue|neutral|purple\">Label</span>; task list <ul data-type=\"task-list\"><li data-type=\"task-item\"><input type=\"checkbox\"> Item</li></ul>; decision list <ul data-type=\"decision-list\"><li data-type=\"decision-item\" data-state=\"DECIDED|UNDECIDED\">text</li></ul>; expand <details><summary>Title</summary><p>content</p></details>; layout <section data-type=\"layout-two-equal|layout-three-equal\"><div data-type=\"column\"><p>Column</p></div></section>; inline card <a href=\"URL\" data-card-appearance=\"inline\">text</a>; date <time datetime=\"YYYY-MM-DD\">label</time>; mention <span data-type=\"mention\" data-user-id=\"ACCOUNT_ID\">@Name</span>; inline placeholder <span data-type=\"placeholder\">prompt</span>; macro/extension <div data-type=\"extension|bodied-extension|multi-bodied-extension\" data-extension-key=\"KEY\" data-extension-type=\"TYPE\" data-parameters=\"JSON\"></div>; sync block <div data-type=\"sync-block|bodied-sync-block\" data-resource-id=\"ID\"></div>; media group <div data-type=\"media-group\"><div data-type=\"media\" data-media-type=\"file\" data-id=\"MEDIA_ID\" data-collection=\"COLLECTION\">file.pdf</div></div>; inline media <span data-type=\"media-inline\" data-media-id=\"MEDIA_ID\" data-media-collection=\"COLLECTION\">file.pdf</span>. For native Confluence macros use data-extension-type=\"com.atlassian.confluence.macro.core\" and never storage XML (<ac:structured-macro>). Omit macroId. Do not invent opaque IDs: only copy data-user-id, data-id, data-collection, data-media-id, data-media-collection, data-resource-id, and data-local-id from existing content or tool output; omit data-local-id on new nodes. Preserve existing data-local-id when editing fetched HTML. Tables support data-number-column, data-layout=\"default|center|wide|full-width\", data-display-mode=\"fixed\", data-width, row/col spans, data-colwidth, and cell data-background. Breakout supports data-breakout=\"wide|full-width\" on details, pre, section, and sync blocks. Follow ADF nesting: task/decision items, headings, and captions are inline-only; list items cannot contain headings/tables/panels/expands; panels cannot contain tables/expands/blockquotes/panels; table cells can contain headings, panels, lists, media, blockquote, decision list, and nested expand (<details data-type=\"nested-expand\">) but not nested tables or normal expand. Never wrap content in <html>, <head>, or <body> tags."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for page/comment body. Use \"html\" to write or read Confluence content as structured HTML. HTML supports standard blocks plus Confluence HTML+ data-type nodes: panels, status, task/decision lists, expands, layouts, cards, media, dates, mentions, macros/extensions, and sync blocks. HTML is round-trip safe and preserves inline comments and existing local IDs. It must follow valid ADF nesting rules: inline-only task/decision items, headings, and captions; no self-nesting panels, expands, tables, or blockquotes. Invalid HTML will be rejected with a descriptive error so you can retry. Use \"markdown\" for simplified plain text. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Confluence footer comment",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createConfluenceInlineComment",
+      "description": "Create an inline comment on specific text in a page or blog post. For top-level comments, provide pageId and inlineCommentProperties (text selection + match counts). For replies, provide parentCommentId only (no pageId or inlineCommentProperties). You must first fetch the page content (e.g. using getConfluencePage) to find the exact text and count how many times it appears. Incorrect or missing inlineCommentProperties can result in a 400 error from the Confluence API.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page or blog post ID, or a Confluence tiny link ID (the encoded part from /wiki/x/ URLs, e.g., Fc1bBw). Use for top-level inline comments only; do not provide with parentCommentId."
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "default": "page",
+            "description": "Type of content: page or blog post"
+          },
+          "parentCommentId": {
+            "type": "string",
+            "description": "Parent comment ID for replies. When provided, this creates a reply to an existing inline comment thread. Do not provide pageId or inlineCommentProperties."
+          },
+          "body": {
+            "type": "string",
+            "description": "Page/comment body. When contentFormat is \"html\", use standard HTML for headings (<h1>-<h6>), paragraphs (<p>), tables (<table>/<thead>/<tbody>/<tr>/<th>/<td>), links (<a href=\"URL\">), code (<pre><code class=\"language-python\">), and lists (<ul>/<ol>/<li>). Confluence-specific HTML+ uses data-type attributes, not CSS classes: panels <div data-type=\"panel-info|panel-warning|panel-note|panel-success|panel-error\"><p>text</p></div>; status <span data-type=\"status\" data-color=\"green|red|yellow|blue|neutral|purple\">Label</span>; task list <ul data-type=\"task-list\"><li data-type=\"task-item\"><input type=\"checkbox\"> Item</li></ul>; decision list <ul data-type=\"decision-list\"><li data-type=\"decision-item\" data-state=\"DECIDED|UNDECIDED\">text</li></ul>; expand <details><summary>Title</summary><p>content</p></details>; layout <section data-type=\"layout-two-equal|layout-three-equal\"><div data-type=\"column\"><p>Column</p></div></section>; inline card <a href=\"URL\" data-card-appearance=\"inline\">text</a>; date <time datetime=\"YYYY-MM-DD\">label</time>; mention <span data-type=\"mention\" data-user-id=\"ACCOUNT_ID\">@Name</span>; inline placeholder <span data-type=\"placeholder\">prompt</span>; macro/extension <div data-type=\"extension|bodied-extension|multi-bodied-extension\" data-extension-key=\"KEY\" data-extension-type=\"TYPE\" data-parameters=\"JSON\"></div>; sync block <div data-type=\"sync-block|bodied-sync-block\" data-resource-id=\"ID\"></div>; media group <div data-type=\"media-group\"><div data-type=\"media\" data-media-type=\"file\" data-id=\"MEDIA_ID\" data-collection=\"COLLECTION\">file.pdf</div></div>; inline media <span data-type=\"media-inline\" data-media-id=\"MEDIA_ID\" data-media-collection=\"COLLECTION\">file.pdf</span>. For native Confluence macros use data-extension-type=\"com.atlassian.confluence.macro.core\" and never storage XML (<ac:structured-macro>). Omit macroId. Do not invent opaque IDs: only copy data-user-id, data-id, data-collection, data-media-id, data-media-collection, data-resource-id, and data-local-id from existing content or tool output; omit data-local-id on new nodes. Preserve existing data-local-id when editing fetched HTML. Tables support data-number-column, data-layout=\"default|center|wide|full-width\", data-display-mode=\"fixed\", data-width, row/col spans, data-colwidth, and cell data-background. Breakout supports data-breakout=\"wide|full-width\" on details, pre, section, and sync blocks. Follow ADF nesting: task/decision items, headings, and captions are inline-only; list items cannot contain headings/tables/panels/expands; panels cannot contain tables/expands/blockquotes/panels; table cells can contain headings, panels, lists, media, blockquote, decision list, and nested expand (<details data-type=\"nested-expand\">) but not nested tables or normal expand. Never wrap content in <html>, <head>, or <body> tags."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for page/comment body. Use \"html\" to write or read Confluence content as structured HTML. HTML supports standard blocks plus Confluence HTML+ data-type nodes: panels, status, task/decision lists, expands, layouts, cards, media, dates, mentions, macros/extensions, and sync blocks. HTML is round-trip safe and preserves inline comments and existing local IDs. It must follow valid ADF nesting rules: inline-only task/decision items, headings, and captions; no self-nesting panels, expands, tables, or blockquotes. Invalid HTML will be rejected with a descriptive error so you can retry. Use \"markdown\" for simplified plain text. Defaults vary by tool when omitted."
+          },
+          "inlineCommentProperties": {
+            "type": "object",
+            "properties": {
+              "textSelection": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The exact text on the page to anchor the inline comment to. Must match the rendered page text exactly (case-sensitive)."
+              },
+              "textSelectionMatchCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of times the textSelection string appears on the page. Fetch the page content and count occurrences before calling this tool."
+              },
+              "textSelectionMatchIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Zero-based index of the specific occurrence of textSelection to anchor the comment to. Must be less than textSelectionMatchCount."
+              }
+            },
+            "required": [
+              "textSelection",
+              "textSelectionMatchCount",
+              "textSelectionMatchIndex"
+            ],
+            "additionalProperties": false,
+            "description": "Required for top-level inline comments (not replies). Provide textSelection, textSelectionMatchCount (total occurrences on the page), and textSelectionMatchIndex (0-based, must be < textSelectionMatchCount)."
+          }
+        },
+        "required": [
+          "cloudId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Confluence inline comment",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getJiraIssue",
+      "description": "Get issue details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Issue fields to return. When omitted or empty, defaults to: summary, description, status, issuetype, priority, labels, components, assignee, reporter, created, updated, resolution, project. Pass \"*all\" to return every field (including custom fields). Include \"comment\" to fetch issue comments in fields.comment.comments."
+          },
+          "fieldsByKeys": {
+            "type": "boolean",
+            "description": "Whether fields in the request are referenced by field keys instead of IDs."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Additional issue details to expand in the response (for example, renderedFields or names)."
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Issue property keys to include in the response."
+          },
+          "updateHistory": {
+            "type": "boolean",
+            "description": "Whether to update the user's recently viewed projects/history for this issue request."
+          },
+          "failFast": {
+            "type": "boolean",
+            "description": "Whether to fail quickly when some fields cannot be loaded instead of partially returning data."
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get issue",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "editJiraIssue",
+      "description": "Update issue. After updating, returns the issue using the same default read fields as getJiraIssue (summary, description, status, issuetype, priority, labels, components, assignee, reporter, created, updated, resolution, project). Use getJiraIssue with fields [\"*all\"] or a custom list if you need more.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Fields to set, keyed by field name or customfield_* ID. To CLEAR a field, pass an explicit null, e.g. { \"resolution\": null }. Clearing the resolution is the fix when a reopened issue is blocked from transitioning because it still has a Resolution set."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "fields"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Update issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createJiraIssue",
+      "description": "Create a Jira issue. Use additional_fields to set any Jira field that does not have its own parameter (e.g. custom fields, priority, components).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectKey": {
+            "type": "string",
+            "description": "Project key"
+          },
+          "issueTypeName": {
+            "type": "string",
+            "description": "Type (Task, Bug, Story)"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32000
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "doc"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": true
+              }
+            ],
+            "description": "Issue description. With contentFormat \"markdown\" (default), pass plain text or Markdown as a string. With contentFormat \"adf\", pass an ADF JSON string or a document object with type \"doc\"."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent for subtasks"
+          },
+          "assignee_account_id": {
+            "type": "string",
+            "description": "Assignee ID"
+          },
+          "additional_fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "REQUIRED for custom fields. This is the ONLY parameter to set priority, labels, custom fields, components, fix versions, or any other Jira fields not listed above. Pass a JSON object with field names as keys. Examples: {\"components\": [{\"name\": \"Backend\"}]}, {\"fixVersions\": [{\"name\": \"v1.2\"}]}, {\"priority\": {\"name\": \"High\"}}, {\"labels\": [\"bug\"]}, {\"customfield_10001\": \"value\"}."
+          },
+          "transition": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The workflow transition ID to apply during issue creation"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "description": "Optional workflow transition to apply during creation. Use getTransitionsForJiraIssue to find valid transition IDs. Placed at top level of Jira API request, not inside fields."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectKey",
+          "issueTypeName",
+          "summary"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getTransitionsForJiraIssue",
+      "description": "Get transitions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "transitionId": {
+            "type": "string"
+          },
+          "skipRemoteOnlyCondition": {
+            "type": "boolean"
+          },
+          "includeUnavailableTransitions": {
+            "type": "boolean"
+          },
+          "sortByOpsBarAndStatus": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get transitions",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getJiraIssueRemoteIssueLinks",
+      "description": "Get remote links",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "globalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get remote links",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getVisibleJiraProjects",
+      "description": "Get projects",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "searchString": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "view",
+              "browse",
+              "edit",
+              "create"
+            ],
+            "default": "create"
+          },
+          "startAt": {
+            "type": "number",
+            "default": 0
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 50,
+            "default": 50
+          },
+          "expandIssueTypes": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get projects",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getJiraProjectIssueTypesMetadata",
+      "description": "Get issue types",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectIdOrKey": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "number",
+            "default": 0
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get issue types",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getJiraIssueTypeMetaWithFields",
+      "description": "Get field metadata",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectIdOrKey": {
+            "type": "string"
+          },
+          "issueTypeId": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "number"
+          },
+          "maxResults": {
+            "type": "number"
+          },
+          "requiredFieldsOnly": {
+            "type": "boolean",
+            "description": "When true (default), returns only the fields that are required to create an issue of this type, reducing response size. Set to false to return all available fields (both required and optional)."
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectIdOrKey",
+          "issueTypeId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get field metadata",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "addCommentToJiraIssue",
+      "description": "Add or update a comment on a Jira issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "commentBody": {
+            "type": "string",
+            "description": "Comment body"
+          },
+          "commentVisibility": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group",
+                  "role"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "commentId": {
+            "type": "string",
+            "maxLength": 18,
+            "description": "ID of an existing comment to update. If omitted, a new comment is added."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "commentBody"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Add comment",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "transitionJiraIssue",
+      "description": "Transition issue status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "transition": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "update": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          },
+          "historyMetadata": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "descriptionKey": {
+                "type": "string"
+              },
+              "activityDescription": {
+                "type": "string"
+              },
+              "activityDescriptionKey": {
+                "type": "string"
+              },
+              "emailDescription": {
+                "type": "string"
+              },
+              "emailDescriptionKey": {
+                "type": "string"
+              },
+              "actor": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "generator": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cause": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "extraData": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "transition"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Transition issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "description": "Search issues with JQL, total counts only when explicitly requested.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "jql": {
+            "type": "string",
+            "description": "JQL query"
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 100,
+            "description": "Max (50-100)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Issue fields to return. When omitted or empty, defaults to: summary, description, status, issuetype, priority, labels, components, assignee, reporter, created, updated, resolution, project. Pass \"*all\" to return every field (including custom fields). Include \"comment\" to fetch issue comments in fields.comment.comments."
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Page token"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          },
+          "computeIssueCount": {
+            "type": "boolean",
+            "description": "Default false. Never set for normal search or if nextPageToken used. If total for same query is known, reuse it. Set true only when no trusted count exists, and either requested explicitly by user or downstream step cannot proceed without it."
+          }
+        },
+        "required": [
+          "cloudId",
+          "jql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Search with JQL",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "lookupJiraAccountId",
+      "description": "Lookup user IDs",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "searchString": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudId",
+          "searchString"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Lookup users",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "addWorklogToJiraIssue",
+      "description": "Add or update a worklog on a Jira issue. When worklogId is provided, updates that worklog;",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "timeSpent": {
+            "type": "string",
+            "description": "Time spent (e.g. 2h, 30m, 4d). Required for new worklogs; use to set or change time when updating."
+          },
+          "worklogId": {
+            "type": "string",
+            "description": "ID of an existing worklog to update. If omitted, a new worklog is created."
+          },
+          "commentBody": {
+            "type": "string",
+            "description": "Comment body"
+          },
+          "started": {
+            "type": "string",
+            "description": "When the work was started (ISO 8601 date-time, e.g. 2026-03-09T09:00:00.000+0000). If omitted, the worklog is booked at the current date/time."
+          },
+          "visibility": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group",
+                  "role"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "timeSpent"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Add or update worklog",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getIssueLinkTypes",
+      "description": "Get available Jira issue link types (e.g. Blocks, Duplicate, Clones, Relates). For createIssueLink: inwardIssue = blocker, outwardIssue = blocked (e.g. \"A is blocked by B\" \u2192 inwardIssue: B, outwardIssue: A).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get issue link types",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createIssueLink",
+      "description": "Create a link between two Jira issues. For directional link types (e.g. Blocks): inwardIssue = issue that blocks, outwardIssue = issue that is blocked (e.g. \"A is blocked by B\" \u2192 inwardIssue: B, outwardIssue: A). Use getIssueLinkTypes if link type is unknown.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "inwardIssue": {
+            "type": "string",
+            "description": "Inward issue key (e.g. HSP-1)."
+          },
+          "outwardIssue": {
+            "type": "string",
+            "description": "Outward issue key (e.g. MKY-1)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Link type name (e.g. Duplicate, Blocks, Clones, Relates). Use getIssueLinkTypes to list available types."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional comment on the outward issue."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format for body content. Use \"markdown\" for simplified plain text. Use \"adf\" (Atlassian Document Format, JSON) for full programmatic fidelity. Defaults vary by tool when omitted."
+          }
+        },
+        "required": [
+          "cloudId",
+          "inwardIssue",
+          "outwardIssue",
+          "type"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create issue link",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getCompassComponents",
+      "description": "Get a list of Compass components",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "query": {
+            "type": "string",
+            "description": "The query to search for components."
+          },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by component type ids (e.g., [\"SERVICE\", \"LIBRARY\", \"APPLICATION\"])."
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by component labels (e.g., [\"frontend\", \"backend\"])."
+              },
+              "repositories": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by repository URLs (e.g., [\"https://bitbucket.org/workspace/repo-name\"]). Use this filter to reverse look up a component for a given repository."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Additional filters to narrow down the search. Results are returned for all the filters matched"
+          },
+          "after": {
+            "type": "string",
+            "description": "The cursor to start at."
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 50,
+            "default": 10,
+            "description": "The maximum number of items to return per page."
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "List Compass components",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getCompassComponent",
+      "description": "Get a Compass component by ID",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "componentId": {
+            "type": "string",
+            "description": "The ID of the component to get"
+          },
+          "includeCustomFieldsInResponse": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to include custom fields in the response. Components often track important information in custom fields"
+          },
+          "includeRelatedLinksInResponse": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to include related links to the Component in the response. Components often track links to repository, documentation, Jira project, operational dashboards, on-call schedule etc with links"
+          },
+          "includeRelatedComponentsAndDependenciesInResponse": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to include related components and dependencies in the response. This includes all relationships (dependencies, child components, parent components, etc.) that this component has with other components"
+          }
+        },
+        "required": [
+          "cloudId",
+          "componentId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Retrieve Compass component",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getCompassCustomFieldDefinitions",
+      "description": "Get a list of Compass custom field definitions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "List custom field definitions",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createCompassCustomFieldDefinition",
+      "description": "Create a custom field definition in Compass",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "input": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the custom field definition"
+              },
+              "description": {
+                "type": "string",
+                "description": "Description of the custom field definition"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "TEXT",
+                  "NUMBER",
+                  "BOOLEAN",
+                  "USER",
+                  "DATE"
+                ],
+                "description": "Type of the custom field"
+              },
+              "isRequired": {
+                "type": "boolean",
+                "description": "Whether the custom field is required"
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ],
+            "additionalProperties": false,
+            "description": "Input data for creating the custom field definition"
+          }
+        },
+        "required": [
+          "cloudId",
+          "input"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create custom field definition",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createCompassComponent",
+      "description": "Create a new Compass component",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the component"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the component"
+          },
+          "typeId": {
+            "type": "string",
+            "description": "Type ID of the component"
+          },
+          "ownerId": {
+            "type": "string",
+            "description": "Owner ID of the component"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for the component"
+          }
+        },
+        "required": [
+          "cloudId",
+          "name",
+          "typeId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Compass component",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createCompassComponentRelationship",
+      "description": "Create a relationship between Compass components",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "fromComponentId": {
+            "type": "string",
+            "description": "The ARI of the source component"
+          },
+          "toComponentId": {
+            "type": "string",
+            "description": "The ARI of the target component"
+          },
+          "relationshipType": {
+            "type": "string",
+            "enum": [
+              "DEPENDS_ON",
+              "DEPENDENCY_OF"
+            ],
+            "description": "Type of relationship"
+          }
+        },
+        "required": [
+          "cloudId",
+          "fromComponentId",
+          "toComponentId",
+          "relationshipType"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create component relationship",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getTeamworkGraphContext",
+      "description": "Retrieves connected context from Teamwork Graph for any Atlassian entity. Returns all relationships and linked objects within one traversal \u2013 including cross-product and third-party connections. Use when the answer requires connections between entities, not just a single entity's fields.\n\nSupported entry points:\n\nJira: issues, projects, sprints, versions, comments\n\nConfluence: pages, blogposts, whiteboards, databases, spaces\n\nGoals, Projects, Focus Areas, Tags and updates\n\nPeople: users, teams, organisations\n\nDevOps: PRs, repos, deployments, services, builds, designs\n\nLoom: videos, meetings\n\nCompass: components\n\nAssets: objects\n\nIncidents, conversations, calendar events, external documents\n\nAfter calling this tool, call getTeamworkGraphObject on returned ARIs to get full content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "objectType": {
+            "type": "string",
+            "enum": [
+              "AtlassianGoal",
+              "AtlassianGoalUpdate",
+              "AtlassianHomeComment",
+              "AtlassianHomeTag",
+              "AtlassianProject",
+              "AtlassianProjectUpdate",
+              "AtlassianTeam",
+              "AtlassianUser",
+              "CompassComponent",
+              "ConfluenceBlogPost",
+              "ConfluenceComment",
+              "ConfluenceDatabase",
+              "ConfluencePage",
+              "ConfluenceSpace",
+              "ConfluenceWhiteboard",
+              "ExternalCalendarEvent",
+              "ExternalConversation",
+              "ExternalDeployment",
+              "ExternalDesign",
+              "ExternalDocument",
+              "ExternalOrganisation",
+              "ExternalPosition",
+              "ExternalPullRequest",
+              "ExternalRepository",
+              "ExternalService",
+              "FocusFocusArea",
+              "JiraSpace",
+              "JiraSprint",
+              "JiraVersion",
+              "JiraWorkItem",
+              "JiraWorkItemComment",
+              "AssetsObject",
+              "LoomMeeting",
+              "LoomMeetingRecurrence",
+              "LoomVideo"
+            ],
+            "description": "Type of object to fetch context for."
+          },
+          "objectIdentifier": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Identifier for the object. It could be a key (e.g. ENG-1234), ID, ARI, or full URL; format depends on objectType."
+          },
+          "detailLevel": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "default": "summary",
+            "description": "'summary' (counts/metadata) or 'full' (detailed content)."
+          },
+          "relationshipTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20,
+            "description": "Filter full results to specific relationship types to save tokens (e.g. 'jira-work-item-links-external-build' for Jira work items)."
+          },
+          "targetObjectTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20,
+            "description": "Filter results to only include relationships targeting specific object types (e.g. AtlassianUser, ConfluenceComment)."
+          },
+          "timeRange": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 date-time string for the start of the time range (e.g. \"2025-01-01T00:00:00Z\")."
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 date-time string for the end of the time range (e.g. \"2025-12-31T23:59:59Z\")."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Optional time range to filter relationships by creation or update time."
+          },
+          "first": {
+            "type": "integer",
+            "maximum": 50,
+            "default": 50,
+            "description": "Max number of related items to return."
+          },
+          "after": {
+            "type": "string",
+            "description": "Pagination cursor for fetching the next page of results."
+          }
+        },
+        "required": [
+          "cloudId",
+          "objectType",
+          "objectIdentifier"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get Teamwork Graph context (beta)",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getTeamworkGraphObject",
+      "description": "Fetches the entire available data for one or more objects (Atlassian or third-party) using their ARIs or URLs. Use for the objects gathered from getTeamworkGraphContext tool.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "maxItems": 25,
+            "description": "A list of object identifiers to hydrate. Supports both ARIs (e.g., 'ari:cloud:jira::issue/123') and full browser URLs (e.g., 'https://mysite.atlassian.net/browse/PROJ-1')."
+          }
+        },
+        "required": [
+          "cloudId",
+          "objects"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get Teamwork Graph object (beta)",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "addTeamworkGraphContext",
+      "description": "Adds a relationship between two entities in the Teamwork Graph (e.g. linking two Jira work items, marking one as blocking another, attaching a remote link, or connecting a Jira work item to an Atlas project or goal).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "relationshipType": {
+            "type": "string",
+            "enum": [
+              "jira-work-item-links-jira-work-item",
+              "jira-work-item-blocks-jira-work-item",
+              "jira-work-item-links-jira-work-item-remote-link",
+              "jira-work-item-tracks-atlassian-project",
+              "jira-work-item-contributes-to-atlassian-goal"
+            ],
+            "description": "Type of relationship to create. Determines which entity types 'objectIdentifier' and 'targetObjectIdentifier' must resolve to."
+          },
+          "objectIdentifier": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Identifier of the source entity. Accepts an ARI, a full URL, or a stable key (e.g. ENG-123 for a Jira work item). Format depends on relationshipType."
+          },
+          "targetObjectIdentifier": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Identifier of the target entity. Accepts an ARI, a full URL, or a stable key (e.g. ATLAS-20426 for an Atlas project). Format depends on relationshipType."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional display label for the target. Used by relationships that surface a title (e.g. remote links); ignored otherwise."
+          }
+        },
+        "required": [
+          "cloudId",
+          "relationshipType",
+          "objectIdentifier",
+          "targetObjectIdentifier"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Add Teamwork Graph context (beta)",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search",
+      "description": "Search Jira and Confluence using Rovo Search, ALWAYS use this tool to search for Jira and Confluence content unless the word CQL or JQL is used in the context",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Not needed for this tool \u2014 cloudId is derived from your access token automatically"
+          },
+          "query": {
+            "type": "string",
+            "description": "The search query to use for Rovo Search"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Rovo Search Jira and Confluence",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "fetch",
+      "description": "Get details of a Jira issue or Confluence page by ARI (Atlassian Resource Identifier), if the id is not an ARI, then use a different tool to fetch the content",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Not needed for this tool \u2014 cloudId is extracted from the ARI automatically"
+          },
+          "id": {
+            "type": "string",
+            "description": "Atlassian Resource Identifier (ARI) from search results, e.g., \"ari:cloud:jira:cloudId:issue/10107\" or \"ari:cloud:confluence:cloudId:page/123456789\""
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Fetch content with ARI (beta)",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}

@@ -7,10 +7,9 @@ for authentication with MCP servers that authenticate using AWS IAM.
 Source: https://github.com/awslabs/agentcore-samples/blob/main/01-tutorials/02-AgentCore-gateway/01-transform-lambda-into-mcp-tools/streamable_http_sigv4.py
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Generator
 
 import httpx
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream

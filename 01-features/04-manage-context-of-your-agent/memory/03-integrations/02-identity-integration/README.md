@@ -28,7 +28,7 @@ The script provisions the Cognito User Pool, creates the memory resource, deploy
 - **Use the Cognito `sub` (not `username` or `email`) as `actorId`.** It's the only stable, immutable identifier — usernames and emails can change.
 - **Validate the JWT in the authorizer, not the agent.** AgentCore's JWT authorizer enforces signature/expiry; don't re-implement that in application code.
 - **Combine with IAM scoping** for defence in depth — even if a bug in the agent passes the wrong `actorId`, an IAM condition on `bedrock-agentcore:actorId` will block the call. See [`../../05-security/01-iam-scoped-access/`](../../05-security/01-iam-scoped-access/).
-- **Multi-tenant?** Prefix actor ids with the tenant (`acme/{sub}`) and condition IAM on the prefix — see [`../../01-short-term-memory/03-actor-session-isolation/`](../../01-short-term-memory/03-actor-session-isolation/).
+- **Multi-tenant?** Prefix actor ids with the tenant (`acme/{sub}`) and condition IAM on the prefix — see [`../../01-short-term-memory/04-actor-session-isolation/`](../../01-short-term-memory/04-actor-session-isolation/).
 
 ## Where to go next
 

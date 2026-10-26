@@ -14,6 +14,7 @@ MCP targets operate in aggregation mode, the gateway acts as an MCP server whose
 | [amazon-api-gateway](amazon-api-gateway/) | Attach an Amazon API Gateway endpoint as an MCP target     |
 | [mcp-servers](mcp-servers/)               | Attach existing MCP servers as targets                     |
 | [integrations](integrations/)             | Use built-in AgentCore gateway integrations as MCP targets |
+| [connectors](connectors/)                 | Attach built-in managed connectors such as Web Search Tool |
 
 ## Documentation
 

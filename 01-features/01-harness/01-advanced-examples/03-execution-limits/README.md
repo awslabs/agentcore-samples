@@ -20,9 +20,11 @@ Each limit is demonstrated with before/after comparisons showing the difference.
 |:----------|:-----------------|
 | `maxIterations` | Maximum think → act → observe loop cycles |
 | `timeoutSeconds` | Wall-clock deadline for the entire invocation |
-| `maxTokens` | Maximum tokens the model can generate |
+| `maxTokens` | Maximum tokens the model can generate **per iteration** |
 
-Pass any combination to `invoke_harness`. The agent stops as soon as any limit is hit.
+Pass any combination to `invoke_harness`. `maxIterations` and `timeoutSeconds` stop
+the agent as soon as they are hit. `maxTokens` is scoped to a single iteration, so it
+bounds individual model calls rather than ending the invocation.
 Useful for keeping latency predictable, controlling cost, or preventing runaway tasks.
 
 ## Sample Prompts
@@ -33,8 +35,10 @@ Useful for keeping latency predictable, controlling cost, or preventing runaway 
 **Prompt with timeoutSeconds=5**: "Write a Python prime number script, run it, show output."
 **Expected Behavior**: Complex task cut short by the deadline — agent may not finish.
 
-**Prompt with maxTokens=10**: "Explain the history of Python in detail."
-**Expected Behavior**: Response is truncated to ~10 tokens — just a few words.
+**Prompt with maxTokens=256**: "Explain the history of Python in detail."
+**Expected Behavior**: A complete answer, *not* a truncated one — the limit applies per
+iteration, so the agent can continue across iterations. Compare the `outputTokens` in the
+usage metadata between this run and the `maxTokens=2048` run.
 
 **Prompt with all limits**: "List files, create summary.txt"
 **Expected Behavior**: Agent completes within whichever limit is hit first.
@@ -55,15 +59,22 @@ Useful for keeping latency predictable, controlling cost, or preventing runaway 
 ### Issue: timeoutSeconds=5 doesn't produce a truncated response
 **Solution**: The agent may respond quickly for simple tasks. Use a complex multi-step task (write + build + run + verify) to reliably trigger the timeout.
 
-### Issue: maxTokens very low causes a validation error
-**Solution**: Some models have a minimum maxTokens value. Try at least 10 tokens.
+### Issue: a low maxTokens doesn't truncate the response
+**Solution**: Expected — on `InvokeHarness`, `maxTokens` caps generation *per iteration*,
+not for the whole invocation, so the agent can keep producing output across iterations
+and still finish with `stopReason: end_turn`. To bound the total work of an invocation,
+use `maxIterations` or `timeoutSeconds`.
 
 ## AgentCore CLI
 
-Invoke a deployed harness with execution limits via the CLI (preview channel):
+Invoke a deployed harness with execution limits via the CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name mylimitedagent --model-provider bedrock
 agentcore deploy
 ```

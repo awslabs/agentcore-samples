@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Cross-region replication for Amazon Bedrock AgentCore Memory — LTM via record
+  streaming. Deployed in the SOURCE region: a Kinesis Data Stream receives the
+  source memory's record-stream events; a consumer Lambda (Event Source Mapping)
+  replicates each record into the TARGET region's memory via
+  BatchCreateMemoryRecords, preserving the original memoryRecordId.
+
+  STM is replicated separately by the application at write time (dual-write
+  CreateEvent with extractionMode=SKIP on the target) — see
+  agentcore_replication.dual_writer. This stack handles only the LTM path.
+
+  After deploying, enable streaming on the source memory with:
+    scripts/enable_streaming.py --memory-id <SRC> --region <SRC_REGION> \
+      --stream-arn <MemoryStream output ARN>
+
+Parameters:
+  TargetMemoryId:
+    Type: String
+    Description: Memory resource ID in the TARGET region (replica).
+  TargetRegion:
+    Type: String
+    Description: Target AWS region (where the replica memory lives).
+  CodeS3Bucket:
+    Type: String
+    Description: S3 bucket (in this/source region) holding the packaged Lambda zip.
+  CodeS3Key:
+    Type: String
+    Default: agentcore-stream-replicator.zip
+    Description: S3 key of the packaged Lambda zip.
+  KinesisStreamName:
+    Type: String
+    Default: agentcore-ltm-stream
+    Description: Name of the Kinesis Data Stream the source memory streams into.
+
+Resources:
+  # 1) Kinesis stream the SOURCE memory delivers MEMORY_RECORDS/FULL_CONTENT into.
+  MemoryStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Ref KinesisStreamName
+      ShardCount: 1
+      RetentionPeriodHours: 24
+
+  # 2) Role AgentCore assumes to PUT records into the stream. Attach its ARN to
+  #    the source memory's memoryExecutionRoleArn (CreateMemory/UpdateMemory).
+  MemoryStreamingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "agentcore-memory-streaming-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: KinesisPut
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                  - kinesis:DescribeStream
+                  - kinesis:DescribeStreamSummary
+                Resource: !GetAtt MemoryStream.Arn
+
+  # 3) DLQ for poison records the consumer can't replicate.
+  ReplicationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "agentcore-stream-replication-dlq-${AWS::Region}"
+      MessageRetentionPeriod: 1209600   # 14 days
+      VisibilityTimeout: 300
+
+  # 4) Consumer Lambda execution role: read the stream, write the target memory.
+  ConsumerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StreamConsumerPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: KinesisRead
+                Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:DescribeStreamSummary
+                  - kinesis:ListShards
+                Resource: !GetAtt MemoryStream.Arn
+              - Sid: DlqWrite
+                Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt ReplicationDLQ.Arn
+              - Sid: TargetMemoryWrite
+                Effect: Allow
+                Action: bedrock-agentcore:BatchCreateMemoryRecords
+                Resource:
+                  - !Sub "arn:aws:bedrock-agentcore:${TargetRegion}:${AWS::AccountId}:memory/${TargetMemoryId}"
+                  - !Sub "arn:aws:bedrock-agentcore:${TargetRegion}:${AWS::AccountId}:memory/${TargetMemoryId}/*"
+
+  ConsumerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "agentcore-ltm-stream-replicator-${TargetRegion}"
+      Runtime: python3.12
+      Handler: stream_handler.lambda_handler
+      Timeout: 120
+      MemorySize: 256
+      Role: !GetAtt ConsumerRole.Arn
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Environment:
+        Variables:
+          TARGET_MEMORY_ID: !Ref TargetMemoryId
+          TARGET_REGION: !Ref TargetRegion
+
+  # 5) Wire the stream to the consumer.
+  StreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt MemoryStream.Arn
+      FunctionName: !Ref ConsumerFunction
+      StartingPosition: TRIM_HORIZON
+      BatchSize: 10
+      BisectBatchOnFunctionError: true
+      MaximumRetryAttempts: 3
+      MaximumRecordAgeInSeconds: 3600
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt ReplicationDLQ.Arn
+
+  ConsumerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "agentcore-ltm-stream-replicator-errors"
+      AlarmDescription: LTM stream consumer reported errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ConsumerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "agentcore-ltm-stream-replication-lag"
+      AlarmDescription: Kinesis iterator age (replication lag) is high.
+      Namespace: AWS/Lambda
+      MetricName: IteratorAge
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ConsumerFunction
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 900000   # 15 min in ms
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  MemoryStreamArn:
+    Description: Pass this to scripts/enable_streaming.py --stream-arn
+    Value: !GetAtt MemoryStream.Arn
+  MemoryStreamingRoleArn:
+    Description: Set as the SOURCE memory's memoryExecutionRoleArn
+    Value: !GetAtt MemoryStreamingRole.Arn
+  ConsumerFunctionName:
+    Value: !Ref ConsumerFunction
+  DlqUrl:
+    Value: !Ref ReplicationDLQ

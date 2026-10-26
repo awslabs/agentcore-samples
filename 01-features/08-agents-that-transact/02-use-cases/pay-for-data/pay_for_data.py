@@ -16,7 +16,7 @@ Usage:
 
 Prerequisites:
     - cp .env.sample .env        (fill in CDP credentials and IAM role ARNs)
-    - npm install -g @aws/agentcore
+    - npm install -g @aws/agentcore@0.30.0
     - AWS CDK v2 installed
 
 Subsequent runs (skip provisioning):
@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import boto3
 from boto3.session import Session
@@ -126,7 +126,7 @@ def assume_role(role_arn: str, session_name: str) -> Session:
 
 def run(cmd, **kw):
     """Run a subprocess command, raising on failure."""
-    result = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, **kw)
     if result.returncode != 0:
         print("stdout:", result.stdout[-500:])
         print("stderr:", result.stderr[-500:])
@@ -145,11 +145,11 @@ ACCOUNT_ID = sts.get_caller_identity()["Account"]
 print(f"Account: {ACCOUNT_ID}, Region: {REGION}, Network: {NETWORK_ALIAS}")
 
 print("\nAssuming ControlPlaneRole...")
-cp_session = assume_role(CONTROL_PLANE_ROLE_ARN, f"cp-setup-{int(datetime.now().timestamp())}")
+cp_session = assume_role(CONTROL_PLANE_ROLE_ARN, f"cp-setup-{int(datetime.now(timezone.utc).timestamp())}")
 cp_client = cp_session.client("bedrock-agentcore-control", endpoint_url=CP_ENDPOINT)
 
 print("Assuming ManagementRole...")
-mgmt_session = assume_role(MANAGEMENT_ROLE_ARN, f"heurist-mgmt-{int(datetime.now().timestamp())}")
+mgmt_session = assume_role(MANAGEMENT_ROLE_ARN, f"heurist-mgmt-{int(datetime.now(timezone.utc).timestamp())}")
 mgmt_client = mgmt_session.client("bedrock-agentcore", endpoint_url=DP_ENDPOINT)
 print("✅ Clients ready\n")
 
@@ -283,7 +283,7 @@ print("=" * 60)
 print("Assuming ProcessPaymentRole for balance check...")
 pp_session = assume_role(
     PROCESS_PAYMENT_ROLE_ARN,
-    f"balance-check-{int(datetime.now().timestamp())}",
+    f"balance-check-{int(datetime.now(timezone.utc).timestamp())}",
 )
 pp_client = pp_session.client("bedrock-agentcore", endpoint_url=DP_ENDPOINT)
 
@@ -305,7 +305,7 @@ try:
         if readable == 0:
             print("   ⚠️  Balance is 0 — fund the wallet before continuing.")
             sys.exit(1)
-except Exception as e:
+except Exception as e:  # noqa: BLE001 - sample continues if the balance probe fails
     print(f"⚠️  Balance check failed: {e}")
     print("   Continuing — ensure the wallet is funded.")
 print()
@@ -378,7 +378,7 @@ os.makedirs(build_ctx, exist_ok=True)
 # Sync catalog cache
 print("Syncing Heurist catalog...")
 sys.path.insert(0, "agent")
-from catalog import fetch_live_catalog  # noqa: E402
+from catalog import fetch_live_catalog
 
 HEURIST_CATALOG_URL = os.environ.get("HEURIST_CATALOG_URL", "https://mesh.heurist.xyz/x402/agents?details=true")
 fetch_live_catalog(catalog_url=HEURIST_CATALOG_URL)

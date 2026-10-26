@@ -27,3 +27,9 @@ ssm-policy.json
 
 # Node
 node_modules/
+
+# Skill-enabled runtime deployment and evaluation artifacts
+skill_agent_config.json
+market_trends_skill_agent.zip
+.skill-agent-build/
+evaluators/results/

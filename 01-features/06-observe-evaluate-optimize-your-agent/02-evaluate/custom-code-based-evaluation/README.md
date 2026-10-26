@@ -1,6 +1,6 @@
-# Custom Code-Based evaluation
+# Custom Code-Based Evaluation
 
-Evaluate your Amazon Bedrock AgentCore agent using **deterministic Lambda-backed evaluators**. Code-based evaluators run your own Python logic — regex checks, business rule validation, statistical tests — and return a score without any LLM inference. Results are fully reproducible across runs.
+Evaluate your Amazon Bedrock AgentCore agent using three complementary evaluator types: **deterministic code-based Lambda evaluators** that run your own Python logic, **built-in LLM-as-a-judge evaluators** that produce natural-language explanations, and **decision-model evaluators** backed by small specialized models that return calibrated confidence scores at a fraction of the cost of a full LLM call. All three types work with the same `EvaluationClient` API and can run in the same evaluation pass.
 
 ## What You'll Learn
 
@@ -9,20 +9,49 @@ Evaluate your Amazon Bedrock AgentCore agent using **deterministic Lambda-backed
 | **Code-based evaluators** | Lambda functions that receive agent spans and return scores using deterministic logic |
 | **TRACE-level code evaluator** | `HRResponseLength` — validates response length is within acceptable bounds |
 | **SESSION-level code evaluator** | `HRFactChecker` — pattern-matches HR facts (PTO balances, pay figures, policy details) against known ground truth |
-| **Mixed evaluator sets** | Combine code-based evaluators with built-in LLM evaluators in the same run |
+| **Decision-model evaluators** | Small specialized models (Jev, Strands Decider 2B) that return calibrated probability scores per turn — faster and cheaper than LLM inference |
+| **Confidence-based cascade** | Use decision-model scores as a cheap first-pass gate; only escalate flagged turns to built-in LLM evaluators for a detailed explanation |
+| **Mixed evaluator sets** | Combine code-based, decision-model, and built-in LLM evaluators in the same run |
 | **On-demand evaluation** | Spot-check a specific session with `EvaluationClient` |
 | **Dataset runner** | Automate agent invocation + evaluation across multiple scenarios |
 | **Online evaluation** | Create a config that continuously scores live traffic with code-based evaluators |
 
+## Solution Overview
+
+The sample evaluates an HR Assistant agent built with Strands Agents using three evaluator types side by side: deterministic code-based Lambda evaluators, built-in LLM-as-a-judge evaluators, and (optionally) decision-model evaluators backed by Jev or Strands Decider 2B.
+
+Two Python scripts handle everything — no CDK, no additional tooling:
+
+- **`../utils/deploy.py`** — deploys the HR Assistant to AgentCore Runtime. The agent answers employee questions with five tools returning fixed mock data (PTO balances, PTO requests, HR policies, benefits, pay stubs).
+- **`evaluate.py`** — deploys and registers evaluators, invokes the agent, and runs all evaluation modes. Running it without flags executes five steps:
+  1. Creates the Lambda execution role (`AgentCoreLambdaEvaluatorRole`)
+  2. Packages and deploys two Lambda evaluators: `hr-response-length` (TRACE — checks response length) and `hr-fact-checker` (SESSION — regex-validates HR facts against known mock data)
+  3. Registers both as AgentCore code-based evaluators via the control plane
+  4. Runs on-demand evaluation with `EvaluationClient` and `OnDemandEvaluationDatasetRunner` across five labeled scenarios, mixing the code-based evaluators with `Builtin.Correctness`, `Builtin.Helpfulness`, and `Builtin.ResponseRelevance`
+  5. Creates an online evaluation config that continuously scores live sessions at 100% sampling
+
+**Decision-model add-ons** are opt-in via flags and add no overhead to the base flow:
+
+- `--with-jev --jev-secret-arn <ARN>` — deploys `jev-evaluator` and registers `JevGroundedness`, `JevHelpfulness`, and `JevGoalCompletion`. Jev is a hosted decision model from TypeSafe; conversation data is sent to TypeSafe's API.
+- `--with-decider` — deploys `strands-decider-evaluator` and registers the same three evaluators backed by [Strands Decider 2B](https://strandsagents.com/blog/introducing-strands-decider/), an open-source model you self-host. Add `--decider-ec2` to auto-provision the EC2 instance, security groups, IAM role, and Lambda VPC configuration with no manual AWS console steps.
+
+Both decision-model backends share the same Lambda architecture: a single function handles all three evaluators by reading its invoked Lambda alias name from `context.invoked_function_arn` and looking up the matching question definition in `evaluators.json`. One alias per evaluator is created at deploy time, so each evaluator invokes only its own alias and the function has a single code path and log group.
+
+---
+
 ## Setup with AgentCore CLI
 
-The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.11.0`).
+The fastest way to bootstrap and deploy the agent is with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`0.30.0`).
 
 ### Install the CLI
 
 ```bash
-npm install -g @aws/agentcore@0.11.0
-agentcore --version   # should print 0.11.0
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
+agentcore --version   # should print 0.30.0
 ```
 
 ### Create and deploy the agent
@@ -95,15 +124,24 @@ agentcore add online-eval \
 
 ## Key Concepts
 
-### Code-Based vs Built-in Evaluators
+### Evaluator Types
 
-| | Built-in (LLM-as-judge) | Code-based (Lambda) |
-|---|---|---|
-| **Judge** | LLM with a fixed evaluation prompt | Your custom Lambda function |
-| **Output** | Probabilistic score with explanation | Deterministic score |
-| **Cost** | LLM inference per evaluation | Lambda invocation |
-| **Best for** | Nuanced qualitative assessment | Exact data validation, business rules |
-| **Customizable** | Limited (fixed prompt templates) | Fully customizable |
+AgentCore supports three evaluator types that each occupy a different cost/accuracy/customizability position.
+
+| | Built-in (LLM-as-judge) | Code-based (Lambda) | Decision model |
+|---|---|---|---|
+| **Judge** | LLM with a fixed evaluation prompt | Your custom Lambda function | Small specialized model (2B parameters) |
+| **Output** | Probabilistic score + natural-language explanation | Deterministic score | Calibrated confidence score (0–1) |
+| **Cost** | LLM inference per call | Lambda invocation only | API fee (Jev) or self-hosted compute |
+| **Latency** | 2–10 s | < 1 ms | ~100–200 ms |
+| **Best for** | Nuanced qualitative assessment, root-cause explanation | Exact data validation, business rules | High-volume screening, cost-efficient cascade gate |
+| **Customizable** | Limited (fixed prompt templates) | Fully customizable | Question definitions in `evaluators.json` |
+
+**When to use each type:**
+
+- Use **code-based evaluators** when you need exact, reproducible checks — specific numbers in responses, correct tool call sequences, format constraints. No LLM inference, no variance between runs.
+- Use **built-in evaluators** when you need a qualitative judgment or a natural-language explanation of what went wrong. Best for debugging and reporting, but each call runs full LLM inference.
+- Use **decision models** when you need to evaluate a large volume of turns affordably. Decision models are trained specifically to select from a fixed set of options and return well-calibrated probabilities, making them well-suited as a cost-effective first-pass screen. The cascade pattern pairs them with built-in evaluators: the decision model flags anything below a confidence threshold, and only those flagged sessions escalate to the more expensive LLM evaluator.
 
 ### Evaluator Levels
 
@@ -134,41 +172,54 @@ def lambda_handler(input: EvaluatorInput, context) -> EvaluatorOutput:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  evaluate.py                                                                 │
-│                                                                              │
-│  1. Deploy Lambda functions (hr-response-length, hr-fact-checker)            │
-│  2. Register evaluators via bedrock-agentcore-control                        │
-│  3a. On-demand: EvaluationClient.run(session_id, evaluator_ids)             │
-│  3b. Dataset: OnDemandEvaluationDatasetRunner.run(dataset, agent_invoker)   │
-│  3c. Online: create_online_evaluation_config (auto-evaluates all sessions)  │
-└────────────────┬────────────────────────────────────────────────────────────┘
-                 │
-     ┌───────────▼────────────┐        ┌──────────────────────────────┐
-     │  AgentCore runtime      │        │  AgentCore evaluations DP   │
-     │  HR Assistant agent     │──OTel─▶│  bedrock-agentcore          │
-     │  (Strands Agents)       │        │                             │
-     └─────────────────────────┘        │   ┌──────────────────────┐  │
-                                        │   │  Builtin LLM evals   │  │
-     ┌─────────────────────────┐        │   │  Correctness         │  │
-     │  CloudWatch Logs        │        │   │  Helpfulness         │  │
-     │  /aws/bedrock-agentcore/│        │   │  ResponseRelevance   │  │
-     │  runtimes/<agent-id>    │        │   └──────────────────────┘  │
-     └─────────────────────────┘        │   ┌──────────────────────┐  │
-                                        │   │  Code-based Lambda   │  │
-     ┌─────────────────────────┐        │   │  HRResponseLength    │  │
-     │  AWS Lambda             │◀───────│   │  HRFactChecker       │  │
-     │  hr-response-length     │        │   └──────────────────────┘  │
-     │  hr-fact-checker        │        └─────────────────────────────┘
-     └─────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  evaluate.py / cascade.py                                                     │
+│                                                                               │
+│  1. Deploy Lambda functions (hr-response-length, hr-fact-checker,             │
+│                              jev-evaluator / strands-decider-evaluator)       │
+│  2. Register evaluators via bedrock-agentcore-control                         │
+│  3a. On-demand: EvaluationClient.run(session_id, evaluator_ids)              │
+│  3b. Dataset: OnDemandEvaluationDatasetRunner.run(dataset, agent_invoker)    │
+│  3c. Online: create_online_evaluation_config (auto-evaluates all sessions)   │
+│  3d. Cascade: DM screen → escalate flagged turns to built-in LLM evaluators  │
+└─────────────────┬────────────────────────────────────────────────────────────┘
+                  │
+     ┌────────────▼────────────┐        ┌───────────────────────────────────┐
+     │  AgentCore runtime       │        │  AgentCore evaluations DP        │
+     │  HR Assistant agent      │──OTel─▶│  bedrock-agentcore               │
+     │  (Strands Agents)        │        │                                   │
+     └──────────────────────────┘        │  ┌───────────────────────────┐   │
+                                         │  │  Builtin LLM evals        │   │
+     ┌──────────────────────────┐        │  │  Correctness  Helpfulness │   │
+     │  CloudWatch Logs          │        │  └───────────────────────────┘   │
+     │  /aws/bedrock-agentcore/  │        │  ┌───────────────────────────┐   │
+     │  runtimes/<agent-id>      │        │  │  Code-based Lambda evals  │   │
+     └──────────────────────────┘        │  │  HRResponseLength         │   │
+                                         │  │  HRFactChecker            │◀──┤
+     ┌──────────────────────────┐        │  └───────────────────────────┘   │
+     │  AWS Lambda               │◀───────│  ┌───────────────────────────┐   │
+     │  hr-response-length       │        │  │  Decision-model evals     │   │
+     │  hr-fact-checker          │        │  │  JevGroundedness          │◀──┤
+     │  jev-evaluator            │        │  │  JevHelpfulness           │   │
+     │  strands-decider-evaluator│        │  │  DeciderGroundedness      │   │
+     └──────────────────────────┘        │  └───────────────────────────┘   │
+                                         └───────────────────────────────────┘
+           ┌──────────────────────────────────────────────────┐
+           │  Decision-model cascade (cascade.py)              │
+           │                                                   │
+           │  DM score < threshold?                            │
+           │    No  → session passes, no LLM call              │
+           │    Yes → Builtin.Correctness + Helpfulness        │
+           └──────────────────────────────────────────────────┘
 ```
 
-**evaluation flow:**
+**Evaluation flow:**
 1. Agent is invoked; OTel spans are written to CloudWatch
-2. `EvaluationClient` or `OnDemandEvaluationDatasetRunner` collects spans from CloudWatch
-3. The service calls each evaluator — builtin evaluators run LLM inference; code-based evaluators invoke your Lambda with the span payload
-4. For **online evaluation**, AgentCore continuously watches the log group and automatically evaluates new sessions without any explicit trigger
-5. All results are aggregated and returned (on-demand) or written to the online evaluation results log group
+2. `EvaluationClient` collects spans from CloudWatch
+3. The service dispatches to each evaluator: built-in evaluators run LLM inference; code-based evaluators invoke your Lambda with the span payload; decision-model evaluators invoke a Lambda that calls a specialized small model (Jev API or self-hosted Strands Decider server)
+4. For the **cascade**, decision-model scores act as a gate: only sessions with at least one turn below the threshold proceed to the more expensive built-in evaluators
+5. For **online evaluation**, AgentCore continuously watches the log group and automatically evaluates new sessions without any explicit trigger
+6. All results are aggregated and returned (on-demand) or written to the online evaluation results log group
 
 ---
 
@@ -473,13 +524,15 @@ You can extend the dataset with additional scenarios to test more HR topics (rem
 
 ## Script Walkthrough
 
-| Step | Description |
-|---|---|
-| 1 | Lambda execution role — create (or reuse) `AgentCoreLambdaEvaluatorRole` |
-| 2 | Package and deploy Lambda functions (`hr-response-length`, `hr-fact-checker`) with bedrock-agentcore SDK bundled |
-| 3 | Register evaluators via `bedrock-agentcore-control` boto3 service |
-| 4 | On-demand evaluation — invoke HR assistant, run `EvaluationClient` (code-based + built-in), then `OnDemandEvaluationDatasetRunner` with 5 scenarios |
-| 5 | Online evaluation — create `online_evaluation_config` with code-based evaluators; auto-triggered on all new sessions |
+| Step | Flag | Description |
+|---|---|---|
+| 1 | (always) | Lambda execution role — create (or reuse) `AgentCoreLambdaEvaluatorRole` |
+| 2 | (always) | Package and deploy Lambda functions (`hr-response-length`, `hr-fact-checker`) with bedrock-agentcore SDK bundled |
+| 3 | (always) | Register evaluators via `bedrock-agentcore-control` boto3 service |
+| 4 | (always) | On-demand evaluation — invoke HR assistant, run `EvaluationClient` (code-based + built-in), then `OnDemandEvaluationDatasetRunner` with 5 scenarios |
+| 5 | (always) | Online evaluation — create `online_evaluation_config` with code-based evaluators; auto-triggered on all new sessions |
+| 6 | `--with-jev` | Deploy `jev-evaluator` Lambda, register three Jev evaluators, run on-demand eval |
+| 7 | `--with-decider` | Deploy `strands-decider-evaluator` Lambda, register three Decider evaluators, run on-demand eval. Add `--decider-ec2` to auto-provision an EC2 instance and configure Lambda VPC automatically |
 
 ---
 
@@ -519,4 +572,371 @@ Code-based evaluators are supported for **both on-demand** (`EvaluationClient`, 
 - Combine code-based evaluators with `EvaluationClient` to validate specific production sessions
 - Add code-based evaluators to your CI/CD pipeline for zero-cost regression testing on every deployment
 - Use online evaluation with a lower sampling rate (e.g. 10%) to cost-effectively monitor high-traffic agents
+- Run `evaluate.py --with-jev` or `--with-decider` to deploy decision-model evaluators, then `cascade.py` to see the cascade pattern in action
 - Explore [`ground-truth-based-evaluation/`](../ground-truth-based-evaluation/) for `EvaluationClient` and ground-truth-based evaluations with built-in evaluators
+
+---
+
+## Decision-Model Evaluators
+
+Beyond deterministic code and probabilistic LLM-as-a-judge, a third option is a **decision model** — a small, specialized model (2B parameters or fewer) trained specifically to select from a fixed set of options and return calibrated confidence scores. Decision models are faster than full LLMs, cheaper to run, and produce well-calibrated probabilities that map cleanly to `value` scores.
+
+Decision models fit into an evaluation workflow in two ways. First, as a standalone evaluator registered with AgentCore, they return per-turn scores (groundedness, helpfulness, goal completion) just like any other evaluator in a `EvaluationClient.run()` call. Second, as the screening layer in a confidence-based cascade: the decision model score determines whether a turn is "interesting enough" to warrant a full LLM judgment with explanation. In practice, if your agent handles mostly routine queries that score above 0.80 on both groundedness and helpfulness, the cascade means you pay for LLM evaluation on only the small fraction of turns that fall short.
+
+This sample supports two interchangeable decision-model backends:
+
+| | Jev | Strands Decider |
+|---|---|---|
+| **Hosting** | Cloud API (TypeSafe) | Self-hosted |
+| **Auth** | API key via Secrets Manager | None (your own server) |
+| **Data egress** | Sent to TypeSafe API | Stays in your VPC |
+| **Latency** | ~115 ms (cloud) | ~115 ms on RTX 3090 / ~153 ms on M3 |
+| **Flag** | `--with-jev` | `--with-decider` |
+
+Both backends use the same `/v1/systemone` HTTP endpoint format and return identical response schemas, so you can swap between them without changing the evaluator definitions.
+
+---
+
+### Jev Evaluators (`--with-jev`)
+
+[Jev](https://typesafe.ai) is a hosted decision model served at `https://api.typesafe.ai/v1/systemone`. It accepts a structured JSON `state` (conversation turns with tool calls) and a set of questions, then returns probability-weighted answers.
+
+#### Setup
+
+1. Obtain a Jev API key from TypeSafe.
+2. Store it in AWS Secrets Manager:
+
+   ```bash
+   aws secretsmanager create-secret \
+       --name jev/api-key \
+       --secret-string "sk-jev-XXXXXXXXXXXX"
+   ```
+
+3. Run with the secret ARN:
+
+   ```bash
+   python evaluate.py \
+       --with-jev \
+       --jev-secret-arn arn:aws:secretsmanager:<region>:<account>:secret:jev/api-key
+   ```
+
+#### Lambda Architecture
+
+A single Lambda function (`jev-evaluator`) handles all three evaluators. AgentCore passes the evaluator name in each invocation event; the Lambda looks up the matching Jev question in `evaluators.json` and routes accordingly. No aliases required — one Lambda ARN is registered three times under different evaluator names.
+
+```
+AgentCore Evaluations DP
+  │
+  ├── JevGroundedness (TRACE)   ──┐
+  ├── JevHelpfulness  (TRACE)   ──┤──→ jev-evaluator Lambda ──→ Jev API (TypeSafe)
+  └── JevGoalCompletion (SESSION)─┘
+```
+
+**Lambda source:** `lambdas/jev_evaluator/`
+
+| File | Purpose |
+|---|---|
+| `lambda_function.py` | Entry point — re-exports `handler.handler` as `lambda_handler` |
+| `handler.py` | Reconstructs turns from OTel spans, builds structured Jev state, interprets answers |
+| `jev.py` | Jev API client with exponential-backoff retries and Secrets Manager key cache |
+| `spans.py` | Parses the mixed span/log-record format AgentCore sends to the Lambda |
+| `evaluators.json` | Defines questions for all three evaluators (noul / score / choice) |
+
+#### Evaluators
+
+| Evaluator | Level | Question type | What it checks |
+|---|---|---|---|
+| `JevGroundedness` | TRACE | `noul` | Every factual claim in the response is supported by tool results |
+| `JevHelpfulness` | TRACE | `score` | How far the response moves the employee toward their goal (4-level rubric) |
+| `JevGoalCompletion` | SESSION | `choice` | Were all employee goals achieved by session end? |
+
+**State format:** Jev receives a structured dict — `{"previous_turns": [...], "current_turn": {...}}` for TRACE or `{"turns": [...]}` for SESSION — preserving tool call inputs and outputs as typed objects.
+
+#### Jev Question Types
+
+```json
+// noul — binary yes/no, returns P(true) in [0, 1]
+{"type": "noul", "instructions": "...", "criteria": {"true": "...", "false": "..."}}
+
+// score — ordinal rubric, returns expected level normalized to [0, 1]
+{"type": "score", "instructions": "...", "criteria": ["level-0 desc", "level-1 desc", ...]}
+
+// choice — named options, returns probability-weighted value
+{"type": "choice", "instructions": "...", "criteria": {"option_a": "...", "option_b": "..."}}
+```
+
+#### AgentCore CLI
+
+```bash
+# Register a Jev-backed evaluator via CLI
+agentcore add evaluator \
+  --name JevGroundedness \
+  --level TRACE \
+  --type code-based \
+  --lambda-arn arn:aws:lambda:<region>:<account>:function:jev-evaluator \
+  --timeout 90
+```
+
+---
+
+### Strands Decider Evaluators (`--with-decider`)
+
+[Strands Decider 2B](https://strandsagents.com/blog/introducing-strands-decider/) is an open-source, 2-billion-parameter decision model you host yourself. It exposes the same `/v1/systemone` HTTP endpoint as Jev, making it a drop-in self-hosted alternative with no API key and no data leaving your environment.
+
+#### Start the server
+
+**Option A — pip:**
+```bash
+pip install strands-decider
+strands-decider serve StrandsAgents/strands-decider-2B-hobson-v21 --port 8000
+```
+
+**Option B — Docker:**
+```bash
+docker run --rm -p 8000:8000 \
+    -e MODEL=StrandsAgents/strands-decider-2B-hobson-v21 \
+    public.ecr.aws/strands/decider:latest
+```
+
+**Option C — auto-provision EC2 in your VPC (recommended, zero manual steps):**
+
+Pass `--decider-ec2` and `evaluate.py` handles everything automatically:
+
+```bash
+python evaluate.py --with-decider --decider-ec2
+```
+
+What it does:
+1. Creates security groups `DeciderLambdaSG` (Lambda outbound) and `DeciderServerSG` (EC2 inbound TCP 8000) in your default VPC — idempotent, reused on subsequent runs
+2. Creates IAM role `DeciderServerRole` with `AmazonSSMManagedInstanceCore` and an instance profile — idempotent
+3. Launches (or reuses) an EC2 instance tagged `DeciderServer` (m5.xlarge, latest AL2023, user data installs Python 3.11 + strands-decider and starts the server); if a stopped instance is found it is restarted
+4. Attaches `AWSLambdaVPCAccessExecutionRole` to the Lambda execution role — idempotent
+5. Configures the Lambda VPC (same VPC, all subnets, `DeciderLambdaSG`) and extends Lambda timeout to 240 s
+6. Polls via SSM until the Strands Decider server passes a health check (first run ~5–10 min for model download; subsequent starts are fast)
+7. Sets `DECIDER_SERVER_URL` to `http://<ec2-private-ip>:8000` automatically
+
+**Option D — bring your own server (any host reachable from the Lambda via private IP):**
+
+```bash
+# On the server (AL2023 example):
+dnf install -y python3.11 python3.11-pip
+python3.11 -m pip install strands-decider
+nohup python3.11 -m strands_decider.cli serve \
+    StrandsAgents/strands-decider-2B-hobson-v21 \
+    --host 0.0.0.0 --port 8000 > /var/log/decider.log 2>&1 &
+```
+
+Then pass the private IP (Lambda must be in the same VPC or have a route to the server):
+
+```bash
+python evaluate.py \
+    --with-decider \
+    --decider-url http://<private-ip>:8000
+```
+
+**Option E — AWS ECS Fargate (GPU task, production):**
+
+Deploy the container image to a Fargate task inside your VPC. Set `DECIDER_SERVER_URL` to the internal service endpoint.
+
+#### Run with Decider
+
+```bash
+# Recommended — auto-provision EC2 (no manual server setup):
+python evaluate.py --with-decider --decider-ec2
+
+# Bring-your-own server already running in the VPC:
+python evaluate.py --with-decider --decider-url http://<private-ip>:8000
+```
+
+#### Lambda Architecture
+
+```
+AgentCore Evaluations DP
+  │
+  ├── DeciderGroundedness (TRACE)    ──┐
+  ├── DeciderHelpfulness  (TRACE)    ──┤──→ strands-decider-evaluator Lambda ──→ Decider server
+  └── DeciderGoalCompletion (SESSION) ─┘         (self-hosted, DECIDER_SERVER_URL)
+```
+
+**Lambda source:** `lambdas/strands_decider_evaluator/`
+
+| File | Purpose |
+|---|---|
+| `lambda_function.py` | Self-contained handler — serializes turns to text, calls Decider server, interprets answers |
+| `spans.py` | Same span parser as the Jev evaluator (shared copy) |
+| `evaluators.json` | Defines questions for all three evaluators |
+
+The Lambda packages no external dependencies — it uses only the Python standard library, which keeps the zip under 50 KB and cold-start time under 200 ms.
+
+#### State serialization
+
+Unlike Jev (which accepts a structured JSON state), Strands Decider is optimized for plain-text input. The Lambda serializes the conversation into readable text:
+
+```
+User: How many PTO days does EMP-001 have left?
+[Tool: get_pto_balance({"employee_id": "EMP-001"})] → {"remaining": 10, "total": 15}
+Assistant: EMP-001 has 10 days of PTO remaining out of 15 total.
+
+User: Please book 2026-08-04 to 2026-08-06 off.
+[Tool: submit_pto_request({...})] → {"request_id": "PTO-2026-042"}
+Assistant: Done. PTO request PTO-2026-042 has been submitted.
+```
+
+For TRACE evaluation, only the current turn (plus a brief prior history) is sent; for SESSION evaluation, the full conversation is included.
+
+#### Evaluators
+
+| Evaluator | Level | Question type | What it checks |
+|---|---|---|---|
+| `DeciderGroundedness` | TRACE | `noul` | Every factual claim is supported by the tool results shown in the conversation |
+| `DeciderHelpfulness` | TRACE | `score` | How far the response moves the employee toward their goal (4-level rubric) |
+| `DeciderGoalCompletion` | SESSION | `choice` | Were all employee goals achieved by session end? |
+
+These are the same logical checks as the Jev evaluators, adapted to text-state instructions.
+
+
+#### AgentCore CLI
+
+```bash
+agentcore add evaluator \
+  --name DeciderGroundedness \
+  --level TRACE \
+  --type code-based \
+  --lambda-arn arn:aws:lambda:<region>:<account>:function:strands-decider-evaluator \
+  --timeout 90
+```
+
+---
+
+### Choosing between Jev, Strands Decider, and built-in evaluators
+
+| Criterion | Built-in (LLM) | Deterministic (Lambda) | Jev | Strands Decider |
+|---|---|---|---|---|
+| **Accuracy** | High | Exact | High, calibrated | High, calibrated |
+| **Cost** | LLM inference | Lambda only | API call fee | Self-hosted infra |
+| **Latency** | 2–10 s | < 1 ms | ~200 ms (network) | ~115 ms + network |
+| **Customizable** | Prompt based | Fully | Question definitions | Question definitions |
+| **Best for** | Qualitative nuance | Exact rules / facts | Calibrated judgment, no infra | Same + data-residency |
+
+---
+
+## Decision-Model Cascade
+
+`cascade.py` demonstrates the **confidence-based cascade** pattern: decision-model evaluators act as a fast first-pass filter, and only sessions that fail the filter escalate to built-in LLM evaluators for a rich natural-language explanation.
+
+### Why this matters
+
+Built-in LLM evaluators (`Builtin.Correctness`, `Builtin.Helpfulness`) produce detailed explanations but cost one LLM inference call per turn per evaluator. At production scale — thousands of sessions per day — evaluating every turn with an LLM is expensive.
+
+Decision models (Jev, Strands Decider) are 10–50× cheaper per evaluation call:
+- No full LLM inference — specialized 2B-parameter model
+- ~100–200 ms latency
+- Calibrated probability scores that map cleanly to pass/fail thresholds
+
+The cascade combines both:
+
+```
+Every session
+    │
+    ▼  cheap: ~100 ms / turn, no LLM
+  ┌───────────────────────────────────┐
+  │  DM screen                        │
+  │  JevGroundedness   (TRACE)        │
+  │  JevHelpfulness    (TRACE)        │
+  └───────────────────────────────────┘
+         │                    │
+    PASS (value ≥ threshold)  FAIL (value < threshold)
+         │                    │
+    ✓ done                    ▼  expensive: LLM inference
+                    ┌─────────────────────────┐
+                    │  Built-in LLM escalation │
+                    │  Builtin.Correctness     │
+                    │  Builtin.Helpfulness     │
+                    │  (with explanation text) │
+                    └─────────────────────────┘
+```
+
+If 80% of sessions pass the DM screen, you eliminate 80% of LLM evaluator calls while still getting a detailed explanation for every session that has an issue.
+
+### Run the cascade
+
+Prerequisites: run `evaluate.py --with-jev` or `evaluate.py --with-decider` first to create `results/jev_evaluator_ids.json` or `results/decider_evaluator_ids.json`.
+
+```bash
+# Auto-detect from results/ (reads whichever IDs file exists)
+python cascade.py
+
+# Explicit path + custom thresholds
+python cascade.py \
+    --jev-ids results/jev_evaluator_ids.json \
+    --groundedness-threshold 0.80 \
+    --helpfulness-threshold 0.65
+```
+
+### What the script does
+
+1. **Invokes the HR assistant** with three standard turns (PTO balance, PTO request, policy lookup) and one adversarial turn (payroll dispute — the agent has no payroll-correction tool, so its response falls short of the employee's goal).
+
+2. **Screens with DM evaluators** — runs `JevGroundedness` and `JevHelpfulness` (or their Decider equivalents) at TRACE level. Results are printed per turn with pass/fail markers.
+
+3. **Escalates flagged turns** — if any turn scores below the threshold, runs `Builtin.Correctness` and `Builtin.Helpfulness` on the same session and prints the LLM explanation alongside the score.
+
+4. **Prints a cost summary** showing how many LLM evaluator calls were saved versus a baseline that always runs built-in evaluators.
+
+### Example output
+
+```
+[Step 2/3] Screening with Jev evaluators ...
+
+  Turn   Groundedness  Helpfulness  Flags
+  -------------------------------------------------------
+  1              0.94         0.91  —
+  2              0.91         0.88  —
+  3              0.89         0.85  —
+  4 (adversarial) 0.72        0.31  LOW_HELP(0.31<0.60)
+
+  Flagged turns : [4]
+
+[Step 3/3] Escalating to built-in LLM evaluators ...
+
+  Turn 4 *** FLAGGED ***
+    Prompt     : EMP-001 says they worked 20 hours of overtime...
+    Correctness: 0.68  [partial]
+    Explanation: The agent correctly reported the January 2026 pay stub
+                 figures (gross $8,333.33, net $5,362.50) but could not
+                 verify the overtime claim or update payroll — the response
+                 does not resolve the employee's core concern.
+    Helpfulness: 0.29  [slightly helpful]
+    Explanation: The agent retrieved available pay information but the
+                 employee's goal (dispute resolution + payroll correction)
+                 remains unmet. The agent should direct the employee to
+                 the payroll team or open a support ticket.
+
+  Cost saving: 6 of 8 LLM evaluator call(s) avoided (75% reduction).
+
+Cascade Summary
+═══════════════════════════════════════════════════════════════
+  Session         : cascade-<uuid>
+  Turns evaluated : 4
+  DM backend      : Jev
+  DM flagged      : 1 turn(s) — [4]
+  LLM escalated   : yes
+  LLM calls saved : 6 of 8 (75%)
+```
+
+### Output file
+
+`results/cascade_results.json` contains:
+- `per_turn_dm_scores` — groundedness and helpfulness score per turn, with flags
+- `flagged_turns` — list of 1-based turn indices that triggered escalation
+- `builtin_results` — full Correctness and Helpfulness results (with explanations) for the escalated session
+- `cost_summary` — comparison of LLM calls with and without the cascade
+
+### Tuning thresholds
+
+| Threshold | Effect |
+|---|---|
+| Lower (e.g. 0.50) | Fewer escalations; only the most problematic sessions reach LLM evaluation |
+| Higher (e.g. 0.85) | More escalations; near-borderline turns also get LLM review |
+
+Start with the defaults (`--groundedness-threshold 0.75 --helpfulness-threshold 0.60`) and adjust based on your false-positive rate: look at `per_turn_dm_scores` to see how often flagged turns actually had meaningful issues according to the LLM explanation.

@@ -1,0 +1,6 @@
+bedrock-agentcore>=0.2.0
+strands-agents>=0.1.8
+boto3
+botocore
+mcp
+requests

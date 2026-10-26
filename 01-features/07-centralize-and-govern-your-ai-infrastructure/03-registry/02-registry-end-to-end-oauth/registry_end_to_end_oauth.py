@@ -16,23 +16,25 @@ Usage:
 Prerequisites:
     - boto3 >= 1.42.87
     - requests library (pip install requests)
-    - AWS credentials configured
-    - AWS_DEFAULT_REGION set (or defaults to current session region)
+    - AWS credentials configured with agent-registry permissions
+    - AWS_DEFAULT_REGION set (default: us-west-2)
 """
 
-import boto3
 import json
+import os
 import time
+
+import boto3
 import requests
 from boto3.session import Session
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 boto_session = Session()
-AWS_REGION = boto_session.region_name
+AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", boto_session.region_name or "us-west-2")
 
-registry_client = boto_session.client("bedrock-agentcore-control", region_name=AWS_REGION)
+registry_client = boto_session.client("agent-registry-control", region_name=AWS_REGION)
 
-REGISTRY_SEARCH_ENDPOINT = f"https://bedrock-agentcore.{AWS_REGION}.amazonaws.com/registry-records/search"
+REGISTRY_SEARCH_ENDPOINT = f"https://agent-registry.{AWS_REGION}.api.aws/discoverable-records-search"
 
 print(f"Session ready | Region: {AWS_REGION}")
 
@@ -58,7 +60,7 @@ def wait_for_record_draft(registry_id, record_id, interval=3):
         if status == "DRAFT":
             return resp
         if status.endswith("_FAILED"):
-            raise Exception(f"Record failed: {status}")
+            raise Exception(f"Record failed: {status}")  # noqa: TRY002
         time.sleep(interval)
 
 
@@ -73,7 +75,7 @@ def wait_for_registry(registry_id, interval=5):
             return resp
         if status.endswith("_FAILED"):
             print(f"  {C.RED}❌ Registry Status: {status}{C.RESET}")
-            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")
+            raise Exception(f"Registry failed: {status} - {resp.get('statusReason')}")  # noqa: TRY002
         print(f"  {C.YELLOW}⏳ Registry Status: {status}{C.RESET}")
         time.sleep(interval)
 
@@ -156,13 +158,15 @@ print(f"\n{C.BOLD}=== 2. Create Agent Registry with OAuth ==={C.RESET}")
 create_registry_response = registry_client.create_registry(
     name="RegistryWithOauth",
     description="Registry created with OAuth (CUSTOM_JWT authorizer)",
-    approvalConfiguration={"autoApproval": False},
-    authorizerType="CUSTOM_JWT",
-    authorizerConfiguration={
-        "customJWTAuthorizer": {
-            "discoveryUrl": discovery_url,
-            "allowedClients": [client_id],
-        }
+    approvalConfiguration={"autoApprovalRules": []},
+    discoveryConfiguration={
+        "authorizerType": "CUSTOM_JWT",
+        "authorizerConfiguration": {
+            "customJWTAuthorizer": {
+                "discoveryUrl": discovery_url,
+                "allowedClients": [client_id],
+            }
+        },
     },
 )
 
@@ -240,17 +244,16 @@ mcp_tool_schema = json.dumps(
 mcp_record_response = registry_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="weather_server",
+    displayName="Weather Server",
     description="MCP server providing weather data and forecasts",
-    descriptorType="MCP",
+    recordType="MCP",
     descriptors={
-        "mcp": {
-            "server": {
-                "schemaVersion": "2025-12-11",
-                "inlineContent": mcp_server_schema,
-            },
-            "tools": {
-                "protocolVersion": "2025-11-25",
-                "inlineContent": mcp_tool_schema,
+        "mcpServer": {
+            "data": mcp_server_schema,
+            "additionalData": {
+                "tools": {
+                    "data": mcp_tool_schema,
+                }
             },
         }
     },
@@ -270,7 +273,7 @@ for rec in records_response["registryRecords"]:
     status = rec["status"]
     sc = C.GREEN if status == "APPROVED" else C.YELLOW if status in ("DRAFT", "PENDING_APPROVAL") else C.RED
     print(
-        f"  {sc}[{status}]{C.RESET} {rec['name']} | {C.CYAN}{rec['descriptorType']}{C.RESET} | {C.DIM}{rec['recordId']}{C.RESET}"
+        f"  {sc}[{status}]{C.RESET} {rec['name']} | {C.CYAN}{rec.get('recordType', 'N/A')}{C.RESET} | {C.DIM}{rec['recordId']}{C.RESET}"
     )
 
 # Approve record
@@ -291,7 +294,7 @@ status = record_response["status"]
 sc = C.GREEN if status == "APPROVED" else C.YELLOW if status in ("DRAFT", "PENDING_APPROVAL") else C.RED
 print(f"\n{C.BOLD}=== Record Details ==={C.RESET}")
 print(f"  {C.BOLD}Name:{C.RESET}      {C.CYAN}{record_response['name']}{C.RESET}")
-print(f"  {C.BOLD}Protocol:{C.RESET}   {C.CYAN}{record_response['descriptorType']}{C.RESET}")
+print(f"  {C.BOLD}Type:{C.RESET}      {C.CYAN}{record_response.get('recordType', 'N/A')}{C.RESET}")
 print(f"  {C.BOLD}Status:{C.RESET}     {sc}{status}{C.RESET}")
 print(f"  {C.BOLD}Version:{C.RESET}    {C.CYAN}{record_response['recordVersion']}{C.RESET}")
 
@@ -395,26 +398,26 @@ print(f"  {C.GREEN}✅ Deleted registry: {C.DIM}{REGISTRY_ID}{C.RESET}")
 try:
     cognito.admin_delete_user(UserPoolId=user_pool_id, Username=TEST_USERNAME)
     print(f"  {C.GREEN}✅ Deleted user: {TEST_USERNAME}{C.RESET}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  {C.RED}❌ Error deleting user: {e}{C.RESET}")
 
 try:
     cognito.delete_user_pool_client(UserPoolId=user_pool_id, ClientId=client_id)
     print(f"  {C.GREEN}✅ Deleted app client: {C.DIM}{client_id}{C.RESET}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  {C.RED}❌ Error deleting app client: {e}{C.RESET}")
 
 try:
     domain = user_pool_id.replace("_", "").lower()
     cognito.delete_user_pool_domain(Domain=domain, UserPoolId=user_pool_id)
     print(f"  {C.GREEN}✅ Deleted user pool domain{C.RESET}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  {C.RED}❌ Error deleting domain: {e}{C.RESET}")
 
 try:
     cognito.delete_user_pool(UserPoolId=user_pool_id)
     print(f"  {C.GREEN}✅ Deleted user pool: {C.DIM}{user_pool_id}{C.RESET}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  {C.RED}❌ Error deleting user pool: {e}{C.RESET}")
 
 print(f"\n{C.GREEN}✅ Cleanup complete!{C.RESET}")

@@ -37,8 +37,8 @@ SRE-agent:
   - "02-use-cases/SRE-agent/**"
 text-to-python-ide:
   - "02-use-cases/text-to-python-ide/**"
-video-games-sales-assistant:
-  - "02-use-cases/video-games-sales-assistant/**"
+data-analyst-conversational-assistant:
+  - "02-use-cases/01-conversational-agents/data-analyst-conversational-assistant/**"
 bedrock-agent:
   - "03-integrations/bedrock-agent/**"
 agentic-frameworks:

@@ -20,15 +20,15 @@ Enterprise platform and security teams are adopting AgentCore policy and AgentCo
 
 What makes AgentCore gateway compelling for these teams is the consolidation of several enterprise-critical capabilities into a single layer:
 
--**Central observability**: AgentCore gateway provides a unified view of all agent-to-tool interactions across the organization, giving platform teams full visibility into what agents are calling, how often, and with what outcomes. This is essential for audit, debugging, and usage analysis at scale.
+- **Central observability**: AgentCore gateway provides a unified view of all agent-to-tool interactions across the organization, giving platform teams full visibility into what agents are calling, how often, and with what outcomes. This is essential for audit, debugging, and usage analysis at scale.
 
--**Central Credential Management**: Rather than distributing secrets and API credentials across individual agents or teams, AgentCore gateway manages authentication centrally. This eliminates credential sprawl and gives security teams a single point of control for access management.
+- **Central Credential Management**: Rather than distributing secrets and API credentials across individual agents or teams, AgentCore gateway manages authentication centrally. This eliminates credential sprawl and gives security teams a single point of control for access management.
 
--**VPC Access to Private Data**: Enterprises need agents to reach internal APIs and data sources that live within private VPCs — not just public endpoints. AgentCore gateway enables secure egress into customer VPCs, ensuring agents can access proprietary data without exposing it to the public internet.
+- **VPC Access to Private Data**: Enterprises need agents to reach internal APIs and data sources that live within private VPCs — not just public endpoints. AgentCore gateway enables secure egress into customer VPCs, ensuring agents can access proprietary data without exposing it to the public internet.
 
--**Multi-Tenancy**: Organizations building internal platforms need to serve multiple teams, business units, or even external customers from a shared AgentCore gateway infrastructure while maintaining strict isolation between tenants.
+- **Multi-Tenancy**: Organizations building internal platforms need to serve multiple teams, business units, or even external customers from a shared AgentCore gateway infrastructure while maintaining strict isolation between tenants.
 
--**Deterministic policy Enforcement**: This is where AgentCore policy becomes essential. AgentCore policy allows central platform teams to define and enforce deterministic guardrails on tool calls. This gives governance teams a hard boundary around agent behavior — not probabilistic model-level guardrails, but deterministic, auditable controls that ensure agents only do what they're explicitly permitted to do.
+- **Deterministic policy Enforcement**: This is where AgentCore policy becomes essential. AgentCore policy allows central platform teams to define and enforce deterministic guardrails on tool calls. This gives governance teams a hard boundary around agent behavior — not probabilistic model-level guardrails, but deterministic, auditable controls that ensure agents only do what they're explicitly permitted to do.
 
 ## Tutorials
 
@@ -49,55 +49,6 @@ What makes AgentCore gateway compelling for these teams is the consolidation of 
 - AWS CLI configured with credentials
 - `boto3` installed (`pip install boto3`)
 
-## AgentCore CLI
-
-Add a gateway to an existing runtime project with the AgentCore CLI:
-
-```bash
-npm install -g @aws/agentcore
-
-# Add a gateway with CUSTOM_JWT inbound auth (interactive mode)
-agentcore add gateway
-
-# Or non-interactive with JWT auth
-agentcore add gateway \
-  --name mygateway \
-  --authorizer-type CUSTOM_JWT \
-  --discovery-url $DISCOVERY_URL \
-  --allowed-clients $CLIENT_ID \
-  --client-id $CLIENT_ID \
-  --client-secret $CLIENT_SECRET
-
-# Add a Lambda function as a gateway target
-agentcore add gateway-target \
-  --name my-tools \
-  --type lambda-function-arn \
-  --lambda-arn $LAMBDA_ARN \
-  --tool-schema-file tool-schemas/tools.json \
-  --gateway mygateway
-
-# Add an MCP server as a gateway target
-agentcore add gateway-target \
-  --name exa-search \
-  --type mcp-server \
-  --endpoint https://mcp.exa.ai/mcp \
-  --gateway mygateway
-
-# Add an OpenAPI spec as a gateway target
-agentcore add gateway-target \
-  --name my-api \
-  --type open-api-schema \
-  --tool-schema-file openapi-specs/my-api.yaml \
-  --gateway mygateway
-
-# Deploy all resources
-agentcore deploy
-
-# Check deployment status
-agentcore status
-```
-
-For direct control of gateway resources (create, query, delete) without a runtime project, use the **AWS CLI** — see the [AgentCore gateway Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html) for the full walkthrough using `aws bedrock-agentcore-control create-gateway`.
 
 ## Documentation
 

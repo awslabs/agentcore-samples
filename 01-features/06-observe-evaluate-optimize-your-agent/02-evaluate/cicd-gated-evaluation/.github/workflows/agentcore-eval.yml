@@ -1,0 +1,320 @@
+# AgentCore Evaluation Pipeline
+# Deploys combined stack (assistant + MCP server), invokes agent, runs evaluations, gates the PR.
+#
+# Required GitHub Secrets:
+#   AWS_ROLE_ARN          - IAM role for GitHub OIDC
+
+name: AgentCore Evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent/**"
+      - "mcp-server/**"
+      - "infrastructure/**"
+      - "scripts/**"
+      - ".github/workflows/agentcore-eval.yml"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: ap-southeast-2
+
+jobs:
+  # Static security scanning. Reports only for now: `continue-on-error: true`
+  # means a finding will not block the PR. Triage the current findings, then remove that
+  # line to turn this into a real gate.
+  security-scan:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners
+        run: pip install --quiet bandit==1.8.6 checkov==3.2.499 detect-secrets==1.5.0
+
+      - name: Bandit (Python SAST)
+        run: bandit -r agent/src mcp-server scripts -ll
+
+      - name: Checkov (Dockerfiles + IaC)
+        run: checkov -d . --framework dockerfile cloudformation --quiet --compact
+
+      - name: detect-secrets
+        run: detect-secrets scan --exclude-files '\.venv|cdk\.out|package-lock\.json'
+
+      # Dependencies are pinned to exact versions for supply-chain integrity, which also
+      # means a pinned version keeps whatever vulnerabilities it shipped with until it is
+      # deliberately bumped. Pins therefore need auditing on every run, not once.
+      # Installs each package so transitive dependencies are covered.
+      - name: pip-audit (dependency vulnerabilities)
+        run: |
+          # set -eu so a failed venv/install aborts the step: silently skipping the audit
+          # would look like a pass. The audit call itself uses || so that a real finding is
+          # recorded for every package rather than stopping at the first one.
+          set -eu
+          status=0
+          for pkg in agent mcp-server; do
+            echo "::group::pip-audit — $pkg"
+            python -m venv "/tmp/audit-$pkg"
+            "/tmp/audit-$pkg/bin/pip" install --quiet --upgrade pip
+            "/tmp/audit-$pkg/bin/pip" install --quiet "./$pkg" pip-audit==2.10.1
+            # The local package itself is not on PyPI and is reported as skipped; that is
+            # expected and does not indicate a missed dependency.
+            "/tmp/audit-$pkg/bin/pip-audit" --progress-spinner off || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+  evaluate:
+    runs-on: ubuntu-latest
+    # This job deploys to AWS on a pull request, which is the point of the demo — the
+    # evaluation result gates the merge. That also means a PR causes credentials to be
+    # issued, so the safety comes from the role rather than from the trigger:
+    #   - the role's trust policy should name repo AND environment
+    #     ("repo:<OWNER>/<REPO>:environment:dev", StringEquals, not ":*"), so a token is
+    #     only issued for a job that declares this environment;
+    #   - the `dev` environment should require a reviewer, so an untrusted PR cannot reach
+    #     AWS without a maintainer approving the run;
+    #   - the role should not hold iam:* on Resource:*.
+    # Naming the environment here is what makes the first two possible; on its own it
+    # grants nothing. See "CI/CD Setup" in README.md.
+    environment: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Fail fast with an actionable message. If role-to-assume is empty, the credentials
+      # action skips OIDC, falls back to the default credential chain, retries 12 times and
+      # then reports a generic "Could not load credentials from any providers" — which does
+      # not say that the secret is missing.
+      - name: Check AWS_ROLE_ARN is configured
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_ROLE_ARN}" ]; then
+            echo "::error::Secret AWS_ROLE_ARN is not available to this job. Create an IAM role for GitHub OIDC and add its ARN under Settings → Secrets and variables → Actions (repository secret), or as a secret on the 'dev' environment this job targets."
+            exit 1
+          fi
+          echo "AWS_ROLE_ARN is set (${#AWS_ROLE_ARN} characters)."
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # v4 defaulted this to true; v6 declares no default. Later steps (aws CLI, boto3,
+          # cdk) read credentials from the environment, so set it explicitly rather than
+          # relying on the action's internal default.
+          output-env-credentials: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      # --- Deploy infrastructure ---
+      - name: Install CDK dependencies
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install .
+
+      - name: Set up QEMU for arm64 Docker builds
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: CDK deploy
+        run: |
+          source .venv/bin/activate
+          npx cdk deploy --require-approval never --outputs-file outputs.json
+
+      - name: Extract CDK outputs
+        id: cdk
+        run: |
+          STACK="AgentCoreCICDStack-dev"
+          echo "agent_arn=$(jq -r ".[\"$STACK\"].AgentRuntimeArn" outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "agent_id=$(jq -r ".[\"$STACK\"].AgentRuntimeId" outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "mcp_id=$(jq -r ".[\"$STACK\"].MCPRuntimeId" outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "token_endpoint=$(jq -r ".[\"$STACK\"].TokenEndpoint" outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "m2m_client_id=$(jq -r ".[\"$STACK\"].M2MClientId" outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "pool_id=$(jq -r ".[\"$STACK\"].SharedUserPoolId" outputs.json)" >> "$GITHUB_OUTPUT"
+
+      # --- Wait for runtimes ---
+      - name: Wait for runtimes READY
+        run: |
+          pip install boto3
+          # Quoted heredoc ('PY'): the shell performs no expansion or quote removal inside,
+          # so the Python below is passed verbatim. A `python3 -c "..."` wrapper would have
+          # its inner quotes consumed by the shell. Workflow expressions are substituted by
+          # Actions before the shell runs, so interpolated values still work here.
+          python3 <<'PY'
+          import json
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          import boto3
+
+          REGION = '${{ env.AWS_REGION }}'
+          MCP_ID = '${{ steps.cdk.outputs.mcp_id }}'
+          AGENT_ID = '${{ steps.cdk.outputs.agent_id }}'
+          TOKEN_ENDPOINT = '${{ steps.cdk.outputs.token_endpoint }}'
+
+          control = boto3.client('bedrock-agentcore-control', region_name=REGION)
+          for name, runtime_id in [('MCP', MCP_ID), ('Agent', AGENT_ID)]:
+              for _ in range(60):
+                  status = control.get_agent_runtime(agentRuntimeId=runtime_id)['status']
+                  print(f'{name} status: {status}', flush=True)
+                  if status == 'READY':
+                      break
+                  if 'FAILED' in status:
+                      sys.exit(f'{name} runtime failed: {status}')
+                  time.sleep(10)
+              else:
+                  sys.exit(f'{name} runtime did not reach READY in time')
+
+          print('Warming up MCP server...', flush=True)
+          # Credentials are read from Secrets Manager and used in-process. Issuing the token
+          # request through urllib rather than shelling out to an external HTTP client keeps
+          # the client secret out of the process argument list entirely.
+          secrets_client = boto3.client('secretsmanager', region_name=REGION)
+          creds = json.loads(
+              secrets_client.get_secret_value(SecretId='agentcore/dev/m2m-client')['SecretString']
+          )
+          token_body = urllib.parse.urlencode({
+              'grant_type': 'client_credentials',
+              'client_id': creds['client_id'],
+              'client_secret': creds['client_secret'],
+              'scope': 'mcp/invoke',
+          }).encode()
+          token_request = urllib.request.Request(
+              TOKEN_ENDPOINT,
+              data=token_body,
+              headers={'Content-Type': 'application/x-www-form-urlencoded'},
+          )
+          with urllib.request.urlopen(token_request, timeout=30) as response:
+              token = json.loads(response.read())['access_token']
+
+          account = boto3.client('sts', region_name=REGION).get_caller_identity()['Account']
+          mcp_arn = f'arn:aws:bedrock-agentcore:{REGION}:{account}:runtime/{MCP_ID}'
+          encoded_arn = urllib.parse.quote(mcp_arn, safe='')
+          url = (
+              f'https://bedrock-agentcore.{REGION}.amazonaws.com'
+              f'/runtimes/{encoded_arn}/invocations?qualifier=DEFAULT'
+          )
+          payload = json.dumps({'jsonrpc': '2.0', 'method': 'initialize', 'id': 1}).encode()
+
+          for attempt in range(1, 11):
+              warm_request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json, text/event-stream',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(warm_request, timeout=60) as response:
+                      code = response.status
+              except urllib.error.HTTPError as exc:
+                  code = exc.code
+              except Exception as exc:
+                  code = f'{type(exc).__name__}: {exc}'
+              print(f'MCP warmup attempt {attempt}: {code}', flush=True)
+              if code == 200:
+                  break
+              time.sleep(15)
+          print('MCP server warm, proceeding...', flush=True)
+          PY
+
+      # --- Run evaluation ---
+      - name: Install eval dependencies
+        run: pip install boto3 requests bedrock-agentcore
+
+      - name: Run evaluation
+        working-directory: scripts
+        run: |
+          mkdir -p evals_results
+          python3 agentcore_eval.py
+        env:
+          AGENT_RUNTIME_ARN: ${{ steps.cdk.outputs.agent_arn }}
+          AGENT_RUNTIME_ID: ${{ steps.cdk.outputs.agent_id }}
+          TOKEN_ENDPOINT: ${{ steps.cdk.outputs.token_endpoint }}
+          # The script reads client_id/client_secret straight from Secrets Manager, so the
+          # secret value never enters a step output, env file, or log.
+          M2M_SECRET_ID: agentcore/dev/m2m-client
+          # mcp/invoke is required by the MCP AuthMiddleware for M2M tokens
+          # (see mcp-server/src/auth/middleware.py); agentcore/invoke authorizes
+          # the agent runtime invocation. Both are granted to the M2M client.
+          OAUTH_SCOPE: "mcp/invoke mcp/finance mcp/hr agentcore/invoke"
+          EVAL_THRESHOLD: "0.8"
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eval-results
+          path: scripts/evals_results/ci_output.json
+
+      - name: Post evaluation summary to PR
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '## 🤖 AgentCore Evaluation Results\n\n';
+            try {
+              if (!fs.existsSync('scripts/evals_results/ci_output.json')) {
+                body += '⚠️ No evaluation results generated. Check workflow logs.';
+              } else {
+                const raw = JSON.parse(fs.readFileSync('scripts/evals_results/ci_output.json', 'utf8'));
+                const threshold = 0.8;
+                body += '| Evaluator | Score | Status |\n|-----------|-------|--------|\n';
+                let allPassed = true;
+                const results = raw.results || [];
+                const scores = {};
+                for (const r of results) {
+                  if (r.value != null && (!scores[r.evaluator_name] || r.value > scores[r.evaluator_name])) {
+                    scores[r.evaluator_name] = r.value;
+                  }
+                }
+                for (const [name, score] of Object.entries(scores)) {
+                  const passed = score >= threshold;
+                  if (!passed) allPassed = false;
+                  body += `| ${name} | ${score.toFixed(2)} | ${passed ? '✅ Pass' : '❌ Fail'} |\n`;
+                }
+                body += `\n**Threshold:** ${threshold}\n`;
+                body += allPassed ? '\n✅ **Quality gate passed.**' : '\n❌ **Quality gate failed.**';
+              }
+            } catch (e) {
+              body += '⚠️ Could not parse results: ' + e.message;
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body,
+            });
+
+      # --- Teardown (disabled to keep stack alive for manual testing) ---
+      # - name: CDK destroy
+      #   if: always()
+      #   run: |
+      #     source .venv/bin/activate
+      #     npx cdk destroy --force

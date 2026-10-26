@@ -1,9 +1,13 @@
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 
 import boto3
+
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 ses = boto3.client("ses")
 SENDER = os.environ.get("SENDER_EMAIL", "")
@@ -52,10 +56,10 @@ def handler(event, context):
             )
             status = "sent"
         except Exception as e:
-            print(f"SES send failed: {e}")
+            logger.error("SES send failed", extra={"error": str(e), "recipient": recipient_email})
             status = "ses_error"
     else:
-        print(f"[EMAIL DRAFT] To: {recipient_email} | Subject: {subject}\n{body}")
+        logger.info("Email draft (SES not configured)", extra={"recipient": recipient_email, "subject": subject})
         status = "draft_logged"
 
     return json.dumps(

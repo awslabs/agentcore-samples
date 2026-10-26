@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OBO Use Case 2 — Frontend</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { margin-bottom: 0.25rem; }
+    .muted { color: #666; }
+    .box { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fafafa; }
+    .warn { background: #fff4e5; border-color: #f0c080; }
+    button, input[type=submit] { background: #2563eb; color: white; border: 0; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    button:hover, input[type=submit]:hover { background: #1e40af; }
+    input[type=text] { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; }
+    code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+    a { color: #2563eb; }
+    .arrow { font-family: ui-monospace, monospace; color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>OBO Use Case 2 — Entra real-world</h1>
+  <p class="muted">User → Frontend → Agent on AgentCore Runtime → AgentCore Gateway → Microsoft Graph</p>
+  <p class="arrow">two OBO exchanges in this chain — agent does OBO #1, Gateway does OBO #2</p>
+
+  {% if not agent_configured %}
+    <div class="box warn">
+      <strong>⚠ Agent not yet deployed.</strong>
+      Deploy the agent with the AgentCore CLI (<code>agentcore deploy -y -v</code>), grab the invoke URL from <code>agentcore status</code>, add it to <code>.env</code> as <code>AGENT_RUNTIME_INVOKE_URL</code>, and restart this frontend.
+    </div>
+  {% endif %}
+
+  {% if user %}
+    <div class="box">
+      <p>Signed in as <strong>{{ user.name or user.preferred_username }}</strong> ({{ user.preferred_username }})</p>
+      <p class="muted">Entra <code>oid</code>: <code>{{ user.oid }}</code> &mdash; this exact value will appear in T_user, T_gateway, and T_graph.</p>
+      <p><a href="/auth/logout">Sign out</a></p>
+    </div>
+
+    <div class="box">
+      <h2>Ask the agent something about you</h2>
+      <p class="muted">The frontend calls the agent with your access token (T_user). The agent OBO-exchanges it for a Gateway-scoped token (T_gateway) and calls the Gateway over MCP. The Gateway transparently OBO-exchanges that for a Graph-scoped token (T_graph) and calls <code>/me</code>. The agent never sees the Graph token.</p>
+      <form method="post" action="/ask">
+        <p><input type="text" name="prompt" value="What is my display name and job title?" /></p>
+        <p><input type="submit" value="Ask agent" {% if not agent_configured %}disabled{% endif %} /></p>
+      </form>
+    </div>
+  {% else %}
+    <div class="box">
+      <p>Sign in with your Microsoft work or school account to try the flow.</p>
+      <p><a href="/auth/login"><button type="button">Sign in with Microsoft</button></a></p>
+    </div>
+  {% endif %}
+
+  <p class="muted" style="margin-top: 3rem; font-size: 0.85rem;">
+    This is a training example. See <code>README.md</code>, <code>ARCHITECTURE.md</code>, and <code>LEARNING_GUIDE.md</code> in this folder for what's happening under the hood.
+  </p>
+</body>
+</html>

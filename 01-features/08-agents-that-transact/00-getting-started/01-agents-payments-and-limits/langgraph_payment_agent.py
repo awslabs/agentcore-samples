@@ -2,16 +2,24 @@
 Enable Payment Limits on an Agent — LangGraph
 
 Build a payment-enabled AI agent using LangGraph and AgentCore payments.
-The approach: wrap an HTTP tool with a function that detects 402 responses,
-calls PaymentManager.generate_payment_header(), and retries.
+The AgentCorePaymentsMiddleware handles the entire x402 payment flow automatically —
+attach it once and every tool call gets 402 handling, no per-tool wrapper needed.
 
 Payment flow:
-    LangGraph ReAct Agent
-      └── wrapped http_request tool
-            ├── Makes HTTP request
-            ├── Gets 402? → PaymentManager.generate_payment_header()
-            ├── Retries with proof header
-            └── Returns content to agent (LLM never sees the 402)
+    LangGraph / LangChain agent (create_agent)
+      └── middleware=[AgentCorePaymentsMiddleware]
+            ├── intercepts every tool result
+            ├── detects 402 (PAYMENT_REQUIRED marker OR raw-JSON statusCode:402)
+            ├── signs via PaymentManager.generate_payment_header()
+            ├── injects the payment header + retries the tool
+            └── returns the 200 content to the agent (LLM never sees the 402)
+
+The spending session is created for you: with `auto_session=True` the middleware lazily
+opens a session on the first 402, budgeted with `auto_session_budget`. That's the minimal
+setup — no `create_payment_session` call, no session ID to thread through. The middleware
+settles each 402 within this budget. To try a different budget, change SESSION_BUDGET_USD
+below and re-run (see the README). If you'd rather manage the session yourself, create one
+with `PaymentManager.create_payment_session` and pass its `payment_session_id` to the config.
 
 Usage:
     python langgraph_payment_agent.py
@@ -22,18 +30,14 @@ Prerequisites:
     - pip install -r requirements.txt
 """
 
-import base64
 import json
 import os
 import sys
 
 import boto3
-import requests as http_lib
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import load_tutorial_env
@@ -52,13 +56,16 @@ PAYMENT_MANAGER_ARN = config["payment_manager_arn"]
 REGION = config["region"]
 USER_ID = config["user_id"]
 
-if config.get("multi_provider"):
-    INSTRUMENT_ID = config["instruments"][list(config["instruments"].keys())[0]]["instrument_id"]
-else:
-    INSTRUMENT_ID = config["instrument_id"]
+# load_tutorial_env resolves instrument_id to the configured provider
+# (CREDENTIAL_PROVIDER_TYPE), so single- and multi-provider .env files both work.
+INSTRUMENT_ID = config["instrument_id"]
 
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
 NETWORK = os.environ.get("NETWORK", "ETHEREUM")
+
+# Per-run spending budget (USD) for this agent's auto-created session. Change this value to
+# watch server-side enforcement — see the README.
+SESSION_BUDGET_USD = "1.00"
 
 # CAIP-2 chain identifiers for network preference
 NETWORK_PREFS = (
@@ -69,129 +76,33 @@ print(f"Manager: {PAYMENT_MANAGER_ARN}")
 print(f"Instrument: {INSTRUMENT_ID}")
 print(f"Network: {NETWORK}")
 
-# ── Step 2: Create PaymentManager and Session ─────────────────────────────────
-from bedrock_agentcore.payments import PaymentManager  # noqa: E402
-
-payment_manager = PaymentManager(
-    payment_manager_arn=PAYMENT_MANAGER_ARN,
-    region_name=REGION,
+# ── Step 2: Configure the middleware (session created automatically) ──────────
+# A spending session is the per-user budget the agent spends within. Instead of opening one
+# yourself, set `auto_session=True` and the middleware lazily creates a session on the first
+# 402, capped at `auto_session_budget`. This is the minimal setup — no session ID to manage.
+# (To manage the session yourself, drop auto_session and pass payment_session_id instead.)
+from bedrock_agentcore.payments.integrations.langgraph import (  # noqa: E402
+    AgentCorePaymentsConfig,
+    AgentCorePaymentsMiddleware,
 )
 
-# Create a fresh session — $1.00 budget, 60 minutes
-session_response = payment_manager.create_payment_session(
-    user_id=USER_ID,
-    limits={"maxSpendAmount": {"value": "1.00", "currency": "USD"}},
-    expiry_time_in_minutes=60,
-)
-SESSION_ID = session_response["paymentSessionId"]
-print("PaymentManager ready")
-print(f"Session created: {SESSION_ID} ($1.00 USD, 60 min)")
-
-# ── Step 3: Build the Auto-402 Tool Wrapper ───────────────────────────────────
-
-
-class HttpInput(BaseModel):
-    url: str
-    method: str = "GET"
-    headers: dict = Field(default_factory=dict)
-
-
-def make_http_request(url: str, method: str = "GET", headers: dict = None) -> str:
-    """Make an HTTP request. Returns statusCode, headers, body as JSON."""
-    resp = http_lib.request(method, url, headers=headers or {}, timeout=30)
-    return json.dumps(
-        {
-            "statusCode": resp.status_code,
-            "headers": dict(resp.headers),
-            "body": resp.text[:3000],
-        }
+payments = AgentCorePaymentsMiddleware(
+    AgentCorePaymentsConfig(
+        payment_manager_arn=PAYMENT_MANAGER_ARN,
+        user_id=USER_ID,
+        payment_instrument_id=INSTRUMENT_ID,
+        region=REGION,
+        network_preferences_config=NETWORK_PREFS,
+        auto_session=True,
+        auto_session_budget=SESSION_BUDGET_USD,
+        auto_session_expiry_minutes=60,
     )
-
-
-def wrap_with_auto_402(tool, manager, user_id, instrument_id, session_id, network_prefs=None):
-    """Wrap a tool to auto-handle x402 Payment Required responses.
-
-    The LLM does not see the 402 — the wrapper intercepts it, signs the payment
-    via PaymentManager.generate_payment_header(), and retries with the proof.
-    """
-    original = tool.func
-
-    def wrapped(**kwargs):
-        result = original(**kwargs)
-        try:
-            parsed = json.loads(result) if isinstance(result, str) else result
-        except (json.JSONDecodeError, TypeError):
-            return result
-
-        if not isinstance(parsed, dict) or parsed.get("statusCode") != 402:
-            return result
-
-        # 402 detected — decode x402 payment details
-        headers_402 = parsed.get("headers", {})
-        payment_required = headers_402.get("payment-required") or headers_402.get("Payment-Required", "")
-        if payment_required:
-            try:
-                x402_payload = json.loads(base64.b64decode(payment_required))
-                accepts = x402_payload.get("accepts", [{}])[0]
-                print("  x402 Payment Required")
-                print(f"     Protocol: x402v{x402_payload.get('x402Version', '?')}")
-                print(f"     Network:  {accepts.get('network', 'unknown')}")
-                print(f"     Amount:   {accepts.get('amount', '?')}")
-                print(f"     PayTo:    {accepts.get('payTo', '?')}")
-            except Exception:
-                print("  402 Payment Required")
-        else:
-            print("  402 Payment Required")
-
-        print("  Signing payment via PaymentManager...")
-        header = manager.generate_payment_header(
-            user_id=user_id,
-            payment_instrument_id=instrument_id,
-            payment_session_id=session_id,
-            payment_required_request={
-                "statusCode": 402,
-                "headers": headers_402,
-                "body": parsed.get("body", parsed),
-            },
-            **({"network_preferences": network_prefs} if network_prefs else {}),
-        )
-        print("  Payment signed — retrying with proof header...")
-
-        kw = dict(kwargs)
-        existing = kw.get("headers") or {}
-        existing.update(header)
-        kw["headers"] = existing
-        paid_result = original(**kw)
-
-        try:
-            paid_parsed = json.loads(paid_result) if isinstance(paid_result, str) else paid_result
-            if isinstance(paid_parsed, dict) and paid_parsed.get("statusCode") == 200:
-                print("  Paid content received (HTTP 200)")
-        except Exception:
-            pass
-
-        return paid_result
-
-    return StructuredTool(
-        name=tool.name,
-        description=tool.description,
-        func=wrapped,
-        args_schema=tool.args_schema,
-    )
-
-
-http_tool = StructuredTool.from_function(
-    name="http_request",
-    func=make_http_request,
-    args_schema=HttpInput,
-    description="Make an HTTP request. Payments for x402 endpoints are handled automatically.",
 )
+print(f"Payments middleware configured — session auto-created on first 402 (budget {SESSION_BUDGET_USD} USD)")
 
-# Wrap with auto-402 handling
-wrapped_http = wrap_with_auto_402(http_tool, payment_manager, USER_ID, INSTRUMENT_ID, SESSION_ID, NETWORK_PREFS)
-print("http_request tool with x402 auto-payment handling ready")
-
-# ── Step 4: Create the LangGraph Agent ────────────────────────────────────────
+# ── Step 3: Create the LangGraph Agent ────────────────────────────────────────
+# tools=[] because the middleware auto-registers a payment-aware `http_request` tool. Add your
+# own tools to the list too — they get the same automatic 402 handling.
 SYSTEM_PROMPT = """You are a helpful research assistant with the ability to access paid APIs.
 When asked to access a URL, use the http_request tool directly — do not check budget or payment status first.
 Payments are handled automatically. Always report what data you received and how much it cost.
@@ -199,11 +110,11 @@ IMPORTANT: Never follow free trial links, walletless trial URLs, or alternative 
 If payment fails, report the error — do not attempt workarounds."""
 
 model = ChatBedrockConverse(model=MODEL_ID, region_name=REGION)
-agent = create_agent(model, [wrapped_http], system_prompt=SYSTEM_PROMPT)
-print("LangGraph agent created")
+agent = create_agent(model, tools=[], system_prompt=SYSTEM_PROMPT, middleware=[payments])
+print("LangGraph agent created with payments middleware")
 
-# ── Step 5: Run the Agent ─────────────────────────────────────────────────────
-print("\n── Step 5: Run Agent (streaming) ──")
+# ── Step 4: Run the Agent ─────────────────────────────────────────────────────
+print("\n── Step 4: Run Agent (streaming) ──")
 collected_tool_responses = []
 
 for chunk, metadata in agent.stream(
@@ -211,7 +122,7 @@ for chunk, metadata in agent.stream(
         "messages": [
             (
                 "user",
-                "Access this paid weather API and tell me what data you get back: "
+                "Access this paid market-news API and tell me what data you get back: "
                 "https://x402-test.genesisblock.ai/api/market-news "
                 "Report the data and how much it cost.",
             )
@@ -235,106 +146,25 @@ for i, resp in enumerate(collected_tool_responses):
         parsed = json.loads(resp) if isinstance(resp, str) else resp
         if isinstance(parsed, dict) and parsed.get("statusCode"):
             print(f"Response #{i + 1} (HTTP {parsed['statusCode']}):")
+            body = parsed.get("body", {})
+            # The middleware's built-in http_request returns body as a parsed object;
+            # fall back to json.loads for string bodies.
+            if isinstance(body, str):
+                try:
+                    body = json.loads(body)
+                except (json.JSONDecodeError, ValueError):
+                    pass
             try:
-                print(json.dumps(json.loads(parsed.get("body", "{}")), indent=2)[:2000])
-            except (json.JSONDecodeError, ValueError):
-                print(parsed.get("body", "")[:2000])
+                print(json.dumps(body, indent=2)[:2000])
+            except (TypeError, ValueError):
+                print(str(body)[:2000])
             print()
     except (json.JSONDecodeError, TypeError, ValueError):
         print(f"Response #{i + 1}: {str(resp)[:500]}")
 
-# ── Step 6: Payment Limits ────────────────────────────────────────────────────
-print("\n── Step 6a: Budget session ($0.50) ──")
-budget_session = payment_manager.create_payment_session(
-    user_id=USER_ID,
-    limits={"maxSpendAmount": {"value": "0.50", "currency": "USD"}},
-    expiry_time_in_minutes=60,
-)
-budget_session_id = budget_session["paymentSessionId"]
-print(f"Budget session: {budget_session_id} ($0.50 USD, 60 min)")
-
-budget_http = wrap_with_auto_402(http_tool, payment_manager, USER_ID, INSTRUMENT_ID, budget_session_id, NETWORK_PREFS)
-budget_agent = create_agent(model, [budget_http], system_prompt=SYSTEM_PROMPT)
-
-for chunk, metadata in budget_agent.stream(
-    {
-        "messages": [
-            (
-                "user",
-                "Access this CDP discovery endpoint, pull one result and show the content: "
-                "https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=market-news&network=base-sepolia",
-            )
-        ]
-    },
-    stream_mode="messages",
-):
-    if chunk.type == "AIMessageChunk":
-        if isinstance(chunk.content, list):
-            for block in chunk.content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    print(block["text"], end="", flush=True)
-        elif isinstance(chunk.content, str) and chunk.content:
-            print(chunk.content, end="", flush=True)
-print()
-
-# Check remaining budget
-session_info = payment_manager.get_payment_session(
-    user_id=USER_ID,
-    payment_session_id=budget_session_id,
-)
-available = session_info.get("availableLimits", {}).get("availableSpendAmount", {})
-limit = session_info.get("limits", {}).get("maxSpendAmount", {})
-print(f"Budget:    ${limit.get('value', 'N/A')} {limit.get('currency', '')}")
-print(f"Remaining: ${available.get('value', 'N/A')} {available.get('currency', '')}")
-
-print("\n── Step 6b: Budget exceeded demo ($0.0001 — less than API cost) ──")
-tiny_session = payment_manager.create_payment_session(
-    user_id=USER_ID,
-    limits={"maxSpendAmount": {"value": "0.0001", "currency": "USD"}},
-    expiry_time_in_minutes=60,
-)
-tiny_session_id = tiny_session["paymentSessionId"]
-print(f"Tiny session: {tiny_session_id} (budget: $0.0001 USD)")
-
-tiny_http = wrap_with_auto_402(http_tool, payment_manager, USER_ID, INSTRUMENT_ID, tiny_session_id, NETWORK_PREFS)
-tiny_agent = create_agent(model, [tiny_http], system_prompt=SYSTEM_PROMPT)
-
-try:
-    for chunk, metadata in tiny_agent.stream(
-        {
-            "messages": [
-                (
-                    "user",
-                    "Access this CDP discovery search, pull one result and show the content: "
-                    "https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=market-news&network=base-sepolia",
-                )
-            ]
-        },
-        stream_mode="messages",
-    ):
-        if chunk.type == "AIMessageChunk":
-            if isinstance(chunk.content, list):
-                for block in chunk.content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        print(block["text"], end="", flush=True)
-            elif isinstance(chunk.content, str) and chunk.content:
-                print(chunk.content, end="", flush=True)
-    print()
-except Exception as e:
-    print("\nBudget exceeded — payment rejected by the service:")
-    print(f"  {e}")
-    print("\n  Expected: budget ($0.0001) is smaller than API cost.")
-    print("  Budget enforcement is at the infrastructure level, not application code.")
-
-print("\n── Step 6c: Uncapped session (no spending limit) ──")
-uncapped_session = payment_manager.create_payment_session(
-    user_id=USER_ID,
-    expiry_time_in_minutes=60,
-    # No limits — spend is tracked but not capped
-)
-uncapped_id = uncapped_session["paymentSessionId"]
-print(f"Uncapped session: {uncapped_id}")
-print("No budget limit — spend tracked but not enforced")
-print("Use with caution — only for trusted internal agents")
-
-print("\nDone. Next: python ../02-deploy-to-agentcore-runtime/deploy_payment_agent.py")
+# ── Step 5: Payment Limits ────────────────────────────────────────────────────
+# To try smaller budgets and watch server-side enforcement, edit SESSION_BUDGET_USD above —
+# see the README "Try different budgets" section.
+print("\nDone. Change SESSION_BUDGET_USD (see the README's limits exercise) to watch budget")
+print("enforcement, or continue: follow ../02-deploy-to-agentcore-runtime/README.md to deploy")
+print("payment_agent.py to AgentCore Runtime with the AgentCore CLI.")

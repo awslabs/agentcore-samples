@@ -2,9 +2,9 @@
 Payment-enabled Strands Agent for AgentCore Runtime.
 
 This agent uses the AgentCorePaymentsPlugin to automatically handle
-x402 payments. When deployed to AgentCore Runtime, it runs under the
-ProcessPaymentRole execution role — it can only process payments within
-the budget set by the application backend.
+x402 payments. When deployed to AgentCore Runtime, it runs under its own
+auto-created PaymentAgent execution role — it can only process payments
+within the budget set by the application backend.
 
 The app backend passes ALL payment context via the invocation payload:
   - payment_manager_arn
@@ -17,7 +17,8 @@ This keeps the agent stateless and enforces that the app backend
 controls what the agent can access.
 
 Deployment:
-    agentcore create --name PaymentAgent --defaults
+    agentcore create --name PaymentAgent --framework Strands --protocol HTTP \
+      --model-provider Bedrock --memory none
     agentcore deploy
 """
 

@@ -1,0 +1,157 @@
+openapi: '3.0.3'
+info:
+  title: 'Claude Managed Agents (subset)'
+  description: >
+    OpenAPI schema for the Claude Managed Agents endpoints fronted by the
+    gateway CUSTOM passthrough target. CUSTOM protocol targets require a schema
+    to enable policy-engine features such as guardrails. Covers the create
+    agent / environment / session, send event, and stream operations.
+  version: '1.0.0'
+servers:
+  - url: 'https://api.anthropic.com'
+paths:
+  /v1/agents:
+    post:
+      operationId: 'createAgent'
+      summary: 'Create a managed agent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
+      responses:
+        '200':
+          description: 'Agent created'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+  /v1/environments:
+    post:
+      operationId: 'createEnvironment'
+      summary: 'Create an environment'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnvironmentRequest'
+      responses:
+        '200':
+          description: 'Environment created'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+  /v1/sessions:
+    post:
+      operationId: 'createSession'
+      summary: 'Start a session'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '200':
+          description: 'Session created'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+  /v1/sessions/{session_id}/events:
+    post:
+      operationId: 'sendEvent'
+      summary: 'Send one or more events to a session'
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendEventsRequest'
+      responses:
+        '200':
+          description: 'Events accepted'
+  /v1/sessions/{session_id}/stream:
+    get:
+      operationId: 'streamEvents'
+      summary: 'Stream session events over SSE'
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 'Server-sent events stream'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    CreateAgentRequest:
+      type: object
+      required:
+        - name
+        - model
+      properties:
+        name:
+          type: string
+        model:
+          type: string
+        system:
+          type: string
+        tools:
+          type: array
+          items:
+            type: object
+    CreateEnvironmentRequest:
+      type: object
+      required:
+        - name
+        - config
+      properties:
+        name:
+          type: string
+        config:
+          type: object
+    CreateSessionRequest:
+      type: object
+      required:
+        - agent
+        - environment_id
+      properties:
+        agent:
+          type: string
+        environment_id:
+          type: string
+        title:
+          type: string
+    SendEventsRequest:
+      type: object
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+    Resource:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        version:
+          type: integer

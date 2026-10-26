@@ -1,0 +1,14 @@
+# Dependencies of the MCP server itself. deploy.py vendors this file into the
+# deployment zip, so keep it minimal: every package here is downloaded as an
+# arm64 wheel and shipped to the runtime.
+#
+# Pinned below 2.0 deliberately. mcp 2.0.0 renamed FastMCP to MCPServer and moved
+# it from mcp.server.fastmcp to mcp.server.mcpserver with no compatibility alias,
+# so the import in mcp_server.py fails on 2.x — verified against the 2.1.1 wheel.
+# Without the upper bound a fresh install resolves to 2.x and the deployed runtime
+# dies on its first import, which AgentCore reports only at invoke time.
+mcp>=1.10.0,<2.0.0
+
+# Arrives as an mcp dependency anyway; listed because mcp_server.py imports Field
+# directly to put a real bound on a tool argument.
+pydantic>=2.0

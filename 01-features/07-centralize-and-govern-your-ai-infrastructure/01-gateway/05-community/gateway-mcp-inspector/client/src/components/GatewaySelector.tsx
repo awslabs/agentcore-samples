@@ -70,7 +70,10 @@ const GatewaySelector = ({
 			);
 			const data = await response.json();
 			if (data.gatewayUrl) {
-				onSelect(gw.gatewayId, data.gatewayUrl);
+				const url = data.gatewayUrl.endsWith("/mcp")
+					? data.gatewayUrl
+					: `${data.gatewayUrl.replace(/\/$/, "")}/mcp`;
+				onSelect(gw.gatewayId, url);
 			} else {
 				setError(data.error || `Could not resolve URL for ${gw.name}`);
 			}

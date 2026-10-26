@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "data-analyst-conversational-assistant",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:project-name": "data-analyst-conversational-assistant"
+  },
+  "runtimes": [
+    {
+      "name": "DataAnalystConversationalAgent",
+      "protocol": "HTTP",
+      "build": "Container",
+      "description": "Strands agent for conversational data analysis with PostgreSQL"
+    }
+  ],
+  "memories": [
+    {
+      "name": "DataAnalystMemory",
+      "type": "longAndShortTerm",
+      "description": "STM for session continuity + LTM semantic facts per user"
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "DataAnalystToolsGateway",
+      "description": "Gateway exposing PostgreSQL query tools as Lambda targets"
+    }
+  ],
+  "evaluators": [
+    {
+      "name": "SQLAccuracyEvaluator",
+      "description": "Checks SQL generation accuracy against ground truth"
+    },
+    {
+      "name": "ResponseQualityEvaluator",
+      "description": "Measures natural language response quality"
+    }
+  ],
+  "onlineEvalConfigs": [],
+  "credentials": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "httpGateways": []
+}

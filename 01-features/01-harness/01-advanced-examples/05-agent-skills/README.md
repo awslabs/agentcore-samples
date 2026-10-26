@@ -65,6 +65,34 @@ client.invoke_harness(
 
 **File download**: Generated files live on the agent's remote VM. Use `invoke_agent_runtime_command` with `base64` to transfer them locally.
 
+**Read all three outputs of a command**: `invoke_agent_runtime_command` streams `stdout`,
+`stderr` *and* `contentStop.exitCode`. Check the exit code before treating the output as
+good — a command that failed still streams whatever it managed to write, so stdout alone
+cannot tell success from failure:
+
+```python
+for event in resp["stream"]:
+    if "chunk" in event:
+        chunk = event["chunk"]
+        if "contentDelta" in chunk:
+            stdout += chunk["contentDelta"].get("stdout", "")
+            stderr += chunk["contentDelta"].get("stderr", "")
+        elif "contentStop" in chunk:
+            exit_code = chunk["contentStop"].get("exitCode")
+```
+
+**`node:slim` has no LibreOffice, and the skill wants one**: the xlsx skill recalculates a
+finished workbook so that each formula also carries its *cached result* — the value
+`openpyxl(data_only=True)` and pandas read without opening Excel. That step needs
+LibreOffice (`soffice`), which the Node image does not ship. In practice the agent notices
+and `apt-get install`s LibreOffice mid-run, so the downloaded files do come back fully
+recalculated (`docProps/app.xml` names LibreOffice as the generating application). It works,
+but it is a large package to install on every fresh session — expect the first spreadsheet
+prompt to take noticeably longer. If the install is skipped or fails, the formulas are still
+correct; only their cached values are missing, and `data_only=True` reads `None` until Excel
+or LibreOffice opens the file. Attach an image that already includes `soffice` to avoid the
+download entirely.
+
 ## Troubleshooting
 
 ### Issue: `npx skills add` command hangs
@@ -73,15 +101,35 @@ client.invoke_harness(
 ### Issue: Skill not found error during invocation
 **Solution**: Verify the path exists: `ls -la .agents/skills/xlsx/`. Run the installation in the same session you're invoking from.
 
+### Issue: `ConflictException: Cannot update agent ... while it is CREATING`
+**Solution**: The harness was not READY before the next call was made. Creating a harness
+takes ~150s on the public network and longer when a container image has to be pulled on top,
+so poll to `READY` before calling `update_harness` or running a command. Use
+`poll_harness_status` from `utils/harness.py`, which raises on timeout and on
+`CREATE_FAILED`/`UPDATE_FAILED` instead of falling through silently.
+
 ### Issue: Generated xlsx file is empty or corrupted
-**Solution**: Check that the agent's file path matches the base64 read command. The file must exist on the VM before you can download it.
+**Solution**: Check that the agent's file path matches the base64 read command. The file must
+exist on the VM before you can download it. This sample validates the transfer: it reports the
+`base64` exit code and stderr when the file is missing, and verifies that what arrived is a zip
+container (an `.xlsx` is a zip) before reporting a sheet count read from the file itself.
+
+### Issue: The script reports the skill install failed
+**Solution**: Read the command output above the error. The install runs
+`apt-get update && apt-get install git -y && npx skills add ...`, so it needs a Debian-based
+container (the `node:slim` image this sample attaches in Part 1) and outbound network access.
+The script stops here deliberately — every later part depends on the skill being present.
 
 ## AgentCore CLI
 
-Create and deploy a harness project via the CLI (preview channel), then use `ExecuteCommand` to install skills in your session:
+Create and deploy a harness project via the CLI, then use `ExecuteCommand` to install skills in your session:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name myskillsagent --model-provider bedrock
 agentcore deploy
 agentcore invoke --harness myskillsagent \

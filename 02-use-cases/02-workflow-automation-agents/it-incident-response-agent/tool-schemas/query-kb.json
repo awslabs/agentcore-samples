@@ -1,0 +1,20 @@
+[
+  {
+    "name": "query_kb",
+    "description": "Search the IT runbook knowledge base for relevant guidance. Use a focused query that names symptoms or affected processes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Natural language search query for runbook lookup."
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Number of results to return (default 4)."
+        }
+      },
+      "required": ["query"]
+    }
+  }
+]

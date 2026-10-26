@@ -22,12 +22,13 @@ Configuration:
     Set SLACK_INC_HOOK and SLACK_CHANNEL_NAME below before running.
 """
 
-import boto3
 import json
-import subprocess
-import botocore.exceptions
 import os
-from utils import wait_for_registry_ready, wait_for_record_draft
+import subprocess
+
+import boto3
+import botocore.exceptions
+from utils import wait_for_record_draft, wait_for_registry_ready
 
 print(f"Boto3 version: {boto3.__version__}")
 
@@ -39,11 +40,11 @@ try:
     import sagemaker
 
     AWS_REGION = sagemaker.Session().boto_region_name
-except Exception:
+except Exception:  # noqa: BLE001
     AWS_REGION = boto3.session.Session().region_name or "us-west-2"
 
 session = boto3.Session(region_name=AWS_REGION)
-cp_client = session.client("bedrock-agentcore-control")
+cp_client = session.client("agent-registry-control")
 
 # ── Step 1 — Create Registry ───────────────────────────────────────────────────
 print("\n=== Step 1 — Create a Registry (Governance-First) ===")
@@ -51,7 +52,7 @@ print("\n=== Step 1 — Create a Registry (Governance-First) ===")
 create_resp = cp_client.create_registry(
     name="adminFlowRegistry",
     description="Registry created for Administrator Flow",
-    approvalConfiguration={"autoApproval": False},
+    approvalConfiguration={"autoApprovalRules": []},
 )
 
 REGISTRY_ARN = create_resp["registryArn"]
@@ -151,8 +152,8 @@ a2a_resp = cp_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="loan_underwriting_agent",
     description="Assesses a loan application and returns an approval decision with risk score and recommended terms.",
-    descriptorType="A2A",
-    descriptors={"a2a": {"agentCard": {"schemaVersion": "0.3", "inlineContent": a2a_agent_card}}},
+    recordType="AGENT",
+    descriptors={"a2aAgentCard": {"data": a2a_agent_card}},
     recordVersion="1.0",
 )
 
@@ -182,42 +183,41 @@ mcp_record = cp_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="loan_underwriting_mcp",
     description="MCP server for loan underwriting tools",
-    descriptorType="MCP",
+    recordType="MCP",
     descriptors={
-        "mcp": {
-            "server": {
-                "schemaVersion": "2025-12-11",
-                "inlineContent": json.dumps(
-                    {
-                        "name": "io.enterprise/loan-underwriting",
-                        "description": "MCP server for loan underwriting tools",
-                        "version": "2.1.0",
-                        "packages": [
-                            {
-                                "registryType": "npm",
-                                "identifier": "@enterprise/loan-underwriting-mc",
-                                "version": "2.1.0",
-                                "transport": {"type": "stdio"},
-                            }
-                        ],
-                    }
-                ),
-            },
-            "tools": {
-                "inlineContent": json.dumps(
-                    {
-                        "tools": [
-                            {
-                                "name": "check_credit_score",
-                                "description": "Retrieve credit score and credit history summary for an applicant",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {"applicant_id": {"type": "string"}},
-                                },
-                            }
-                        ],
-                    }
-                )
+        "mcpServer": {
+            "data": json.dumps(
+                {
+                    "name": "io.enterprise/loan-underwriting",
+                    "description": "MCP server for loan underwriting tools",
+                    "version": "2.1.0",
+                    "packages": [
+                        {
+                            "registryType": "npm",
+                            "identifier": "@enterprise/loan-underwriting-mc",
+                            "version": "2.1.0",
+                            "transport": {"type": "stdio"},
+                        }
+                    ],
+                }
+            ),
+            "additionalData": {
+                "tools": {
+                    "data": json.dumps(
+                        {
+                            "tools": [
+                                {
+                                    "name": "check_credit_score",
+                                    "description": "Retrieve credit score and credit history summary for an applicant",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {"applicant_id": {"type": "string"}},
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                }
             },
         }
     },
@@ -249,10 +249,10 @@ custom_record = cp_client.create_registry_record(
     registryId=REGISTRY_ID,
     name="loan_decision_engine_custom",
     description="Custom Rest API for integrating with the internal loan decision engine to finalize underwriting outcomes",
-    descriptorType="CUSTOM",
+    recordType="CUSTOM",
     descriptors={
         "custom": {
-            "inlineContent": json.dumps(
+            "data": json.dumps(
                 {
                     "name": "loan-decision-engine",
                     "description": "Custom Rest API for integrating with the internal loan decision engine to finalize underwriting outcomes",
@@ -290,12 +290,12 @@ print("  1. Check for duplicates via semantic search")
 print("  2. Scan agent cards using CISCO AI Defense")
 print("  3. Store AI scan results in DynamoDB + generate HTML report in S3")
 print("  4. Send Slack notification to the Administrator")
-print("")
+print()
 print("Check your Slack channel for notifications. Each message includes:")
 print("  - Record metadata and duplicate check results")
 print("  - AI scan summary with link to detailed HTML report")
 print("  - AWS CLI commands to approve/reject the record")
-print("")
+print()
 print("Refer to IAM_PERMISSIONS.md for the required permissions.")
 
 # ── Step 5 — Cleanup ──────────────────────────────────────────────────────────

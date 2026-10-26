@@ -1,0 +1,7 @@
+{
+  "gateway_url": "https://YOUR-GATEWAY-ID.gateway.bedrock-agentcore.REGION.amazonaws.com/mcp",
+  "client_id": "YOUR_COGNITO_CLIENT_ID",
+  "client_secret": "YOUR_COGNITO_CLIENT_SECRET",
+  "token_url": "https://YOUR-USER-POOL.auth.REGION.amazoncognito.com/oauth2/token",
+  "scope": "interview-gateway/invoke"
+}

@@ -1,0 +1,14 @@
+# AgentCore SDK — AgentCorePaymentsPlugin and PaymentManager. 1.22.0 is the release that adds
+# x402 `upto` support, including the plugin's `permit2_allowance_limit` field.
+bedrock-agentcore[strands-agents]>=1.22.0
+
+# AWS SDK — carries the ProcessPayment wire contract. Needs a service model that includes
+# permit2AllowanceLimit.
+boto3>=1.43.73
+botocore>=1.43.73
+
+# Strands Agents SDK
+strands-agents>=1.52.0
+strands-agents-tools>=0.8.6
+
+python-dotenv>=1.2.3

@@ -28,6 +28,7 @@ Usage from scripts:
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any
 
@@ -39,7 +40,21 @@ class GatewayBoto3Client:
 
     def __init__(self, region: str | None = None):
         self.region = region or boto3.Session().region_name
-        self.client = boto3.client("bedrock-agentcore-control", region_name=self.region)
+        # Optional control-plane endpoint override. Unset resolves to the
+        # default AWS endpoint, so end users need no configuration.
+        endpoint = os.environ.get("AGENTCORE_CONTROL_ENDPOINT")
+        self.client = boto3.client(
+            "bedrock-agentcore-control",
+            region_name=self.region,
+            endpoint_url=endpoint,
+        )
+        # Credential-provider (token-vault / Identity) operations use the
+        # default endpoint, even when self.client is pointed at an override.
+        self.identity_client = (
+            boto3.client("bedrock-agentcore-control", region_name=self.region)
+            if endpoint
+            else self.client
+        )
         self.iam = boto3.client("iam")
         self.sts = boto3.client("sts")
         self._account_id: str | None = None
@@ -58,6 +73,8 @@ class GatewayBoto3Client:
         api_key_targets: bool = False,
         lambda_targets: bool = False,
         s3_schemas: bool = False,
+        websearch_targets: bool = False,
+        bedrock_targets: bool = False,
         policy_engine_arn: str | None = None,
     ) -> str:
         """Create a least-privilege IAM role for the gateway.
@@ -89,6 +106,23 @@ class GatewayBoto3Client:
             ],
         }
 
+        # Some environments assume the execution role under additional service
+        # principals. Set AGENTCORE_TRUST_PRINCIPALS (comma-separated) to add
+        # them. Unset uses the default principal, so end users need no config.
+        extra_principals = [
+            p.strip()
+            for p in os.environ.get("AGENTCORE_TRUST_PRINCIPALS", "").split(",")
+            if p.strip()
+        ]
+        for principal in extra_principals:
+            assume_role_policy["Statement"].append(
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": principal},
+                    "Action": "sts:AssumeRole",
+                }
+            )
+
         try:
             self.iam.create_role(
                 RoleName=role_name,
@@ -97,7 +131,12 @@ class GatewayBoto3Client:
             print(f"  Created IAM role: {role_name}")
             time.sleep(10)
         except self.iam.exceptions.EntityAlreadyExistsException:
-            print(f"  IAM role already exists: {role_name}")
+            # Refresh the trust policy so re-runs pick up any principal changes.
+            self.iam.update_assume_role_policy(
+                RoleName=role_name,
+                PolicyDocument=json.dumps(assume_role_policy),
+            )
+            print(f"  IAM role already exists: {role_name} (trust policy refreshed)")
 
         statements: list[dict[str, Any]] = []
 
@@ -146,6 +185,34 @@ class GatewayBoto3Client:
                 }
             )
 
+        if websearch_targets:
+            statements.append(
+                {
+                    "Effect": "Allow",
+                    "Action": "bedrock-agentcore:InvokeGateway",
+                    "Resource": gateway_arn,
+                }
+            )
+            statements.append(
+                {
+                    "Effect": "Allow",
+                    "Action": "bedrock-agentcore:InvokeWebSearch",
+                    "Resource": f"arn:aws:bedrock-agentcore:{self.region}:aws:tool/web-search.v1",
+                }
+            )
+
+        if bedrock_targets:
+            statements.append(
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock-mantle:ListModels",
+                        "bedrock-mantle:CreateInference",
+                    ],
+                    "Resource": "*",
+                }
+            )
+
         if policy_engine_arn:
             statements.append(
                 {
@@ -184,6 +251,7 @@ class GatewayBoto3Client:
         api_key_targets: bool = False,
         lambda_targets: bool = False,
         s3_schemas: bool = False,
+        bedrock_targets: bool = False,
         policy_engine_arn: str | None = None,
     ) -> dict[str, Any]:
         role_arn = self.create_gateway_role(
@@ -192,6 +260,7 @@ class GatewayBoto3Client:
             api_key_targets=api_key_targets,
             lambda_targets=lambda_targets,
             s3_schemas=s3_schemas,
+            bedrock_targets=bedrock_targets,
             policy_engine_arn=policy_engine_arn,
         )
 
@@ -270,6 +339,118 @@ class GatewayBoto3Client:
         print(f"  Created target: {name} (ID: {response['targetId']})")
         return response
 
+    def create_mcp_connector_target(
+        self,
+        gateway_id: str,
+        name: str,
+        connector_id: str,
+        *,
+        configurations: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Create an MCP target backed by a built-in connector.
+
+        Connectors are pre-built, managed integrations (for example the
+        Web Search Tool, ``connectorId="web-search"``). The gateway
+        authenticates to the connector with its own IAM role, so no stored
+        credential is needed. ``configurations`` is an optional list of per-tool
+        configuration dicts (for example a domain filter on the WebSearch tool).
+        """
+        connector_config: dict[str, Any] = {"source": {"connectorId": connector_id}}
+        if configurations:
+            connector_config["configurations"] = configurations
+
+        response = self.client.create_gateway_target(
+            name=name,
+            gatewayIdentifier=gateway_id,
+            targetConfiguration={"mcp": {"connector": connector_config}},
+            credentialProviderConfigurations=[
+                {"credentialProviderType": "GATEWAY_IAM_ROLE"}
+            ],
+        )
+        print(f"  Created connector target: {name} (ID: {response['targetId']})")
+        return response
+
+    def create_inference_target(
+        self,
+        gateway_id: str,
+        name: str,
+        *,
+        connector_id: str | None = None,
+        endpoint: str | None = None,
+        model_mapping: dict[str, Any] | None = None,
+        operations: list[dict[str, Any]] | None = None,
+        credential_provider_type: str = "GATEWAY_IAM_ROLE",
+        api_key_provider_arn: str | None = None,
+        credential_parameter_name: str = "Authorization",
+        credential_location: str = "HEADER",
+        credential_prefix: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an inference target that routes LLM traffic to a model provider.
+
+        Provide either ``connector_id`` (zero-config connector mode) or
+        ``endpoint`` (explicit provider mode with optional ``model_mapping`` and
+        ``operations``). Outbound auth defaults to ``GATEWAY_IAM_ROLE`` (SigV4,
+        e.g. Bedrock); pass ``credential_provider_type="API_KEY"`` with an
+        ``api_key_provider_arn`` for providers like OpenAI or Anthropic.
+        """
+        if bool(connector_id) == bool(endpoint):
+            raise ValueError(
+                "Provide exactly one of connector_id (connector mode) or "
+                "endpoint (provider mode)."
+            )
+
+        if connector_id:
+            inference_config: dict[str, Any] = {
+                "connector": {"source": {"connectorId": connector_id}}
+            }
+        else:
+            provider_config: dict[str, Any] = {"endpoint": endpoint}
+            if model_mapping:
+                provider_config["modelMapping"] = model_mapping
+            if operations:
+                provider_config["operations"] = operations
+            inference_config = {"provider": provider_config}
+
+        kwargs: dict[str, Any] = {
+            "name": name,
+            "gatewayIdentifier": gateway_id,
+            "targetConfiguration": {"inference": inference_config},
+        }
+
+        if credential_provider_type == "GATEWAY_IAM_ROLE":
+            kwargs["credentialProviderConfigurations"] = [
+                {"credentialProviderType": "GATEWAY_IAM_ROLE"}
+            ]
+        elif credential_provider_type == "API_KEY":
+            if not api_key_provider_arn:
+                raise ValueError(
+                    "api_key_provider_arn is required when "
+                    "credential_provider_type='API_KEY'."
+                )
+            api_key_provider: dict[str, Any] = {
+                "providerArn": api_key_provider_arn,
+                "credentialParameterName": credential_parameter_name,
+                "credentialLocation": credential_location,
+            }
+            if credential_prefix:
+                api_key_provider["credentialPrefix"] = credential_prefix
+            kwargs["credentialProviderConfigurations"] = [
+                {
+                    "credentialProviderType": "API_KEY",
+                    "credentialProvider": {
+                        "apiKeyCredentialProvider": api_key_provider
+                    },
+                }
+            ]
+        else:
+            raise ValueError(
+                f"Unsupported credential_provider_type: {credential_provider_type}"
+            )
+
+        response = self.client.create_gateway_target(**kwargs)
+        print(f"  Created inference target: {name} (ID: {response['targetId']})")
+        return response
+
     def create_credential_provider(
         self,
         name: str,
@@ -277,7 +458,7 @@ class GatewayBoto3Client:
         client_id: str,
         client_secret: str,
     ) -> dict[str, Any]:
-        response = self.client.create_oauth2_credential_provider(
+        response = self.identity_client.create_oauth2_credential_provider(
             name=name,
             credentialProviderVendor="CustomOauth2",
             oauth2ProviderConfigInput={
@@ -307,7 +488,7 @@ class GatewayBoto3Client:
 
     def delete_credential_provider(self, name: str) -> None:
         try:
-            self.client.delete_oauth2_credential_provider(name=name)
+            self.identity_client.delete_oauth2_credential_provider(name=name)
             print(f"  Deleted credential provider: {name}")
         except Exception as e:
             print(f"  Could not delete credential provider {name}: {e}")

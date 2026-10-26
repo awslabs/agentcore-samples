@@ -1,0 +1,14 @@
+# Test-time dependencies only.
+#
+# Both service models come from the SDK rather than from this repository, which makes the runtime's
+# boto3 a real prerequisite: it must carry `bedrock-agentcore-control` (the Preview source) and
+# `agent-registry-control` (the target), or building a client raises `UnknownServiceError`. See
+# registry_client.py. These pins exist so `python -m unittest` can import botocore locally and in CI.
+#
+# Floored at 1.43.66, the first release that ships the target service model. That release requires Python 3.10,
+# so CI runs 3.11 -- which is also what the Glue 5.0 jobs run, keeping the tests on the same
+# interpreter as the jobs. The previous `botocore<1.43` pin held CI on Python 3.9 to match the Glue
+# Python shell; those jobs are Glue 5.0 Spark jobs now, precisely because no Python 3.9 SDK has the
+# new Registry service model. See GLUE_SDK_MODULES in lib/migration-engine-stack.ts.
+boto3>=1.43.66
+botocore>=1.43.66

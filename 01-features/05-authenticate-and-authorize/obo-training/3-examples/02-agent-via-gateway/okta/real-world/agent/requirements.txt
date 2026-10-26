@@ -1,0 +1,10 @@
+# Pinned to versions that work together as of writing. Loosen if you need
+# newer SDKs and have tested compatibility.
+
+bedrock-agentcore>=0.1.0
+boto3>=1.43.2
+botocore>=1.43.2
+
+# Strands + MCP client used to talk to AgentCore Gateway.
+strands-agents>=0.4.0
+mcp>=1.2.0

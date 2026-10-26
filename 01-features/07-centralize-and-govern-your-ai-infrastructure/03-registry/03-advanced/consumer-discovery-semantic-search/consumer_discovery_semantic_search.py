@@ -20,28 +20,31 @@ API coverage:
     GetRegistryRecord, DeleteRegistryRecord, DeleteRegistry
 """
 
-import boto3
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
+import boto3
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
 
 session = boto3.Session(region_name=AWS_REGION)
-cp_client = session.client("bedrock-agentcore-control")
-dp_client = session.client("bedrock-agentcore")
+
+
+cp_client = session.client("agent-registry-control")
+dp_client = session.client("agent-registry")
 
 print(f"Session ready | Region: {AWS_REGION}")
 
 # ── 1. Create registry with auto-approval ─────────────────────────────────────
-registry_name = f"consumerDiscovery_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+registry_name = f"consumerDiscovery_{datetime.now(tz=timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
 create_resp = cp_client.create_registry(
     name=registry_name,
     description="Registry for consumer discovery journey demo",
-    approvalConfiguration={"autoApproval": True},
+    approvalConfiguration={"autoApprovalRules": ["APPROVE_ALL"]},
 )
 
 REGISTRY_ARN = create_resp["registryArn"]
@@ -74,13 +77,13 @@ for rec in SEED_RECORDS:
         registryId=REGISTRY_ID,
         name=rec["name"],
         description=rec["description"],
-        descriptorType=rec["protocol"],
+        recordType=rec["recordType"],
         descriptors=rec["descriptors"],
         recordVersion=rec["recordVersion"],
     )
     record_id = resp["recordArn"].split("/")[-1]
     record_ids.append(record_id)
-    print(f"  [{rec['protocol']:3s}] {rec['name']} -> {record_id}")
+    print(f"  [{rec['recordType']:6s}] {rec['name']} -> {record_id}")
 
 print(f"\nCreated {len(record_ids)} records.")
 
@@ -110,7 +113,7 @@ print("Ready for discovery.")
 
 def search_raw(query, max_results=10):
     """Search the registry and print the raw JSON API response."""
-    response = dp_client.search_registry_records(
+    response = dp_client.search_discoverable_registry_records(
         registryIds=[REGISTRY_ARN],
         searchQuery=query,
         maxResults=max_results,
@@ -122,10 +125,10 @@ def search_raw(query, max_results=10):
 
 def search(query, max_results=10, filters=None):
     """Search the registry and display formatted results. Optionally apply metadata filters."""
-    params = dict(registryIds=[REGISTRY_ARN], searchQuery=query, maxResults=max_results)
+    params = {"registryIds": [REGISTRY_ARN], "searchQuery": query, "maxResults": max_results}
     if filters:
         params["filters"] = filters
-    response = dp_client.search_registry_records(**params)
+    response = dp_client.search_discoverable_registry_records(**params)
     records = response.get("registryRecords", [])
     header = f'Search: "{query}"'
     if filters:
@@ -133,7 +136,7 @@ def search(query, max_results=10, filters=None):
     print(header)
     print(f"Found {len(records)} result(s)\n")
     for rec in records:
-        print(f"  [{rec['descriptorType']:3s}]  {rec['name']}")
+        print(f"  [{rec['recordType']:6s}]  {rec['name']}")
         print(f"        {rec.get('description', 'N/A')}")
         print()
     return response
@@ -167,7 +170,7 @@ results = search("track shipments and get delivery estimates")
 print("\n=== 3.6 Drill-Down: MCP Tool Connection Details ===")
 response = search("look up order details by order ID")
 records = response.get("registryRecords", [])
-mcp_hits = [r for r in records if r["descriptorType"] == "MCP"]
+mcp_hits = [r for r in records if r["recordType"] == "MCP"]
 
 if mcp_hits:
     hit = mcp_hits[0]
@@ -175,10 +178,10 @@ if mcp_hits:
     print(f"Drilling into: {hit['name']} ({record_id})\n")
 
     full = cp_client.get_registry_record(registryId=REGISTRY_ID, recordId=record_id)
-    mcp = full.get("descriptors", {}).get("mcp", {})
+    mcp = full.get("descriptors", {}).get("mcpServer", {})
 
-    server = json.loads(mcp.get("server", {}).get("inlineContent", "{}"))
-    tools = json.loads(mcp.get("tools", {}).get("inlineContent", "{}"))
+    server = json.loads(mcp.get("data", "{}"))
+    tools = json.loads(mcp.get("additionalData", {}).get("tools", {}).get("data", "{}"))
 
     print("Server descriptor:")
     print(json.dumps(server, indent=2))
@@ -191,7 +194,7 @@ else:
 print("\n=== 3.7 Drill-Down: A2A Agent Details ===")
 response = search("issue a refund for a completed order")
 records = response.get("registryRecords", [])
-a2a_hits = [r for r in records if r["descriptorType"] == "A2A"]
+a2a_hits = [r for r in records if r["recordType"] == "AGENT"]
 
 if a2a_hits:
     hit = a2a_hits[0]
@@ -199,8 +202,8 @@ if a2a_hits:
     print(f"Drilling into: {hit['name']} ({record_id})\n")
 
     full = cp_client.get_registry_record(registryId=REGISTRY_ID, recordId=record_id)
-    card = full.get("descriptors", {}).get("a2a", {}).get("agentCard", {})
-    agent_card = json.loads(card.get("inlineContent", "{}"))
+    card = full.get("descriptors", {}).get("a2aAgentCard", {})
+    agent_card = json.loads(card.get("data", "{}"))
 
     print("Agent card:")
     print(json.dumps(agent_card, indent=2))
@@ -214,7 +217,7 @@ records = response.get("registryRecords", [])
 
 by_protocol = {}
 for rec in records:
-    proto = rec["descriptorType"]
+    proto = rec["recordType"]
     by_protocol.setdefault(proto, []).append(rec["name"])
 
 print("\nResults grouped by protocol:")
@@ -240,35 +243,35 @@ raw_response = search_raw("order lookup")
 print("\n=== 3.12 Metadata-Filtered Search ===")
 
 # $eq — MCP only
-results = search("payment", filters={"descriptorType": {"$eq": "MCP"}})
+results = search("payment", filters={"recordType": {"$eq": "MCP"}})
 
 # $ne — exclude MCP
-results = search("shipping inventory refund", filters={"descriptorType": {"$ne": "MCP"}})
+results = search("shipping inventory refund", filters={"recordType": {"$ne": "MCP"}})
 
-# $in — MCP or A2A
-results = search("order management", filters={"descriptorType": {"$in": ["MCP", "A2A"]}})
+# $in — MCP or AGENT
+results = search("order management", filters={"recordType": {"$in": ["MCP", "AGENT"]}})
 
 # version filter
-results = search("order", filters={"version": {"$eq": "1.0"}})
+results = search("order", filters={"recordVersion": {"$eq": "1.0"}})
 
 # $and — MCP AND version 1.0
 results = search(
     "email notification",
     filters={
         "$and": [
-            {"descriptorType": {"$eq": "MCP"}},
-            {"version": {"$eq": "1.0"}},
+            {"recordType": {"$eq": "MCP"}},
+            {"recordVersion": {"$eq": "1.0"}},
         ]
     },
 )
 
-# $or — MCP OR A2A
+# $or — MCP OR AGENT
 results = search(
     "inventory",
     filters={
         "$or": [
-            {"descriptorType": {"$eq": "MCP"}},
-            {"descriptorType": {"$eq": "A2A"}},
+            {"recordType": {"$eq": "MCP"}},
+            {"recordType": {"$eq": "AGENT"}},
         ]
     },
 )
@@ -284,13 +287,13 @@ for rid in record_ids:
     try:
         cp_client.delete_registry_record(registryId=REGISTRY_ID, recordId=rid)
         print(f"  Deleted record: {rid}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Error deleting {rid}: {e}")
 
 try:
     cp_client.delete_registry(registryId=REGISTRY_ID)
     print(f"  Deleted registry: {REGISTRY_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"  Error deleting registry: {e}")
 
 print("\nCleanup complete!")

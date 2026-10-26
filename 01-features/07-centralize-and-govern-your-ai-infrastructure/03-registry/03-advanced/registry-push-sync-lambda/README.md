@@ -154,7 +154,7 @@ The Lambda execution role requires the following permissions:
 
 | policy                                    | Actions                                                              |
 |-------------------------------------------|----------------------------------------------------------------------|
-| registry access                           | `bedrock-agentcore:ListRegistryRecords`, `bedrock-agentcore:GetRegistryRecord`, `bedrock-agentcore:UpdateRegistryRecord` |
+| registry access                           | `agent-registry:ListRegistryRecords`, `agent-registry:GetRegistryRecord`, `agent-registry:UpdateRegistryRecord` |
 | AgentCore identity                        | `bedrock-agentcore:GetResourceOauth2Token`, `bedrock-agentcore:GetWorkloadAccessToken` |
 | Secrets Manager                           | `secretsmanager:GetSecretValue` (required by AgentCore identity to read stored credentials) |
 | CloudWatch Logs                           | `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`   |
@@ -282,7 +282,7 @@ The following table lists common issues and their resolutions:
 | Auth error (secretsmanager)          | Lambda role missing Secrets Manager perm | Add `secretsmanager:GetSecretValue` to the Lambda role.    |
 | Auth error (workload token)          | Lambda role missing identity perm        | Add `bedrock-agentcore:GetWorkloadAccessToken` to the Lambda role. |
 | Auth error (credential provider)     | Wrong provider name for account          | Check the `CREDENTIAL_PROVIDER_{ACCT_ID}` environment variable on the Lambda. |
-| registry update fails                | Lambda role missing permissions          | Add `bedrock-agentcore:UpdateRegistryRecord` to the Lambda role. |
+| registry update fails                | Lambda role missing permissions          | Add `agent-registry:UpdateRegistryRecord` to the Lambda role. |
 | `no_change` when expecting update    | Tools are identical                      | Verify that the tool names, descriptions, or inputSchemas actually differ. |
 ## Running the Python Scripts
 

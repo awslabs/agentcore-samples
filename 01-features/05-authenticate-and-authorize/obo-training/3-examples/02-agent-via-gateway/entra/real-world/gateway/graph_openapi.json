@@ -1,0 +1,48 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Microsoft Graph (subset)",
+    "version": "1.0.0",
+    "description": "Minimal OpenAPI spec for the Microsoft Graph endpoints exposed as MCP tools through AgentCore Gateway. The Gateway calls these endpoints with an OBO-exchanged token; the agent never calls Graph directly."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com",
+      "description": "Microsoft Graph base URL"
+    }
+  ],
+  "paths": {
+    "/v1.0/me": {
+      "get": {
+        "operationId": "getMyProfile",
+        "summary": "Get the current user's Microsoft 365 profile",
+        "description": "Returns the profile of the user whose token is used as the Bearer credential. With OBO, this is the originating end-user, not the gateway service identity.",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {"type": "string"},
+                    "displayName": {"type": "string"},
+                    "givenName": {"type": "string"},
+                    "surname": {"type": "string"},
+                    "mail": {"type": "string"},
+                    "userPrincipalName": {"type": "string"},
+                    "jobTitle": {"type": "string"},
+                    "officeLocation": {"type": "string"},
+                    "preferredLanguage": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Unauthorized — missing or invalid token"},
+          "403": {"description": "Forbidden — insufficient permissions on the token"}
+        }
+      }
+    }
+  }
+}

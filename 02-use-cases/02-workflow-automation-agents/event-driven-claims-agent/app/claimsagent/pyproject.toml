@@ -9,12 +9,11 @@ description = "AgentCore Runtime Application using Strands SDK"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "aws-opentelemetry-distro",
-    "bedrock-agentcore >= 1.9.1",
-    "botocore[crt] >= 1.35.0",
-    "mcp >= 1.19.0",
-    "strands-agents >= 1.13.0",
-    
+    "aws-opentelemetry-distro >= 0.18.0, < 1.0",
+    "bedrock-agentcore >= 1.15.0, < 2.0",
+    "botocore[crt] >= 1.43.36, < 2.0",
+    "mcp >= 1.28.0, < 2.0",
+    "strands-agents >= 1.44.0, < 2.0",
 ]
 
 [tool.hatch.build.targets.wheel]

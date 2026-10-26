@@ -69,4 +69,4 @@ Custom evaluators provide maximum flexibility by allowing you to define every as
 - Technical support agents assessed on troubleshooting methodology
 
 ## Next Steps
-After completing this tutorial, proceed to [Using On-demand Evaluation](../01-setting-evaluations) to learn how to apply these evaluators to your agent traces.
+After completing this tutorial, proceed to [Using On-demand Evaluation](../02-running-evaluations) to learn how to apply these evaluators to your agent traces.

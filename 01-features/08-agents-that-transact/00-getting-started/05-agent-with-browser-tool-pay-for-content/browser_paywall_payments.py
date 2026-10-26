@@ -32,14 +32,13 @@ Usage:
     python browser_paywall_payments.py
 
 Prerequisites:
-    - Tutorials 00 and 01 completed (.env exists)
+    - Tutorial 00 completed (.env exists with the payment manager + instrument)
     - Wallet funded with testnet USDC
     - pip install -r requirements.txt
     - python -m playwright install chromium
 """
 
 import asyncio
-import json
 import os
 import sys
 import time
@@ -58,16 +57,16 @@ PAYMENT_MANAGER_ARN = config["payment_manager_arn"]
 REGION = config["region"]
 USER_ID = config["user_id"]
 
-if config.get("multi_provider"):
-    PROVIDER = list(config["instruments"].keys())[0]
-    INSTRUMENT_ID = config["instruments"][PROVIDER]["instrument_id"]
-    CONNECTOR_ID = config["instruments"][PROVIDER]["connector_id"]
-else:
-    INSTRUMENT_ID = config["instrument_id"]
-    CONNECTOR_ID = config.get("connector_id")
-    PROVIDER = config.get("provider_type", "unknown")
+# load_tutorial_env resolves instrument_id to the configured provider
+# (CREDENTIAL_PROVIDER_TYPE), so single- and multi-provider .env files both work.
+INSTRUMENT_ID = config["instrument_id"]
+PROVIDER = config.get("active_provider") or config.get("provider_type", "unknown")
 
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
+
+# Per-user spending budget for the browser tool's payment session.
+SESSION_BUDGET_USD = "1.00"
+SESSION_EXPIRY_MINUTES = 60
 
 print_summary(
     "Config",
@@ -85,30 +84,23 @@ manager = PaymentManager(payment_manager_arn=PAYMENT_MANAGER_ARN, region_name=RE
 instr = manager.get_payment_instrument(user_id=USER_ID, payment_instrument_id=INSTRUMENT_ID)
 instr_status = instr.get("status", "UNKNOWN")
 assert instr_status == "ACTIVE", f"Instrument is {instr_status} — fund and delegate in Tutorial 00/03 first"
-
-session_resp = manager.create_payment_session(
-    user_id=USER_ID,
-    limits={"maxSpendAmount": {"value": "1.00", "currency": "USD"}},
-    expiry_time_in_minutes=60,
-)
-SESSION_ID = session_resp["paymentSessionId"]
 print(f"Instrument {INSTRUMENT_ID} is {instr_status}")
-print(f"Session: {SESSION_ID} (budget: $1.00, expiry: 60 min)")
+
+# A spending session is per-user, so the SDK mints one here in application code,
+# scoped to the user we serve and capped at SESSION_BUDGET_USD for SESSION_EXPIRY_MINUTES.
+session = manager.create_payment_session(
+    user_id=USER_ID,
+    limits={"maxSpendAmount": {"value": SESSION_BUDGET_USD, "currency": "USD"}},
+    expiry_time_in_minutes=SESSION_EXPIRY_MINUTES,
+)
+SESSION_ID = session["paymentSessionId"]
+print(f"Created payment session {SESSION_ID} (budget ${SESSION_BUDGET_USD}, {SESSION_EXPIRY_MINUTES} min)")
 
 # ── Step 3-4: Build the browse_with_payment Tool ──────────────────────────────
 from playwright.async_api import async_playwright  # noqa: E402
 from strands import tool  # noqa: E402
 
 from bedrock_agentcore.tools.browser_client import BrowserClient  # noqa: E402
-
-
-def extract_x402_requirements(headers, body):
-    """Parse x402 payment requirements from a 402 response."""
-    try:
-        return json.loads(body)
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return {"headers": headers, "body": body}
 
 
 def _format_result(status: int, content: str, paid: bool, url: str) -> str:
@@ -264,4 +256,4 @@ print(
     f"region={REGION}#gen-ai-observability/agent-core"
 )
 print("\nDone. Sessions expire automatically.")
-print("Next: python ../07-multi-agent-payment-orchestrator/multi_agent_payments.py")
+print("Next: python ../06-research-agent-with-payment-memory/research_agent_with_memory.py")

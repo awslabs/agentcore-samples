@@ -1,0 +1,7 @@
+# The Memory class + BaseMemoryBlock API (replacing the deprecated ChatMemoryBuffer) is in
+# modern llama-index-core. Pinned to a known-good floor; latest 0.14.x verified.
+llama-index-core>=0.12.0
+llama-index-llms-bedrock-converse>=0.3.0
+bedrock-agentcore>=0.1.6
+boto3>=1.34.0
+pydantic>=2.0.0

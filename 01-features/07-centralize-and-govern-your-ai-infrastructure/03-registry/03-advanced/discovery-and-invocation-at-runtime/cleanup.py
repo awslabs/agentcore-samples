@@ -10,21 +10,28 @@ section is guarded so cleanup proceeds even if some variables are missing.
 """
 
 import os
-import time
 import shutil
+import time
+
 import boto3
 
 # Re-create AWS clients in case kernel was restarted
 try:
-    cp_client
+    cp_client  # noqa: B018
 except NameError:
     session = boto3.Session()
     region = session.region_name or "us-west-2"
     cp_client = session.client("bedrock-agentcore-control")
+    registry_client = session.client("agent-registry-control")
     iam_client = session.client("iam")
     lambda_client = session.client("lambda")
     cognito_client = session.client("cognito-idp")
     sm_client = session.client("secretsmanager")
+
+try:
+    registry_client  # noqa: B018
+except NameError:
+    registry_client = session.client("agent-registry-control")
 
 
 # Safely resolve variables from the calling scope, returning None if not set.
@@ -80,9 +87,9 @@ print("\n1. Deleting registry records...")
 if _record_ids and _REGISTRY_ID:
     for rid in _record_ids:
         try:
-            cp_client.delete_registry_record(registryId=_REGISTRY_ID, recordId=rid)
+            registry_client.delete_registry_record(registryId=_REGISTRY_ID, recordId=rid)
             print(f"  Deleted record: {rid}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Skip {rid}: {e}")
 else:
     print("  Skipped (record_ids or REGISTRY_ID not set)")
@@ -91,9 +98,9 @@ else:
 print("\n2. Deleting registry...")
 if _REGISTRY_ID:
     try:
-        cp_client.delete_registry(registryId=_REGISTRY_ID)
+        registry_client.delete_registry(registryId=_REGISTRY_ID)
         print(f"  Deleted registry: {_REGISTRY_ID}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip: {e}")
 else:
     print("  Skipped (REGISTRY_ID not set)")
@@ -107,7 +114,7 @@ for name, aid in _agent_ids:
     try:
         cp_client.delete_agent_runtime(agentRuntimeId=aid)
         print(f"  Deleted agent: {aid}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip {name}: {e}")
 
 # 4. Delete gateway targets
@@ -117,7 +124,7 @@ if _target_ids and _gateway_id:
         try:
             cp_client.delete_gateway_target(gatewayIdentifier=_gateway_id, targetId=tid)
             print(f"  Deleted target: {tid}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Skip {tname}: {e}")
     time.sleep(30)  # Wait for targets to delete
 else:
@@ -129,7 +136,7 @@ if _gateway_id:
     try:
         cp_client.delete_gateway(gatewayIdentifier=_gateway_id)
         print(f"  Deleted gateway: {_gateway_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip: {e}")
 else:
     print("  Skipped (gateway_id not set)")
@@ -141,7 +148,7 @@ if _lambda_arns:
         try:
             lambda_client.delete_function(FunctionName=arn)
             print(f"  Deleted: {name}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Skip {name}: {e}")
 else:
     print("  Skipped (lambda_arns not set)")
@@ -158,7 +165,7 @@ for role_name in [_lambda_role_name, _gateway_role_name]:
             iam_client.delete_role_policy(RoleName=role_name, PolicyName=p)
         iam_client.delete_role(RoleName=role_name)
         print(f"  Deleted role: {role_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip {role_name}: {e}")
 
 # 8. Delete Secrets Manager secret
@@ -167,7 +174,7 @@ if _secret_name:
     try:
         sm_client.delete_secret(SecretId=_secret_name, ForceDeleteWithoutRecovery=True)
         print(f"  Deleted secret: {_secret_name}")  # codeql[py/clear-text-logging-sensitive-data]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip: {e}")
 else:
     print("  Skipped (secret_name not set)")
@@ -179,7 +186,7 @@ if _domain_name and _user_pool_id:
         cognito_client.delete_user_pool_domain(Domain=_domain_name, UserPoolId=_user_pool_id)
         cognito_client.delete_user_pool(UserPoolId=_user_pool_id)
         print(f"  Deleted pool: {_user_pool_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip: {e}")
 else:
     print("  Skipped (domain_name or user_pool_id not set)")
@@ -212,7 +219,7 @@ for launch in [_orchestrator_launch, _pricing_launch, _support_launch]:
         repo_name = launch.ecr_uri.split("/")[1].split(":")[0]
         ecr_client.delete_repository(repositoryName=repo_name, force=True)
         print(f"  Deleted ECR repo: {repo_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Skip ECR: {e}")
 
 print("\n=== Cleanup complete! ===")

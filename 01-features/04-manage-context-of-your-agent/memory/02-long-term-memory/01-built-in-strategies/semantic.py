@@ -9,9 +9,15 @@ Semantic strategy extracts standalone facts about the user or the world
 ("user's name is Alex", "based in Berlin"). It is the default choice for
 "who is this user?" recall.
 
-Two surfaces:
-    python semantic.py boto3
-    python semantic.py sdk
+Two ways to run it:
+
+    python semantic.py boto3    # the raw AWS API, no SDK. Shows exactly what's on the wire.
+    python semantic.py sdk      # the AgentCore SDK (MemorySessionManager). The recommended way.
+
+Use `boto3` to see the underlying calls. Use `sdk` for real work, since it handles the
+boilerplate for you. The `sdk` path needs bedrock-agentcore 1.14 or newer, because it
+searches with `search_long_term_memories(namespace=...)`. Older versions only accept the
+deprecated `namespace_prefix=`.
 
 Add `--cleanup` to delete the memory resource at the end. By default the
 memory is kept so you can inspect it; the script prints the memoryId.
@@ -30,7 +36,7 @@ from datetime import datetime, timezone
 REGION = os.getenv("AWS_REGION", "us-east-1")
 ACTOR_ID = "user-alex"
 SESSION_ID = f"sess-{int(time.time())}"
-EXTRACTION_WAIT_SECONDS = 60
+EXTRACTION_WAIT_SECONDS = 90
 NAMESPACE_TEMPLATE = "/users/{actorId}/facts/"
 
 TURNS = [
@@ -105,21 +111,25 @@ def run_with_boto3(cleanup: bool = False) -> None:
         print(f"\n[boto3] Keeping memory {memory_id} (pass --cleanup to delete)")
 
 
-# === AgentCore SDK ====================================================
+# === AgentCore SDK — high-level MemorySessionManager =================
 def run_with_sdk(cleanup: bool = False) -> None:
-    from bedrock_agentcore.memory import MemoryClient
+    # MemoryClient owns the control plane (create/delete the resource);
+    # MemorySessionManager is data-plane only, so we create the memory with
+    # MemoryClient, then drive events + retrieval through a MemorySession.
+    from bedrock_agentcore.memory import MemoryClient, MemorySessionManager
+    from bedrock_agentcore.memory.constants import ConversationalMessage, MessageRole
 
     client = MemoryClient(region_name=REGION)
-    # add_semantic_strategy is the SDK helper for the same shape as boto3.
     memory = client.create_memory_and_wait(
-        name=f"SemanticSdk_{int(time.time())}",
-        description="Semantic strategy (SDK)",
+        name=f"SemanticSession_{int(time.time())}",
+        description="Semantic strategy (SDK session API)",
         strategies=[
             {
                 "semanticMemoryStrategy": {
                     "name": "UserFacts",
                     "description": "Standalone facts about the user",
-                    "namespaces": [NAMESPACE_TEMPLATE],
+                    # Current field is namespaceTemplates (namespaces is deprecated).
+                    "namespaceTemplates": [NAMESPACE_TEMPLATE],
                 }
             }
         ],
@@ -128,21 +138,21 @@ def run_with_sdk(cleanup: bool = False) -> None:
     memory_id = memory["id"]
     print(f"[sdk] Created memory {memory_id}")
 
-    # SDK takes (text, role) tuples and groups multiple messages into one event.
-    client.create_event(
-        memory_id=memory_id,
-        actor_id=ACTOR_ID,
-        session_id=SESSION_ID,
-        messages=[(text, role) for role, text in TURNS],
-    )
+    # Bind a session, then write all turns in one add_turns call. add_turns
+    # takes ConversationalMessage objects and maps to a single create_event.
+    manager = MemorySessionManager(memory_id=memory_id, region_name=REGION)
+    session = manager.create_memory_session(actor_id=ACTOR_ID, session_id=SESSION_ID)
+    session.add_turns(messages=[ConversationalMessage(text, MessageRole[role]) for role, text in TURNS])
     print(f"[sdk] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
     time.sleep(EXTRACTION_WAIT_SECONDS)
 
     namespace = NAMESPACE_TEMPLATE.format(actorId=ACTOR_ID)
     for query in QUERIES:
-        hits = client.retrieve_memories(memory_id=memory_id, namespace=namespace, query=query, top_k=3)
+        # Use namespace= (exact match); namespace_prefix= is deprecated.
+        hits = session.search_long_term_memories(query=query, namespace=namespace, top_k=3)
         print(f"\n[sdk] Q: {query}")
         for h in hits:
+            # Each hit is a MemoryRecord (dict-like): content.text + score.
             print(f"  - {h['content']['text']} (score={h.get('score')})")
 
     if cleanup:
@@ -155,13 +165,13 @@ def run_with_sdk(cleanup: bool = False) -> None:
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "--cleanup"]
     cleanup = "--cleanup" in sys.argv[1:]
-    surface = args[0] if args else "boto3"
-    if surface == "boto3":
+    mode = args[0] if args else "boto3"
+    if mode == "boto3":
         run_with_boto3(cleanup=cleanup)
-    elif surface == "sdk":
+    elif mode == "sdk":
         run_with_sdk(cleanup=cleanup)
     else:
-        print(f"Unknown surface {surface!r}. Use boto3 | sdk.", file=sys.stderr)
+        print(f"Unknown mode {mode!r}. Use boto3 | sdk.", file=sys.stderr)
         sys.exit(1)
 
 

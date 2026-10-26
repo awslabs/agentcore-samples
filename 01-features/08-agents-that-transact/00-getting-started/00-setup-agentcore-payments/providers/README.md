@@ -25,7 +25,34 @@ python providers/stripe_privy_account_setup.py
 
 Each script prints step-by-step instructions for the manual browser steps, then prompts for the credentials to save to `.env`.
 
+See the detailed instructions to be followed [here](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-create-manager.html)
+
+
+## Important Note  
+
+To create a Coinbase payment connector, your account must have an active AWS Marketplace subscription to the Coinbase Wallets for AgentCore Payments listing. This is a one-time subscription per account, and the subscribing identity needs the `AWSMarketplaceManageSubscriptions` permission. With this subscription, your Coinbase wallet usage charges are consolidated into your monthly AWS bill based on Coinbase’s pricing on the Coinbase website. There are no additional charges or obligations for the subscription. The requirement applies to Coinbase whether you use Quick create or your own credentials; other providers, such as Stripe (Privy), are not affected. If the subscription is missing, `CreatePaymentConnector` fails with a `SubscriptionRequiredException` (HTTP 403) whose message includes the Marketplace listing URL to subscribe. For more information, see [Subscribe to Coinbase Wallets for AgentCore Payments in AWS Marketplace](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html).
+
 ## Coinbase CDP Setup Summary
+
+
+If you choose Coinbase, choose how to provide the credentials for the payment auth:
+
+Quick create configurations - recommended — Quick create links your Coinbase CDP account and lets AgentCore payments provision the API key and Wallet secret for you, so you never generate or paste any keys. It is available from the AgentCore console and from the AgentCore CLI:
+
+```bash
+# No credential flags — you authorize through Coinbase at deploy time
+agentcore add payment-connector \
+  --manager MyPaymentManager \
+  --name MyCoinbaseConnector \
+  --provider CoinbaseCDP \
+  --provision-mode QUICK_CREATE
+```
+
+On `agentcore deploy`, the connector is created in `PENDING_AUTHENTICATION` and the deploy prints an `authorizationUrl`. Open it, sign in to Coinbase, and grant access — the connector then moves to `READY` with a service-provisioned credential provider. Quick create does not support linking to an existing project with a Wallet Secret. See Step 2 of the [Tutorial 00 setup guide](../README.md) for the full command sequence.
+
+Watch the detailed walkthrough in the [GA announcement blog](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/).
+
+Use existing configurations — Provide Coinbase CDP credentials that you generated yourself in the Coinbase Developer Platform.
 
 1. Create a Coinbase account at [coinbase.com](https://coinbase.com/)
 2. Enable CDP at [portal.cdp.coinbase.com](https://portal.cdp.coinbase.com/)

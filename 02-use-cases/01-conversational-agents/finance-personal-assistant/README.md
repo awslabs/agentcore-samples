@@ -57,7 +57,7 @@ Participants should have:
 - AWS credentials configured for Amazon Bedrock access
 - Python 3.8+ installed on their development machine
 - AWS account with Amazon Bedrock access. In an AWS-conducted event, you will have a provisioned account
-- Enable [Model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Anthropic Claude 3.7 Sonnet on Amazon Bedrock.
+- Enable [Model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Claude Haiku 4.5 on Amazon Bedrock.
 - Jupyter Notebook or compatible IDE
 
 ## Sample Queries

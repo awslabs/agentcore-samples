@@ -1,0 +1,16 @@
+# Two A2A integrations, both needed — see agent.py → "WHY THIS USES TWO SDKs".
+#
+# strands-agents[a2a] : the [a2a] extra is what pulls in the official a2a-sdk and
+#   unlocks strands.multiagent.a2a. Plain `strands-agents` does NOT ship it, and
+#   the import fails at startup. Pinned >=1.50 for A2AServer's `serve_at_root`.
+#
+# bedrock-agentcore[a2a] : provides serve_a2a — the runtime-aware server that adds
+#   GET /ping and reads the AgentCore session headers. The [a2a] extra targets
+#   a2a-sdk 0.3 (there is a separate [a2a-v1] extra for a2a-sdk 1.x, which has a
+#   different card shape); both packages must agree on the a2a-sdk major, so keep
+#   these two extras in step if you bump either.
+#
+# Note this sample DOES need bedrock-agentcore, unlike the MCP one — but not for
+# BedrockAgentCoreApp, which is never imported here.
+strands-agents[a2a]>=1.50.0,<2.0.0
+bedrock-agentcore[a2a]>=1.21.0,<2.0.0

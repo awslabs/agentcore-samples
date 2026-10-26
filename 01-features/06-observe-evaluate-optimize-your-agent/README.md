@@ -6,19 +6,7 @@ automated evaluation, and AI-driven optimization with A/B testing.
 
 ## Overview
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Agent Lifecycle on AgentCore                   │
-│                                                                 │
-│  [Infrastructure Setup]    [Observe]    [Evaluate]  [Optimize]  │
-│         (one-time)          │               │           │       │
-│             │               ▼               ▼           ▼       │
-│  Enable Transaction ──► Advanced      ──► Batch    ──► Config   │
-│  Search + ADOT           OTel Techniques  Eval         Bundles  │
-│                         Custom Spans    Online Eval  A/B Tests  │
-│                         Data Protection GT Datasets  AI Recs    │
-└─────────────────────────────────────────────────────────────────┘
-```
+![Agent development to production loops](AGENT-LOOPS.PNG)
 
 ## Before You Start — Enable observability Infrastructure
 
@@ -108,13 +96,15 @@ python observe/data_protection.py --cleanup
 
 ## evaluate/ — Automated Agent evaluation
 
-Three evaluation approaches across the full evaluation maturity curve:
+Evaluation approaches across the full evaluation maturity curve:
 
 | Sub-folder | Approach | Description |
 |:-----------|:---------|:------------|
 | `ground-truth-based-evaluation/` | Ground Truth | Dataset simulation → batch evaluation with ground truth labels |
 | `llm-as-a-judge-evaluation/` | LLM as Judge | On-demand and online evaluation using built-in LLM evaluators |
 | `custom-code-based-evaluation/` | Custom Code | Lambda-based evaluators with domain-specific business logic |
+| `skills-evaluation/` | Agent Skills | Built-in skill selection and instruction-following evaluation |
+| `typescript-agents/` | TypeScript Agents | LangGraph.js agent evaluated on-demand, with a dataset, in batch, and online |
 
 All evaluation samples use an **HR Assistant agent** as the demo agent.
 
@@ -127,6 +117,8 @@ All evaluation samples use an **HR Assistant agent** as the demo agent.
 | `Correctness` | Did the agent give accurate information? |
 | `TrajectoryToolSelectionAccuracy` | Did the agent choose the right tools in the right order? |
 | `Faithfulness` | Is the response grounded in retrieved context? |
+| `SkillSelectionAccuracy` | Did the agent load the right skill for the request? |
+| `SkillInstructionFollowing` | Did the agent follow the loaded skill's required steps? |
 
 ---
 
@@ -165,7 +157,11 @@ python optimize.py --name HRAssistV1
 The AgentCore CLI supports the full evaluate → optimize loop. Install it:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### Run a quick evaluation on a session

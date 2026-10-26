@@ -109,7 +109,7 @@ os.environ["PYTHON_REPL_INTERACTIVE"] = "false"
 
 # Configuration
 REGION = "us-west-2"
-MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID = "global.anthropic.claude-opus-4-6-v1"
 
 # Initialize clients
 agentcore_client = boto3.client("bedrock-agentcore", region_name=REGION)

@@ -1,0 +1,131 @@
+# ══════════════════════════════════════════════════════════════════════
+# AgentCore payments — Pay for Secure Data (x402)
+#
+# Copy this file to `.env` and fill in values. The notebook's §2 seeds
+# `.env` from this template on first run and lists the keys you still
+# need to fill in.
+#
+# Or copy manually and edit by hand:
+#     cp env-sample.txt .env
+#
+# Empty values are filled in as you go:
+#   * `setup-roles.sh` writes the four IAM role ARNs.
+#   * §4 of the notebook writes Manager ARN, Connector ID, and the
+#     Credential Provider ARN.
+#   * §5 writes the Payment Instrument ID, Session ID, and wallet address.
+#
+# ── Wallet provider secret handoff ──
+# The Coinbase CDP keys are pasted into this file once. The notebook's §4
+# reads them to call `CreatePaymentCredentialProvider`, which hands them to
+# AgentCore Identity. The service stores them in AWS Secrets Manager under
+# AWS KMS encryption and surfaces only the secret ARN to your agent. The
+# agent runtime calls `GetResourcePaymentToken` at signing time and never
+# receives the raw secret.
+#
+# After §4 runs, the secrets in this file are no longer used at runtime.
+# `.env` is `.gitignore`-d so it is never committed; you can blank the
+# secret values once setup is complete.
+# ══════════════════════════════════════════════════════════════════════
+
+# ── AWS ──────────────────────────────────────────────────────────────
+# AgentCore payments is available in preview in these regions:
+#   us-east-1      — US East (N. Virginia)
+#   us-west-2      — US West (Oregon)
+#   eu-central-1   — Europe (Frankfurt)
+#   ap-southeast-2 — Asia Pacific (Sydney)
+# boto3 derives the control-plane and data-plane endpoints from the
+# region, so no endpoint URLs are needed here.
+AWS_REGION=us-west-2
+# AWS_PROFILE=default            # Uncomment to use a named AWS CLI profile
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+# ── IAM roles — created by test/integration/setup-roles.sh ───────────
+# setup-roles.sh creates four roles idempotently and writes the four ARNs
+# below back into this .env automatically:
+#     bash test/integration/setup-roles.sh
+# Leave empty on first run — setup-roles.sh fills these in with the real ARNs.
+CONTROL_PLANE_ROLE_ARN=
+MANAGEMENT_ROLE_ARN=
+PROCESS_PAYMENT_ROLE_ARN=
+RESOURCE_RETRIEVAL_ROLE_ARN=
+
+# ── Wallet provider credentials — Coinbase CDP ───────────────────────
+# coinbase.com/developer-platform → Project → API Keys and
+# Project → Wallet → Wallet Secret. Enable "Delegated signing" under
+# Project → Wallet → Embedded Wallets → Policies (project layer) before
+# first use; the per-wallet grant is completed in §5 via the Wallet Hub.
+COINBASE_API_KEY_ID=
+COINBASE_API_KEY_SECRET=
+COINBASE_WALLET_SECRET=
+
+# ── AgentCore payments state — populated by the notebook ─────────────
+# Leave empty on first run. §4 creates one Credential Provider, one
+# Manager, and one Connector. §5 creates one Instrument and one Session.
+MANAGER_ARN=
+PAYMENT_CONNECTOR_ID=
+CREDENTIAL_PROVIDER_ARN=
+PAYMENT_INSTRUMENT_ID=
+PAYMENT_SESSION_ID=
+WALLET_ADDRESS=
+
+# ── Payment instrument + session tuning ──────────────────────────────
+# Informational operator identifier used as the `userId` header on
+# CreatePaymentInstrument / CreatePaymentSession. §2 auto-generates a
+# fresh value if this is empty.
+USER_ID=
+
+# Email the embedded wallet links to. CreatePaymentInstrument requires
+# `linkedAccounts[{email:{emailAddress}}]`. It MUST be a REAL inbox you
+# control: the per-wallet delegated-signing grant is completed by signing
+# in to the Coinbase Wallet Hub with a one-time code sent here. A
+# placeholder like alex@example.com (reserved, non-deliverable) makes the
+# grant impossible. Use a real inbox you control (for example, a personal
+# or corporate email address).
+INSTRUMENT_EMAIL=
+
+# PAYMENT_INSTRUMENT_NETWORK: "ETHEREUM" settles USDC on Base for x402;
+# "SOLANA" settles on Solana. The t54 x402-secure and Heurist endpoints
+# are live services that settle on mainnet, so fund the wallet on the
+# settlement chain (Base) accordingly. See the README cost notice.
+PAYMENT_INSTRUMENT_NETWORK=ETHEREUM
+# Spending limit the operator authorises per session. USD amount. Keep this small —
+# every approved run settles two real payments (trust check + target call).
+PAYMENT_SESSION_MAX_SPEND_USD=1.0
+# 15–480 minutes; enforced by the service.
+PAYMENT_SESSION_EXPIRY_MINUTES=60
+
+# ── t54 x402-secure trust guardrail ──────────────────────────────────
+# The pre-payment trust signal. `check_x402_endpoint_trust` POSTs the
+# target endpoint URL here; the endpoint itself returns HTTP 402 and the
+# AgentCorePaymentsPlugin pays for the score.
+X402_SECURE_BASE_URL=https://x402-secure-api.t54.ai
+X402_SECURE_SCORE_ENDPOINT=/x402/tools/get_overall_score
+# Minimum overall_score (0–100) the target endpoint must clear before the
+# gateway allows a target payment.
+X402_TRUST_THRESHOLD=50
+# How long a successful trust result is reused within one request (seconds).
+X402_TRUST_CACHE_TTL_SECONDS=300
+# 1 = block the target call when trust state is missing/expired (recommended).
+X402_TRUST_FAIL_CLOSED=1
+
+# ── Live-run gates ───────────────────────────────────────────────────
+# The paid runs are OFF by default. Set to 1 (or true) ONLY after you have
+# completed both delegated-signing layers and funded the wallet — each
+# approved run settles REAL USDC twice (the t54 x402-secure trust check and
+# the target service call).
+RUN_LIVE=0          # §7: run the agent locally against the live services
+RUN_LIVE_RUNTIME=0  # §8: invoke the deployed AgentCore Runtime live
+
+# ── Registered target x402 service ───────────────────────────────────
+# The included target is the Heurist YahooFinanceAgent market-data endpoint.
+# Swap this to register a different target x402 service.
+HEURIST_YAHOO_FINANCE_BASE_URL=https://mesh.heurist.xyz/x402/agents/YahooFinanceAgent
+
+# ── Optional integration prerequisite gates (test/integration) ───────
+# Only used by test/integration/*. Leave RUN_AWS_X402_E2E=0 unless you are
+# intentionally running the gated live prerequisite checks.
+PAY_TO=
+PAYMENT_AMOUNT=
+MAX_PAYMENT_AMOUNT_USDC=0.25
+RUN_AWS_X402_E2E=0
+CONFIRM_AWS_ACCOUNT_ID=

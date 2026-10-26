@@ -22,3 +22,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Generated state and output files (contain account-specific ARNs)
+agent_state_*.json
+optimize_state_*.json
+insights_result.json

@@ -24,6 +24,7 @@ The UI opens at `http://localhost:6274`. The proxy server runs on port `6277`.
 ### Development Mode
 
 ```bash
+npm install
 npm run dev
 ```
 

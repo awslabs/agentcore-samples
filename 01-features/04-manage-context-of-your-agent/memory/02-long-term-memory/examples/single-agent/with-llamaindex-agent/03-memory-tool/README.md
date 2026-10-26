@@ -43,8 +43,8 @@ Memory search is exposed as a `FunctionTool` wrapping `search_long_term_memories
 ## See also
 
 - [AgentCore memory documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html)
-- Short-term counterparts: [`../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/`](../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/)
-- Built-in strategies primer: [`../../../01-built-in-strategies/`](../../../01-built-in-strategies/)
+- Short-term counterparts: [`../../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/`](../../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/)
+- Built-in strategies primer: [`../../../../01-built-in-strategies/`](../../../../01-built-in-strategies/)
 
 ## Running the Python Scripts
 

@@ -373,7 +373,7 @@ Resources:
           # the MCP server URL (synchronizationType=URL with IAM credential provider)
           - Effect: Allow
             Principal:
-              Service: bedrock-agentcore.amazonaws.com
+              Service: agent-registry.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: AgentRegistryAccess
@@ -383,10 +383,10 @@ Resources:
               # Registry: search and read records
               - Effect: Allow
                 Action:
-                  - bedrock-agentcore:ListRegistries
-                  - bedrock-agentcore:GetRegistry
-                  - bedrock-agentcore:SearchRegistryRecords
-                  - bedrock-agentcore:GetRegistryRecord
+                  - agent-registry:ListRegistries
+                  - agent-registry:GetRegistry
+                  - agent-registry:SearchDiscoverableRegistryRecords
+                  - agent-registry:GetRegistryRecord
                 Resource: "*"
               # Bedrock: invoke model
               # Cross-region inference profiles route to multiple regions,

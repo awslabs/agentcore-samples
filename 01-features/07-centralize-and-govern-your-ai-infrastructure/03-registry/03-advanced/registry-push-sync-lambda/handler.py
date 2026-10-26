@@ -23,8 +23,9 @@ Global env vars:
 import json
 import os
 import urllib.parse
-import requests
+
 import boto3
+import requests
 
 
 def get_bearer_token(account_id=None):
@@ -75,7 +76,7 @@ def _parse_sse_json(body):
     text = body if isinstance(body, str) else body.decode("utf-8")
     text = text.strip()
     # If it's plain JSON, parse directly
-    if text.startswith("{") or text.startswith("["):
+    if text.startswith(("{", "[")):
         return json.loads(text)
     # SSE format: lines like "event: message\ndata: {...}\n\n"
     for line in text.splitlines():
@@ -126,7 +127,7 @@ def call_tools_list(mcp_url, token):
     )
     init_resp.raise_for_status()
     session_id = init_resp.headers.get("Mcp-Session-Id")
-    init_result = _parse_sse_json(init_resp.text)  # noqa: F841 — parsed to validate response
+    init_result = _parse_sse_json(init_resp.text)
     print(f"MCP session initialized, session_id={session_id}")
 
     # Step 2: Call tools/list
@@ -191,7 +192,7 @@ def _find_record_by_mcp_url(client, registry_id, mcp_url):
             runtime_arn = decoded_url[idx + len(runtime_marker) :].split("/invocations")[0]
         else:
             runtime_arn = None
-    except Exception:
+    except Exception:  # noqa: BLE001
         runtime_arn = None
 
     records = client.list_registry_records(registryId=registry_id)
@@ -214,9 +215,8 @@ def _find_record_by_mcp_url(client, registry_id, mcp_url):
                 recordId=record_id,
             )
             descriptors = full.get("descriptors", {})
-            mcp_desc = descriptors.get("mcp", {})
-            server_schema = mcp_desc.get("server", {})
-            inline = server_schema.get("inlineContent", "")
+            mcp_desc = descriptors.get("mcpServer", {})
+            inline = mcp_desc.get("data", "")
 
             # Match on runtime ARN (decoded or encoded) in the server schema
             if runtime_arn and runtime_arn in inline:
@@ -227,10 +227,10 @@ def _find_record_by_mcp_url(client, registry_id, mcp_url):
             if encoded_arn and encoded_arn in inline:
                 print(f"Found matching record (by encoded ARN): {record_id} ({rec.get('name', '?')})")
                 return record_id, full
-            if mcp_url in inline or urllib.parse.unquote(mcp_url).rstrip("?qualifier=DEFAULT") in inline:
+            if mcp_url in inline or urllib.parse.unquote(mcp_url).replace("?qualifier=DEFAULT", "") in inline:
                 print(f"Found matching record (by URL): {record_id} ({rec.get('name', '?')})")
                 return record_id, full
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Error checking record {record_id}: {e}")
             continue
 
@@ -241,12 +241,9 @@ def _find_record_by_mcp_url(client, registry_id, mcp_url):
 
 
 def _get_registry_client():
-    """Create a boto3 client for the AWS Agent Registry control plane.
-
-    Uses the bedrock-agentcore-control service model included in boto3 >= 1.42.87.
-    """
+    """Create a boto3 client for the AWS Agent Registry control plane."""
     region = os.environ.get("AWS_REGION", "us-west-2")
-    return boto3.client("bedrock-agentcore-control", region_name=region)
+    return boto3.client("agent-registry-control", region_name=region)
 
 
 def _normalize_tools(tools):
@@ -266,9 +263,9 @@ def _normalize_tools(tools):
 def _get_registry_tools_from_record(full_record):
     """Get the current tools from an AWS Agent Registry record's tools definition."""
     descriptors = full_record.get("descriptors", {})
-    mcp_desc = descriptors.get("mcp", {})
-    tools_def = mcp_desc.get("tools", {})
-    inline = tools_def.get("inlineContent", "")
+    mcp_desc = descriptors.get("mcpServer", {})
+    tools_def = mcp_desc.get("additionalData", {}).get("tools", {})
+    inline = tools_def.get("data", "")
     if not inline:
         return []
     try:
@@ -335,12 +332,17 @@ def sync_registry_if_changed(mcp_tools, mcp_url):
         recordId=record_id,
         descriptors={
             "optionalValue": {
-                "mcp": {
+                "mcpServer": {
                     "optionalValue": {
-                        "tools": {
+                        "additionalData": {
                             "optionalValue": {
-                                "protocolVersion": "2025-06-18",
-                                "inlineContent": tool_schema_content,
+                                "tools": {
+                                    "optionalValue": {
+                                        "data": {
+                                            "optionalValue": tool_schema_content,
+                                        },
+                                    }
+                                }
                             }
                         }
                     }

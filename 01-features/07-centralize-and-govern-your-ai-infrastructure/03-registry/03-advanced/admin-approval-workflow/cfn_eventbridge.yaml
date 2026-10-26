@@ -103,8 +103,8 @@ Resources:
           print(f"Boto3 version: {boto3.__version__}")
 
           # boto3 clients for the two AgentCore Registry planes
-          registry_cp_client = boto3.client("bedrock-agentcore-control", region_name=REGION)
-          registry_dp_client = boto3.client("bedrock-agentcore", region_name=REGION)
+          registry_cp_client = boto3.client("agent-registry-control", region_name=REGION)
+          registry_dp_client = boto3.client("agent-registry", region_name=REGION)
 
           def get_registry_record(registry_id, record_id):
               resp = registry_cp_client.get_registry_record(registryId=registry_id, recordId=record_id)
@@ -126,7 +126,7 @@ Resources:
   
               print(f"Search parameters: {kwargs}")
               
-              resp = registry_dp_client.search_registry_records(**kwargs)
+              resp = registry_dp_client.search_discoverable_registry_records(**kwargs)
               metadata = resp.get("ResponseMetadata", {})
               aws_request_id = metadata['HTTPHeaders']['x-amzn-requestid']
               timestamp = metadata.get("HTTPHeaders", {}).get("date", datetime.now(timezone.utc).isoformat())
@@ -304,14 +304,14 @@ Resources:
                   print(f"Warning: could not write scan findings to DynamoDB: {e}")
 
               approve_cmd = (
-                  f"aws bedrock-agentcore-control update-registry-record-status"
+                  f"aws agent-registry-control update-registry-record-status"
                   f" --registry-id {registryId}"
                   f" --record-id {registryRecordId}"
                   f" --status APPROVED"
                   f" --status-reason 'Admin approved via CLI'"
               )
               reject_cmd = (
-                  f"aws bedrock-agentcore-control update-registry-record-status"
+                  f"aws agent-registry-control update-registry-record-status"
                   f" --registry-id {registryId}"
                   f" --record-id {registryRecordId}"
                   f" --status REJECTED"
@@ -319,7 +319,7 @@ Resources:
               )
 
               getdetails_cmd = (
-                  f"aws bedrock-agentcore-control get-registry-record"
+                  f"aws agent-registry-control get-registry-record"
                   f" --registry-id {registryId}"
                   f" --record-id {registryRecordId}"
               )
@@ -376,53 +376,53 @@ Resources:
               - Sid: AllowCreatingNewRegistry
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:CreateRegistry
+                  - agent-registry:CreateRegistry
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:*
               - Sid: AllowListingAllRegistries
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:ListRegistries
+                  - agent-registry:ListRegistries
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:*
               - Sid: AllowGetUpdateDeleteRegistry
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:GetRegistry
-                  - bedrock-agentcore:UpdateRegistry
-                  - bedrock-agentcore:DeleteRegistry
+                  - agent-registry:GetRegistry
+                  - agent-registry:UpdateRegistry
+                  - agent-registry:DeleteRegistry
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*
               - Sid: AllowCreatingRegistryRecords
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:CreateRegistryRecord
+                  - agent-registry:CreateRegistryRecord
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*
               - Sid: AllowListingRecordsInRegistry
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:ListRegistryRecords
+                  - agent-registry:ListRegistryRecords
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*
               - Sid: AllowGettingRecordsInRegistry
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:GetRegistryRecord
+                  - agent-registry:GetRegistryRecord
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*/record/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*/record/*
               - Sid: AllowApproveRejectDeprecateRecords
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:UpdateRegistryRecord
+                  - agent-registry:UpdateRegistryRecord
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*/record/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*/record/*
               - Sid: SearchRegistryRecords
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:SearchRegistryRecords
+                  - agent-registry:SearchDiscoverableRegistryRecords
                 Resource:
-                  - !Sub arn:aws:bedrock-agentcore:us-west-2:${AWS::AccountId}:registry/*
+                  - !Sub arn:aws:agent-registry:us-west-2:${AWS::AccountId}:registry/*
         - PolicyName: S3ScanReportsAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -491,10 +491,10 @@ Resources:
   RegistryStateChangeRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub ${Prefix}-bedrock-agentcore-registry-pending-approval
+      Name: !Sub ${Prefix}-agent-registry-pending-approval
       EventPattern:
         source:
-          - aws.bedrock-agentcore
+          - aws.agent-registry
         detail-type:
           - "Registry Record State changed to Pending Approval"
         detail:

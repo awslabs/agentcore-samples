@@ -1,0 +1,65 @@
+/* ============================================================
+   Insurance Claims Demo — Global Styles
+   Design direction: analytical, precise, Bloomberg-inspired
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* --- Palette --- */
+  --color-bg: #f8f9fb;
+  --color-bg-elevated: #ffffff;
+  --color-bg-surface: #f0f1f5;
+  --color-bg-hover: #e8e9ef;
+  --color-border: #d8dae3;
+  --color-border-subtle: #e8e9ef;
+
+  --color-text-primary: #1a1d27;
+  --color-text-secondary: #5a5e72;
+  --color-text-muted: #8b8fa3;
+
+  --color-accent: #5b6abf;
+  --color-accent-hover: #4a58a8;
+  --color-accent-subtle: rgba(91, 106, 191, 0.08);
+
+  --color-success: #16a34a;
+  --color-warning: #ea580c;
+  --color-danger: #dc2626;
+
+  /* --- Typography --- */
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* --- Spacing --- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* --- Shadows --- */
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+
+  /* --- Transitions --- */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}

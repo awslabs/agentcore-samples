@@ -1,0 +1,23 @@
+{
+  "name": "@sample/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CDK stack: AgentCore Gateway + Lambda service-catalog target + IAM + ECR",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "cdk": "cdk",
+    "deploy": "cdk deploy --require-approval never",
+    "synth": "cdk synth"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.262.0",
+    "constructs": "10.7.1"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1132.1"
+  }
+}

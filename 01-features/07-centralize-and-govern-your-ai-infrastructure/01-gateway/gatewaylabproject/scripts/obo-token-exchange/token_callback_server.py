@@ -102,10 +102,11 @@ def wait_for_server_ready(timeout=30) -> bool:
 
 
 class TokenCallbackServer:
-    def __init__(self, tenant_id: str, client_id: str, client_secret: str):
+    def __init__(self, tenant_id: str, client_id: str, client_secret: str, scope: str):
         self.tenant_id = tenant_id
         self.client_id = client_id
         self.client_secret = client_secret
+        self.scope = scope
         self.app = FastAPI()
         self._setup_routes()
 
@@ -147,7 +148,7 @@ class TokenCallbackServer:
                     "redirect_uri": redirect_uri,
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
-                    "scope": f"api://{self.client_id}/access_as_user openid profile email",
+                    "scope": self.scope,
                 },
             )
             tokens = r.json()
@@ -177,17 +178,33 @@ def main():
     parser.add_argument("tenant_id")
     parser.add_argument("client_id")
     parser.add_argument("client_secret")
+    parser.add_argument(
+        "--scope",
+        default=None,
+        help=(
+            "OAuth scope to request. Defaults to the auth client's own "
+            "api://<client-id>/access_as_user. Set this to a downstream "
+            "resource scope (e.g. api://<runtime-client-id>/access_as_user) "
+            "to mint a token with that resource's audience."
+        ),
+    )
     args = parser.parse_args()
 
-    server = TokenCallbackServer(args.tenant_id, args.client_id, args.client_secret)
+    scope = args.scope or f"api://{args.client_id}/access_as_user openid profile email"
+
+    server = TokenCallbackServer(
+        args.tenant_id, args.client_id, args.client_secret, scope
+    )
     host = "0.0.0.0" if _is_workshop_studio() else "127.0.0.1"  # nosec B104
     callback_url = get_callback_url()
+
+    from urllib.parse import quote
 
     authorize_url = (
         f"https://login.microsoftonline.com/{args.tenant_id}/oauth2/v2.0/authorize?"
         f"client_id={args.client_id}&response_type=code&"
-        f"redirect_uri={__import__('urllib.parse', fromlist=['quote']).quote(callback_url)}&"
-        f"scope={__import__('urllib.parse', fromlist=['quote']).quote(f'api://{args.client_id}/access_as_user openid profile email')}"
+        f"redirect_uri={quote(callback_url)}&"
+        f"scope={quote(scope)}"
     )
 
     print(f"\n🚀 Token callback server on {host}:{PORT}")

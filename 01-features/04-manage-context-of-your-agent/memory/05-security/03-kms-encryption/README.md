@@ -56,16 +56,25 @@ The same flow expressed with the AWS CLI:
 #     bedrock-agentcore.amazonaws.com to assume it, and whose permissions
 #     include kms:GenerateDataKey and kms:Decrypt on the key.
 #   - The key policy must allow that role to use the key.
-export KMS_KEY_ARN=arn:aws:kms:$AWS_REGION:<acct>:key/<key-id>
-export MEMORY_EXECUTION_ROLE_ARN=arn:aws:iam::<acct>:role/AgentCoreMemoryRole
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export KMS_KEY_ARN="arn:aws:kms:$AWS_REGION:$ACCOUNT_ID:key/<your-cmk-key-id>"
+export MEMORY_EXECUTION_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/AgentCoreMemoryRole"
 
 # 1. Create memory with CMK encryption
-aws bedrock-agentcore-control create-memory \
-  --region "$AWS_REGION" --name "KMSCli-$(date +%s)" \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
+  --region "$AWS_REGION" --name "KMSCli_$(date +%s)" \
   --event-expiry-duration 30 --client-token "$(uuidgen)" \
   --encryption-key-arn "$KMS_KEY_ARN" \
-  --memory-execution-role-arn "$MEMORY_EXECUTION_ROLE_ARN"
-export MEMORY_ID=<id>
+  --memory-execution-role-arn "$MEMORY_EXECUTION_ROLE_ARN" \
+  --query 'memory.id' --output text)
+
+
+# Wait until ACTIVE. CreateEvent is rejected while the memory is still CREATING,
+# and creation takes a couple of minutes. This also exits on FAILED, so it cannot hang.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Verify the key is recorded on the resource
 aws bedrock-agentcore-control get-memory \

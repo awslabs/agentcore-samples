@@ -13,9 +13,8 @@ Usage:
 import json
 import os
 import subprocess
-import urllib.request
 import urllib.error
-
+import urllib.request
 
 # GitHub API base
 GITHUB_API = "https://api.github.com/repos"
@@ -115,11 +114,11 @@ def load_skill_from_registry(search_response, record_index=0, base_dir="./skills
         (skill_dir, skill_md_content) tuple.
     """
     record = search_response["registryRecords"][record_index]
-    agent_skills = record["descriptors"]["agentSkills"]
+    agent_skills = record["descriptors"]["agentSkillsDefinition"]
 
     # 1. Parse skill content
-    skill_md_content = agent_skills["skillMd"]["inlineContent"]
-    skill_def = json.loads(agent_skills["skillDefinition"]["inlineContent"])
+    skill_md_content = agent_skills["additionalData"]["skillMd"]["data"]
+    skill_def = json.loads(agent_skills["data"])
 
     # Extract the skill name from SKILL.md frontmatter (the `name:` field)
     # This MUST match the directory name for the AgentSkills plugin
@@ -152,7 +151,7 @@ def load_skill_from_registry(search_response, record_index=0, base_dir="./skills
 
         contents = _fetch_github_contents(owner, repo, remote_path, branch)
         for item in contents:
-            # Skip SKILL.md since we already wrote it from inlineContent
+            # Skip SKILL.md since we already wrote it from registry data
             if item["name"].upper() == "SKILL.MD":
                 continue
 

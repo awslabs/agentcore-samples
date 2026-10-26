@@ -1,7 +1,8 @@
 """MCP Order Management Server — exposes order CRUD tools via FastMCP."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
@@ -19,7 +20,7 @@ def create_order(customer_name: str, product: str, quantity: int) -> str:
     return (
         f"Order created successfully. Order ID: {order_id}, Customer: {customer_name}, "
         f"Product: {product}, Quantity: {quantity}, Status: PENDING, "
-        f"Created: {datetime.now().isoformat()}"
+        f"Created: {datetime.now(tz=timezone.utc).isoformat()}"
     )
 
 
@@ -34,7 +35,7 @@ def get_order(order_id: str) -> str:
 
 
 @mcp.tool()
-def update_order(order_id: str, quantity: int = None, product: str = None) -> str:
+def update_order(order_id: str, quantity: int | None = None, product: str | None = None) -> str:
     """Update an existing order's quantity or product."""
     updates = []
     if quantity is not None:
@@ -44,7 +45,7 @@ def update_order(order_id: str, quantity: int = None, product: str = None) -> st
     return (
         f"Order {order_id} updated successfully. "
         f"Changes: {', '.join(updates) if updates else 'None'}, "
-        f"Updated: {datetime.now().isoformat()}"
+        f"Updated: {datetime.now(tz=timezone.utc).isoformat()}"
     )
 
 
@@ -53,7 +54,7 @@ def cancel_order(order_id: str, reason: str) -> str:
     """Cancel an existing order with a reason."""
     return (
         f"Order {order_id} cancelled successfully. Reason: {reason}, "
-        f"Status: CANCELLED, Cancelled: {datetime.now().isoformat()}"
+        f"Status: CANCELLED, Cancelled: {datetime.now(tz=timezone.utc).isoformat()}"
     )
 
 

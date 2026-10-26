@@ -15,16 +15,20 @@ episode has CONCLUDED. Completion uses next-turn lookahead, so each episode belo
 ends with an explicit closing turn AND a trailing turn confirming it — a final
 turn with nothing after it reads as "still in progress" and never extracts.
 
-Two surfaces:
-    python episodic.py boto3
-    python episodic.py sdk
+Two ways to run it:
+    python episodic.py boto3    # the raw AWS API, no SDK. Shows exactly what's on the wire.
+    python episodic.py sdk      # the AgentCore SDK (MemorySessionManager). The recommended way.
+
+The `sdk` path needs bedrock-agentcore 1.14 or newer, because it retrieves with
+`search_long_term_memories(namespace_path=...)`. Older versions only accept the
+deprecated `namespace_prefix=`.
 
 Add `--cleanup` to delete the memory resource at the end. By default the
 memory is kept so you can inspect it; the script prints the memoryId.
 
 SDK note: `MemoryClient.add_episodic_strategy()` exists, but here we pass the
 raw `episodicMemoryStrategy` shape to `create_memory_and_wait` so the boto3 and
-SDK surfaces stay 1:1. The episodic strategy REQUIRES a `reflectionConfiguration`
+sdk paths stay 1:1. The episodic strategy REQUIRES a `reflectionConfiguration`
 whose namespace is the same as (or a prefix of) the episode namespace —
 omitting it makes CreateMemory fail.
 
@@ -49,7 +53,7 @@ ACTOR_ID = "user-alex"
 # Episodic runs a 3-step pipeline (Extraction -> Consolidation -> Reflection) and
 # only emits records once it detects a COMPLETED episode, so it is much slower than
 # single-step semantic extraction — allow ~15-20 min, not seconds. This is an UPPER
-# BOUND: both surfaces poll and return as soon as the first record appears, so a fast
+# BOUND: both paths poll and return as soon as the first record appears, so a fast
 # extraction won't wait the full duration.
 EXTRACTION_WAIT_SECONDS = 1200
 # Episodes are scoped per actor+session (more nested); reflections roll up to the
@@ -89,9 +93,9 @@ QUERIES = ["memory leak debugging", "notifications design decisions"]
 
 
 def _wait_for_records_boto3(data, memory_id, namespace_path, query, *, max_wait, poll=30) -> bool:
-    """Bounded poll for the first extracted record (boto3 surface).
+    """Bounded poll for the first extracted record (boto3 path).
 
-    boto3 has no built-in extraction waiter, and this surface deliberately
+    boto3 has no built-in extraction waiter, and this path deliberately
     demonstrates the raw data plane without the SDK. So we mirror what the SDK's
     MemoryClient.wait_for_memories does — poll RetrieveMemoryRecords until a record
     appears or the deadline passes — returning early instead of a blind sleep.
@@ -127,10 +131,10 @@ def run_with_boto3(cleanup: bool = False) -> None:
                 "episodicMemoryStrategy": {
                     "name": "Episodes",
                     "description": "Meaningful interaction sequences",
-                    "namespaces": [EPISODE_NAMESPACE_TEMPLATE],
+                    "namespaceTemplates": [EPISODE_NAMESPACE_TEMPLATE],
                     # REQUIRED for episodic — the Reflection step writes cross-episode
                     # insights here; namespace must be the same-as/prefix-of the episode ns.
-                    "reflectionConfiguration": {"namespaces": [REFLECTION_NAMESPACE_TEMPLATE]},
+                    "reflectionConfiguration": {"namespaceTemplates": [REFLECTION_NAMESPACE_TEMPLATE]},
                 }
             }
         ],
@@ -179,24 +183,31 @@ def run_with_boto3(cleanup: bool = False) -> None:
         print(f"\n[boto3] Keeping memory {memory_id} (pass --cleanup to delete)")
 
 
-# === AgentCore SDK ====================================================
+# === AgentCore SDK — high-level MemorySessionManager =================
 def run_with_sdk(cleanup: bool = False) -> None:
-    from bedrock_agentcore.memory import MemoryClient
+    # MemoryClient owns the control plane (create/delete the resource);
+    # MemorySessionManager is data-plane only, so we create the memory with
+    # MemoryClient, then drive events + retrieval through the manager / its sessions.
+    from bedrock_agentcore.memory import MemoryClient, MemorySessionManager
+    from bedrock_agentcore.memory.constants import ConversationalMessage, MessageRole
 
     client = MemoryClient(region_name=REGION)
-    # Pass the raw episodic strategy shape (MemoryClient.add_episodic_strategy() also
-    # exists if you prefer the helper). `reflectionConfiguration` is REQUIRED; the
-    # reflection namespace must be the same-as/prefix-of the episode namespace.
+    # Episodic REQUIRES reflectionConfiguration. The reflection namespace must be
+    # the same as (or a prefix of) the episode namespaceTemplates; otherwise
+    # CreateMemory throws a ValidationException. namespaces is deprecated — both
+    # the strategy and its reflection block use namespaceTemplates.
     memory = client.create_memory_and_wait(
-        name=f"EpisodicSdk_{int(time.time())}",
-        description="Episodic strategy (SDK)",
+        name=f"EpisodicSession_{int(time.time())}",
+        description="Episodic strategy (SDK session API)",
         strategies=[
             {
                 "episodicMemoryStrategy": {
                     "name": "Episodes",
                     "description": "Meaningful interaction sequences",
                     "namespaceTemplates": [EPISODE_NAMESPACE_TEMPLATE],
-                    "reflectionConfiguration": {"namespaceTemplates": [REFLECTION_NAMESPACE_TEMPLATE]},
+                    "reflectionConfiguration": {
+                        "namespaceTemplates": [REFLECTION_NAMESPACE_TEMPLATE],
+                    },
                 }
             }
         ],
@@ -205,42 +216,45 @@ def run_with_sdk(cleanup: bool = False) -> None:
     memory_id = memory["id"]
     print(f"[sdk] Created memory {memory_id}")
 
+    # Each scenario is its own session. add_turns takes ConversationalMessage
+    # objects and maps to a single create_event. Episodes only consolidate once
+    # the interaction has a clear conclusion, so each scenario closes with an
+    # explicit ending plus a confirming turn (see DEBUG_TURNS / DESIGN_TURNS).
+    manager = MemorySessionManager(memory_id=memory_id, region_name=REGION)
     for session_id, turns in [
-        (f"debug-sdk-{int(time.time())}", DEBUG_TURNS),
-        (f"design-sdk-{int(time.time())}", DESIGN_TURNS),
+        (f"debug-session-{int(time.time())}", DEBUG_TURNS),
+        (f"design-session-{int(time.time())}", DESIGN_TURNS),
     ]:
-        client.create_event(
-            memory_id=memory_id,
-            actor_id=ACTOR_ID,
-            session_id=session_id,
-            messages=[(text, role) for role, text in turns],
-        )
+        session = manager.create_memory_session(actor_id=ACTOR_ID, session_id=session_id)
+        session.add_turns(messages=[ConversationalMessage(text, MessageRole[role]) for role, text in turns])
 
+    # Retrieve at the actor level so the search spans BOTH the session-scoped
+    # episodes (/episodes/{actorId}/{sessionId}/) and the actor-scoped reflections
+    # (/episodes/{actorId}/). search_long_term_memories lives on the manager itself
+    # (it is memory-scoped, not bound to one session). namespace_path = hierarchical
+    # prefix match; namespace= would be exact-match only.
     namespace_path = ACTOR_NAMESPACE_TEMPLATE.format(actorId=ACTOR_ID)
+
+    # Episodic extraction + reflection is slow (often 15-20 min) and its exact
+    # timing varies, so poll instead of sleeping a fixed amount: ask for the first
+    # records and return as soon as they appear, up to a cap. A blind sleep either
+    # wastes time or, if it ends too early, prints nothing even though the records
+    # surface moments later.
     print(f"[sdk] Waiting up to {EXTRACTION_WAIT_SECONDS}s for extraction + reflection...")
-    # Use the SDK's built-in waiter instead of a blind sleep: it polls retrieve_memories
-    # and returns as soon as the first record lands. Reliable here because the namespace
-    # starts EMPTY (fresh memory) — its docstring notes it's unreliable on populated
-    # namespaces and will be deprecated once the API exposes extraction status.
-    # wait_for_memories takes `namespace` (matched by prefix), so the actor-level path
-    # spans the session-scoped episodes underneath it.
-    if client.wait_for_memories(
-        memory_id=memory_id,
-        namespace=namespace_path,
-        test_query=QUERIES[0],
-        max_wait=EXTRACTION_WAIT_SECONDS,
-        poll_interval=30,
-    ):
-        print("[sdk] Episode records available.")
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    while time.time() < deadline:
+        if manager.search_long_term_memories(query=QUERIES[0], namespace_path=namespace_path, top_k=1):
+            print("[sdk] Episode records available.")
+            break
+        time.sleep(30)
     else:
         print(f"[sdk] No records after {EXTRACTION_WAIT_SECONDS}s (episodic can lag; try again later).")
 
     for query in QUERIES:
-        # namespace_path = hierarchical retrieval: returns both the session-scoped
-        # episodes and the actor-scoped reflections under /episodes/{actorId}/.
-        hits = client.retrieve_memories(memory_id=memory_id, namespace_path=namespace_path, query=query, top_k=3)
+        hits = manager.search_long_term_memories(query=query, namespace_path=namespace_path, top_k=3)
         print(f"\n[sdk] Q: {query}")
         for h in hits:
+            # Each hit is a MemoryRecord (dict-like): content.text + score.
             print(f"  - {h['content']['text']}")
 
     if cleanup:
@@ -253,13 +267,13 @@ def run_with_sdk(cleanup: bool = False) -> None:
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "--cleanup"]
     cleanup = "--cleanup" in sys.argv[1:]
-    surface = args[0] if args else "boto3"
-    if surface == "boto3":
+    mode = args[0] if args else "boto3"
+    if mode == "boto3":
         run_with_boto3(cleanup=cleanup)
-    elif surface == "sdk":
+    elif mode == "sdk":
         run_with_sdk(cleanup=cleanup)
     else:
-        print(f"Unknown surface {surface!r}. Use boto3 | sdk.", file=sys.stderr)
+        print(f"Unknown mode {mode!r}. Use boto3 | sdk.", file=sys.stderr)
         sys.exit(1)
 
 

@@ -124,14 +124,14 @@ For carrying out AWS Agent registry operations for publisher workflow, create an
       "Sid": "RegistryPublisherPermission",
       "Effect": "Allow",
       "Action": [
-        "bedrock-agentcore:ListRegistries",
-        "bedrock-agentcore:GetRegistry",
-        "bedrock-agentcore:CreateRegistryRecord",
-        "bedrock-agentcore:ListRegistryRecords",
-        "bedrock-agentcore:GetRegistryRecord",
-        "bedrock-agentcore:DeleteRegistryRecord",
-        "bedrock-agentcore:UpdateRegistryRecord",
-        "bedrock-agentcore:SubmitRegistryRecordForApproval"
+        "agent-registry:ListRegistries",
+        "agent-registry:GetRegistry",
+        "agent-registry:CreateRegistryRecord",
+        "agent-registry:ListRegistryRecords",
+        "agent-registry:GetRegistryRecord",
+        "agent-registry:DeleteRegistryRecord",
+        "agent-registry:UpdateRegistryRecord",
+        "agent-registry:SubmitRegistryRecordForApproval"
       ],
       "Resource": ["*"]
     }

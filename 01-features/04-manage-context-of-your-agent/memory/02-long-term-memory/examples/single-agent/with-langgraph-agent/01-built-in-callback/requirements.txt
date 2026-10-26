@@ -1,0 +1,10 @@
+boto3
+bedrock_agentcore
+# LangGraph v1.0+: create_agent and the middleware system live in the `langchain`
+# package (>=1.0). `langgraph` is still required as the underlying runtime/checkpointer.
+langchain>=1.0
+langgraph>=1.0
+langchain_aws
+langchain_core
+# AgentCore Memory integrations for LangGraph: AgentCoreMemorySaver + AgentCoreMemoryStore
+langgraph-checkpoint-aws

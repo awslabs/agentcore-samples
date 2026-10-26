@@ -1,0 +1,146 @@
+{
+  "name": "ReceiptsAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "receiptsagent",
+      "description": "Receipts IDP agent — dual-agent extraction with a model degradation ladder (Phase 1: stub)",
+      "build": "Container",
+      "entrypoint": "main.py",
+      "codeLocation": "app/receiptsagent",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "instrumentation": { "enableOtel": true },
+      "envVars": [
+        { "name": "_AWS_XRAY_DAEMON_ADDRESS", "value": "localhost:2000" },
+        { "name": "_AWS_XRAY_TRACING_ENABLED", "value": "true" },
+        { "name": "OTEL_METRICS_EXPORTER", "value": "none" },
+        { "name": "OTEL_TRACES_EXPORTER", "value": "otlp" },
+        { "name": "OTEL_EXPORTER_OTLP_PROTOCOL", "value": "http/protobuf" },
+        { "name": "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED", "value": "true" },
+        { "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" },
+        { "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "value": "true" },
+        { "name": "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", "value": "true" },
+        { "name": "OTEL_PROPAGATORS", "value": "baggage,tracecontext,xray" },
+        { "name": "AGENT_MODEL_ID", "value": "global.anthropic.claude-opus-4-8" }
+      ]
+    }
+  ],
+  "evaluators": [
+    {
+      "name": "ReceiptsExtractionQualityEvaluator",
+      "level": "SESSION",
+      "description": "LLM-as-judge for receipts extraction quality: OCR field accuracy, totals reconciliation, category plausibility, routing correctness, and honest confidence (spec §5.6).",
+      "config": {
+        "llmAsAJudge": {
+          "model": "global.anthropic.claude-sonnet-4-6",
+          "instructions": "Given the following receipts agent session context:\n\n{context}\n\nTool calls made:\n{actual_tool_trajectory}\n\nEvaluate the receipts IDP agent for: 1) accurate extraction of merchant, date, currency, and line items from the OCR; 2) whether subtotal + tax + tip reconcile to total; 3) plausible expense category for the merchant and user; 4) correct routing (auto-persist via save_expense only when clearly correct, otherwise human_review); 5) honest confidence. A run on a degraded ladder rung (L2 down) is EXPECTED to route to review — judge the routing as correct, not as a failure. Rate the overall receipts-processing quality.",
+          "ratingScale": {
+            "numerical": [
+              { "label": "Poor", "definition": "Major extraction errors or wrong routing", "value": 1 },
+              { "label": "Below Average", "definition": "Some errors or missing fields", "value": 2 },
+              { "label": "Average", "definition": "Correct extraction but reconciliation or routing could be tighter", "value": 3 },
+              { "label": "Good", "definition": "Accurate extraction with correct routing and clear reasoning", "value": 4 },
+              { "label": "Excellent", "definition": "Perfect extraction, reconciliation, category, and routing", "value": 5 }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "onlineEvalConfigs": [
+    {
+      "name": "ReceiptsEvaluation",
+      "agent": "receiptsagent",
+      "evaluators": [
+        "Builtin.Helpfulness",
+        "Builtin.Correctness",
+        "Builtin.ToolSelectionAccuracy"
+      ],
+      "samplingRate": 100,
+      "description": "Online evaluation for the receipts agent (3 built-in metrics, scored continuously from production spans)."
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "ReceiptsGateway",
+      "description": "MCP Gateway for receipts tools: user profile, recent expenses, merchant lookup, save expense, human review",
+      "targets": [
+        {
+          "name": "get-user-profile",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_GET_USER_PROFILE",
+            "toolSchemaFile": "lambdas/schemas/get_user_profile.json"
+          }
+        },
+        {
+          "name": "get-recent-expenses",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_GET_RECENT_EXPENSES",
+            "toolSchemaFile": "lambdas/schemas/get_recent_expenses.json"
+          }
+        },
+        {
+          "name": "lookup-merchant",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_LOOKUP_MERCHANT",
+            "toolSchemaFile": "lambdas/schemas/lookup_merchant.json"
+          }
+        },
+        {
+          "name": "save-expense",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_SAVE_EXPENSE",
+            "toolSchemaFile": "lambdas/schemas/save_expense.json"
+          }
+        },
+        {
+          "name": "human-review",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_HUMAN_REVIEW",
+            "toolSchemaFile": "lambdas/schemas/human_review.json"
+          }
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-west-2.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+          "allowedClients": ["PLACEHOLDER_CLIENT_ID"]
+        }
+      },
+      "enableSemanticSearch": true,
+      "exceptionLevel": "DEBUG",
+      "policyEngineConfiguration": {
+        "policyEngineName": "ReceiptsPolicyEngine",
+        "mode": "ENFORCE"
+      }
+    }
+  ],
+  "policyEngines": [
+    {
+      "name": "ReceiptsPolicyEngine",
+      "description": "Cedar policy engine for receipts authorization — allow-all + selective deny on save-expense over a threshold (routes to human review)",
+      "policies": [
+        {
+          "name": "AllowAllTools",
+          "description": "Permit all tool calls on the receipts gateway for authenticated agents",
+          "statement": "permit(principal, action, resource is AgentCore::Gateway);",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        },
+        {
+          "name": "BlockExcessiveExpense",
+          "description": "Forbid SAVING an expense with total >= $2,000; the agent routes it to human_review instead. Guard order matters (Cedar && short-circuits): (1) `context has input` FIRST so the statement is valid for actions like AgentCore::Action::Http that have no input (omitting this fails policy-engine CREATE with 'attribute input not found' — IGNORE_ALL_FINDINGS does NOT suppress it); (2) `!(context.input has reason)` scopes to the save path (human_review requires reason, save_expense has none), so the review fallback is never blocked; (3) the >= 2000 threshold. NOTE: integer totals get exact semantics; a fractional total makes the decimal-vs-Long comparison error and (forbid-fails-closed) routes that save to review too — a safe, conservative 'when in doubt, review' outcome (spec §5.5).",
+          "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has input && !(context.input has reason) && context.input has total && context.input.total >= 2000 };",
+          "validationMode": "IGNORE_ALL_FINDINGS"
+        }
+      ]
+    }
+  ]
+}

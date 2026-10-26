@@ -141,11 +141,23 @@ else
   LAYER_BUILD_DIR="${SCRIPT_DIR}/layer_build"
   LAYER_ZIP="${SCRIPT_DIR}/${LAYER_KEY}"
 
+  # Detect available pip command (works on macOS, CloudShell, EC2, etc.)
+  if command -v pip &> /dev/null; then
+    PIP_CMD="pip"
+  elif command -v pip3 &> /dev/null; then
+    PIP_CMD="pip3"
+  elif python3 -m pip --version &> /dev/null; then
+    PIP_CMD="python3 -m pip"
+  else
+    echo "ERROR: pip is not installed. Please install pip and try again." >&2
+    exit 1
+  fi
+
   [[ -d "${LAYER_BUILD_DIR}" ]] && rm -rf "${LAYER_BUILD_DIR}"
   mkdir -p "${LAYER_BUILD_DIR}/python"
   WHEELS_DIR="${SCRIPT_DIR}/../../python_wheels"
-  pip install cisco-ai-a2a-scanner==1.0.1 -t "${LAYER_BUILD_DIR}/python/" --quiet
-  pip install boto3 -t "${LAYER_BUILD_DIR}/python/" --ignore-installed --upgrade
+  ${PIP_CMD} install cisco-ai-a2a-scanner==1.0.1 -t "${LAYER_BUILD_DIR}/python/" --quiet
+  ${PIP_CMD} install boto3 -t "${LAYER_BUILD_DIR}/python/" --ignore-installed --upgrade
 
   cd "${LAYER_BUILD_DIR}"
   zip -r "${LAYER_ZIP}" python/ > /dev/null 2>&1

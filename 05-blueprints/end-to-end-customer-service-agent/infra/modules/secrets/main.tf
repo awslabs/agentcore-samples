@@ -74,8 +74,7 @@ resource "aws_iam_role_policy" "rotation_lambda_secrets" {
           aws_secretsmanager_secret.cognito_client_secret.arn,
           aws_secretsmanager_secret.zendesk_credentials.arn,
           aws_secretsmanager_secret.langfuse_credentials.arn,
-          aws_secretsmanager_secret.gateway_credentials.arn,
-          aws_secretsmanager_secret.tavily_key.arn
+          aws_secretsmanager_secret.gateway_credentials.arn
         ]
       }
     ]
@@ -176,23 +175,4 @@ resource "aws_secretsmanager_secret_rotation" "gateway_credentials" {
   }
 }
 
-resource "aws_secretsmanager_secret" "tavily_key" {
-  name       = "tavily_key"
-  kms_key_id = aws_kms_key.secrets_key.key_id
-}
-
-resource "aws_secretsmanager_secret_version" "tavily_key" {
-  secret_id = aws_secretsmanager_secret.tavily_key.id
-  secret_string = jsonencode({
-    tavily_key = var.tavily_api_key
-  })
-}
-
-resource "aws_secretsmanager_secret_rotation" "tavily_key" {
-  secret_id           = aws_secretsmanager_secret.tavily_key.id
-  rotation_lambda_arn = aws_lambda_function.rotation_lambda.arn
-  
-  rotation_rules {
-    automatically_after_days = 90
-  }
-}
+# Tavily secret removed — replaced by AgentCore Web Search Tool (managed connector)

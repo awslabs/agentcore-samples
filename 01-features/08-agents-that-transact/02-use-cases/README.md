@@ -30,6 +30,39 @@ An AI agent built with **Strands Agents** autonomously pays for metered access t
 - Self-contained: `pay_for_api.py` provisions the AgentCore payments stack inline and deploys the seller from an included CDK app
 - AgentCore Runtime deploy with CloudWatch Transaction Search and the GenAI Observability dashboard
 
+---
+
+### [Pay for Secure Data (x402)](pay-for-x402-secure-data/)
+
+An AI agent built with **Strands Agents** pays for a registered x402 service **only after** an independent trust check clears a guardrail. Before paying the target service, the agent pays **t54 x402-secure** to risk-score that exact endpoint; only if the score clears the configured threshold (and the endpoint is not flagged as a scam) does it pay the target and return the content. The included target is the **Heurist YahooFinanceAgent** market-data endpoint. Both paid calls run through `AgentCorePaymentsPlugin`, and a deterministic `TrustedX402ServiceGateway` enforces the trust decision in code — not by the model's prompt.
+
+**Highlights**
+- Pre-payment trust gate: t54 x402-secure scores the target endpoint before the agent pays it
+- Deterministic, code-enforced guardrail blocks missing, stale, low-score, scam, or URL-mismatched trust before any target payment (fail-closed)
+- `AgentCorePaymentsPlugin` handles the HTTP 402 → `ProcessPayment` → retry for both the trust check and the target call
+- Per-invocation payment context — one AgentCore Runtime deployment serves many users and sessions
+- Four IAM roles enforce separation of duties; session spending limits enforced by AgentCore payments, not by agent prompt instructions
+- Self-contained: `pay_for_x402_secure_data.py` provisions the AgentCore payments stack inline; AgentCore Runtime deploy via CDK with CloudWatch observability
+
+---
+
+### [Pay for Research with an OpenAI Agent](pay-for-research-with-openai-agent/)
+
+A three-agent research team built with the **OpenAI Agents SDK** and **OpenAI
+models on Amazon Bedrock** evaluates public evidence first, then buys one
+application-approved premium source only when a material gap remains.
+AgentCore Payments enforces the session budget and expiry outside model context.
+
+**Highlights**
+- OpenAI Agents SDK manager pattern with a research lead and two bounded specialists
+- Only the premium specialist receives the application-bound payment tool
+- Framework-agnostic AgentCore Payments integration for OpenAI Agents SDK
+- Exact-host and public-address checks before merchant access
+- One signing attempt per source per run, with explicit handling of unknown payment outcomes
+- Optional human approval before a paid tool call
+- Three runnable Python scripts for session creation, research, and cleanup
+- Current GA AgentCore Payments APIs and SDK
+
 ## Running the Use Cases
 
 Pay for Content (Browser Use):
@@ -53,6 +86,34 @@ bash test/integration/setup-roles.sh   # once per account
 bash test/integration/setup-env.sh     # generates USER_ID
 python pay_for_api.py
 ```
+
+Pay for Secure Data (x402):
+
+```bash
+cd pay-for-x402-secure-data
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp env-sample.txt .env                 # fill in Coinbase CDP creds, INSTRUMENT_EMAIL, CONFIRM_AWS_ACCOUNT_ID
+bash test/integration/setup-roles.sh   # once per account
+bash test/integration/setup-env.sh     # generates USER_ID
+python pay_for_x402_secure_data.py
+```
+
+Pay for Research with an OpenAI Agent:
+
+```bash
+cd pay-for-research-with-openai-agent
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.sample .env
+python create_payment_session.py --budget 0.01 --expiry-minutes 15
+export PAYMENT_SESSION_ID=<printed-session-id>
+python pay_for_research.py "Assess the material near-term drivers and risks for AMZN." --require-payment-approval
+python cleanup_payment_session.py
+```
+
+Use the appropriate management or execution AWS profile for each command, as
+described in the [research sample walkthrough](pay-for-research-with-openai-agent/).
 
 ---
 

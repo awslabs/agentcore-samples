@@ -175,16 +175,16 @@ def delete_execution_role(role_name: str) -> None:
     policy_arn = f"arn:aws:iam::{account_id}:policy/BrowserOSActPolicy"
     try:
         iam.detach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        print(f"Could not detach role policy: {e}")
     try:
         iam.delete_role_policy(RoleName=role_name, PolicyName="BrowserOSActPolicy")
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        print(f"Could not delete inline policy: {e}")
     try:
         iam.delete_role(RoleName=role_name)
         print(f"Deleted IAM role: {role_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Could not delete role: {e}")
 
 
@@ -276,7 +276,7 @@ def main():
     print(f"Created browser: {browser_id}")
 
     # Setup endpoint and credentials
-    base_url = f"https://bedrock-agentcore.{region}.amazonaws.com/"
+    base_url = f"https://bedrock-agentcore.{region}.amazonaws.com"
     credentials, _ = get_credentials(region)
 
     # Start session
@@ -296,7 +296,7 @@ def main():
         try:
             cp_client.delete_browser(browserId=browser_id)
             print(f"Deleted browser: {browser_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Could not delete browser: {e}")
         delete_execution_role(role_name)
     else:

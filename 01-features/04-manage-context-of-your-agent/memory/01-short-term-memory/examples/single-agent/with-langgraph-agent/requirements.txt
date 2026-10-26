@@ -1,6 +1,10 @@
 boto3
+bedrock_agentcore
+# `langchain` (>=1.0) is required: these scripts import `langchain.chat_models` and
+# `langchain.tools`. It is NOT pulled in by langgraph or langchain-aws.
+langchain>=1.0
+langgraph>=1.0
 langchain_aws
 langchain_core
-langgraph
-bedrock_agentcore
+# AgentCore Memory checkpointer: AgentCoreMemorySaver
 langgraph-checkpoint-aws

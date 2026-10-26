@@ -1,0 +1,19 @@
+# ── Secrets & environment ──
+.env
+.env.local
+.env.*.local
+
+# ── Python ──
+__pycache__/
+*.pyc
+.venv/
+.venv-*/
+
+# ── AgentCore CLI-generated (per-runtime scaffolding) ──
+# The CLI drops these under $AGENT_RUNTIME_NAME/ on `agentcore create`.
+oboUc2EntraAgent/
+# Match any future runtime folder created with the same naming convention.
+oboUc2*/
+
+# ── Backup files from sed etc. ──
+*.bak

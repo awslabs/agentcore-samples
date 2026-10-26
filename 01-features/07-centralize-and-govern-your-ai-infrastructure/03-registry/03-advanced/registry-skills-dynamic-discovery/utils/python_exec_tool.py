@@ -44,6 +44,7 @@ def python_exec(code: str, working_dir: str = "") -> str:
                 text=True,
                 cwd=cwd,
                 timeout=120,
+                check=False,
             )
             output = result.stdout + result.stderr
             return output.strip() or "Code executed successfully (no output)."
@@ -52,7 +53,7 @@ def python_exec(code: str, working_dir: str = "") -> str:
 
     except subprocess.TimeoutExpired:
         return "Error: Code execution timed out after 120 seconds."
-    except Exception:
+    except Exception:  # noqa: BLE001
         return f"Error:\n{traceback.format_exc()}"
 
 
@@ -77,10 +78,11 @@ def run_shell(command: str, working_dir: str = "") -> str:
             text=True,
             cwd=working_dir or None,
             timeout=120,
+            check=False,
         )
         output = result.stdout + result.stderr
         return output.strip() or "Command executed successfully (no output)."
     except subprocess.TimeoutExpired:
         return "Error: Command timed out after 120 seconds."
-    except Exception:
+    except Exception:  # noqa: BLE001
         return f"Error:\n{traceback.format_exc()}"

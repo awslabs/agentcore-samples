@@ -1,0 +1,75 @@
+openapi: '3.0.3'
+info:
+  title: 'AgentCore Runtime HTTP Target'
+  description: >
+    Example OpenAPI schema for an HTTP runtime target following the
+    AgentCore Runtime HTTP protocol contract.
+  version: '1.0.0'
+paths:
+  /:
+    post:
+      operationId: 'invokeAgent'
+      summary: 'Invoke the agent with a prompt'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvocationRequest'
+      responses:
+        '200':
+          description: 'Successful agent response'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvocationResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: 'Server-sent events stream for streaming responses'
+        '401':
+          description: 'Unauthorized - OAuth authentication failed'
+        '500':
+          description: 'Internal server error'
+components:
+  schemas:
+    InvocationRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          description: 'The user prompt or input to the agent'
+    InvocationResponse:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          $ref: '#/components/schemas/Result'
+    Result:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          description: 'The role of the message author'
+          enum:
+            - assistant
+            - user
+        content:
+          type: array
+          description: 'Array of content blocks in the response'
+          items:
+            $ref: '#/components/schemas/ContentBlock'
+    ContentBlock:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: 'The text content of the response'

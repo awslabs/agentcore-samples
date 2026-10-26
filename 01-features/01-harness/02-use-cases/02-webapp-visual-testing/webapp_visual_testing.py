@@ -42,8 +42,9 @@ import boto3
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from utils.client import get_agentcore_client, get_agentcore_control_client
+from utils.harness import poll_harness_status
 from utils.iam import create_harness_role, delete_harness_role
-from utils.client import get_agentcore_control_client, get_agentcore_client
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="Automated Visual QA with Harness")
@@ -99,14 +100,12 @@ try:
     print(f"Harness ID:  {harness_id}")
     print(f"Harness ARN: {harness_arn}")
 
-    # Wait for READY before updating (update_harness rejects while CREATING)
+    # Wait for READY before updating (update_harness rejects while CREATING).
+    # This has to wait for the real status rather than a fixed number of polls:
+    # the old ceiling could expire while the harness was still CREATING, and the
+    # update below then failed with a ConflictException.
     print("Waiting for harness to become READY...")
-    for i in range(24):
-        status = control.get_harness(harnessId=harness_id)["harness"]["status"]
-        print(f"  [{i + 1}] {status}")
-        if status == "READY":
-            break
-        time.sleep(5)
+    poll_harness_status(control, harness_id)
 
     print(f"Attaching Node.js container ({NODE_CONTAINER})...")
     control.update_harness(
@@ -114,13 +113,8 @@ try:
         environmentArtifact={"optionalValue": {"containerConfiguration": {"containerUri": NODE_CONTAINER}}},
     )
 
-    for i in range(24):
-        status = control.get_harness(harnessId=harness_id)["harness"]["status"]
-        print(f"  [{i + 1}] {status}")
-        if status == "READY":
-            print("✅ Harness ready with Node.js container")
-            break
-        time.sleep(5)
+    poll_harness_status(control, harness_id)
+    print("✅ Harness ready with Node.js container")
 
     # ── Part 2: Prepare the Environment ──────────────────────────────────────
     print("\n=== Part 2: Prepare Environment ===")
@@ -276,7 +270,7 @@ Then list the screenshots: ls -la /tmp/screenshot_*.png"""
                 f.write(img_bytes)
             screenshots_saved.append(local_path)
             print(f"✅ Screenshot {i}: {len(img_bytes):,} bytes → {local_path}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a bad screenshot must not abort the rest
             print(f"⚠️  Screenshot {i}: decode failed — {e}")
 
     print(f"\nRetrieved {len(screenshots_saved)} screenshots")
@@ -292,8 +286,8 @@ finally:
             try:
                 control.delete_harness(harnessId=harness_id)
                 print(f"Deleted harness: {harness_id}")
-            except Exception as e:
-                print(f"Warning: {e}")
+            except Exception as e:  # noqa: BLE001 - cleanup must continue regardless
+                print(f"Warning: could not delete harness {harness_id}: {e}")
         delete_harness_role()
         print("Done.")
     else:

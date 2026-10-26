@@ -1,94 +1,86 @@
-"""Trigger Lambda: S3 email → EventBridge → Invoke Agent Runtime with JWT auth.
+"""Trigger Lambda: S3 email → EventBridge → Invoke Agent Runtime (fire-and-forget).
 
-Since the Runtime uses CUSTOM_JWT auth, we can't use boto3 SDK (SigV4).
-Instead, we get a Cognito M2M token and invoke via HTTPS with [REDACTED_TOKEN]
+The Runtime uses IAM (SigV4) authentication. This Lambda's execution role has
+bedrock-agentcore:InvokeAgentRuntime permission granted by CDK.
+
+The invocation is fire-and-forget: the Lambda sends the signed HTTPS request
+and confirms the Runtime accepted it (HTTP 200), but does NOT wait for the full
+streaming response. The agent processes the claim asynchronously — results are
+written to DynamoDB by the agent's tool calls, not returned to this Lambda.
 """
 
-import base64
 import json
+import logging
 import os
 import re
 import urllib.parse
 import urllib.request
 
 import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.session import Session as BotocoreSession
+
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 s3 = boto3.client("s3")
 
 # Environment variables (set by CDK)
 RUNTIME_ARN = os.environ.get("AGENTCORE_RUNTIME_ARN", "")
-COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
-COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
-COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET", "")
-COGNITO_TOKEN_ENDPOINT = os.environ.get("COGNITO_TOKEN_ENDPOINT", "")
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 
 
-def get_cognito_token():
-    """Get M2M JWT from Cognito using client_credentials flow."""
-    token_endpoint = COGNITO_TOKEN_ENDPOINT
+def invoke_runtime_async(payload_dict):
+    """Invoke the AgentCore Runtime via HTTPS with SigV4 auth (fire-and-forget).
 
-    creds = base64.b64encode(f"{COGNITO_CLIENT_ID}:{COGNITO_CLIENT_SECRET}".encode()).decode()
-    data = urllib.parse.urlencode(
-        {
-            "grant_type": "client_credentials",
-            "scope": "agentcore/invoke",
-        }
-    ).encode()
-
-    req = urllib.request.Request(
-        token_endpoint,
-        data=data,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"Basic {creds}",
-        },
-    )
-
-    if not token_endpoint.startswith("https://"):
-        raise ValueError(f"Only HTTPS URLs are permitted: {token_endpoint}")
-    with urllib.request.urlopen(req) as resp:  # nosec B310
-        token_data = json.loads(resp.read())
-
-    return token_data["access_token"]
-
-
-def invoke_runtime_with_jwt(token, payload_dict):
-    """Invoke the AgentCore Runtime via HTTPS with JWT bearer token."""
+    Sends the request and reads only the first chunk to confirm acceptance.
+    Does NOT buffer the full streaming response — the agent processes
+    asynchronously and writes results to DynamoDB via tool calls.
+    """
     escaped_arn = urllib.parse.quote(RUNTIME_ARN, safe="")
     url = f"https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{escaped_arn}/invocations"
 
     payload = json.dumps(payload_dict).encode()
 
-    req = urllib.request.Request(
-        url,
+    # Sign the request with SigV4 using the Lambda's execution role credentials
+    session = BotocoreSession()
+    credentials = session.get_credentials().get_frozen_credentials()
+
+    aws_request = AWSRequest(
+        method="POST",
+        url=url,
         data=payload,
         headers={
-            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         },
     )
+    SigV4Auth(credentials, "bedrock-agentcore", REGION).add_auth(aws_request)
 
-    # Buffer streaming SSE response into clean text
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers=dict(aws_request.headers),
+    )
+
+    # Fire-and-forget: open the connection, confirm HTTP 200, read first few
+    # lines to verify the agent started, then close without waiting for completion.
+    # Timeout covers the Runtime cold start (~30-60s on first invocation).
     if not url.startswith("https://"):
         raise ValueError(f"Only HTTPS URLs are permitted: {url}")
-    content_parts = []
-    with urllib.request.urlopen(req, timeout=120) as resp:  # nosec B310
-        for line in resp:
-            decoded = line.decode("utf-8").strip()
-            if not decoded:
-                continue
-            if decoded.startswith("data: "):
-                chunk = decoded[6:]
-                # Remove surrounding quotes from JSON-encoded strings
-                if chunk.startswith('"') and chunk.endswith('"'):
-                    chunk = json.loads(chunk)  # proper JSON unescape
-                content_parts.append(chunk)
-            elif decoded.startswith("{") and "error" in decoded:
-                # Error response
-                content_parts.append(f"\n[ERROR] {decoded}\n")
 
-    return "".join(content_parts)
+    with urllib.request.urlopen(req, timeout=65) as resp:  # nosec B310  # 65s covers cold start
+        status = resp.status
+        # Read up to 5 lines to confirm the agent started streaming
+        preview_lines = []
+        for i, line in enumerate(resp):
+            if i >= 5:
+                break
+            decoded = line.decode("utf-8").strip()
+            if decoded:
+                preview_lines.append(decoded)
+
+    return status, preview_lines
 
 
 def parse_email(content):
@@ -144,9 +136,24 @@ def handler(event, context):
     if claimant_email:
         payload["claimant_email"] = claimant_email
 
-    # Get JWT and invoke runtime via HTTPS
-    token = get_cognito_token()
-    result = invoke_runtime_with_jwt(token, payload)
+    # Fire-and-forget: invoke Runtime and confirm it accepted the request.
+    # The agent processes asynchronously — results go to DynamoDB via tool calls.
+    status, preview = invoke_runtime_async(payload)
 
-    print(f"Agent response for {key}: {result[:1000]}")
-    return {"statusCode": 200, "body": result}
+    logger.info(
+        "Runtime accepted claim from %s (HTTP %d). Preview: %s",
+        key,
+        status,
+        " | ".join(preview[:3]),
+    )
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps(
+            {
+                "message": "Claim submitted for processing",
+                "source": f"s3://{bucket}/{key}",
+                "runtime_status": status,
+            }
+        ),
+    }

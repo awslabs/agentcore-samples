@@ -1,0 +1,50 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Mock downstream API (public echo)",
+    "version": "1.0.0",
+    "description": "OpenAPI spec that AgentCore Gateway exposes as an MCP tool. The Gateway performs OBO #2 (T_gateway -> T_downstream) and then calls this endpoint with the exchanged token as the Bearer credential. In production this would be your own resource server that validates the token's scope, audience, and issuer; for this training example we call httpbin.org/anything, a public echo service that returns the entire incoming request as JSON. That echoes back the OBO-exchanged token so learners can see it with their own eyes."
+  },
+  "servers": [
+    {
+      "url": "https://httpbin.org",
+      "description": "Public HTTP echo service. Any Bearer token is accepted (no server-side validation); the whole point is for httpbin to reflect what the Gateway sent."
+    }
+  ],
+  "paths": {
+    "/anything": {
+      "get": {
+        "operationId": "callDownstreamApi",
+        "summary": "Call the mock downstream API on the user's behalf",
+        "description": "Invokes the mock downstream API. The Gateway performs OBO #2 to mint a fresh access token scoped for the downstream API (downstream.access custom scope on Okta's default authorization server), then calls this endpoint with that token as the Bearer credential. The response echoes the request back as JSON, including the Authorization header so you can inspect the exchanged token that the Gateway forwarded.",
+        "responses": {
+          "200": {
+            "description": "Echoed request. `headers.Authorization` contains the OBO-exchanged Bearer token the Gateway sent. `url` is the URL httpbin received. `origin` is the source IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "args": {
+                      "type": "object",
+                      "description": "Query string parameters (empty for this call)."
+                    },
+                    "headers": {
+                      "type": "object",
+                      "description": "All HTTP headers the endpoint received, including Authorization with the OBO-exchanged token.",
+                      "additionalProperties": {"type": "string"}
+                    },
+                    "method": {"type": "string", "example": "GET"},
+                    "origin": {"type": "string", "description": "Source IP of the caller (the Gateway's egress IP)."},
+                    "url": {"type": "string", "description": "The URL httpbin received."}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Unauthorized. Not returned by httpbin.org/anything (which accepts anything) — listed for completeness so learners know real APIs typically enforce this."}
+        }
+      }
+    }
+  }
+}

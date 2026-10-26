@@ -1,0 +1,57 @@
+{
+  "name": "aws-agent-registry-migration",
+  "version": "0.1.0",
+  "description": "Migrate AWS Agent Registry records to the new version of Registry, with a report of every record that moved",
+  "license": "Apache-2.0",
+  "keywords": [
+    "aws",
+    "agent-registry",
+    "bedrock-agentcore",
+    "migration"
+  ],
+  "bin": {
+    "agent-registry-migration": "dist/cli/index.js"
+  },
+  "main": "dist/cli/index.js",
+  "files": [
+    "dist/",
+    "glue/extract.py",
+    "glue/transform_load.py",
+    "glue/common/build_wheel.py",
+    "glue/common/pyproject.toml",
+    "glue/common/migration_common/",
+    "config/migration.example.json",
+    "config/migration.customer-managed-role.example.json",
+    "cdk.json",
+    "README.md",
+    "docs/"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc && npm run build:executable",
+    "build:executable": "node -e \"require('node:fs').chmodSync('dist/cli/index.js', 0o755)\"",
+    "test": "python3 -m unittest discover -s glue/common/tests -p 'test_*.py'",
+    "check": "npm run build && python3 -m compileall -q glue && npm test && node tools/verify_cli_modes.js",
+    "build:lib": "python3 glue/common/build_wheel.py --outdir build/glue-lib",
+    "verify:lib": "npm run build:lib && python3 tools/verify_wheel.py build/glue-lib",
+    "verify:fingerprint": "npm run build && npm pack --silent >/dev/null && cdk synth -c config=config/migration.example.json >/dev/null && python3 tools/verify_replay_fingerprint.py --clean",
+    "synth": "npm run build && cdk synth",
+    "benchmark": "python3 tools/benchmark_load_concurrency.py",
+    "prepack": "npm run build",
+    "cdk": "cdk",
+    "verify:cli": "npm run build && node tools/verify_cli_modes.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "aws-cdk": "2.1131.0",
+    "aws-cdk-lib": "2.261.0",
+    "cdk-nag": "2.38.2",
+    "constructs": "10.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3"
+  }
+}

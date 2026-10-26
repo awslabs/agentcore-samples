@@ -1,0 +1,9 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env.local
+
+# Local clones and test artifacts (not part of this repo)
+agent-toolkit-for-aws/

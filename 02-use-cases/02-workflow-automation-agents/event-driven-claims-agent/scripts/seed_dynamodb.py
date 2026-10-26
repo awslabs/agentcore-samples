@@ -2,12 +2,40 @@
 """Seed DynamoDB tables with sample data."""
 
 import argparse
+
 import boto3
 
 
+def get_table_name(region, stack_name="AgentCore-ClaimsAgent-dev", logical_suffix="Policies"):
+    """Discover the actual DynamoDB table name from the deployed stack.
+
+    Falls back to the hardcoded convention if the stack isn't found.
+    """
+    cfn = boto3.client("cloudformation", region_name=region)
+    try:
+        resp = cfn.list_stack_resources(StackName=stack_name)
+        for r in resp.get("StackResourceSummaries", []):
+            if r["ResourceType"] == "AWS::DynamoDB::Table" and logical_suffix in r["LogicalResourceId"]:
+                return r["PhysicalResourceId"]
+    except Exception:
+        pass
+    # Fallback: try common naming patterns
+    dynamodb = boto3.client("dynamodb", region_name=region)
+    try:
+        tables = dynamodb.list_tables()["TableNames"]
+        for t in tables:
+            if "Policies" in t and "Claims" in t.lower():
+                return t
+    except Exception:
+        pass
+    return "ClaimsAgent-Policies"
+
+
 def seed_policies(region):
+    table_name = get_table_name(region)
+    print(f"  Table: {table_name}")
     dynamodb = boto3.resource("dynamodb", region_name=region)
-    table = dynamodb.Table("ClaimsAgent-Policies")
+    table = dynamodb.Table(table_name)
     policies = [
         {
             "policy_number": "POL-12345",
@@ -58,7 +86,7 @@ def seed_policies(region):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--region", default="eu-west-1")
+    parser.add_argument("--region", default="us-west-2")
     args = parser.parse_args()
     print(f"🌱 Seeding DynamoDB in {args.region}...")
     seed_policies(args.region)

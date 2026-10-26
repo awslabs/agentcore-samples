@@ -1,8 +1,9 @@
 import os
+
+import uvicorn
+from fastapi import FastAPI
 from strands import Agent
 from strands.multiagent.a2a import A2AServer
-from fastapi import FastAPI
-import uvicorn
 
 agent = Agent(
     system_prompt="""

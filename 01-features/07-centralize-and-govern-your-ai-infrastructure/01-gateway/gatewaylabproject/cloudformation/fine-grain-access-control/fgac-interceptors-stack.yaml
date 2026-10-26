@@ -209,21 +209,50 @@ Resources:
                   scopes = claims.get("scope", "")
 
                   result = body.get("result", {})
+
+                  # tools/list responses expose the tools directly on the result
+                  # (or under structuredContent). Semantic search
+                  # (x_amz_bedrock_agentcore_search) returns its matches the same
+                  # way, but some gateway versions also embed the tool list as a
+                  # JSON string in result.content[0].text. Filter every shape we
+                  # find so users only ever see tools their scopes allow —
+                  # whether they discovered them via tools/list or search.
+                  filtered_body = body.copy()
+
+                  # Shape 1: result.tools (plain tools/list)
                   tools = result.get("tools", [])
-                  if not tools:
-                      tools = result.get("structuredContent", {}).get("tools", [])
-
                   if tools:
-                      filtered_tools = filter_tools_by_scope(tools, scopes)
-                      print(f"[FGAC] Filtered {len(tools)} -> {len(filtered_tools)} tools")
+                      filtered = filter_tools_by_scope(tools, scopes)
+                      print(f"[FGAC] Filtered result.tools {len(tools)} -> {len(filtered)}")
+                      filtered_body["result"]["tools"] = filtered
 
-                      filtered_body = body.copy()
-                      if "result" in filtered_body:
-                          if "structuredContent" in filtered_body["result"]:
-                              filtered_body["result"]["structuredContent"]["tools"] = filtered_tools
-                          else:
-                              filtered_body["result"]["tools"] = filtered_tools
-                      body = filtered_body
+                  # Shape 2: result.structuredContent.tools (tools/list + search)
+                  sc_tools = result.get("structuredContent", {}).get("tools", [])
+                  if sc_tools:
+                      filtered = filter_tools_by_scope(sc_tools, scopes)
+                      print(f"[FGAC] Filtered structuredContent.tools {len(sc_tools)} -> {len(filtered)}")
+                      filtered_body["result"]["structuredContent"]["tools"] = filtered
+
+                  # Shape 3: result.content[*].text is a JSON string carrying
+                  # {"tools": [...]} — the semantic-search payload shape. Parse,
+                  # filter, and re-serialize; leave non-JSON text untouched.
+                  content = result.get("content", [])
+                  if isinstance(content, list):
+                      for item in content:
+                          if not isinstance(item, dict) or item.get("type") != "text":
+                              continue
+                          text = item.get("text", "")
+                          try:
+                              payload = json.loads(text)
+                          except (ValueError, TypeError):
+                              continue
+                          if isinstance(payload, dict) and isinstance(payload.get("tools"), list):
+                              before = len(payload["tools"])
+                              payload["tools"] = filter_tools_by_scope(payload["tools"], scopes)
+                              print(f"[FGAC] Filtered search content.tools {before} -> {len(payload['tools'])}")
+                              item["text"] = json.dumps(payload)
+
+                  body = filtered_body
 
               except Exception as e:
                   print(f"[FGAC] Response filter error: {e}")

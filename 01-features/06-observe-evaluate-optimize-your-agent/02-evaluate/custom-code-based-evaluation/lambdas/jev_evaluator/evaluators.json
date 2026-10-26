@@ -1,0 +1,66 @@
+{
+  "evaluators": [
+    {
+      "name": "JevGroundedness",
+      "level": "TRACE",
+      "description": "Jev checks that every fact in the agent response is supported by tool results.",
+      "question": {
+        "type": "noul",
+        "instructions": "The state is one turn of an HR assistant conversation. `current_turn.tool_calls` holds every tool the assistant called in this turn and the exact result each tool returned. Is every factual claim in `current_turn.assistant_response` (PTO balances, dates, policy terms, benefit amounts, pay figures, request IDs) supported by those tool results or by earlier turns in `previous_turns`? General courtesy, clarifying questions, and statements that information is unavailable are not factual claims.",
+        "criteria": {
+          "true": "Every factual claim in the response matches a tool result or an earlier turn, or the response makes no factual claims.",
+          "false": "The response states at least one fact that no tool result supports, or contradicts a tool result."
+        }
+      },
+      "labels": {
+        "true": "Grounded",
+        "false": "Ungrounded"
+      }
+    },
+    {
+      "name": "JevHelpfulness",
+      "level": "TRACE",
+      "description": "Jev rates how far the agent response moves the employee toward their goal.",
+      "question": {
+        "type": "score",
+        "instructions": "The state is one turn of an HR assistant conversation. Rate how much `current_turn.assistant_response` moves the employee toward the goal expressed in `current_turn.user` and `previous_turns`. Judge from the employee's point of view.",
+        "criteria": [
+          "Not helpful: ignores the request, obstructs it, or leads the employee in the wrong direction.",
+          "Slightly helpful: related to the request but leaves the employee mostly where they started.",
+          "Helpful: answers the request or completes the requested action.",
+          "Very helpful: answers completely and anticipates the obvious next step without padding."
+        ]
+      },
+      "labels": [
+        "Not Helpful",
+        "Slightly Helpful",
+        "Helpful",
+        "Very Helpful"
+      ]
+    },
+    {
+      "name": "JevGoalCompletion",
+      "level": "SESSION",
+      "description": "Jev decides whether the employee's goals were achieved across the whole session.",
+      "question": {
+        "type": "choice",
+        "instructions": "The state is a complete HR assistant session in `turns`. Considering every goal the employee expressed, did the assistant achieve them by the end of the session? A goal counts as achieved only when the employee received a correct answer grounded in tool results, or the requested action was completed.",
+        "criteria": {
+          "achieved": "Every goal the employee expressed was achieved.",
+          "partially_achieved": "At least one goal was achieved and at least one was not.",
+          "not_achieved": "No goal the employee expressed was achieved."
+        }
+      },
+      "values": {
+        "achieved": 1.0,
+        "partially_achieved": 0.5,
+        "not_achieved": 0.0
+      },
+      "labels": {
+        "achieved": "Achieved",
+        "partially_achieved": "Partially Achieved",
+        "not_achieved": "Not Achieved"
+      }
+    }
+  ]
+}

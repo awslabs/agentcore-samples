@@ -53,7 +53,7 @@ AWS registry access — completely removing the need to manually copy and paste 
 
 1. Navigate to **Applications → APIs** in the Auth0 Dashboard
 2. Click **Create API**
-3. Set the **Identifier (Audience)** to: `https://bedrock-agentcore.us-west-2.amazonaws.com`
+3. Set the **Identifier (Audience)** to: `https://agent-registry.us-west-2.api.aws`
 4. Set **Signing Algorithm** to `RS256`
 5. Enable grant types: **Authorization Code, Refresh Token, Client Credentials**
 
@@ -79,7 +79,7 @@ cp .env.example .env
 After running Step 2 of the script (registry creation), note the registry ID and:
 1. In Auth0 Dashboard, navigate to **Applications → APIs** and create an API with the
    MCP endpoint URL as **Identifier**:
-   `https://bedrock-agentcore.us-west-2.amazonaws.com/registry/<REGISTRY_ID>/mcp`
+   `https://agent-registry.us-west-2.api.aws/registry/<REGISTRY_ID>/mcp`
 2. The `create_registry` helper in `seed_records.py` automatically adds this MCP URL
    to the registry's `allowedAudience` — no manual update needed in the code.
 
@@ -109,7 +109,7 @@ After the script prints the MCP URL, add it to `.kiro/settings/mcp.json`:
   "mcpServers": {
     "dcr-registry-server": {
       "type": "http",
-      "url": "https://bedrock-agentcore.us-west-2.amazonaws.com/registry/<REGISTRY_ID>/mcp/",
+      "url": "https://agent-registry.us-west-2.api.aws/registry/<REGISTRY_ID>/mcp/",
       "disabled": false
     }
   }

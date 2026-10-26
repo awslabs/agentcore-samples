@@ -1,0 +1,24 @@
+# Dependencies for the CLIENT side of this sample — deploy.py, invoke.py and
+# cleanup.py, which run on your machine.
+#
+# This is NOT the deployed artifact's dependency file. That one is
+# agent/requirements.txt, and it stays minimal (just `mcp`), because whatever is
+# in it gets vendored into the zip that ships to the EC2 instance.
+
+boto3>=1.43.65        # first version carrying the CapacityProvider APIs
+
+# invoke.py drives the deployed server with a real MCP client rather than
+# hand-rolled JSON-RPC over boto3, so the transport handles the Mcp-Session-Id
+# echo, the protocol-version header and SSE unwrapping.
+#
+# Lower bound 1.24.0: `mcp.client.streamable_http.streamable_http_client`, the
+# entry point that accepts a pre-built httpx client, first appears there — 1.20.0
+# has only the deprecated `streamablehttp_client`. Upper bound 2.0.0: mcp 2.x
+# switched its HTTP stack to `httpx2`, so the `httpx.Auth` SigV4 adapter in
+# invoke.py would no longer be the right type.
+mcp>=1.24.0,<2.0.0
+
+# Both arrive as mcp dependencies anyway; listed because invoke.py imports them
+# itself — httpx for the SigV4 auth adapter, anyio to run the async session.
+httpx>=0.27
+anyio>=4.5

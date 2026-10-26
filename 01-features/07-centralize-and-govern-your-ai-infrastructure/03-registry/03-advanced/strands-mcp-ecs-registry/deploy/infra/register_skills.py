@@ -8,7 +8,7 @@ Safe to re-run: skips skill names that already exist (by checking list_registry_
 
 Usage:
     python register_skills.py \\
-        --registry-arn arn:aws:bedrock-agentcore:us-east-1:123:registry/abc123 \\
+        --registry-arn arn:aws:agent-registry:us-east-1:123:registry/abc123 \\
         --region us-east-1 \\
         [--skill-name multi-quarter-trend-analysis]   # omit to register all new skills
 
@@ -73,9 +73,9 @@ def get_existing_skill_names(registry_client, registry_id: str) -> set[str]:
     try:
         resp = registry_client.list_registry_records(registryId=registry_id)
         for rec in resp.get("registryRecords", []):
-            if rec.get("descriptorType") == "AGENT_SKILLS":
+            if rec.get("recordType") == "SKILL":
                 existing.add(rec["name"])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Warning: could not list existing records: {e}")
     return existing
 
@@ -106,11 +106,11 @@ def register_skill(registry_client, registry_id: str, skill_name: str, skills_ro
         registryId=registry_id,
         name=skill_name,
         description=description,
-        descriptorType="AGENT_SKILLS",
+        recordType="SKILL",
         descriptors={
-            "agentSkills": {
-                "skillMd": {"inlineContent": skill_md},
-                "skillDefinition": {"inlineContent": json.dumps({"packages": []})},
+            "agentSkillsDefinition": {
+                "data": json.dumps({"packages": []}),
+                "additionalData": {"skillMd": {"data": skill_md}},
             }
         },
         recordVersion="1.0",
@@ -157,7 +157,7 @@ def main():
     skills_root = os.path.abspath(skills_root)
 
     session = Session(region_name=args.region)
-    registry_client = session.client("bedrock-agentcore-control")
+    registry_client = session.client("agent-registry-control")
 
     # Determine which skills to register
     to_register = [args.skill_name] if args.skill_name else NEW_SKILLS

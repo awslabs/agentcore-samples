@@ -1,24 +1,23 @@
 {
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
   "name": "gatewaylabproject",
   "version": 1,
   "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "gatewaylabproject"
+  },
   "runtimes": [],
   "memories": [],
-  "credentials": [
-    {
-      "authorizerType": "OAuthCredentialProvider",
-      "name": "fgac_mcp_server-oauth",
-      "discoveryUrl": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_fMrBxq4vp/.well-known/openid-configuration",
-      "vendor": "CustomOauth2",
-      "managed": true,
-      "usage": "inbound"
-    }
-  ],
+  "knowledgeBases": [],
+  "credentials": [],
   "evaluators": [],
   "onlineEvalConfigs": [],
   "agentCoreGateways": [],
   "policyEngines": [],
   "configBundles": [],
   "abTests": [],
-  "httpGateways": []
+  "harnesses": [],
+  "datasets": [],
+  "payments": []
 }

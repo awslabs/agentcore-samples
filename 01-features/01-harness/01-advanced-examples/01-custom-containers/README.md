@@ -36,10 +36,15 @@ By default, harness runs on Amazon Linux 2023 with Python. Custom containers let
                 │
                 ▼
         [Firecracker microVM]
-        - node, npm, full Node.js ecosystem
-        - Agent can install packages, run servers, use curl
+        - Whatever the image ships (e.g. node + npm, or the Go toolchain)
+        - Agent can install packages and run servers
         - Same session ID = same VM state persists
 ```
+
+> **Only what the image ships is available.** Minimal base images omit tools you
+> may take for granted: `python:3.12-slim` has neither `curl` nor `wget`, and
+> `golang:1.24` has no `file`. Prefer language built-ins (Node's `http`, Python's
+> `urllib`) over shelling out, or install the tool first.
 
 ## Sample Prompts
 
@@ -52,8 +57,11 @@ By default, harness runs on Amazon Linux 2023 with Python. Custom containers let
 **Prompt (node/npm)**: "Install chalk and write a colorful banner script."
 **Expected Behavior**: Agent runs `npm install chalk`, writes `colors.js`, executes it showing colored output.
 
+**Prompt (python)**: "Write a Python HTTP server on port 3000 that returns JSON with the current time. Test it, then kill the server."
+**Expected Behavior**: Agent creates `/tmp/server.py` using `http.server`, starts it in background, makes a request with `urllib` (the `python:3.12-slim` image has no `curl` or `wget`), shows JSON output, kills server.
+
 **Prompt (go/cross-compile)**: "Cross-compile for linux/amd64 and show the file info."
-**Expected Behavior**: Agent sets `GOOS=linux GOARCH=amd64`, runs `go build -o goserver_linux_amd64`, shows file with `file` command.
+**Expected Behavior**: Agent sets `GOOS=linux GOARCH=amd64`, runs `go build -o goserver_linux_amd64`, shows the size with `ls -lh` and the architecture with `readelf -h` (the `golang:1.24` image has no `file` binary).
 
 ## Key Concepts
 
@@ -76,10 +84,14 @@ By default, harness runs on Amazon Linux 2023 with Python. Custom containers let
 
 ## AgentCore CLI
 
-Custom container configuration is supported via the AgentCore CLI (preview channel):
+Custom container configuration is supported via the AgentCore CLI:
 
 ```bash
-npm install -g @aws/agentcore@preview
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 agentcore create --name mycontaineragent --model-provider bedrock
 ```
 

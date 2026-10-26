@@ -30,7 +30,7 @@ Each VPC is created with three subnet types:
 - **[Docker](https://docs.docker.com/engine/install/)**
 - **[AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html)**
 - **[TypeScript](https://www.typescriptlang.org/download/)**
-- **[AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore)**: `npm install -g @aws/agentcore`
+- **[AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore)**: `npm install -g @aws/agentcore@0.30.0`
 - Python 3.12+
 
 ## Deployment Steps
@@ -192,7 +192,7 @@ print(next(r['identifier'] for r in data['resources'] if r['name'] == 'vpc-egres
 
 export GATEWAY_URL=$(aws bedrock-agentcore-control get-gateway \
   --gateway-identifier $GATEWAY_ID \
-  --query 'gatewayUrl' --output text)
+  --query 'gatewayUrl' --output text)/mcp
 
 echo "gateway ID:  $GATEWAY_ID"
 echo "gateway URL: $GATEWAY_URL"

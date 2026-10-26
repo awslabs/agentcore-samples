@@ -15,7 +15,7 @@ Startup sequence (once per ECS task):
 
 Per-request (runtime):
   2. Registry search (all types) for the user's intent
-  3. Select top AGENT_SKILLS result → parse mcp_tools: from its SKILL.md frontmatter
+  3. Select top SKILL result → parse mcp_tools: from its SKILL.md frontmatter
   4. Connect MCP server → filter list_tools_sync() to only the declared tools
   5. Build Strands Agent with base tools + those specific MCP tools only
   6. Run agent → skill instructions drive tool calls
@@ -68,13 +68,13 @@ LOADED_SKILLS_DIR = "/tmp/loaded_skills"
 # ── AWS clients (use ECS task role automatically) ─────────────────────────────
 
 boto_session = Session(region_name=AWS_REGION)
-registry_client = boto_session.client("bedrock-agentcore-control")
-search_client = boto_session.client("bedrock-agentcore")
+registry_client = boto_session.client("agent-registry-control")
+search_client = boto_session.client("agent-registry")
 s3_client = boto_session.client("s3")
 
 # ── Globals populated at startup ─────────────────────────────────────────────
 
-agent: Optional[Agent] = None
+agent: Agent | None = None
 _static_tools: list = []  # search_and_load_skill, file_read, python_exec
 _agent_system_prompt: str = ""
 _mcp_lock: threading.Lock = threading.Lock()
@@ -108,8 +108,8 @@ def load_skill_from_registry(search_response: dict, record_index: int = 0) -> tu
     Returns (skill_dir, skill_md_content).
     """
     record = search_response["registryRecords"][record_index]
-    agent_skills = record["descriptors"]["agentSkills"]
-    skill_md = agent_skills["skillMd"]["inlineContent"]
+    agent_skills = record["descriptors"]["agentSkillsDefinition"]
+    skill_md = agent_skills["additionalData"]["skillMd"]["data"]
     skill_name = _extract_skill_name(skill_md, record.get("name", "skill"))
 
     skill_dir = os.path.join(LOADED_SKILLS_DIR, skill_name)
@@ -143,7 +143,7 @@ def _download_skill_artifacts(skill_name: str, skill_dir: str) -> None:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 s3_client.download_file(SKILLS_BUCKET, key, dest)
                 log.info("Downloaded s3://%s/%s → %s", SKILLS_BUCKET, key, dest)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.warning("Could not download S3 artifacts for %s: %s", skill_name, exc)
 
 
@@ -192,24 +192,24 @@ def _discover_mcp_url() -> str:
 
     The registry crawls the MCP server at registration time and stores the
     MCP server manifest (modelcontextprotocol.io JSON schema) in
-    descriptors.mcp.server.inlineContent. The URL is under remotes[0].url.
+    descriptors.mcpServer.data. The URL is under remotes[0].url.
     """
     if not REGISTRY_ARN:
         log.warning("REGISTRY_ARN not set — cannot discover MCP URL from Registry")
         return ""
     registry_id = REGISTRY_ARN.split("/")[-1]
     try:
-        response = search_client.search_registry_records(
+        response = search_client.search_discoverable_registry_records(
             registryIds=[registry_id],
             searchQuery="financial tools MCP server",
             maxResults=10,
         )
         for record in response.get("registryRecords", []):
-            if record.get("descriptorType") == "MCP":
+            if record.get("recordType") == "MCP":
                 # The registry crawls the MCP server and populates server.inlineContent
                 # with the MCP server manifest (modelcontextprotocol.io schema).
-                # The URL is in: descriptors.mcp.server.inlineContent (JSON) → remotes[0].url
-                inline = record.get("descriptors", {}).get("mcp", {}).get("server", {}).get("inlineContent", "")
+                # The URL is in: descriptors.mcpServer.data (JSON) → remotes[0].url
+                inline = record.get("descriptors", {}).get("mcpServer", {}).get("data", "")
                 url = ""
                 try:
                     if inline:
@@ -217,14 +217,14 @@ def _discover_mcp_url() -> str:
                         remotes = server_json.get("remotes", [])
                         if remotes:
                             url = remotes[0].get("url", "")
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
 
                 if url:
                     log.info("Discovered MCP URL from Registry: %s", url)
                     return url
         log.warning("No MCP record found in Registry")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.warning("Registry MCP URL discovery failed: %s", exc)
     return ""
 
@@ -315,31 +315,31 @@ def _build_static_tools() -> None:
         """Search the AWS Agent Registry for a skill and load it locally.
 
         Searches the unified AWS Agent Registry across all record types
-        (AGENT_SKILLS, MCP, A2A, CUSTOM) and returns results ranked by
+        (SKILL, MCP, AGENT, CUSTOM) and returns results ranked by
         semantic relevance.
 
         The registry is a unified catalog. A search for "financial analysis"
-        may return both AGENT_SKILLS records (workflow instructions) and MCP
+        may return both SKILL records (workflow instructions) and MCP
         records (tool servers). Interpret results by type:
-          - AGENT_SKILLS → load and follow its SKILL.md instructions
+          - SKILL → load and follow its SKILL.md instructions
           - MCP          → informational; tools are already connected at startup
           - A2A / CUSTOM → informational; not actionable in this deployment
 
-        Always select the top AGENT_SKILLS record to execute the task.
+        Always select the top SKILL record to execute the task.
         The full SKILL.md is only loaded for the top match (progressive disclosure).
 
         Args:
             query: Natural language description of the task or skill needed.
 
         Returns:
-            Ranked candidate list with types + SKILL.md for the top AGENT_SKILLS match.
+            Ranked candidate list with types + SKILL.md for the top SKILL match.
         """
         registry_id = REGISTRY_ARN.split("/")[-1]
 
         # Search across all record types — this is the documented pattern.
-        # The registry is a unified catalog (MCP, A2A, AGENT_SKILLS, CUSTOM).
-        # We select AGENT_SKILLS client-side after receiving the ranked results.
-        response = search_client.search_registry_records(
+        # The registry is a unified catalog (MCP, AGENT, SKILL, CUSTOM).
+        # We select SKILL client-side after receiving the ranked results.
+        response = search_client.search_discoverable_registry_records(
             registryIds=[registry_id],
             searchQuery=query,
             maxResults=10,
@@ -347,16 +347,13 @@ def _build_static_tools() -> None:
         response.pop("ResponseMetadata", None)
 
         all_records = response.get("registryRecords", [])
-        skill_records = [r for r in all_records if r.get("descriptorType") == "AGENT_SKILLS"]
+        skill_records = [r for r in all_records if r.get("recordType") == "SKILL"]
 
         if not skill_records:
-            return (
-                f"No AGENT_SKILLS records found for query: '{query}'. "
-                "The registry may have no approved skill records yet."
-            )
+            return f"No SKILL records found for query: '{query}'. The registry may have no approved skill records yet."
 
         log.info(
-            "Registry search: %d AGENT_SKILLS result(s) for '%s'",
+            "Registry search: %d SKILL result(s) for '%s'",
             len(skill_records),
             query,
         )
@@ -409,14 +406,14 @@ def _build_static_tools() -> None:
             if working_dir and os.path.isdir(working_dir):
                 kwargs["cwd"] = working_dir
 
-            result = subprocess.run(["python3", tmp_path], **kwargs)
+            result = subprocess.run(["python3", tmp_path], check=False, **kwargs)
             output = result.stdout
             if result.stderr:
                 output += "\n[stderr]\n" + result.stderr
             return output.strip() or "(no output)"
         except subprocess.TimeoutExpired:
             return "Error: execution timed out (60s limit)"
-        except Exception:
+        except Exception:  # noqa: BLE001
             return f"Error:\n{traceback.format_exc()}"
         finally:
             if tmp_path and os.path.exists(tmp_path):
@@ -427,14 +424,14 @@ def _build_static_tools() -> None:
     _agent_system_prompt = (
         "You are a financial analyst agent with access to the AWS Agent Registry. "
         "The registry is a unified catalog with four record types:\n"
-        "  • AGENT_SKILLS: step-by-step workflow instructions for a task. "
-        "    Always search for and follow an AGENT_SKILLS record first.\n"
+        "  • SKILL: step-by-step workflow instructions for a task. "
+        "    Always search for and follow a SKILL record first.\n"
         "  • MCP: tool servers. If an MCP record appears in search results, "
         "    the tools it describes are already available to you by name — "
         "    call them directly as instructed by the skill.\n"
-        "  • A2A / CUSTOM: informational only in this deployment.\n"
+        "  • AGENT / CUSTOM: informational only in this deployment.\n"
         "When the user asks you to perform a task: call search_and_load_skill, "
-        "select the top AGENT_SKILLS result, and follow its SKILL.md exactly. "
+        "select the top SKILL result, and follow its SKILL.md exactly. "
         "MCP tools are pre-loaded for this request — call them as the skill instructs."
     )
 
@@ -448,7 +445,7 @@ async def lifespan(app: FastAPI):
     log.info("Starting up — discovering MCP server URL from registry...")
     try:
         _discovered_mcp_url = _discover_mcp_url()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.warning("MCP URL discovery failed at startup: %s", exc)
         _discovered_mcp_url = ""
     _build_static_tools()
@@ -469,7 +466,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 # ── JWT validation (Cognito) ──────────────────────────────────────────────────
 
-_jwks_cache: Optional[dict] = None
+_jwks_cache: dict | None = None
 
 
 def _get_jwks() -> dict:
@@ -503,7 +500,7 @@ def _verify_cognito_jwt(token: str) -> dict:
 
 
 def require_auth(
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),  # noqa: B008
 ) -> dict:
     """FastAPI dependency — validates Bearer JWT if Cognito is configured."""
     if not COGNITO_JWKS_URL:
@@ -536,7 +533,7 @@ def health():
 @app.post("/invoke", response_model=InvokeResponse)
 def invoke(
     req: InvokeRequest,
-    claims: dict = Depends(require_auth),
+    claims: dict = Depends(require_auth),  # noqa: B008
 ):
     """Invoke the Strands agent with a user message."""
     if agent is None:
@@ -549,7 +546,7 @@ def invoke(
 @app.post("/invoke/stream")
 def invoke_stream(
     req: InvokeRequest,
-    claims: dict = Depends(require_auth),
+    claims: dict = Depends(require_auth),  # noqa: B008
 ):
     """Invoke the Strands agent and stream SSE progress events back to the caller.
 
@@ -569,7 +566,7 @@ def invoke_stream(
     def generate():
         import queue as _queue
 
-        q: "_queue.Queue[Optional[str]]" = _queue.Queue()
+        q: _queue.Queue[str | None] = _queue.Queue()
         result_holder: list = []
         error_holder: list = []
 
@@ -612,19 +609,19 @@ def invoke_stream(
                 from strands.models import BedrockModel
 
                 # ── STEP 1: Registry semantic search — across all record types ──
-                # Unified catalog search: returns AGENT_SKILLS, MCP, A2A, and
+                # Unified catalog search: returns SKILL, MCP, AGENT, and
                 # CUSTOM records ranked by semantic (vector) similarity to the
-                # user's message. Client-side we select the top AGENT_SKILLS.
+                # user's message. Client-side we select the top SKILL.
                 registry_id = REGISTRY_ARN.split("/")[-1]
                 _step("Semantic search on AWS Agent Registry…", "🔍")
-                search_resp = search_client.search_registry_records(
+                search_resp = search_client.search_discoverable_registry_records(
                     registryIds=[registry_id],
                     searchQuery=req.message,
                     maxResults=10,
                 )
                 search_resp.pop("ResponseMetadata", None)
                 all_records = search_resp.get("registryRecords", [])
-                skill_records = [r for r in all_records if r.get("descriptorType") == "AGENT_SKILLS"]
+                skill_records = [r for r in all_records if r.get("recordType") == "SKILL"]
 
                 # ── STEP 2: Parse skill frontmatter → get declared MCP tools ──
                 declared_tool_names: list[str] = []
@@ -633,9 +630,10 @@ def invoke_stream(
                     top_skill_md = (
                         skill_records[0]
                         .get("descriptors", {})
-                        .get("agentSkills", {})
+                        .get("agentSkillsDefinition", {})
+                        .get("additionalData", {})
                         .get("skillMd", {})
-                        .get("inlineContent", "")
+                        .get("data", "")
                     )
                     declared_tool_names = _parse_mcp_tools_from_frontmatter(top_skill_md)
                     skill_name_found = skill_records[0].get("name", "unknown")
@@ -646,7 +644,7 @@ def invoke_stream(
                     )
 
                 # Emit structured search results for UI visualization.
-                # NOTE: "top_match" is the top-ranked AGENT_SKILLS result used only
+                # NOTE: "top_match" is the top-ranked SKILL result used only
                 # to pre-load MCP tools for this request. The Strands agent will
                 # independently call search_and_load_skill and decide which skill
                 # (if any) to actually execute. They may differ.
@@ -664,10 +662,10 @@ def invoke_stream(
                             "candidates": [
                                 {
                                     "name": r.get("name", "?"),
-                                    "type": r.get("descriptorType", "?"),
+                                    "type": r.get("recordType", "?"),
                                     "description": r.get("description", "")[:120],
                                     "top_match": (
-                                        r.get("descriptorType") == "AGENT_SKILLS"
+                                        r.get("recordType") == "SKILL"
                                         and bool(skill_records)
                                         and r.get("name") == skill_records[0].get("name")
                                     ),
@@ -695,7 +693,7 @@ def invoke_stream(
                             + ", ".join(t.tool_name for t in mcp_tools),
                             "🔌",
                         )
-                    except Exception as mcp_exc:
+                    except Exception as mcp_exc:  # noqa: BLE001
                         log.warning("MCP unavailable: %s", mcp_exc)
                         _step("MCP unavailable — continuing without data tools", "⚠️")
                 elif _discovered_mcp_url and not declared_tool_names:
@@ -739,7 +737,7 @@ def invoke_stream(
                 _step("Agent reasoning complete — preparing response", "✅")
                 result_holder.append(str(r))
             except Exception as exc:
-                log.error("Stream agent error: %s", exc, exc_info=True)
+                log.exception("Stream agent error")
                 error_holder.append(str(exc))
             finally:
                 # Always stop the per-request MCP client to release the session
@@ -747,7 +745,7 @@ def invoke_stream(
                     try:
                         per_request_mcp_client.stop(None, None, None)
                         log.info("Per-request MCP client stopped.")
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                 q.put(None)  # sentinel
 
@@ -757,7 +755,7 @@ def invoke_stream(
         while True:
             try:
                 item = q.get(timeout=120)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 break
             if item is None:
                 break
@@ -775,8 +773,10 @@ def invoke_stream(
     )
 
 
-def _tool_label(name: str, inp: dict = {}) -> str:
+def _tool_label(name: str, inp: dict | None = None) -> str:
     """Human-readable description of a tool call for the UI progress feed."""
+    if inp is None:
+        inp = {}
     if name == "search_and_load_skill":
         q = inp.get("query", "")
         suffix = ': "' + q + '"' if q else ""

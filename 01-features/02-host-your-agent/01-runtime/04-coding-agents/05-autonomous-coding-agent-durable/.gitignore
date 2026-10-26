@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# CDK
+cdk.out/
+.cdk.staging/
+
+# Config (generated at deploy time)
+deploy/config.env
+envvars.config
+bootstrap.config
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

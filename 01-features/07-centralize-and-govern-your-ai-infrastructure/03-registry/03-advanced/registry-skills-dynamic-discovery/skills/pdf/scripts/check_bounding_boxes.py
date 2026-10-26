@@ -1,6 +1,6 @@
-from dataclasses import dataclass
 import json
 import sys
+from dataclasses import dataclass
 
 
 @dataclass
@@ -42,18 +42,17 @@ def get_bounding_box_messages(fields_json_stream) -> list[str]:
                 if len(messages) >= 20:
                     messages.append("Aborting further checks; fix bounding boxes and try again")
                     return messages
-        if ri.rect_type == "entry":
-            if "entry_text" in ri.field:
-                font_size = ri.field["entry_text"].get("font_size", 14)
-                entry_height = ri.rect[3] - ri.rect[1]
-                if entry_height < font_size:
-                    has_error = True
-                    messages.append(
-                        f"FAILURE: entry bounding box height ({entry_height}) for `{ri.field['description']}` is too short for the text content (font size: {font_size}). Increase the box height or decrease the font size."
-                    )
-                    if len(messages) >= 20:
-                        messages.append("Aborting further checks; fix bounding boxes and try again")
-                        return messages
+        if ri.rect_type == "entry" and "entry_text" in ri.field:
+            font_size = ri.field["entry_text"].get("font_size", 14)
+            entry_height = ri.rect[3] - ri.rect[1]
+            if entry_height < font_size:
+                has_error = True
+                messages.append(
+                    f"FAILURE: entry bounding box height ({entry_height}) for `{ri.field['description']}` is too short for the text content (font size: {font_size}). Increase the box height or decrease the font size."
+                )
+                if len(messages) >= 20:
+                    messages.append("Aborting further checks; fix bounding boxes and try again")
+                    return messages
 
     if not has_error:
         messages.append("SUCCESS: All bounding boxes are valid")

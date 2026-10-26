@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Auth0 OAuth utilities for AWS AgentCore Registry: create, seed, and search.
 
 This script provides end-to-end tooling for setting up and populating an
@@ -23,12 +22,13 @@ Usage:
     python seed_records.py
 """
 
-import boto3
 import json
 import logging
 import os
 import time
 from pathlib import Path
+
+import boto3
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -42,15 +42,15 @@ AUDIENCE = os.getenv("AUTH0_AUDIENCE")
 
 
 def _registry_arn(registry_id):
-    return f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT_ID}:registry/{registry_id}"
+    return f"arn:aws:agent-registry:{REGION}:{ACCOUNT_ID}:registry/{registry_id}"
 
 
 def _cp_client():
-    return boto3.client("bedrock-agentcore-control", region_name=REGION)
+    return boto3.client("agent-registry-control", region_name=REGION)
 
 
 def _dp_client():
-    return boto3.client("bedrock-agentcore", region_name=REGION)
+    return boto3.client("agent-registry", region_name=REGION)
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -73,12 +73,14 @@ def create_registry(
     resp = cp.create_registry(
         name=name,
         description=description,
-        authorizerType="CUSTOM_JWT",
-        authorizerConfiguration={
-            "customJWTAuthorizer": {
-                "discoveryUrl": discovery_url,
-                "allowedAudience": [AUDIENCE],
-            }
+        discoveryConfiguration={
+            "authorizerType": "CUSTOM_JWT",
+            "authorizerConfiguration": {
+                "customJWTAuthorizer": {
+                    "discoveryUrl": discovery_url,
+                    "allowedAudience": [AUDIENCE],
+                }
+            },
         },
     )
     registry_arn = resp["registryArn"]
@@ -109,19 +111,21 @@ def create_registry(
 def update_registry_audience_with_mcp_url(registry_id):
     """Add the MCP endpoint URL to the registry's allowedAudience."""
     cp = _cp_client()
-    dp = _dp_client()
     registry = cp.get_registry(registryId=registry_id)
-    jwt_config = registry["authorizerConfiguration"]["customJWTAuthorizer"]
-    mcp_url = f"{dp.meta.endpoint_url}/registry/{registry_id}/mcp"
+    jwt_config = registry["discoveryConfiguration"]["authorizerConfiguration"]["customJWTAuthorizer"]
+    mcp_url = f"https://agent-registry.{REGION}.api.aws/registry/{registry_id}/mcp"
     audience = list(set(jwt_config.get("allowedAudience", []) + [mcp_url]))
     cp.update_registry(
         registryId=registry_id,
-        authorizerConfiguration={
+        discoveryConfiguration={
             "optionalValue": {
-                "customJWTAuthorizer": {
-                    "discoveryUrl": jwt_config["discoveryUrl"],
-                    "allowedAudience": audience,
-                }
+                "authorizerType": "CUSTOM_JWT",
+                "authorizerConfiguration": {
+                    "customJWTAuthorizer": {
+                        "discoveryUrl": jwt_config["discoveryUrl"],
+                        "allowedAudience": audience,
+                    }
+                },
             }
         },
     )
@@ -139,10 +143,10 @@ RECORDS = [
     {
         "name": "weather_agent",
         "description": "Retrieves current weather conditions and 5-day forecasts for any city worldwide. Provides temperature, humidity, wind speed, and precipitation data.",
-        "descriptorType": "CUSTOM",
+        "recordType": "CUSTOM",
         "descriptors": {
             "custom": {
-                "inlineContent": json.dumps(
+                "data": json.dumps(
                     {
                         "type": "http-agent",
                         "team": "Platform",
@@ -160,10 +164,10 @@ RECORDS = [
     {
         "name": "order_status_agent",
         "description": "Tracks order status, shipping updates, and estimated delivery times for e-commerce orders. Integrates with major carriers like UPS, FedEx, and USPS.",
-        "descriptorType": "CUSTOM",
+        "recordType": "CUSTOM",
         "descriptors": {
             "custom": {
-                "inlineContent": json.dumps(
+                "data": json.dumps(
                     {
                         "type": "http-agent",
                         "team": "Commerce",
@@ -182,10 +186,10 @@ RECORDS = [
     {
         "name": "customer_support_agent",
         "description": "Handles customer inquiries, processes refunds, and escalates issues. Uses knowledge base for FAQ resolution and sentiment analysis for prioritization.",
-        "descriptorType": "CUSTOM",
+        "recordType": "CUSTOM",
         "descriptors": {
             "custom": {
-                "inlineContent": json.dumps(
+                "data": json.dumps(
                     {
                         "type": "http-agent",
                         "team": "Support",
@@ -204,10 +208,10 @@ RECORDS = [
     {
         "name": "inventory_lookup_agent",
         "description": "Checks real-time product inventory across warehouses and stores. Supports SKU lookup, stock level alerts, and reorder recommendations.",
-        "descriptorType": "CUSTOM",
+        "recordType": "CUSTOM",
         "descriptors": {
             "custom": {
-                "inlineContent": json.dumps(
+                "data": json.dumps(
                     {
                         "type": "http-agent",
                         "team": "Supply Chain",
@@ -234,7 +238,7 @@ def seed(registry_id):
     cp = _cp_client()
     created = []
     for rec in RECORDS:
-        logger.info("Creating record '%s' (%s)...", rec["name"], rec["descriptorType"])
+        logger.info("Creating record '%s' (%s)...", rec["name"], rec["recordType"])
         try:
             resp = cp.create_registry_record(registryId=registry_id, **rec)
             record_id = resp["recordArn"].split("/")[-1]
@@ -242,7 +246,7 @@ def seed(registry_id):
             created.append({"name": rec["name"], "recordId": record_id})
         except cp.exceptions.ConflictException:
             logger.info("  Already exists — skipping")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("  Failed: %s", e)
 
     if created:
@@ -261,7 +265,7 @@ def seed(registry_id):
                     statusReason="Auto-seed",
                 )
                 logger.info("  ✓ %s approved", rec["name"])
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error("  ✗ %s: %s", rec["name"], e)
 
     logger.info("Done — seeded %d record(s)", len(created))

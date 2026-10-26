@@ -1,17 +1,31 @@
 """
 AgentCore Gateway Integration with Harness.
 
-Demonstrates the full lifecycle of an AgentCore Gateway:
-  1. Create an IAM execution role
-  2. Create a Gateway with IAM auth and MCP protocol
-  3. Add an MCP target (remote MCP server endpoint)
-  4. Create a Harness wired to the Gateway
-  5. Invoke the agent — it discovers and calls tools via the Gateway
-  6. Clean up all resources
+Demonstrates the full lifecycle of an AgentCore Gateway (the step numbers below
+match the ones this script prints):
+  Step 0. Create an IAM execution role
+  Step 1. Create a Gateway with the MCP protocol and no inbound authorizer
+  Step 2. Add an MCP target (remote MCP server endpoint)
+  Step 3. Create a Harness (a plain Harness — it holds no Gateway reference)
+  Step 4. Invoke the agent, passing the Gateway ARN in `tools`
+  Then:   Clean up all resources
 
 AgentCore Gateway is a managed proxy between your agent and external tool servers
-(MCP, HTTP). It provides centralized auth, routing rules, and observability for
+(MCP, HTTP). It gives you one place to handle auth, routing and observability for
 all tool traffic.
+
+The Harness and the Gateway are not bound to each other: create_harness takes no
+Gateway parameter, and the Gateway ARN is supplied per-invoke in the `tools`
+argument to invoke_harness. So one Harness can be pointed at different Gateways on
+different calls, and deleting either resource does not affect the other.
+
+A Gateway has two independent authorization sides, and this sample deliberately
+uses neither, to keep the focus on the plumbing:
+  - Inbound (`authorizerType` on create_gateway): who is allowed to call the
+    Gateway. Set to NONE here. See 07-oauth for CUSTOM_JWT.
+  - Outbound (`credentialProviderConfigurations` on create_gateway_target): how
+    the Gateway authenticates to the tool server behind it. Not set here, because
+    the default Exa endpoint serves anonymous callers on a free tier.
 
 Usage:
     # Basic — uses the default Exa MCP search endpoint
@@ -34,7 +48,6 @@ Prerequisites:
 
 import argparse
 import json
-import os
 import sys
 import time
 import uuid
@@ -45,10 +58,9 @@ import botocore.exceptions
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from utils.iam import create_harness_role
-from utils.client import get_agentcore_client, get_agentcore_control_client
-
-REGION = os.getenv("AWS_DEFAULT_REGION")
+from utils.client import REGION, get_agentcore_client, get_agentcore_control_client
+from utils.harness import HARNESS_POLL_INTERVAL, HARNESS_POLL_TIMEOUT, poll_harness_status
+from utils.iam import create_harness_role, delete_harness_role
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 DEFAULT_MCP_ENDPOINT = "https://mcp.exa.ai/mcp"
@@ -61,8 +73,28 @@ DEFAULT_PROMPT = (
 )
 
 GATEWAY_POLL_INTERVAL = 5
-GATEWAY_POLL_TIMEOUT = 120
-HARNESS_POLL_TIMEOUT = 120
+# 300s to match 07-oauth's budget for the same two operations, and the "2-3
+# minutes" the README tells the reader to expect. The old 120s contradicted both:
+# gateway and target reach READY in ~5s in practice, so a run that is slow enough
+# to matter is one this poller would have abandoned right as it got going.
+GATEWAY_POLL_TIMEOUT = 300
+
+# Gateways report UPDATE_UNSUCCESSFUL rather than FAILED when an update fails, and
+# targets add SYNCHRONIZE_UNSUCCESSFUL. Polling for READY without treating these as
+# terminal burns the full timeout and then reports a TimeoutError, hiding the
+# statusReasons the service already returned.
+GATEWAY_FAILURE_STATUSES = ("FAILED", "UPDATE_UNSUCCESSFUL")
+TARGET_FAILURE_STATUSES = (*GATEWAY_FAILURE_STATUSES, "SYNCHRONIZE_UNSUCCESSFUL")
+
+# A target configured with outbound credentials can stop in one of these until the
+# authorization is completed out of band. This sample sets no credential provider,
+# so it cannot reach them — but waiting out the timeout on a state that will never
+# clear by itself is worth calling out rather than silently spinning.
+TARGET_PENDING_AUTH_STATUSES = (
+    "CREATE_PENDING_AUTH",
+    "UPDATE_PENDING_AUTH",
+    "SYNCHRONIZE_PENDING_AUTH",
+)
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(
@@ -88,8 +120,8 @@ def poll_gateway_status(control, gateway_id, target_status="READY", timeout=GATE
         print(f"  Gateway status: {status}")
         if status == target_status:
             return resp
-        if status == "FAILED":
-            raise RuntimeError(f"Gateway FAILED: {resp.get('statusReasons', [])}")
+        if status in GATEWAY_FAILURE_STATUSES:
+            raise RuntimeError(f"Gateway {status}: {resp.get('statusReasons', [])}")
         if time.monotonic() > deadline:
             raise TimeoutError(f"Gateway not {target_status} after {timeout}s")
         time.sleep(GATEWAY_POLL_INTERVAL)
@@ -103,25 +135,15 @@ def poll_target_status(control, gateway_id, target_id, target_status="READY", ti
         print(f"  Target status: {status}")
         if status == target_status:
             return resp
-        if status in ("FAILED", "DELETE_FAILED"):
+        if status in TARGET_FAILURE_STATUSES:
             raise RuntimeError(f"Target {status}: {resp.get('statusReasons', [])}")
+        if status in TARGET_PENDING_AUTH_STATUSES:
+            raise RuntimeError(
+                f"Target {status}: it is waiting on an outbound authorization that will not "
+                f"complete on its own. {resp.get('statusReasons', [])}"
+            )
         if time.monotonic() > deadline:
             raise TimeoutError(f"Target not {target_status} after {timeout}s")
-        time.sleep(GATEWAY_POLL_INTERVAL)
-
-
-def poll_harness_status(control, harness_id, target_status="READY", timeout=HARNESS_POLL_TIMEOUT):
-    deadline = time.monotonic() + timeout
-    while True:
-        resp = control.get_harness(harnessId=harness_id)
-        status = resp["harness"]["status"]
-        print(f"  Harness status: {status}")
-        if status == target_status:
-            return resp
-        if status in ("FAILED", "DELETE_FAILED"):
-            raise RuntimeError(f"Harness {status}")
-        if time.monotonic() > deadline:
-            raise TimeoutError(f"Harness not {target_status} after {timeout}s")
         time.sleep(GATEWAY_POLL_INTERVAL)
 
 
@@ -156,34 +178,70 @@ def stream_response(client, harness_arn, session_id, message, model_id, gateway_
                     full_text += delta["text"]
             elif "messageStop" in event:
                 print()
+            # internalServerException is not the only error the stream can carry:
+            # validationException and runtimeClientError are modelled events too, and
+            # falling through them printed nothing at all, so a rejected invoke looked
+            # like an agent that simply had no answer.
             elif "internalServerException" in event:
                 print(f"\n  Error: {event['internalServerException']}")
+            elif "validationException" in event:
+                print(f"\n  Validation error: {event['validationException']}")
+            elif "runtimeClientError" in event:
+                print(f"\n  Runtime error: {event['runtimeClientError']}")
     except botocore.exceptions.EventStreamError:
         if not full_text:
             raise
     return full_text
 
 
-def _cleanup(gw_control, harness_control, gateway_id, target_id, harness_id):
-    if harness_id:
+def _delete_harness(harness_control, harness_id, timeout=HARNESS_POLL_TIMEOUT):
+    """Delete a Harness, waiting out the ConflictException raised while it is still CREATING.
+
+    A harness cannot be deleted until it leaves CREATING, and cleanup runs at
+    precisely the moment that is most likely to be true: the `finally` block
+    after a step failed mid-provisioning. Without this wait the delete is
+    rejected on its only attempt and the harness is left behind — which then
+    counts against the account's harness quota with nothing pointing at why.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
         try:
             harness_control.delete_harness(harnessId=harness_id)
             print(f"  Deleted harness: {harness_id}")
-        except Exception as e:
-            print(f"  Warning: {e}")
+            return
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] != "ConflictException":
+                print(f"  Warning: could not delete harness {harness_id}: {e}")
+                return
+            if time.monotonic() > deadline:
+                print(f"  Warning: harness {harness_id} still not deletable after {timeout}s: {e}")
+                return
+            print(f"  Harness still provisioning, retrying delete in {HARNESS_POLL_INTERVAL}s...")
+            time.sleep(HARNESS_POLL_INTERVAL)
+
+
+def _cleanup(gw_control, harness_control, gateway_id, target_id, harness_id, created_role=False):
+    if harness_id:
+        _delete_harness(harness_control, harness_id)
     if gateway_id and target_id:
         try:
             gw_control.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
             print(f"  Deleted target: {target_id}")
             time.sleep(10)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cleanup must continue regardless
             print(f"  Warning: {e}")
     if gateway_id:
         try:
             gw_control.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"  Deleted gateway: {gateway_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cleanup must continue regardless
             print(f"  Warning: {e}")
+    # Delete the execution role too, but only the one we created — the role name
+    # is shared by every sample in this folder, so deleting a role the caller
+    # passed in with --role-arn would destroy something we don't own. Without
+    # this the role outlived the script and had to be removed by hand.
+    if created_role:
+        delete_harness_role()
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -197,6 +255,7 @@ def main(args=None):
     client = get_agentcore_client()
 
     gateway_id = target_id = harness_id = None
+    created_role = False
 
     try:
         # Step 0: IAM role
@@ -208,6 +267,7 @@ def main(args=None):
             print(f"  Using provided role: {role_arn}")
         else:
             role_arn = create_harness_role()
+            created_role = True
             print("  Waiting for IAM propagation...")
             time.sleep(10)
 
@@ -216,6 +276,11 @@ def main(args=None):
         print("Step 1: Create Gateway")
         print("=" * 60)
         gateway_name = f"GatewayDemo-{uuid.uuid4().hex[:8]}"
+        # authorizerType is the INBOUND control: who may call this Gateway. The
+        # full set is NONE | AWS_IAM | CUSTOM_JWT | AUTHENTICATE_ONLY. NONE keeps
+        # the sample to one moving part; it is not "IAM auth" — AWS_IAM is a
+        # separate value this sample does not use. Use CUSTOM_JWT in production
+        # (07-oauth shows it end to end with a Cognito user pool).
         resp = gw_control.create_gateway(
             name=gateway_name,
             roleArn=role_arn,
@@ -232,6 +297,19 @@ def main(args=None):
         print("\n" + "=" * 60)
         print(f"Step 2: Add MCP target ({args.mcp_endpoint})")
         print("=" * 60)
+        # No credentialProviderConfigurations here: that is the OUTBOUND control
+        # (how the Gateway authenticates to the tool server), and the default Exa
+        # endpoint serves anonymous callers. Exa's free tier is rate limited and
+        # shared, so a busy account can see the tool call fail with HTTP 429; pass
+        # your own key to lift it, e.g.
+        #   credentialProviderConfigurations=[{
+        #       "credentialProviderType": "API_KEY",
+        #       "credentialProvider": {"apiKeyCredentialProvider": {
+        #           "providerArn": "<token-vault api-key provider arn>",
+        #           "credentialLocation": "HEADER",
+        #           "credentialParameterName": "x-api-key",
+        #       }},
+        #   }]
         resp = gw_control.create_gateway_target(
             gatewayIdentifier=gateway_id,
             name=args.target_name,
@@ -280,7 +358,7 @@ def main(args=None):
     finally:
         if not args.skip_cleanup:
             print("\nCleaning up...")
-            _cleanup(gw_control, harness_control, gateway_id, target_id, harness_id)
+            _cleanup(gw_control, harness_control, gateway_id, target_id, harness_id, created_role)
 
 
 if __name__ == "__main__":

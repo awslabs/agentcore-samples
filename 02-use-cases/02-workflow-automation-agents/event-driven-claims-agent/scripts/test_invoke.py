@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Invoke the Claims Agent runtime with JWT auth and display clean streamed output.
+"""Invoke the Claims Agent runtime with SigV4 auth and display clean streamed output.
 
 Usage:
     python3 scripts/test_invoke.py --region us-west-2
@@ -7,72 +7,57 @@ Usage:
 """
 
 import argparse
-import base64
 import json
 import sys
 import urllib.parse
 import urllib.request
 
 import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.session import Session as BotocoreSession
 
 
-def get_cognito_token(region: str) -> tuple[str, str]:
-    """Get M2M token from Cognito using client_credentials flow."""
+def get_runtime_arn(region: str) -> str:
+    """Get the Runtime ARN from CloudFormation outputs."""
     cf = boto3.client("cloudformation", region_name=region)
-    outputs = cf.describe_stacks(StackName="ClaimsInfraStack")["Stacks"][0]["Outputs"]
+    outputs = cf.describe_stacks(StackName="AgentCore-ClaimsAgent-dev")["Stacks"][0]["Outputs"]
     output_map = {o["OutputKey"]: o["OutputValue"] for o in outputs}
 
-    user_pool_id = output_map["UserPoolId"]
-    client_id = output_map["UserPoolClientId"]
-    runtime_arn = output_map.get("RuntimeArn", "")
+    for key, val in output_map.items():
+        if key.startswith("RuntimeArn") or key == "RuntimeArn":
+            return val
+        if "RuntimeArn" in key:
+            return val
 
-    cognito = boto3.client("cognito-idp", region_name=region)
-    client_info = cognito.describe_user_pool_client(UserPoolId=user_pool_id, ClientId=client_id)
-    cs = client_info["UserPoolClient"]["ClientSecret"]
-
-    pool_info = cognito.describe_user_pool(UserPoolId=user_pool_id)
-    domain = pool_info["UserPool"].get("Domain", "")
-    token_endpoint = f"https://{domain}.auth.{region}.amazoncognito.com/oauth2/token"
-
-    creds = base64.b64encode(f"{client_id}:{cs}".encode()).decode()
-    data = urllib.parse.urlencode(
-        {
-            "grant_type": "client_credentials",
-            "scope": "agentcore/invoke",
-        }
-    ).encode()
-
-    req = urllib.request.Request(
-        token_endpoint,
-        data=data,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"Basic {creds}",
-        },
-    )
-
-    if not token_endpoint.startswith("https://"):
-        raise ValueError(f"Only HTTPS URLs are permitted: {token_endpoint}")
-    with urllib.request.urlopen(req) as resp:  # nosec B310
-        token_data = json.loads(resp.read())
-
-    return token_data["access_token"], runtime_arn
+    raise RuntimeError("RuntimeArn not found in stack outputs")
 
 
-def invoke_and_stream(token: str, runtime_arn: str, region: str, prompt: str):
-    """Invoke the agent and stream clean formatted output to terminal."""
+def invoke_and_stream(runtime_arn: str, region: str, prompt: str):
+    """Invoke the agent with SigV4 auth and stream formatted output."""
     escaped_arn = urllib.parse.quote(runtime_arn, safe="")
     url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{escaped_arn}/invocations"
 
     payload = json.dumps({"prompt": prompt}).encode()
 
+    # Sign the request with SigV4
+    session = BotocoreSession()
+    credentials = session.get_credentials().get_frozen_credentials()
+
+    aws_request = AWSRequest(
+        method="POST",
+        url=url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+        },
+    )
+    SigV4Auth(credentials, "bedrock-agentcore", region).add_auth(aws_request)
+
     req = urllib.request.Request(
         url,
         data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
+        headers=dict(aws_request.headers),
     )
 
     print("\033[90m━━━ Agent Response ━━━\033[0m\n")
@@ -111,7 +96,7 @@ def invoke_and_stream(token: str, runtime_arn: str, region: str, prompt: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Invoke Claims Agent with JWT")
+    parser = argparse.ArgumentParser(description="Invoke Claims Agent with SigV4")
     parser.add_argument("--region", default="us-west-2")
     parser.add_argument(
         "--prompt",
@@ -119,12 +104,12 @@ def main():
     )
     args = parser.parse_args()
 
-    print("\033[90m🔑 Authenticating...\033[0m")
-    token, runtime_arn = get_cognito_token(args.region)
+    print("\033[90m🔑 Authenticating (SigV4)...\033[0m")
+    runtime_arn = get_runtime_arn(args.region)
     print(f"\033[90m✅ Connected to {runtime_arn.split('/')[-1]}\033[0m")
     print(f"\033[90m📝 {args.prompt}\033[0m\n")
 
-    invoke_and_stream(token, runtime_arn, args.region, args.prompt)
+    invoke_and_stream(runtime_arn, args.region, args.prompt)
 
 
 if __name__ == "__main__":

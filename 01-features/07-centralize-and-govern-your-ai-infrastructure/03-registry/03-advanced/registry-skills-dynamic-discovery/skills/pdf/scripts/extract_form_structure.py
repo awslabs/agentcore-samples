@@ -14,6 +14,7 @@ Usage: python extract_form_structure.py <input.pdf> <output.json>
 
 import json
 import sys
+
 import pdfplumber
 
 

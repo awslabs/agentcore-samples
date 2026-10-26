@@ -6,7 +6,7 @@ A bidirectional voice agent supporting three S2S models: **Amazon Nova Sonic**, 
 
 ```bash
 # Navigate to the bidirectional streaming tutorial root
-cd 06-workshops/01-AgentCore-runtime/06-bi-directional-streaming
+cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
 
 # Create and activate a virtual environment
 python3 -m venv .venv
@@ -34,6 +34,8 @@ python utils/deploy.py 02-strands-ws
 # Start the web client
 ./utils/start_client.sh 02-strands-ws
 ```
+
+The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. This sample also provisions 4 MCP Gateways and a Memory resource before the runtime. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
 
 ### Configure Knowledge Base (Required for FAQ Tools)
 
