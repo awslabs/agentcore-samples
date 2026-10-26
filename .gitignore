@@ -59,6 +59,8 @@ lib/
 !06-workshops/01-AgentCore-runtime/01-hosting-agent/05-java-agents/02-embabel-with-bedrock-model/infra/lib/
 !02-use-cases/lakehouse-agent/deployment/advanced-agentcore-policy-gateway-interceptor/lib/
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/cdk/lib/
+!02-use-cases/02-workflow-automation-agents/agent-registry-arrival-signal/orchestrator-host/agentcore/cdk/lib/
+!02-use-cases/02-workflow-automation-agents/agent-registry-arrival-signal/peer-host/agentcore/cdk/lib/
 lib64/
 parts/
 sdist/
@@ -298,6 +300,7 @@ plan/
 **/aws-targets.json
 !01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/**/aws-targets.json
 !06-workshops/02-AgentCore-gateway/**/aws-targets.json
+!02-use-cases/02-workflow-automation-agents/agent-registry-arrival-signal/**/aws-targets.json
 **/.cli/deployed-state.json
 
 # Evaluation and session results

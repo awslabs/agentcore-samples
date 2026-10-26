@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "orchestrator"
+version = "0.1.0"
+description = "AgentCore A2A Agent using Strands SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "a2a-sdk[all] >= 0.3.0, < 0.4.0",
+    "aws-opentelemetry-distro ~= 0.18.0",
+    "bedrock-agentcore[a2a,strands-agents] >= 1.18.1",
+    # Matches the repo pyproject.toml boto3 floor. The CLI's scaffold default
+    # (botocore[crt] >= 1.35.0, no boto3) is below the version that ships the
+    # agent-registry/agent-registry-control preview namespace the registration
+    # script needs.
+    "boto3 >= 1.43.116",
+    "botocore[crt] >= 1.43.116",
+    "strands-agents >= 1.13.0",
+]
+
+# The orchestrator agent and event path ship as vendored source under
+# app/orchestrator/agent_registry_sample/. The CodeZip build runs uv with
+# source-building disabled, so a path source cannot install the package. An
+# editable install writes a .pth to a build-machine path absent in the container
+# (HTTP 424 at runtime), and a non-editable install needs a wheel build (synth
+# fails with "Building source distributions is disabled"). Vendoring ships the
+# package inside codeLocation as plain source, with no build and no .pth.
+[tool.hatch.build.targets.wheel]
+packages = ["."]

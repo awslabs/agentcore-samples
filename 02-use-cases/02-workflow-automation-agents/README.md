@@ -32,6 +32,7 @@ Agents that run without a user in the loop. They are triggered by system events 
 | [intelligent-event-agent](./intelligent-event-agent/) | General | Beginner | Runtime, Memory, Gateway *(in development, no README yet)* |
 | [multi-isv-orchestration](./multi-isv-orchestration/) | Enterprise CRM + ERP | Intermediate | Gateway (multi-target), Identity (Cognito inbound + CustomOauth2 outbound); Salesforce + SAP MCP Server through one Gateway for cross-system queries |
 | [gpu-music-production-agent](./gpu-music-production-agent/) | Media & Entertainment | Advanced | Runtime (EC2 capacity provider, GPU), Memory; a generative audio model runs on the instance GPU and three collocated agents hand files to each other over a shared EBS volume, with a computed verdict that escalates to human review |
+| [agent-registry-arrival-signal](./agent-registry-arrival-signal/) | General / Platform | Advanced | Runtime, A2A, Agent Registry; Agent Registry to EventBridge to SQS to Lambda to Runtime push path plus a capability-search pull path |
 
 
 ## See also
