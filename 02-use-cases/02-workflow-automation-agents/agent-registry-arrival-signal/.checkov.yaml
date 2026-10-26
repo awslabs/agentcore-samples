@@ -1,0 +1,14 @@
+# Checkov configuration for the AWS Agent Registry arrival-signal sample.
+# Scans the synthesized CDK template (cdk.out/), not the Python source, so run
+# `cdk synth` before `checkov`.
+directory:
+  - cdk.out
+framework:
+  - cloudformation
+compact: true
+quiet: false
+
+# Every skip here needs a matching inline `# checkov:skip=<CKV_ID>:<reason>`
+# comment at the corresponding CDK construct in the Python source. No blanket
+# severity-level or rule-level suppressions.
+skip-check: []

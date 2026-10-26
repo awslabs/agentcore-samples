@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "peer"
+version = "0.1.0"
+description = "AgentCore A2A Agent using Strands SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "a2a-sdk[all] >= 0.3.0, < 0.4.0",
+    "aws-opentelemetry-distro ~= 0.18.0",
+    "bedrock-agentcore[a2a,strands-agents] >= 1.18.1",
+    # Uses the repo's shared pin (>= 1.43.116), not the scaffold's default
+    # botocore[crt] >= 1.35.0 floor. U3 (the peer) has no registry client and does not
+    # need boto3, but one shared pin keeps a lower boto3 from conflicting with the
+    # registry-touching units.
+    "boto3 >= 1.43.116",
+    "botocore[crt] >= 1.43.116",
+    "cryptography >= 42.0.0",
+    "pyjwt >= 2.8.0",
+    "strands-agents >= 1.62.0",
+]
+
+# The peer greeter ships as vendored source under app/peer/agent_registry_sample/.
+# The CodeZip build runs uv with source-building disabled, so a path source cannot
+# install the package (editable -> .pth to an absent path -> HTTP 424, non-editable
+# -> wheel build fails at synth). Vendoring ships it inside codeLocation as plain source.
+[tool.hatch.build.targets.wheel]
+packages = ["."]
