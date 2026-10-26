@@ -134,6 +134,7 @@
 - Deepak Singh (deepaxs)
 - Irene Arroyo Delgado (iiarroyo)
 - rmncardoso
+- mccartnick
 - ach1ntya
 - Shruthi Rajoli (rajolishruthi)
 - ratnopam
@@ -141,3 +142,4 @@
 - Bent Krause (krausexb)
 - Georgios Tsoukas (gtsoukasaws)
 - Sana Iqbal (sanaiqbalw)
+- Olawale Olaleye (berry2012)
