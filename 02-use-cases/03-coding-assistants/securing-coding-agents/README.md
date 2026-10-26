@@ -297,4 +297,4 @@ The existing `02-policy` sample demonstrates ABAC with JWT claims for an insuran
 
 ## License
 
-This sample is provided under the Apache License 2.0. See the [LICENSE](../../LICENSE) file for details.
+This sample is provided under the Apache License 2.0. See the [LICENSE](../../../LICENSE) file for details.
