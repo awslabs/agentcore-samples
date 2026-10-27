@@ -1,0 +1,13 @@
+[project]
+name = "end-to-end-weather-agent"
+version = "0.1.0"
+description = "End-to-End Weather Agent - Pulumi Python"
+requires-python = ">=3.12"
+dependencies = [
+    "pulumi>=3.0.0,<4.0.0",
+    "pulumi-aws>=7.0.0,<8.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"

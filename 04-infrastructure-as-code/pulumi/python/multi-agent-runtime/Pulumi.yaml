@@ -1,0 +1,7 @@
+name: multi-agent-runtime
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    virtualenv: .venv
+description: Multi-Agent Runtime - Pulumi Python

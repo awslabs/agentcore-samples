@@ -1,0 +1,7 @@
+name: mcp-server-agentcore-runtime
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    virtualenv: .venv
+description: MCP Server on AgentCore Runtime - Pulumi Python
