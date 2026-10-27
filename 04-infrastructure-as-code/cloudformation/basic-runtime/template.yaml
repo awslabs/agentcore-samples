@@ -34,6 +34,67 @@ Parameters:
     Default: "basic-agent"
     Description: "Name of the ECR repository"
 
+  # Logging Configuration
+  RuntimeLogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: "Retention for the agent runtime log group, which contains prompt and response text"
+    AllowedValues:
+      [
+        1,
+        3,
+        5,
+        7,
+        14,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        365,
+        400,
+        545,
+        731,
+        1096,
+        1827,
+        2192,
+        2557,
+        2922,
+        3288,
+        3653,
+      ]
+
+  BuildLogRetentionInDays:
+    Type: Number
+    Default: 14
+    Description: "Retention for the CodeBuild and Lambda custom resource log groups"
+    AllowedValues:
+      [
+        1,
+        3,
+        5,
+        7,
+        14,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        365,
+        400,
+        545,
+        731,
+        1096,
+        1827,
+        2192,
+        2557,
+        2922,
+        3288,
+        3653,
+      ]
+
 # ============================================================================
 # METADATA SECTION
 # ============================================================================
@@ -50,6 +111,11 @@ Metadata:
         Parameters:
           - ECRRepositoryName
           - ImageTag
+      - Label:
+          default: "Logging Configuration"
+        Parameters:
+          - RuntimeLogRetentionInDays
+          - BuildLogRetentionInDays
     ParameterLabels:
       AgentName:
         default: "Agent Name"
@@ -59,6 +125,10 @@ Metadata:
         default: "ECR Repository Name"
       ImageTag:
         default: "Image Tag"
+      RuntimeLogRetentionInDays:
+        default: "Runtime Log Retention (days)"
+      BuildLogRetentionInDays:
+        default: "Build Log Retention (days)"
 
 # ============================================================================
 # RESOURCES SECTION
@@ -449,10 +519,15 @@ Resources:
                 - |
                   cat > my_agent.py << 'EOF'
                   from strands import Agent
+                  import json
                   import os
                   from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
                   app = BedrockAgentCoreApp()
+
+                  def log_event(event, **fields):
+                      """Write one JSON line to stdout; AgentCore Runtime ships stdout to CloudWatch Logs"""
+                      print(json.dumps({"event": event, **fields}, default=str), flush=True)
 
                   def create_basic_agent() -> Agent:
                       """Create a basic agent with simple functionality"""
@@ -469,17 +544,21 @@ Resources:
                       try:
                           # Get the query from payload
                           query = payload.get("prompt", "Hello, how are you?") if payload else "Hello, how are you?"
+                          log_event("user_prompt", prompt=query)
 
                           # Create and use the agent
                           agent = create_basic_agent()
                           response = agent(query)
+                          answer = response.message['content'][0]['text']
+                          log_event("agent_response", response=answer)
 
                           return {
                               "status": "success",
-                              "response": response.message['content'][0]['text']
+                              "response": answer
                           }
 
                       except Exception as e:
+                          log_event("agent_error", error=str(e))
                           return {
                               "status": "error",
                               "error": str(e)
@@ -545,6 +624,8 @@ Resources:
       ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
       ProjectName: !Ref AgentImageBuildProject
       WaitForCompletion: "true"
+      # Changing ImageTag re-runs the build on stack update (ECR tags are immutable)
+      ImageTag: !Ref ImageTag
 
   # ========================================================================
   # AGENTCORE MODULE - Runtime Only (No Tools)
@@ -566,6 +647,131 @@ Resources:
       NetworkConfiguration:
         NetworkMode: !Ref NetworkMode
       Description: !Sub "Basic agent runtime for ${AWS::StackName}"
+
+  # ========================================================================
+  # LOGGING MODULE - Retention for service-created log groups
+  # ========================================================================
+  # The AgentCore runtime, CodeBuild, and Lambda log groups are created by
+  # their own services, not by CloudFormation, so they cannot be declared as
+  # AWS::Logs::LogGroup resources here (creation would fail once they exist).
+  # This custom resource applies a retention policy to each one instead.
+
+  LogRetentionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-log-retention-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LogRetentionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageRetentionOnStackLogGroups
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteRetentionPolicy
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-log-retention-role"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: IAM
+
+  LogRetentionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-log-retention"
+      Description: "Applies CloudWatch Logs retention policies as a CloudFormation custom resource"
+      Handler: index.handler
+      Role: !GetAtt LogRetentionRole.Arn
+      Runtime: python3.12
+      Timeout: 300
+      ReservedConcurrentExecutions: 1
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info('Received event: %s', json.dumps(event))
+
+              try:
+                  # Leave retention policies in place on delete. These log groups are
+                  # owned by their services, so the stack must not remove their data.
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  logs = boto3.client('logs')
+                  applied = []
+
+                  for group in event['ResourceProperties']['LogGroups']:
+                      name = group['Name']
+                      days = int(group['RetentionInDays'])
+
+                      # Create the group if the owning service has not yet written to
+                      # it, so retention applies from the very first log event.
+                      try:
+                          logs.create_log_group(logGroupName=name)
+                          logger.info('Created log group %s', name)
+                      except logs.exceptions.ResourceAlreadyExistsException:
+                          logger.info('Log group %s already exists', name)
+
+                      logs.put_retention_policy(logGroupName=name, retentionInDays=days)
+                      logger.info('Set retention on %s to %s days', name, days)
+                      applied.append('{}={}d'.format(name, days))
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'Applied': ' '.join(applied)
+                  })
+
+              except Exception as e:
+                  logger.error('Failed to apply retention: %s', str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-log-retention"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: Lambda
+
+  ApplyLogRetention:
+    Type: Custom::LogRetention
+    Properties:
+      ServiceToken: !GetAtt LogRetentionFunction.Arn
+      LogGroups:
+        # Agent runtime: holds the prompt and response text logged by the agent
+        - Name: !Sub "/aws/bedrock-agentcore/runtimes/${AgentRuntime.AgentRuntimeId}-DEFAULT"
+          RetentionInDays: !Ref RuntimeLogRetentionInDays
+        # Container image build output
+        - Name: !Sub "/aws/codebuild/${AWS::StackName}-basic-agent-build"
+          RetentionInDays: !Ref BuildLogRetentionInDays
+        # Custom resource Lambda functions
+        - Name: !Sub "/aws/lambda/${AWS::StackName}-codebuild-trigger"
+          RetentionInDays: !Ref BuildLogRetentionInDays
+        - Name: !Sub "/aws/lambda/${AWS::StackName}-log-retention"
+          RetentionInDays: !Ref BuildLogRetentionInDays
 
 # ============================================================================
 # OUTPUTS SECTION
@@ -589,3 +795,14 @@ Outputs:
     Value: !GetAtt AgentExecutionRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-AgentExecutionRoleArn"
+
+  # LOGGING MODULE OUTPUTS
+  RuntimeLogGroupName:
+    Description: "CloudWatch Logs group for the agent runtime, including prompt and response text"
+    Value: !Sub "/aws/bedrock-agentcore/runtimes/${AgentRuntime.AgentRuntimeId}-DEFAULT"
+    Export:
+      Name: !Sub "${AWS::StackName}-RuntimeLogGroupName"
+
+  RuntimeLogRetention:
+    Description: "Retention applied to the agent runtime log group, in days"
+    Value: !Ref RuntimeLogRetentionInDays
