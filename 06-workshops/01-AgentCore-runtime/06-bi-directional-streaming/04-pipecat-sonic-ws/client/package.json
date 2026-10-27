@@ -13,6 +13,6 @@
     "protobufjs": "^7.6.0"
   },
   "devDependencies": {
-    "vite": "^6.4.2"
+    "vite": "^6.4.4"
   }
 }
