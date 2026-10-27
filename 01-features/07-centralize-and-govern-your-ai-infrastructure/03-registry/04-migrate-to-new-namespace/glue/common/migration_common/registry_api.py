@@ -352,24 +352,84 @@ class StatusResult:
         return self.achieved is not None and self.achieved == self.requested
 
 
+# What `transform.duplicateNames` may be set to. `fail` (the default) refuses the second source
+# record to claim a target identity and reports it; `suffix` migrates it under a distinct name.
+# Mirrors the union in lib/config.ts and the validation in settings.validate_runtime_configuration.
+DUPLICATE_NAME_MODES = ("fail", "suffix")
+
+
+def disambiguated_target_name(name: str, source_record_id: str) -> str:
+    """Return the target name ``duplicateNames = "suffix"`` gives a record that cannot keep ``name``.
+
+    The suffix is a digest of the *source record's own identity* -- the canonical
+    ``account/region/registry/recordId`` claimant id -- and of nothing else: not the run, not the
+    record's position in the batch, not a counter. So the mapping from (base name, source record) to
+    suffixed name is fixed: the same record asked to move off the same name always lands on the same
+    target name, in either execution mode, from any host.
+
+    Which of the records wanting a name has to move is a separate question, and not one this function
+    or the claim below can answer, because it depends on the other records and on what previous runs
+    already created. ``plan_target_names`` in the transform/load job decides it before the load starts
+    and passes the answer in as ``preferred_name``.
+
+    The name stays within the target's 255-character bound by truncating the base, exactly as the
+    transform's sanitisation fallback does (``_TARGET_NAME_MAX_LENGTH`` there is the same bound as
+    ``_TARGET_FIELD_MAX_LENGTHS["name"]`` here), and the base is already a valid target name, so
+    truncating it and appending ``-<hex>`` keeps it one.
+
+    Lives with the claim guard rather than in the transform because the transform sees one record at
+    a time and cannot know that a name is taken.
+    """
+    suffix = hashlib.sha256(source_record_id.encode("utf-8")).hexdigest()[:8]
+    base = name[: _TARGET_FIELD_MAX_LENGTHS["name"] - len(suffix) - 1]
+    if not base:
+        # A target name must start with an alphanumeric character, so there is no suffixed form of an
+        # empty one -- `-<hex>` would be refused by the service. The transform never produces an empty
+        # name (see _resolve_name), which makes this a guard against a future caller, not a live path.
+        raise RegistryApiError(
+            f"Cannot derive a distinct target name for source record {source_record_id!r}: the "
+            "transformed name is empty, and a target name has to start with an alphanumeric character."
+        )
+    return f"{base}-{suffix}"
+
+
+def claim_key(registry_id: str, name: str, record_version: Any) -> tuple[str, str, str | None]:
+    """Return the identity a target-name claim is keyed by: registry, name, normalized version.
+
+    Public because the load stage builds the same keys when it plans which record keeps which name,
+    and the two must agree on how an absent recordVersion is spelled.
+    """
+    return (registry_id, name, _normalized_version(record_version))
+
+
 class TargetNameClaims:
     """Thread-safe claims for the target registry ``(registry, name, recordVersion)`` identity.
 
     Preview permits multiple records with the same identity while the new version requires it to be unique.
     Keeping this guard independent of the API client lets dry runs enforce the same cross-record
     invariant as live loads without constructing a client or making an AWS call.
+
+    Deliberately narrow: it enforces uniqueness over the claims it is given and never decides *which*
+    of two records wanting one name should keep it. That decision needs the other records and the
+    state of previous runs, neither of which a per-claim guard sees, so it is made by the load stage
+    and arrives here as ``preferred_name``.
     """
 
     def __init__(
         self,
         claimed: dict[tuple[str, str, str | None], str] | None = None,
         lock: Any | None = None,
+        duplicate_names: str = "fail",
     ) -> None:
         # ``TargetRegistryClient`` keeps these established attributes because transport-replacing
         # subclasses initialize them directly. Wrapping caller-owned state preserves that extension
         # point while standalone dry-run guards get fresh state.
         self._claimed = claimed if claimed is not None else {}
         self._lock = lock if lock is not None else threading.Lock()
+        # Only ``suffix`` changes behaviour; anything else -- including a value this class was never
+        # taught -- refuses the second claimant, which is the safe answer. Configuration is validated
+        # before it reaches here (settings.validate_runtime_configuration).
+        self._duplicate_names = duplicate_names
 
     def claim(
         self,
@@ -377,25 +437,61 @@ class TargetNameClaims:
         name: str,
         record_version: Any,
         source_record_id: str,
-    ) -> None:
-        """Reserve one transformed target identity for one Preview source record."""
-        key = (registry_id, name, _normalized_version(record_version))
+        *,
+        preferred_name: str | None = None,
+    ) -> str:
+        """Reserve one transformed target identity for one Preview source record.
+
+        Returns the name actually claimed; callers must load the record under it.
+
+        In ``fail`` mode that is always ``name``: the second source record to claim an identity is
+        refused, and ``preferred_name`` is ignored, so this guard behaves identically however it is
+        called.
+
+        In ``suffix`` mode ``preferred_name`` is the name the caller has decided this record should
+        be given -- from the record's own source identity and from what previous runs already created,
+        not from the order records arrive in (see ``TargetNameClaimPool`` in the transform/load job).
+        Absent one, the record asks for ``name``. Either way, a name held by a *different* source
+        record is never handed out: the record falls back to its own suffixed variant of ``name``, and
+        if even that is held, nothing is claimed and the record fails.
+        """
+        version = _normalized_version(record_version)
+        requested = (preferred_name or name) if self._duplicate_names == "suffix" else name
         with self._lock:
-            claimed_by = self._claimed.get(key)
+            claimed_by = self._claimed.get((registry_id, requested, version))
             if claimed_by is None:
-                self._claimed[key] = source_record_id
-                return
+                self._claimed[(registry_id, requested, version)] = source_record_id
+                return requested
             if claimed_by == source_record_id:
-                return
-        raise RegistryApiError(
-            f"Preview records {claimed_by!r} and {source_record_id!r} both migrate to the target registry name "
-            f"{name!r}"
-            + (f" (recordVersion {record_version!r})" if record_version not in (None, "") else "")
-            + f". That identity is already claimed in registry {registry_id}; the new version requires it "
-            "to be unique, so loading the second "
-            "would overwrite the first. Rename one of them in the source registry, or give them "
-            "distinct recordVersions, and re-extract."
-        )
+                return requested
+            if self._duplicate_names == "suffix":
+                suffixed = disambiguated_target_name(name, source_record_id)
+                holder = self._claimed.get((registry_id, suffixed, version))
+                if holder is None or holder == source_record_id:
+                    self._claimed[(registry_id, suffixed, version)] = source_record_id
+                    return suffixed
+                # Both the name this record was to be given and its own suffixed variant are held by
+                # *other* source records, so there is nothing left to move this one onto. Report both
+                # identities rather than overwrite either record.
+                message = (
+                    f"Preview record {source_record_id!r} migrates to the target registry name {requested!r}"
+                    + (f" (recordVersion {record_version!r})" if record_version not in (None, "") else "")
+                    + f", which {claimed_by!r} already holds in registry {registry_id}, and its distinct "
+                    f"name {suffixed!r} is held by {holder!r}. duplicateNames is 'suffix', which moves a "
+                    "record off a name another record holds, but both names are taken. Rename one of "
+                    "them in the source registry, or give them distinct recordVersions, and re-extract."
+                )
+            else:
+                message = (
+                    f"Preview records {claimed_by!r} and {source_record_id!r} both migrate to the target registry name "
+                    f"{name!r}"
+                    + (f" (recordVersion {record_version!r})" if record_version not in (None, "") else "")
+                    + f". That identity is already claimed in registry {registry_id}; the new version requires it "
+                    "to be unique, so loading the second "
+                    "would overwrite the first. Rename one of them in the source registry, or give them "
+                    "distinct recordVersions, and re-extract."
+                )
+        raise RegistryApiError(message)
 
 
 class TargetRegistryClient:
@@ -1035,7 +1131,14 @@ class TargetRegistryClient:
         record_version: Any,
         source_record_id: str,
     ) -> None:
-        """Apply the live client's backstop for a duplicate transformed target identity."""
+        """Apply the live client's backstop for a duplicate transformed target identity.
+
+        Stays in ``fail`` mode whatever ``transform.duplicateNames`` says, and has to: every record a
+        live load writes has already passed through the load stage's ordered claim pool, which is
+        where a duplicate is resolved onto a distinct name. A collision reaching this point therefore
+        means two source records really are asking for one identity, and renaming one here -- after
+        the lookup that decided create-or-update -- would be a silent overwrite.
+        """
         name_claims = getattr(self, "_name_claims", None)
         if name_claims is None:
             # Transport-replacing subclasses may deliberately bypass ``__init__`` while retaining
