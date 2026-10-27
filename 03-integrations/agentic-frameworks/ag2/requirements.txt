@@ -1,0 +1,3 @@
+ag2[bedrock]>=0.11.0
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
