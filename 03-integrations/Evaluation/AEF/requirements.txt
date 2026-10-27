@@ -1,0 +1,19 @@
+-e ragas-evaluation
+streamlit
+boto3>=1.34.131
+botocore>=1.33.9
+datasets
+openpyxl
+langchain_aws
+langchain>=0.3.3
+langchain-core
+openpyxl
+langchainhub
+pyarrow>=12.0.0,<18.0.0
+llama-index>=0.10.34
+torch
+chromadb
+langgraph>=0.2.38
+langchain-experimental
+altair<5
+tiktoken
