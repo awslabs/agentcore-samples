@@ -1,0 +1,13 @@
+[project]
+name = "toon"
+version = "0.1.0"
+description = "Convert your MCP tools to respond with TOON instead of JSON"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aws-cdk-lib>=2.229.0",
+    "bedrock-agentcore-starter-toolkit>=0.1.34",
+    "boto3>=1.41.3",
+    "constructs>=10.4.3",
+    "requests>=2.32.5",
+]
