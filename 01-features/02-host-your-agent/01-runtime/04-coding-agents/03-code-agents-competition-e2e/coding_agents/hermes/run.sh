@@ -76,9 +76,11 @@ set -- "${ARGS[@]}"
 
 MODEL_FLAG="-m ${MODEL} --provider bedrock"
 
+# hermes v0.19+ requires the `chat` subcommand; non-interactive one-shot is
+# `-q/--query` (the old top-level `--non-interactive PROMPT` form was removed).
 if [ $# -gt 0 ]; then
   PROMPT="$*"
-  exec hermes $MODEL_FLAG --non-interactive "$PROMPT"
+  exec hermes chat $MODEL_FLAG -q "$PROMPT"
 else
-  exec hermes $MODEL_FLAG
+  exec hermes chat $MODEL_FLAG
 fi

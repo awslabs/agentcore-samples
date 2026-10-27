@@ -15,7 +15,7 @@ Usage:
     python connect.py --cmd "ls /mnt/s3files/skills/"
 
 Environment:
-    AWS_REGION                                  (default: us-west-2)
+    AWS_REGION                                  (default: runtime ARN region)
 """
 
 import argparse
@@ -32,7 +32,8 @@ from bedrock_agentcore.runtime.shell import ShellChannel, ShellSession
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REGION = os.environ.get("AWS_REGION", "us-west-2")
+# Region defaults to the runtime ARN's region (set after config loads); env overrides.
+REGION = os.environ.get("AWS_REGION")
 
 
 def load_config() -> dict:
@@ -113,7 +114,9 @@ async def run(args):
     session_id = args.session or str(uuid.uuid4())
     shell_id = str(uuid.uuid4())
 
-    client = AgentCoreRuntimeClient(region=REGION)
+    # Derive region from the runtime ARN unless AWS_REGION was set explicitly.
+    region = REGION or runtime_arn.split(":")[3]
+    client = AgentCoreRuntimeClient(region=region)
 
     print("Connecting to AgentCore Runtime...")
     print(f"  Runtime: {runtime_arn}")

@@ -1,17 +1,29 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
-RUN dnf install -y --allowerasing git curl nodejs npm python3 python3-pip jq tar gzip unzip which findutils && dnf clean all
+# xz is required by the Hermes installer to extract its Node.js tarball.
+RUN dnf install -y --allowerasing git curl nodejs npm python3 python3-pip jq tar gzip xz unzip which findutils && dnf clean all
 
 RUN npm install -g typescript ts-node
 
 # Non-root user
 RUN useradd -m -d /home/agent -u 1000 agent
 
-# Hermes Agent CLI (installed as agent user so it lands in ~/.hermes/bin)
-USER agent
-ENV HOME=/home/agent
-RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true
-USER root
+# Hermes Agent CLI. Install as root so it lands in the FHS layout
+# (/usr/local/bin/hermes) — on PATH for every shell, including the interactive
+# login shell that run.sh execs into. Installing as the agent user puts it in
+# ~/.hermes/bin, which the login shell drops from PATH. Non-interactive flags
+# skip the API-key wizard (Bedrock auth comes from the runtime IAM role); no
+# `|| true` so a failed install fails the build loudly instead of silently
+# shipping a container without the hermes binary.
+RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+    | bash -s -- --non-interactive --skip-setup --skip-browser
+
+# The Bedrock provider imports the `anthropic` SDK at runtime (with its boto3
+# extra for SigV4-signed Bedrock calls), but the installer doesn't pull it into
+# hermes's venv. Add it explicitly so `hermes chat --provider bedrock` can
+# initialize. The venv is uv-managed (no pip), so use the managed uv the
+# installer dropped in /root/.hermes/bin. anthropic[bedrock] brings boto3/botocore.
+RUN /root/.hermes/bin/uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python 'anthropic[bedrock]>=0.39.0'
 
 # boto3 + awscurl for AgentCore MCP tool calls
 RUN pip3 install --quiet boto3 awscurl
