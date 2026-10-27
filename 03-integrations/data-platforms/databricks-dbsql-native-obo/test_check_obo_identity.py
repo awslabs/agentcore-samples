@@ -5,6 +5,8 @@ Run with either:
     pytest -v
 """
 
+from __future__ import annotations
+
 import base64
 import contextlib
 import io
@@ -24,6 +26,8 @@ from check_obo_identity import (
     PER_USER,
     PER_USER_UNVERIFIED,
     PROVIDER_NOT_FOUND,
+    REMEDY_INBOUND_AUDIENCE,
+    REMEDY_INBOUND_TOKEN,
     REMEDY_PER_USER,
     REMEDY_PER_USER_UNCHECKED,
     REMEDY_SUBJECT_NOT_COMPARABLE,
@@ -34,7 +38,9 @@ from check_obo_identity import (
     UNKNOWN,
     WORKSPACE_MEMBERSHIP,
     GatewayUnreachable,
+    TransportError,
     classify_failure,
+    classify_handshake_refusal,
     classify_identity,
     extract_identity,
     extract_text,
@@ -47,6 +53,14 @@ from check_obo_identity import (
     run_check,
     subject_from_token,
 )
+
+# Captured from a live gateway: initialize with a validly signed token whose aud is not in allowedAudience.
+# HTTP 403 with WWW-Authenticate: Bearer error="insufficient_scope", and id 0 rather than the request's.
+WRONG_AUDIENCE_MESSAGE = (
+    "insufficient_scope - The request requires higher privileges than provided by the access token."
+)
+WRONG_AUDIENCE_REFUSAL = {"jsonrpc": "2.0", "id": 0, "error": {"code": -32002, "message": WRONG_AUDIENCE_MESSAGE}}
+INITIALIZED = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2025-06-18"}}
 
 
 def _jwt(payload: dict) -> str:
@@ -148,6 +162,13 @@ class ClassifyFailure(unittest.TestCase):
         )
         self.assertEqual(verdict, INBOUND_TOKEN)
         self.assertNotIn("public-client", remedy)
+
+    def test_the_authorizers_wording_is_not_in_the_shared_table(self):
+        # The shared table also classifies tools/call errors, where RFC 6750 wording can come from the target.
+        for text in (WRONG_AUDIENCE_MESSAGE, "Invalid Bearer token", "Missing Bearer token"):
+            with self.subTest(text=text):
+                verdict, _ = classify_failure(text)
+                self.assertEqual(verdict, UNKNOWN)
 
     def test_credential_provider_not_found_beats_the_catch_all(self):
         verdict, remedy = classify_failure("Token exchange failed: credential provider not found.")
@@ -430,14 +451,18 @@ class TransportFailure(unittest.TestCase):
             mcp_post("https://example.invalid/mcp", "t", {"jsonrpc": "2.0", "id": 1}, None)
 
     def test_http_error_is_not_a_transport_failure(self):
+        import email.message
         import io
         import urllib.error
 
         body = b'{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"x"}]}}'
-        err = urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(body))
+        err = urllib.error.HTTPError("u", 400, "Bad Request", email.message.Message(), io.BytesIO(body))
         with mock.patch("check_obo_identity.urllib.request.urlopen", self._raising(err)):
             result = mcp_post("https://example.invalid/mcp", "t", {"jsonrpc": "2.0", "id": 1}, None)
-        self.assertEqual(extract_text(result), "x")
+        # A non-2xx never reads as a success, even when its body is a JSON-RPC result.
+        self.assertTrue(is_error(result))
+        self.assertEqual(result["error"].http_status, 400)
+        self.assertIn('"text":"x"', result["error"]["message"])
 
     def test_main_reports_the_verdict_and_exits_four(self):
         # Assert the verdict, not just the exit status: UNKNOWN also exits 4, so an exit-code-only
@@ -687,6 +712,312 @@ class SubjectClaimCli(unittest.TestCase):
         with patched, contextlib.redirect_stdout(buffer):
             main(argv)
         self.assertIn("subject : user@example.com", buffer.getvalue())
+
+
+class HandshakeRefusal(unittest.TestCase):
+    """The authorizer refuses a bad inbound token at initialize. The check must say so, and stop there."""
+
+    def _run(self, *responses):
+        post = mock.Mock(side_effect=list(responses))
+        with mock.patch("check_obo_identity.mcp_post", post):
+            result = run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+        return result, post
+
+    def test_a_wrong_audience_at_initialize_is_inbound_token_with_its_message(self):
+        result, post = self._run(WRONG_AUDIENCE_REFUSAL)
+        self.assertEqual(result["verdict"], INBOUND_TOKEN)
+        self.assertEqual(result["detail"], WRONG_AUDIENCE_MESSAGE)
+        self.assertIn("allowedAudience", result["remedy"])
+        self.assertEqual(post.call_count, 1, "a refused handshake must not go on to tools/call")
+
+    def test_a_refused_handshake_reports_no_negotiated_version(self):
+        result, _ = self._run(WRONG_AUDIENCE_REFUSAL)
+        self.assertIsNone(result["protocol_version"])
+
+    def test_a_tool_call_error_envelope_keeps_its_message_as_detail(self):
+        tool_error = {"jsonrpc": "2.0", "id": 2, "error": {"code": -32600, "message": "something nobody has seen"}}
+        result, _ = self._run({"result": {"protocolVersion": "2025-06-18"}}, tool_error)
+        self.assertEqual(result["verdict"], UNKNOWN)
+        self.assertEqual(result["detail"], "something nobody has seen")
+
+    def test_main_exits_with_the_inbound_token_code(self):
+        argv = ["--gateway-url", "https://gw.invalid/mcp", "--target-name", "tgt", "--token", "tok", "--json"]
+        buffer = io.StringIO()
+        patched = mock.patch("check_obo_identity.mcp_post", side_effect=[WRONG_AUDIENCE_REFUSAL])
+        with patched, contextlib.redirect_stdout(buffer):
+            code = main(argv)
+        self.assertEqual(code, EXIT_CODES[INBOUND_TOKEN])
+        self.assertEqual(json.loads(buffer.getvalue())["detail"], WRONG_AUDIENCE_MESSAGE)
+
+
+def _http_error(status: int, challenge: str | list[str] | None = None, body: bytes = b""):
+    """An HTTPError as urlopen raises it, with optional WWW-Authenticate challenges (one header each) and body."""
+    import email.message
+    import urllib.error
+
+    headers = email.message.Message()
+    for value in [challenge] if isinstance(challenge, str) else challenge or []:
+        headers["WWW-Authenticate"] = value
+    return urllib.error.HTTPError("https://gw.invalid/mcp", status, "refused", headers, io.BytesIO(body))
+
+
+def _initialized_then(*errors):
+    """An urlopen mock whose first call answers initialize, then raises each error in turn."""
+    opened = mock.MagicMock()
+    opened.__enter__.return_value = io.BytesIO(json.dumps(INITIALIZED).encode())
+    return mock.Mock(side_effect=[opened, *errors])
+
+
+class HandshakeClassification(unittest.TestCase):
+    """Authorizer refusals are recognised on initialize by code first, then wording, then the bare status."""
+
+    def test_the_wrong_audience_capture_gets_the_audience_remedy(self):
+        verdict, remedy = classify_handshake_refusal(WRONG_AUDIENCE_REFUSAL["error"], WRONG_AUDIENCE_MESSAGE)
+        self.assertEqual((verdict, remedy), (INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE))
+
+    def test_the_json_rpc_code_with_its_status_decides_even_with_unfamiliar_wording(self):
+        cases = {(-32001, 401): REMEDY_INBOUND_TOKEN, (-32002, 403): REMEDY_INBOUND_AUDIENCE}
+        for (code, status), expected in cases.items():
+            with self.subTest(code=code):
+                error = TransportError({"code": code, "message": "reworded"}, status, [])
+                verdict, remedy = classify_handshake_refusal(error, "reworded")
+                self.assertEqual((verdict, remedy), (INBOUND_TOKEN, expected))
+
+    def test_a_code_without_its_status_is_not_the_authorizer(self):
+        # MCP uses both numbers too: -32001 is the TypeScript SDK's request timeout.
+        verdict, _ = classify_handshake_refusal({"code": -32001, "message": "Request timed out"}, "Request timed out")
+        self.assertEqual(verdict, UNKNOWN)
+
+    def test_a_specific_cause_beats_a_code_that_arrives_without_its_status(self):
+        text = "Token exchange failed: rate limited. Please try again later."
+        verdict, _ = classify_handshake_refusal({"code": -32001, "message": text}, text)
+        self.assertEqual(verdict, TRANSIENT)
+
+    def test_a_malformed_code_does_not_crash(self):
+        for code in ({"nested": 1}, ["-32001"], "-32001"):
+            with self.subTest(code=code):
+                verdict, _ = classify_handshake_refusal({"code": code, "message": "x"}, "x")
+                self.assertEqual(verdict, UNKNOWN)
+
+    def test_a_401_with_any_json_rpc_code_is_inbound_token(self):
+        error = TransportError({"code": -32600, "message": "Unauthorized"}, 401, [])
+        self.assertEqual(classify_handshake_refusal(error, "Unauthorized"), (INBOUND_TOKEN, REMEDY_INBOUND_TOKEN))
+
+    def test_a_specific_cause_beats_a_bare_401(self):
+        text = "Token exchange failed: rate limited. Please try again later."
+        error = TransportError({"code": -32600, "message": text}, 401, [])
+        self.assertEqual(classify_handshake_refusal(error, text)[0], TRANSIENT)
+
+    def test_a_status_the_body_claims_is_not_transport_evidence(self):
+        # A 2xx error object is a plain dict: an http_status key in it is just data, never the real status.
+        for error in (
+            {"code": -32001, "message": "Request timed out", "http_status": 401},
+            {"code": -32603, "message": "x", "http_status": [1], "www_authenticate": 5},
+        ):
+            with self.subTest(error=error):
+                self.assertEqual(classify_handshake_refusal(error, error["message"])[0], UNKNOWN)
+
+    def test_the_wording_is_the_fallback_when_no_code_is_sent(self):
+        for text in ("Invalid Bearer token", "Missing Bearer token"):
+            with self.subTest(text=text):
+                verdict, remedy = classify_handshake_refusal({"message": text}, text)
+                self.assertEqual((verdict, remedy), (INBOUND_TOKEN, REMEDY_INBOUND_TOKEN))
+
+    def test_other_handshake_errors_fall_through_to_the_shared_table(self):
+        text = "Token exchange failed: rate limited. Please try again later."
+        verdict, _ = classify_handshake_refusal({"code": -32603, "message": text}, text)
+        self.assertEqual(verdict, TRANSIENT)
+
+    def test_the_audience_remedy_names_the_tokens_actual_aud_for_both_entra_versions(self):
+        self.assertIn("actual aud", REMEDY_INBOUND_AUDIENCE)
+        self.assertIn("v2.0", REMEDY_INBOUND_AUDIENCE)
+        self.assertIn("v1.0", REMEDY_INBOUND_AUDIENCE)
+        self.assertIn("allowedScopes", REMEDY_INBOUND_AUDIENCE)
+
+
+class DownstreamRejectionIsNotInbound(unittest.TestCase):
+    """The same RFC 6750 wording behind tools/call is the target rejecting the delivered token."""
+
+    def _run(self, tool_response):
+        post = mock.Mock(side_effect=[INITIALIZED, tool_response])
+        with mock.patch("check_obo_identity.mcp_post", post):
+            return run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+
+    def _wrapped(self, cause: str) -> dict:
+        text = f"MCP tools/call failed: Authorization error when sending message: {cause}"
+        return {"jsonrpc": "2.0", "id": 2, "result": {"isError": True, "content": [{"type": "text", "text": text}]}}
+
+    def test_a_wrapped_downstream_403_is_target_rejected_token(self):
+        result = self._run(self._wrapped("403 " + WRONG_AUDIENCE_MESSAGE))
+        self.assertEqual(result["verdict"], TARGET_REJECTED_TOKEN)
+
+    def test_a_wrapped_downstream_invalid_bearer_is_target_rejected_token(self):
+        result = self._run(self._wrapped("401 Invalid Bearer token"))
+        self.assertEqual(result["verdict"], TARGET_REJECTED_TOKEN)
+
+    def test_an_authorizer_code_without_its_status_on_tools_call_is_left_to_the_shared_table(self):
+        error = {"jsonrpc": "2.0", "id": 2, "error": {"code": -32002, "message": WRONG_AUDIENCE_MESSAGE}}
+        result = self._run(error)
+        self.assertEqual(result["verdict"], UNKNOWN)
+        self.assertEqual(result["detail"], WRONG_AUDIENCE_MESSAGE)
+
+    def test_the_bare_rfc6750_wording_without_the_wrapper_is_unknown_not_inbound(self):
+        text = "403 " + WRONG_AUDIENCE_MESSAGE
+        tool_error = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"isError": True, "content": [{"type": "text", "text": text}]},
+        }
+        self.assertEqual(self._run(tool_error)["verdict"], UNKNOWN)
+
+
+class EmptyBodyRefusal(unittest.TestCase):
+    """A refusal with only a status and a challenge is still classified, and its evidence kept."""
+
+    def _check(self, error):
+        with mock.patch("check_obo_identity.urllib.request.urlopen", mock.Mock(side_effect=error)) as opener:
+            result = run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+        return result, opener
+
+    def test_mcp_post_keeps_the_status_and_challenge(self):
+        error = _http_error(401, 'Bearer error="invalid_token"')
+        with mock.patch("check_obo_identity.urllib.request.urlopen", mock.Mock(side_effect=error)):
+            response = mcp_post("https://gw.invalid/mcp", "tok", {"jsonrpc": "2.0", "id": 1}, None)
+        self.assertTrue(is_error(response))
+        self.assertEqual(response["error"].http_status, 401)
+        self.assertEqual(response["error"].challenges, ['Bearer error="invalid_token"'])
+
+    def test_an_empty_401_at_initialize_is_inbound_token(self):
+        result, opener = self._check(_http_error(401, 'Bearer error="invalid_token"'))
+        self.assertEqual((result["verdict"], result["remedy"]), (INBOUND_TOKEN, REMEDY_INBOUND_TOKEN))
+        self.assertEqual(result["detail"], 'HTTP 401 (Bearer error="invalid_token")')
+        self.assertEqual(opener.call_count, 1, "a refused handshake must not go on to tools/call")
+
+    def test_an_empty_403_with_insufficient_scope_gets_the_audience_remedy(self):
+        result, _ = self._check(_http_error(403, 'Bearer error="insufficient_scope"'))
+        self.assertEqual((result["verdict"], result["remedy"]), (INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE))
+
+    def test_an_empty_403_without_a_bearer_challenge_is_not_blamed_on_the_token(self):
+        result, _ = self._check(_http_error(403))
+        self.assertEqual(result["verdict"], UNKNOWN)
+        self.assertEqual(result["detail"], "HTTP 403")
+
+    def test_main_exits_with_the_inbound_token_code(self):
+        argv = ["--gateway-url", "https://gw.invalid/mcp", "--target-name", "tgt", "--token", "tok", "--json"]
+        buffer = io.StringIO()
+        opener = mock.Mock(side_effect=_http_error(401, 'Bearer error="invalid_token"'))
+        with mock.patch("check_obo_identity.urllib.request.urlopen", opener), contextlib.redirect_stdout(buffer):
+            code = main(argv)
+        self.assertEqual(code, EXIT_CODES[INBOUND_TOKEN])
+        self.assertEqual(json.loads(buffer.getvalue())["verdict"], INBOUND_TOKEN)
+
+
+class RefusalBodies(unittest.TestCase):
+    """Whatever a non-2xx carries, it is an error with its status kept, never mistaken for a success."""
+
+    def _post(self, error):
+        with mock.patch("check_obo_identity.urllib.request.urlopen", mock.Mock(side_effect=error)):
+            return mcp_post("https://gw.invalid/mcp", "tok", {"jsonrpc": "2.0", "id": 1}, None)
+
+    def _check(self, *errors):
+        with mock.patch("check_obo_identity.urllib.request.urlopen", mock.Mock(side_effect=list(errors))):
+            return run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+
+    def test_a_json_body_without_an_error_key_is_an_error_with_its_status(self):
+        response = self._post(_http_error(403, None, b'{"message":"Missing Authentication Token"}'))
+        self.assertTrue(is_error(response))
+        self.assertEqual(response["error"].http_status, 403)
+        self.assertIn("Missing Authentication Token", response["error"]["message"])
+
+    def test_a_401_front_door_body_at_initialize_is_inbound_token(self):
+        result = self._check(_http_error(401, None, b'{"message":"Unauthorized"}'))
+        self.assertEqual(result["verdict"], INBOUND_TOKEN)
+        self.assertIn("Unauthorized", result["detail"])
+
+    def test_an_html_403_with_an_insufficient_scope_challenge_gets_the_audience_remedy(self):
+        error = _http_error(403, 'Bearer error="insufficient_scope"', b"<html><body>Forbidden</body></html>")
+        result = self._check(error)
+        self.assertEqual((result["verdict"], result["remedy"]), (INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE))
+
+    def test_a_json_rpc_error_body_keeps_the_http_status(self):
+        body = b'{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Unauthorized"}}'
+        response = self._post(_http_error(401, 'Bearer error="invalid_token"', body))
+        self.assertEqual(response["error"].http_status, 401)
+        self.assertEqual(response["error"]["message"], "Unauthorized")
+
+    def test_a_json_rpc_refusal_reports_its_status_in_the_detail(self):
+        body = b'{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Unauthorized"}}'
+        result = self._check(_http_error(401, 'Bearer error="invalid_token"', body))
+        self.assertEqual((result["verdict"], result["detail"]), (INBOUND_TOKEN, "HTTP 401: Unauthorized"))
+
+    def test_the_http_evidence_never_leaks_into_the_error_text(self):
+        body = b'{"jsonrpc":"2.0","id":1,"error":{"code":-32603}}'
+        result = self._check(_http_error(500, 'Bearer error="invalid_token"', body))
+        self.assertEqual(result["verdict"], TRANSIENT)
+        self.assertNotIn("http_status", result["detail"])
+        self.assertNotIn("Bearer", result["detail"])
+
+    def test_every_challenge_is_read_not_only_the_first(self):
+        error = _http_error(403, ['DPoP algs="ES256"', 'Bearer error="insufficient_scope"'])
+        result = self._check(error)
+        self.assertEqual((result["verdict"], result["remedy"]), (INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE))
+
+    def test_empty_throttling_and_gateway_errors_are_transient(self):
+        for status in (429, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                self.assertEqual(self._check(_http_error(status))["verdict"], TRANSIENT)
+
+    def _after_initialize(self, *errors):
+        with mock.patch("check_obo_identity.urllib.request.urlopen", _initialized_then(*errors)):
+            return run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+
+    def test_an_empty_503_on_tools_call_is_transient(self):
+        result = self._after_initialize(_http_error(503))
+        self.assertEqual((result["verdict"], result["detail"]), (TRANSIENT, "HTTP 503"))
+
+    def test_a_body_that_cannot_be_read_still_keeps_its_status(self):
+        # The gateway answered, so this is not GATEWAY_UNREACHABLE: the status decides.
+        error = _http_error(401, 'Bearer error="invalid_token"')
+        error.read = mock.Mock(side_effect=TimeoutError("read timed out"))
+        response = self._post(error)
+        self.assertEqual(response["error"].http_status, 401)
+        self.assertEqual(classify_handshake_refusal(response["error"], response["error"]["message"])[0], INBOUND_TOKEN)
+
+    def test_a_non_2xx_result_at_initialize_does_not_count_as_a_handshake(self):
+        error = _http_error(401, None, b'{"jsonrpc":"2.0","id":1,"result":null}')
+        result = self._check(error)
+        self.assertEqual(result["verdict"], INBOUND_TOKEN)
+        self.assertIsNone(result["protocol_version"])
+
+    def test_the_transport_status_replaces_one_the_body_claims(self):
+        body = b'{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"x","http_status":200,"www_authenticate":5}}'
+        response = self._post(_http_error(503, None, body))
+        self.assertEqual((response["error"].http_status, response["error"].challenges), (503, []))
+        self.assertEqual(self._check(_http_error(503, None, body))["verdict"], TRANSIENT)
+
+    def test_a_retryable_status_beats_the_generic_exchange_failure(self):
+        body = b'{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"Token exchange failed"}}'
+        self.assertEqual(self._after_initialize(_http_error(503, None, body))["verdict"], TRANSIENT)
+
+    def test_bearer_and_insufficient_scope_must_come_from_the_same_challenge(self):
+        error = _http_error(403, ['DPoP error="insufficient_scope"', 'Bearer realm="gw"'])
+        result = self._check(error)
+        self.assertEqual((result["verdict"], result["remedy"]), (INBOUND_TOKEN, REMEDY_INBOUND_TOKEN))
+
+    def test_the_authorizers_code_and_status_on_tools_call_stay_on_the_shared_table(self):
+        # The token already passed the authorizer at initialize, so tools/call is not classified as its refusal.
+        for status, code, message in ((401, -32001, "Invalid Bearer token"), (403, -32002, WRONG_AUDIENCE_MESSAGE)):
+            with self.subTest(code=code):
+                body = json.dumps({"jsonrpc": "2.0", "id": 0, "error": {"code": code, "message": message}}).encode()
+                result = self._after_initialize(_http_error(status, None, body))
+                self.assertEqual((result["verdict"], result["detail"]), (UNKNOWN, f"HTTP {status}: {message}"))
+
+    def test_a_string_valued_error_on_tools_call_is_still_classified(self):
+        string_error = {"jsonrpc": "2.0", "id": 2, "error": "Token exchange failed: rate limited"}
+        post = mock.Mock(side_effect=[INITIALIZED, string_error])
+        with mock.patch("check_obo_identity.mcp_post", post):
+            result = run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
+        self.assertEqual(result["verdict"], TRANSIENT)
 
 
 if __name__ == "__main__":

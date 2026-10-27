@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import re
@@ -109,14 +110,23 @@ REMEDY_INBOUND_TOKEN = (
     "the gateway authorizer does not accept. Mint a fresh one and check its iss and aud against the "
     "authorizer's discoveryUrl and allowedAudience."
 )
+REMEDY_INBOUND_AUDIENCE = (
+    "The gateway authorizer accepted the token's signature but not its claims. Despite the insufficient_scope "
+    "wording this is usually the audience: the token's aud is not in the authorizer's allowedAudience, so "
+    "decode the token and put its actual aud there. A Microsoft Entra v2.0 token always carries the "
+    "application's client ID; a v1.0 token carries the resource it was requested for, often the api:// "
+    "Application ID URI. Otherwise check allowedClients (a token with no client_id claim is refused the same "
+    "way), allowedScopes, and any custom claim the authorizer requires."
+)
 REMEDY_PROVIDER_NOT_FOUND = (
     "The credential provider named on the target does not exist where the gateway looked. Check the "
     "providerArn on the target, and that the provider lives in the same Region as the gateway."
 )
 REMEDY_TRANSIENT = (
     "Rate limiting or a service error rather than a misconfiguration, so retry before changing anything. "
-    "This is matched on the message text alone and both the exchange and the target can emit it, so read "
-    "the detail field to see which one did, and give AWS the verbatim text if it persists."
+    "This is matched on the message text, or on an HTTP 429 or 5xx whose text matches nothing more specific, "
+    "and both the exchange and the target can emit it, so read the detail field to see which one did, and "
+    "give AWS the verbatim text if it persists."
 )
 REMEDY_EXCHANGE_REFUSED = (
     "The exchange was refused. Databricks issues a per-user token only when no client authentication is "
@@ -181,7 +191,23 @@ FAILURE_SIGNATURES = (
     # sending message", sometimes with the underlying cause appended. It sits below the leaves so a
     # composite message is classified by its cause rather than by the wrapper.
     ("authorization error when sending message", TARGET_REJECTED_TOKEN, REMEDY_TARGET_REJECTED_TOKEN),
-    ("token exchange failed", EXCHANGE_REFUSED, REMEDY_EXCHANGE_FAILED_GENERIC),
+)
+# The catch-all for every "Token exchange failed" message, kept out of the table because it is the weakest
+# evidence there is: a retryable HTTP status outranks it, though nothing more specific does.
+GENERIC_EXCHANGE_FAILURE = (("token exchange failed", EXCHANGE_REFUSED, REMEDY_EXCHANGE_FAILED_GENERIC),)
+
+# The gateway authorizer's own refusals, which arrive at initialize: 401 / -32001 for a missing or
+# unverifiable token, and 403 / -32002 insufficient_scope for a signed token whose claims it rejects. They
+# are recognised on the handshake only. The insufficient_scope wording is RFC 6750's standard description, so
+# a target's 403 behind tools/call can carry it verbatim, and there the exchange worked and the target
+# rejected the delivered token, which says nothing about the inbound one.
+# A code counts only with the HTTP status the gateway sent it with, because MCP uses both numbers too:
+# -32001 is the TypeScript SDK's request timeout and -32002 the specification's resource not found.
+AUTHORIZER_CODES = {-32001: (401, REMEDY_INBOUND_TOKEN), -32002: (403, REMEDY_INBOUND_AUDIENCE)}
+AUTHORIZER_SIGNATURES = (
+    ("requires higher privileges than provided by the access token", INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE),
+    ("invalid bearer token", INBOUND_TOKEN, REMEDY_INBOUND_TOKEN),
+    ("missing bearer token", INBOUND_TOKEN, REMEDY_INBOUND_TOKEN),
 )
 
 
@@ -228,15 +254,61 @@ def subject_from_token(token: str | None, claim: str = "email") -> str | None:
     return value.strip()
 
 
-def classify_failure(text: str | None) -> tuple[str, str]:
-    """Map an error string from the gateway to a cause and a remedy."""
-    if not text:
-        return UNKNOWN, REMEDY_NO_ERROR_TEXT
-    haystack = text.lower()
-    for needle, verdict, remedy in FAILURE_SIGNATURES:
+def _match(text: str | None, table: tuple) -> tuple[str, str] | None:
+    """Return the verdict and remedy of the first needle in the text, or None."""
+    haystack = (text or "").lower()
+    for needle, verdict, remedy in table:
         if needle in haystack:
             return verdict, remedy
+    return None
+
+
+def is_transient_status(status: object) -> bool:
+    """A 429 or any 5xx: worth retrying before changing anything."""
+    return isinstance(status, int) and (status == 429 or 500 <= status <= 599)
+
+
+def classify_failure(text: str | None, http_status: int | None = None) -> tuple[str, str]:
+    """Map an error string from the gateway to a cause and a remedy.
+
+    A retryable HTTP status outranks only the generic "Token exchange failed" catch-all.
+    """
+    matched = _match(text, FAILURE_SIGNATURES)
+    if matched:
+        return matched
+    if is_transient_status(http_status):
+        return TRANSIENT, REMEDY_TRANSIENT
+    matched = _match(text, GENERIC_EXCHANGE_FAILURE)
+    if matched:
+        return matched
+    if not text:
+        return UNKNOWN, REMEDY_NO_ERROR_TEXT
     return UNKNOWN, REMEDY_UNRECOGNISED
+
+
+def classify_handshake_refusal(error: object, text: str | None) -> tuple[str, str]:
+    """Map an error answered to initialize. Only here does an authorizer-shaped error mean the authorizer.
+
+    Keyed on the JSON-RPC code together with the HTTP status it arrived with, then the authorizer's wording
+    and the shared table's specific causes, then the bare status and a Bearer challenge. Anything else gets
+    the shared table's fallbacks.
+    """
+    status, challenges = transport_evidence(error)
+    code = error.get("code") if isinstance(error, dict) else None
+    for expected_code, (expected_status, remedy) in AUTHORIZER_CODES.items():
+        if code == expected_code and status == expected_status:
+            return INBOUND_TOKEN, remedy
+    matched = _match(text, AUTHORIZER_SIGNATURES) or _match(text, FAILURE_SIGNATURES)
+    if matched:
+        return matched
+    if status == 401:
+        return INBOUND_TOKEN, REMEDY_INBOUND_TOKEN
+    bearer = [value.lower() for value in challenges if value.lower().lstrip().startswith("bearer")]
+    if status == 403 and bearer:
+        if any("insufficient_scope" in value for value in bearer):
+            return INBOUND_TOKEN, REMEDY_INBOUND_AUDIENCE
+        return INBOUND_TOKEN, REMEDY_INBOUND_TOKEN
+    return classify_failure(text, status)
 
 
 def resolve_identity(shape: str, identity: str | None, subject: str | None) -> tuple[str, str]:
@@ -279,6 +351,15 @@ def extract_text(response: dict) -> str | None:
         if isinstance(block, dict) and block.get("type") == "text" and block.get("text") is not None:
             return block.get("text")
     return None
+
+
+def error_text(response: dict) -> str | None:
+    """The message of a JSON-RPC error envelope, which carries no result content for extract_text to find."""
+    error = response.get("error")
+    if not isinstance(error, dict):
+        return None
+    message = error.get("message")
+    return message if isinstance(message, str) and message else json.dumps(error)
 
 
 def is_error(response: dict) -> bool:
@@ -377,6 +458,14 @@ def _sse_payloads(body: str):
             continue
 
 
+class HandshakeRefused(Exception):
+    """initialize itself was answered with an error, so no tool call can tell us anything."""
+
+    def __init__(self, message: str, error: object = None):
+        super().__init__(message)
+        self.error = error
+
+
 class GatewayUnreachable(Exception):
     """The gateway URL could not be reached at all — DNS, connection or socket timeout."""
 
@@ -396,7 +485,14 @@ def mcp_post(url: str, token: str, payload: dict, protocol_version: str | None, 
             body = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         # An MCP error arrives as a normal body on a non-2xx response, so this is not a transport failure.
-        body = exc.read().decode("utf-8", "replace")
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except (OSError, http.client.HTTPException):
+            # The gateway did answer, so its status and challenge still decide the verdict without a body.
+            body = ""
+        finally:
+            exc.close()
+        return http_error_envelope(exc.code, exc.headers, body, payload.get("id"))
     except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:  # noqa: UP041
         # HTTPError is a subclass of URLError and is handled above, so reaching here means the
         # request never got an HTTP response: bad host, refused connection, or the read timed out.
@@ -404,6 +500,55 @@ def mcp_post(url: str, token: str, payload: dict, protocol_version: str | None, 
         # before that, so both are listed and the linter is told to leave it alone.
         raise GatewayUnreachable(f"{url}: {getattr(exc, 'reason', exc)}") from exc
     return parse_mcp_body(body, expected_id=payload.get("id"))
+
+
+class TransportError(dict):
+    """A JSON-RPC error object from a non-2xx response, with the HTTP evidence it arrived with.
+
+    The status and challenges are attributes rather than keys, so nothing a response body says can stand in
+    for them, and they never leak into the error text that is reported or classified.
+    """
+
+    def __init__(self, error: dict, http_status: int, challenges: list[str]):
+        super().__init__(error)
+        self.http_status = http_status
+        self.challenges = challenges
+
+
+def transport_evidence(error: object) -> tuple[int | None, list[str]]:
+    """The HTTP status and WWW-Authenticate challenges an error arrived with, or (None, []) for none."""
+    if isinstance(error, TransportError):
+        return error.http_status, error.challenges
+    return None, []
+
+
+def with_status(text: str | None, status: int | None) -> str | None:
+    """Lead an error's text with its HTTP status, so the report shows what drove the verdict."""
+    if status is None or (text or "").startswith(f"HTTP {status}"):
+        return text
+    return f"HTTP {status}: {text}" if text else f"HTTP {status}"
+
+
+def http_error_envelope(status: int, headers: object, body: str, expected_id: object = None) -> dict:
+    """Decode a non-2xx response so that it can never read as a success, keeping its HTTP evidence.
+
+    A refusal may carry a JSON-RPC error, something that is not JSON-RPC at all (an HTML page from a proxy,
+    or {"message": ...} from a front door), or no body. A JSON-RPC error keeps its content; anything else, a
+    JSON-RPC result included, becomes an error quoting what came back. Either way the status and every
+    WWW-Authenticate challenge travel with it as a TransportError.
+    """
+    challenges = [value for value in (headers.get_all("WWW-Authenticate") or []) if value] if headers else []
+    try:
+        response = parse_mcp_body(body, expected_id=expected_id)
+    except ValueError:
+        response = {}
+    if isinstance(response.get("error"), dict):
+        return {**response, "error": TransportError(response["error"], status, challenges)}
+    message = f"HTTP {status}" + (f" ({', '.join(challenges)})" if challenges else "")
+    excerpt = " ".join(body.split())[:300]
+    if excerpt:
+        message += f": {excerpt}"
+    return {"error": TransportError({"message": message}, status, challenges)}
 
 
 def negotiate(url: str, token: str, requested_version: str) -> str:
@@ -423,6 +568,9 @@ def negotiate(url: str, token: str, requested_version: str) -> str:
         },
     }
     response = mcp_post(url, token, payload, protocol_version=None)
+    if is_error(response):
+        message = error_text(response) or extract_text(response) or "initialize returned an error"
+        raise HandshakeRefused(message, response.get("error"))
     return (response.get("result") or {}).get("protocolVersion") or requested_version
 
 
@@ -461,7 +609,15 @@ def run_check(
     subject_claim: str = "email",
 ) -> dict:
     """Run the identity probe and return a verdict dictionary."""
-    negotiated = negotiate(url, token, requested_version)
+    try:
+        negotiated = negotiate(url, token, requested_version)
+    except HandshakeRefused as refused:
+        # The authorizer refuses a bad inbound token here, before any tool runs. Report it now: carrying on
+        # to tools/call meets the same refusal and used to surface as UNKNOWN with no detail.
+        text = str(refused)
+        verdict, remedy = classify_handshake_refusal(refused.error, text)
+        status, _ = transport_evidence(refused.error)
+        return {"verdict": verdict, "remedy": remedy, "detail": with_status(text, status), "protocol_version": None}
     payload = {
         "jsonrpc": "2.0",
         "id": 2,
@@ -474,8 +630,16 @@ def run_check(
     response = mcp_post(url, token, payload, protocol_version=negotiated, timeout=QUERY_TIMEOUT)
     text = extract_text(response)
     if is_error(response):
-        verdict, remedy = classify_failure(text or json.dumps(response.get("error") or {}))
-        return {"verdict": verdict, "remedy": remedy, "detail": text, "protocol_version": negotiated}
+        text = text or error_text(response)
+        error = response.get("error")
+        status, _ = transport_evidence(error)
+        verdict, remedy = classify_failure(text or json.dumps(error or {}), status)
+        return {
+            "verdict": verdict,
+            "remedy": remedy,
+            "detail": with_status(text, status),
+            "protocol_version": negotiated,
+        }
     identity = extract_identity(text)
     subject = subject_from_token(token, subject_claim)
     verdict, remedy = resolve_identity(classify_identity(identity), identity, subject)

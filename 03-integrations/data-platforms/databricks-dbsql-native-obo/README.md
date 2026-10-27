@@ -115,9 +115,9 @@ Verdicts and exit codes:
 | `WORKSPACE_MEMBERSHIP` | 4 | Identity resolved; the user is not a workspace member. |
 | `GATEWAY_UNREACHABLE` | 4 | The gateway URL itself was not reachable, so nothing was tested. Transport, not identity: check the URL, the Region in the hostname, and egress. |
 | `UNKNOWN` | 4 | Could not determine; the report prints what was seen. |
-| `INBOUND_TOKEN` | 5 | The token you presented was rejected before the exchange: expired, or an issuer or audience the authorizer does not accept. |
+| `INBOUND_TOKEN` | 5 | The token you presented was rejected before the exchange: expired, or an issuer or audience the authorizer does not accept. A wrong audience answers `403 insufficient_scope` at `initialize`; see the note below. |
 | `PROVIDER_NOT_FOUND` | 6 | The credential provider named on the target does not exist where the gateway looked. Check `providerArn`, and that the provider is in the gateway's Region. |
-| `TRANSIENT` | 7 | Rate limited, or a service error. Nothing is misconfigured on this evidence; retry. |
+| `TRANSIENT` | 7 | Rate limited, or a service error, including an HTTP 429 or 5xx whose text matches nothing more specific. Nothing is misconfigured on this evidence; retry. |
 | `TARGET_REJECTED_TOKEN` | 8 | The exchange succeeded and Databricks rejected the delivered token. Check `all-apis` in the target's scopes, that the provider's discovery host matches the workspace host the target points at, and the caller's own permission on the warehouse, Genie space or function. |
 | `TARGET_NOT_FOUND` | 9 | No tool matched `--target-name`, or the target contributed no tools — see the `listingMode` note below. |
 | `IDENTITY_MISMATCH` | 10 | Unity Catalog saw a human, but not the human in the token presented. Commonly a shared account with an email-shaped username. |
@@ -125,8 +125,15 @@ Verdicts and exit codes:
 
 The `insufficient permissions for token exchange`, `is not a member of workspace`, `scopes, audience, or
 IdP configuration` and `Authorization error when sending message` mappings were observed against a live
-gateway. `INBOUND_TOKEN`, `PROVIDER_NOT_FOUND`, `TRANSIENT` and `TARGET_NOT_FOUND` come from the
-service-side message list supplied in review of this sample, and are not from a run of our own.
+gateway, and so were the authorizer's own refusals behind `INBOUND_TOKEN`: `401 Missing Bearer token`,
+`401 Invalid Bearer token` and `403 insufficient_scope`, all answered at `initialize`. The script recognises
+them only on the `initialize` response, keyed on the JSON-RPC code together with the status the gateway sent
+it with (`-32001` with 401, `-32002` with 403), since MCP also uses both numbers, then on their wording.
+`insufficient_scope` is the standard RFC 6750 description, so a target's `403` behind `tools/call` can carry it
+too: `tools/call` errors stay on the shared table, where that 403 wrapped as `Authorization error when sending
+message` is `TARGET_REJECTED_TOKEN`. `PROVIDER_NOT_FOUND`,
+`TRANSIENT`, `TARGET_NOT_FOUND` and the `inbound token is invalid` wording come from the service-side
+message list supplied in review of this sample, and are not from a run of our own.
 
 ## Notes that save time
 
@@ -140,6 +147,13 @@ service-side message list supplied in review of this sample, and are not from a 
   version and rejects a different one with `-32600`. The preflight script does this for you.
 - **With a Cognito ID token, use `allowedAudience` rather than `allowedClients`** on the authorizer. ID
   tokens carry `aud` but no `client_id`, so `allowedClients` yields `403 insufficient_scope`.
+- **A wrong `allowedAudience` also answers `403 insufficient_scope`, at `initialize`.** The wording suggests a
+  missing OAuth scope, but the authorizer has accepted the token's signature and rejected its claims, most
+  often `aud`. Decode the token and put its actual `aud` in `allowedAudience` (and in the Databricks
+  federation policy). A Microsoft Entra v2.0 token always carries the application's client ID; a v1.0 token
+  carries the resource it was requested for, often the `api://` Application ID URI, and its issuer is
+  `sts.windows.net`, so the authorizer's `discoveryUrl` must match the token version too. If `aud` is right,
+  check `allowedScopes` and any custom claim the authorizer requires.
 - **When an exchange fails on a `DYNAMIC` target, that target contributes no tools and no error** to
   `tools/list`. A caller sees a short tool list with no explanation.
 - **`exceptionLevel: DEBUG` populates `_meta.debug` in responses; it does not create log delivery.**
