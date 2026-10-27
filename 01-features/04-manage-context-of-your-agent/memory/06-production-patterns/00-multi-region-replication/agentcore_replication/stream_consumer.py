@@ -44,8 +44,9 @@ import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
 from botocore.exceptions import ClientError
 
@@ -115,7 +116,7 @@ def _to_epoch(event_time) -> float:
             return dt.timestamp()
         except ValueError:
             pass
-    return datetime.now(timezone.utc).timestamp()
+    return time.time()
 
 
 def _client_token(stream_event: dict) -> str:
