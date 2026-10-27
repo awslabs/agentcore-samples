@@ -20,7 +20,7 @@ Environment variables required:
     COGNITO_CLIENT_SECRET  — Cognito app client secret
     COGNITO_SCOPE          — OAuth scope string
     BEDROCK_MODEL_ID       — (optional) Bedrock inference profile ID or ARN;
-                             defaults to us.anthropic.claude-sonnet-4-5-20250514-v1:0
+                             defaults to global.anthropic.claude-sonnet-4-6
 
 IAM permissions required:
     bedrock:InvokeModel (for Claude Sonnet 4)
@@ -36,11 +36,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from utils.gateway_auth import get_oauth_token
-
+from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.agents import create_agent
+from utils.gateway_auth import get_oauth_token
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
