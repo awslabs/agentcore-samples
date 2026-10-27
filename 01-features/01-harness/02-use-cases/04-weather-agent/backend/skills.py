@@ -13,9 +13,8 @@ from botocore.config import Config
 from botocore.exceptions import ParamValidationError
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from utils.client import get_agentcore_control_client, get_agentcore_client
-
 from resources import REGION
+from utils.client import get_agentcore_client, get_agentcore_control_client
 
 NODE_CONTAINER = "public.ecr.aws/docker/library/node:slim"
 MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -95,7 +94,7 @@ def _try_git_skill(client, harness_arn: str, session_id: str, city: str) -> str 
     except ParamValidationError:
         print("[skills] Git-based skill not supported, falling back to path approach")
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - report and fall back to the non-skill path
         print(f"[skills] Git-based skill exception: {type(e).__name__}: {e}")
         return None
 
@@ -115,26 +114,40 @@ def _install_skill_path(client, control, harness_id: str, harness_arn: str, sess
         print(f"[skills] Attaching Node.js container: {NODE_CONTAINER}")
         control.update_harness(
             harnessId=harness_id,
-            environmentArtifact={
-                "optionalValue": {"containerConfiguration": {"containerUri": NODE_CONTAINER}}
-            },
+            environmentArtifact={"optionalValue": {"containerConfiguration": {"containerUri": NODE_CONTAINER}}},
         )
-        for _ in range(24):
+        # 600s, matching utils/harness.py: a container UPDATE routinely runs
+        # past the old 24 x 5s = 120s ceiling, and this loop has no else-branch,
+        # so expiring simply fell through and ran the install commands against a
+        # harness that was still UPDATING. UPDATE_FAILED is checked too, so a
+        # real failure stops here instead of surfacing as a confusing shell error.
+        deadline = time.monotonic() + 600
+        while True:
             status = control.get_harness(harnessId=harness_id)["harness"]["status"]
             if status == "READY":
                 break
+            if status == "UPDATE_FAILED":
+                print(f"[skills] Container attach failed: {status}")
+                return False
+            if time.monotonic() > deadline:
+                print(f"[skills] Container attach did not finish in 600s (status: {status})")
+                return False
             time.sleep(5)
 
     # Install skill
     print("[skills] Installing xlsx skill via npx...")
     _run_command(
-        client, harness_arn, session_id,
+        client,
+        harness_arn,
+        session_id,
         "apt-get update -qq && apt-get install git -y -qq > /dev/null 2>&1 && "
-        "npx skills add https://github.com/anthropics/skills --skill xlsx --yes 2>&1 | tail -3"
+        "npx skills add https://github.com/anthropics/skills --skill xlsx --yes 2>&1 | tail -3",
     )
 
     # Verify
-    verify = _run_command(client, harness_arn, session_id, "ls .agents/skills/xlsx/ 2>/dev/null && echo OK || echo MISSING")
+    verify = _run_command(
+        client, harness_arn, session_id, "ls .agents/skills/xlsx/ 2>/dev/null && echo OK || echo MISSING"
+    )
     if "OK" in verify:
         _skill_installed[session_id] = True
         print("[skills] Skill installed successfully")
@@ -143,11 +156,13 @@ def _install_skill_path(client, control, harness_id: str, harness_arn: str, sess
     return False
 
 
-def generate_weather_report(harness_arn: str, harness_id: str, session_id: str, city: str = "the cities discussed") -> dict:
+def generate_weather_report(
+    harness_arn: str, harness_id: str, session_id: str, city: str = "the cities discussed"
+) -> dict:
     """Generate a weather forecast XLSX report. Tries Git skill first, falls back to path."""
     try:
         return _generate_report_inner(harness_arn, harness_id, session_id, city)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - report as data rather than breaking the request
         print(f"[skills] Unhandled exception: {type(e).__name__}: {e}")
         return {"success": False, "error": f"{type(e).__name__}: {e}"}
 
@@ -161,8 +176,8 @@ def _generate_report_inner(harness_arn: str, harness_id: str, session_id: str, c
     agent_text = _try_git_skill(client, harness_arn, session_id, city)
 
     if agent_text is not None:
-        # Git skill ran — check if file was generated
-        print(f"[skills] Git skill completed. Agent text length: {len(agent_text)}")
+        # Git skill ran — check if file was generated. _try_git_skill already
+        # logged the completion and length, so don't log it a second time.
         b64_clean = _download_file(client, harness_arn, session_id)
         if b64_clean:
             return {
