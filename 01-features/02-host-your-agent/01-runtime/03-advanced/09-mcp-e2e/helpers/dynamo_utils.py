@@ -1,11 +1,17 @@
-import boto3
-from datetime import datetime
-from typing import Dict, List
+import os
+from datetime import datetime, timezone
 from decimal import Decimal
+
+import boto3
+from botocore.exceptions import ClientError
 
 
 class FinanceDB:
-    def __init__(self, table_name: str = "finance_tracker", region_name: str = "us-east-1"):
+    def __init__(
+        self,
+        table_name: str = "finance_tracker",
+        region_name: str = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1")),
+    ):
         self.dynamodb = boto3.resource("dynamodb", region_name=region_name)
         self.table_name = table_name
         self.table = self.dynamodb.Table(table_name)
@@ -13,11 +19,9 @@ class FinanceDB:
     def create_table(self) -> str:
         """Create the finance tracker table if it doesn't exist"""
         try:
-            # Check if table already exists
             self.table.load()
             return f"Table {self.table_name} already exists"
         except self.dynamodb.meta.client.exceptions.ResourceNotFoundException:
-            # Table doesn't exist, create it
             try:
                 table = self.dynamodb.create_table(
                     TableName=self.table_name,
@@ -33,10 +37,10 @@ class FinanceDB:
                 )
                 table.wait_until_exists()
                 return f"Table {self.table_name} created successfully"
-            except Exception as e:
-                return f"Error creating table: {str(e)}"
-        except Exception as e:
-            return f"Error checking table: {str(e)}"
+            except ClientError as e:
+                return f"Error creating table: {e!s}"
+        except ClientError as e:
+            return f"Error checking table: {e!s}"
 
     def delete_table(self) -> str:
         """Delete the finance tracker table"""
@@ -44,8 +48,8 @@ class FinanceDB:
             self.table.delete()
             self.table.wait_until_not_exists()
             return f"Table {self.table_name} deleted successfully"
-        except Exception as e:
-            return f"Error deleting table: {str(e)}"
+        except ClientError as e:
+            return f"Error deleting table: {e!s}"
 
     def add_transaction(
         self,
@@ -58,13 +62,13 @@ class FinanceDB:
         """Add a transaction to DynamoDB"""
         item = {
             "pk": f"USER#{user_alias}",
-            "sk": f"TRANSACTION#{datetime.now().isoformat()}",
+            "sk": f"TRANSACTION#{datetime.now(tz=timezone.utc).isoformat()}",
             "type": transaction_type,
-            "amount": Decimal(str(amount)),  # Convert float to Decimal
+            "amount": Decimal(str(amount)),
             "description": description,
             "category": category,
-            "date": datetime.now().isoformat(),
-            "created_at": datetime.now().isoformat(),
+            "date": datetime.now(tz=timezone.utc).isoformat(),
+            "created_at": datetime.now(tz=timezone.utc).isoformat(),
         }
 
         self.table.put_item(Item=item)
@@ -76,14 +80,14 @@ class FinanceDB:
             "pk": f"USER#{user_alias}",
             "sk": f"BUDGET#{category}",
             "category": category,
-            "monthly_limit": Decimal(str(monthly_limit)),  # Convert float to Decimal
-            "set_date": datetime.now().isoformat(),
+            "monthly_limit": Decimal(str(monthly_limit)),
+            "set_date": datetime.now(tz=timezone.utc).isoformat(),
         }
 
         self.table.put_item(Item=item)
         return f"Budget set for {category}: ${monthly_limit:.2f}/month"
 
-    def get_transactions(self, user_alias: str) -> List[Dict]:
+    def get_transactions(self, user_alias: str) -> list[dict]:
         """Get all transactions for a user"""
         response = self.table.query(
             KeyConditionExpression="pk = :pk AND begins_with(sk, :sk)",
@@ -94,7 +98,7 @@ class FinanceDB:
         )
         return response.get("Items", [])
 
-    def get_budgets(self, user_alias: str) -> List[Dict]:
+    def get_budgets(self, user_alias: str) -> list[dict]:
         """Get all budgets for a user"""
         response = self.table.query(
             KeyConditionExpression="pk = :pk AND begins_with(sk, :sk)",
@@ -102,11 +106,11 @@ class FinanceDB:
         )
         return response.get("Items", [])
 
-    def get_balance(self, user_alias: str) -> Dict:
+    def get_balance(self, user_alias: str) -> dict:
         """Calculate balance from transactions"""
         transactions = self.get_transactions(user_alias)
 
-        total = sum(float(t["amount"]) for t in transactions)  # Convert Decimal to float
+        total = sum(float(t["amount"]) for t in transactions)
         income = sum(float(t["amount"]) for t in transactions if t["type"] == "income")
         expenses = sum(abs(float(t["amount"])) for t in transactions if t["type"] == "expense")
 
