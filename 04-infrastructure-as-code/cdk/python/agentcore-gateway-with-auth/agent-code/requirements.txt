@@ -1,0 +1,7 @@
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+mcp>=1.0.0
+strands-agents
+boto3>=1.40.0
+httpx>=0.25.0
+pydantic>=2.0.0
