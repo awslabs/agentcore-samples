@@ -1,0 +1,4 @@
+boto3>=1.42.87
+strands-agents
+httpx
+python-dotenv
