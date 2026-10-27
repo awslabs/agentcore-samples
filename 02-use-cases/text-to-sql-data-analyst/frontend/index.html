@@ -1,0 +1,240 @@
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-SQL GenAI</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Text-to-SQL GenAI</h1>
+            <p class="subtitle">Query your data in natural language</p>
+        </header>
+
+        <div class="query-section">
+            <div class="input-group">
+                <textarea
+                    id="queryInput"
+                    placeholder="Type your question here... For example: How many customers do we have?"
+                    rows="3"
+                    aria-label="Natural language query input"
+                ></textarea>
+                <button id="submitBtn" class="btn-primary" aria-label="Submit query">
+                    <span class="btn-text">Query</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner" role="status" aria-label="Loading"></span> Processing...
+                    </span>
+                </button>
+            </div>
+
+            <div class="examples-section">
+                <h3>Example Queries</h3>
+                <div class="examples-grid" role="list">
+                    <button class="example-btn" role="listitem" onclick="setQuery('How many customers do we have?')">
+                        How many customers?
+                    </button>
+                    <button class="example-btn" role="listitem" onclick="setQuery('What are the top 10 best-selling products?')">
+                        Top 10 products
+                    </button>
+                    <button class="example-btn" role="listitem" onclick="setQuery('What is the average ticket by segment?')">
+                        Average ticket by segment
+                    </button>
+                    <button class="example-btn" role="listitem" onclick="setQuery('Which products have low stock?')">
+                        Low stock products
+                    </button>
+                    <button class="example-btn" role="listitem" onclick="setQuery('What is the most used payment method?')">
+                        Most used payment method
+                    </button>
+                    <button class="example-btn" role="listitem" onclick="setQuery('How many sales this month?')">
+                        Sales this month
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="results-section" style="display: none;" aria-live="polite">
+            <div class="sql-section">
+                <h3>Generated SQL:</h3>
+                <pre id="sqlDisplay" class="sql-code"></pre>
+            </div>
+            <div class="table-section">
+                <h3>Results:</h3>
+                <div id="resultsInfo" class="results-info"></div>
+                <div class="table-container">
+                    <table id="resultsTable" class="results-table" role="table">
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorSection" class="error-section" style="display: none;" role="alert">
+            <h3>Error</h3>
+            <p id="errorMessage"></p>
+        </div>
+
+        <div class="database-tables-section">
+            <h3>Available Tables</h3>
+            <p class="section-description">Schema of the tables you can query</p>
+
+            <div class="tables-grid">
+                <div class="table-card">
+                    <div class="table-card-header">
+                        <span class="table-icon" aria-hidden="true">&#x1F464;</span>
+                        <h4>customers</h4>
+                    </div>
+                    <p class="table-description">Registered customers</p>
+                    <div class="table-columns-list">
+                        <div class="column-item"><span class="col-type">BIGINT</span> customer_id <span class="col-comment">PK</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> name</div>
+                        <div class="column-item"><span class="col-type">STRING</span> email</div>
+                        <div class="column-item"><span class="col-type">STRING</span> registration_date <span class="col-comment">YYYY-MM-DD</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> country</div>
+                        <div class="column-item"><span class="col-type">STRING</span> segment <span class="col-comment">premium, regular, new</span></div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-card-header">
+                        <span class="table-icon" aria-hidden="true">&#x1F4E6;</span>
+                        <h4>products</h4>
+                    </div>
+                    <p class="table-description">Product catalog</p>
+                    <div class="table-columns-list">
+                        <div class="column-item"><span class="col-type">INT</span> product_id <span class="col-comment">PK</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> name</div>
+                        <div class="column-item"><span class="col-type">STRING</span> category</div>
+                        <div class="column-item"><span class="col-type">DOUBLE</span> price <span class="col-comment">USD</span></div>
+                        <div class="column-item"><span class="col-type">INT</span> stock <span class="col-comment">Low &lt; 50</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> supplier</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-card-header">
+                        <span class="table-icon" aria-hidden="true">&#x1F4B0;</span>
+                        <h4>sales</h4>
+                    </div>
+                    <p class="table-description">Sales transactions</p>
+                    <div class="table-columns-list">
+                        <div class="column-item"><span class="col-type">BIGINT</span> sale_id <span class="col-comment">PK</span></div>
+                        <div class="column-item"><span class="col-type">BIGINT</span> customer_id <span class="col-comment">FK</span></div>
+                        <div class="column-item"><span class="col-type">BIGINT</span> product_id <span class="col-comment">FK</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> sale_date <span class="col-comment">YYYY-MM-DD</span></div>
+                        <div class="column-item"><span class="col-type">INT</span> quantity</div>
+                        <div class="column-item"><span class="col-type">DOUBLE</span> total_amount <span class="col-comment">USD</span></div>
+                        <div class="column-item"><span class="col-type">DOUBLE</span> discount <span class="col-comment">0.0-1.0</span></div>
+                        <div class="column-item"><span class="col-type">STRING</span> payment_method</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="database-info">
+                <div class="info-box">
+                    <span class="info-icon" aria-hidden="true">&#x1F5C3;</span>
+                    <div class="info-content"><strong>Database:</strong> <span id="dbName">my_company_demo</span></div>
+                </div>
+                <div class="info-box">
+                    <span class="info-icon" aria-hidden="true">&#x1F527;</span>
+                    <div class="info-content"><strong>Engine:</strong> Amazon Athena (Presto SQL)</div>
+                </div>
+                <div class="info-box">
+                    <span class="info-icon" aria-hidden="true">&#x1F4CA;</span>
+                    <div class="info-content"><strong>Format:</strong> Parquet (columnar)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const API_BASE = '/api';
+
+    function setQuery(text) {
+        document.getElementById('queryInput').value = text;
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', submitQuery);
+    document.getElementById('queryInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuery(); }
+    });
+
+    async function submitQuery() {
+        const query = document.getElementById('queryInput').value.trim();
+        if (!query) return;
+
+        const btn = document.getElementById('submitBtn');
+        btn.querySelector('.btn-text').style.display = 'none';
+        btn.querySelector('.btn-loading').style.display = 'inline-flex';
+        btn.disabled = true;
+
+        document.getElementById('resultsSection').style.display = 'none';
+        document.getElementById('errorSection').style.display = 'none';
+
+        try {
+            const response = await fetch(`${API_BASE}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query })
+            });
+            const data = await response.json();
+            if (data.success) { displayResults(data); }
+            else { showError(data.error || 'Unknown error'); }
+        } catch (err) {
+            showError(`Connection error: ${err.message}`);
+        } finally {
+            btn.querySelector('.btn-text').style.display = 'inline';
+            btn.querySelector('.btn-loading').style.display = 'none';
+            btn.disabled = false;
+        }
+    }
+
+    function displayResults(data) {
+        document.getElementById('sqlDisplay').textContent = data.sql || '';
+        document.getElementById('resultsInfo').textContent =
+            `${data.row_count || 0} rows | ${data.execution_time_ms || 0}ms`;
+
+        const thead = document.getElementById('tableHead');
+        const tbody = document.getElementById('tableBody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+
+        if (data.columns && data.columns.length > 0) {
+            const headerRow = document.createElement('tr');
+            data.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col.name;
+                th.setAttribute('scope', 'col');
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+        }
+
+        if (data.rows && data.rows.length > 0) {
+            data.rows.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col.name] ?? 'NULL';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('resultsSection').style.display = 'block';
+    }
+
+    function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        document.getElementById('errorSection').style.display = 'block';
+    }
+    </script>
+</body>
+</html>
