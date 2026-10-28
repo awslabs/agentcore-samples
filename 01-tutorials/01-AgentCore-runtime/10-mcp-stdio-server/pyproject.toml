@@ -1,0 +1,10 @@
+[project]
+name = "06-mcp-stdio-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "awslabs-aws-documentation-mcp-server>=1.1.9",
+    "fastmcp>=2.12.5",
+]
