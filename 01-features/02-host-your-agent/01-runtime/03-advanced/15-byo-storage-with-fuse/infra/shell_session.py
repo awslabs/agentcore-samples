@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """shell_session.py -- opens a real interactive PTY inside a running
 AgentCore Runtime session, via the SDK's InvokeAgentRuntimeCommandShell
 WebSocket API (bedrock_agentcore.runtime.shell). Unlike agentcore_boto3.py's

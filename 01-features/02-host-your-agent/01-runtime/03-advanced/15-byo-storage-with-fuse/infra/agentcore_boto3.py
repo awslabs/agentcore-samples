@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """agentcore_boto3.py -- boto3 wrapper for AgentCore control+data plane
 calls. --body-file for create/update is the raw create/update kwargs as
 JSON, passed through as **kwargs.
