@@ -167,7 +167,7 @@ def main(cleanup: bool = False) -> None:
         ],
         session_id=SESSION_ID,
         extractionConfig=dealership,
-        metadata={"channel": "web", "source_system": "crm"},
+        metadata={"channel": {"stringValue": "web"}, "source_system": {"stringValue": "crm"}},
     )
     print("Ingested 2 JSON app events (no conversation involved)")
 
