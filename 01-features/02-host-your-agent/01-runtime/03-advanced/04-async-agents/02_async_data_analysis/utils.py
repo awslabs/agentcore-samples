@@ -282,7 +282,7 @@ def create_agentcore_role(agent_name):
                     "bedrock:InvokeModelWithResponseStream",
                 ],
                 "Resource": [
-                    f"arn:aws:bedrock:{region}::foundation-model/us.anthropic.claude-sonnet-4-20250514-v1:0",
+                    f"arn:aws:bedrock:{region}::foundation-model/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     f"arn:aws:bedrock:{region}::foundation-model/us.anthropic.claude-haiku-4-5-20251001-v1:0",
                 ],
             },
