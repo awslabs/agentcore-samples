@@ -1,0 +1,29 @@
+{
+  "customer_id": "CUST002",
+  "credit_score": 680,
+  "credit_rating": "BB",
+  "existing_facilities": [
+    {
+      "type": "Term Loan",
+      "limit": 2000000,
+      "utilized": 1800000,
+      "status": "current",
+      "bank": "Silicon Valley Bank"
+    }
+  ],
+  "payment_history": {
+    "on_time_payments": 18,
+    "late_payments": 4,
+    "defaults": 0,
+    "average_days_to_pay": 35
+  },
+  "financial_statements": {
+    "fiscal_year": 2023,
+    "total_assets": 15000000,
+    "total_liabilities": 8000000,
+    "net_income": -500000,
+    "debt_to_equity": 1.14,
+    "current_ratio": 1.5
+  },
+  "credit_inquiries_last_12_months": 8
+}

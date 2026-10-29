@@ -1,0 +1,27 @@
+{
+  "customer_id": "CUST003",
+  "name": "Global Trading Partners LLC",
+  "account_type": "corporate",
+  "industry": "Import/Export",
+  "incorporation": {
+    "country": "United States",
+    "state": "Florida",
+    "date": "2018-11-05"
+  },
+  "contact": {
+    "address": "789 Port Boulevard, Miami, FL 33132",
+    "phone": "+1-305-555-0300",
+    "email": "accounts@globaltrading.example.com"
+  },
+  "directors": [
+    { "name": "Carlos Rodriguez", "role": "Managing Director", "pep_status": false },
+    { "name": "Elena Martinez", "role": "Operations Director", "pep_status": true }
+  ],
+  "beneficial_owners": [
+    { "name": "Carlos Rodriguez", "ownership_percentage": 60 },
+    { "name": "Elena Martinez", "ownership_percentage": 40 }
+  ],
+  "kyc_status": "under_review",
+  "risk_flags": ["pep_exposure", "high_risk_geography"],
+  "annual_revenue": "$25M-$50M"
+}
