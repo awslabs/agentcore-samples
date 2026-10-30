@@ -6,6 +6,9 @@
 # selects deliberately — each entry covers a pattern that is load-bearing for
 # this tutorial, with the reason stated inline.
 extend = "../../../pyproject.toml"
+# The sample's minimum Python (the runtimes, the Lambdas and the documented local setup).
+# Without this, ruff assumes a newer Python and suggests changes that would not run on it.
+target-version = "py312"
 
 [lint]
 # Appended to the root config's ignore list (which stays in effect).

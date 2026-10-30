@@ -5,8 +5,9 @@ Find All AgentCore Runtimes
 This script lists all AgentCore runtimes in your account and their CloudWatch logs.
 """
 
-import boto3
 from datetime import datetime
+
+import boto3
 
 
 def main():
@@ -119,7 +120,8 @@ def main():
 
                             found_logs = True
                             break
-                    except Exception:
+                    except Exception as e:
+                        print(f"      ⚠  Skipped log group prefix {pattern}: {e}")
                         continue
 
                 if not found_logs:

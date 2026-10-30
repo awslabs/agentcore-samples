@@ -6,8 +6,9 @@ This script checks the status of the lakehouse agent runtime and helps you
 find its CloudWatch logs.
 """
 
-import boto3
 from datetime import datetime, timedelta
+
+import boto3
 
 
 def main():

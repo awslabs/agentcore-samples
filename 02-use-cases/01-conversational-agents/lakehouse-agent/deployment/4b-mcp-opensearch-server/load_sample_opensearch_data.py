@@ -32,7 +32,7 @@ Usage:
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 from aws_requests_auth.aws_auth import AWSRequestsAuth
@@ -346,7 +346,7 @@ def build_documents_for_user(user_sub: str, user_label: str) -> list[dict]:
     ("CLM-<label>-<suffix>") so both claim_id and narrative content are
     disjoint across users regardless of seed order or count.
     """
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     docs = []
     for note_type, claim_id_suffix, note_text in NOTES_BY_LABEL[user_label]:
         docs.append(
