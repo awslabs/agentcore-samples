@@ -24,7 +24,7 @@ Port 8080 isn't in `allowedPorts`, because `InvokeAgentRuntime` reaches the agen
 - An AWS account in a Region where AgentCore Runtime Session endpoints are available, with credentials configured.
 - Permissions to create an IAM role, upload to Amazon S3, and create a runtime, plus `bedrock-agentcore:InvokeAgentRuntime` and `bedrock-agentcore:InvokeAgentRuntimeProxy` on that runtime and its DEFAULT runtime endpoint.
 - Amazon Bedrock model access for Anthropic Claude Haiku 5.5.
-- Python 3.10 or later with `bedrock-agentcore` 1.26.0 or later.
+- Python 3.10 or later with `bedrock-agentcore` 1.25.2 or later and `boto3` 1.43.122 or later.
 - Node.js 22 or later with `npm`, which `deploy.py` uses to package the agent and the website.
 - A Jupyter environment, such as JupyterLab or Visual Studio Code with the Jupyter extension.
 
