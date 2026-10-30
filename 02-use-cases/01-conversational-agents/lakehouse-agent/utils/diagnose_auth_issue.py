@@ -96,7 +96,7 @@ def get_jwt_authorizer(region, runtime_arn):
         print("   ❌ No authorizer configuration found!")
         print("   ℹ️  Agent is using IAM SigV4 authentication")
         print("\n💡 Solution:")
-        print("   Run: python lakehouse-agent/update_agent_authorizer.py")
+        print("   Re-run: python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return None
 
     auth_config = runtime_config["authorizerConfiguration"]
@@ -104,7 +104,7 @@ def get_jwt_authorizer(region, runtime_arn):
     if "customJWTAuthorizer" not in auth_config:
         print("   ❌ No JWT authorizer configured!")
         print("\n💡 Solution:")
-        print("   Run: python lakehouse-agent/update_agent_authorizer.py")
+        print("   Re-run: python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return None
 
     return auth_config["customJWTAuthorizer"]
@@ -143,7 +143,7 @@ def diagnose_cognito(ssm, params, jwt_config):
     if configured_issuer != expected_issuer:
         print("   ❌ MISMATCH!")
         print("\n💡 Solution:")
-        print("   Run: python lakehouse-agent/update_agent_authorizer.py")
+        print("   Re-run: python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return
 
     print("   ✅ Issuers match!")
@@ -156,7 +156,7 @@ def diagnose_cognito(ssm, params, jwt_config):
     if cognito_client_id not in allowed_clients:
         print("   ❌ Client ID not in allowed list!")
         print("\n💡 Solution:")
-        print("   Run: python lakehouse-agent/update_agent_authorizer.py")
+        print("   Re-run: python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return
 
     print("   ✅ Client ID matches!")
@@ -332,7 +332,7 @@ def main():
         print("\n💡 Solution:")
         print("   Run the setup scripts in order:")
         if idp_provider == "cognito":
-            print("   1. python gateway-setup/setup_cognito.py")
+            print("   1. python deployment/1-cognito-setup/setup_cognito.py")
             print(
                 "   2. python deployment/2-lakehouse-tenant-roles-setup/setup_runtime_roles.py create --role lakehouse-agent"
             )
