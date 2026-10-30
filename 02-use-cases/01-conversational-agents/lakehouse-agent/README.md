@@ -723,7 +723,7 @@ The system includes an optional login audit feature that records every Cognito a
 
 A token left in place keeps full administrative reach over your tenant for as long as it lives. Revoking it is one click and it is the last step of the walkthrough.
 
-**Two things that are *not* Okta objects but are worth knowing at the same time:** CloudWatch log groups are retained by design (see the `Manual cleanup` list nb09 prints), and the `/app/lakehouse-agent-obo/` SSM prefix is never swept because it belongs to a different sample.
+**Two things that are *not* Okta objects but are worth knowing at the same time:** CloudWatch log groups are retained by design (see the `Manual cleanup` list nb09 prints), and the SSM sweep removes only names under `/app/lakehouse-agent/` (the trailing slash keeps look-alike prefixes out).
 
 **CLI**: Each deployment step has a dedicated cleanup script. Run in reverse order:
 
