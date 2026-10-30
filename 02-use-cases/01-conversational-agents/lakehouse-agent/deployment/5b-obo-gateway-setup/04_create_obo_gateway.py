@@ -86,6 +86,10 @@ GATEWAY_ROLE_NAME = f"agentcore-{GATEWAY_NAME}-role"
 # server needs. It must exist on the Okta authorization server.
 OBO_TARGET_SCOPES = ["opensearch.search"]
 
+# Name used in this script's output. Okta builds the OBO gateway; Cognito builds the
+# same notes gateway with a REQUEST interceptor and no OBO token exchange.
+GATEWAY_LABELS = {"okta": "OBO_Gateway", "cognito": "Notes_Gateway"}
+
 # Default MCP protocol version advertised by the gateway.
 MCP_SUPPORTED_VERSIONS = ["2025-11-25"]
 
@@ -95,7 +99,7 @@ SSM_PREFIX = "/app/lakehouse-agent/"
 class SSMConfig:
     """Load configuration from SSM Parameter Store."""
 
-    def __init__(self):
+    def __init__(self, idp_provider: str | None = None):
         session = boto3.Session()
         self.region = session.region_name
         self.ssm = boto3.client("ssm", region_name=self.region)
@@ -109,7 +113,7 @@ class SSMConfig:
         # IdP selector — read once. GW2 flips auth by IdP: Okta =
         # OBO (TOKEN_EXCHANGE, no interceptor); Cognito = REQUEST interceptor +
         # Cognito M2M provider. Load only the active IdP's keys.
-        self.idp_provider = get_idp_provider(self.ssm)
+        self.idp_provider = idp_provider or get_idp_provider(self.ssm)
 
         print("\n🔍 Loading configuration from SSM Parameter Store...")
         self.opensearch_mcp_runtime_arn = self._get(f"{SSM_PREFIX}opensearch-mcp-runtime-arn")
@@ -137,11 +141,10 @@ class SSMConfig:
             # client — consistent with deployment/agentcore_cli_deploy.py.
             self.cognito_m2m_client_id = self._get(f"{SSM_PREFIX}cognito-m2m-client-id")
             self.cognito_m2m_client_secret = self._get(f"{SSM_PREFIX}cognito-m2m-client-secret", secure=True)
-            self.has_m2m_client = True
             print(f"   ✅ OpenSearch MCP Runtime ARN: {self.opensearch_mcp_runtime_arn}")
             print(f"   ✅ Cognito User Pool ARN: {self.cognito_user_pool_arn}")
             print(f"   ✅ Notes Interceptor Lambda ARN: {self.notes_interceptor_lambda_arn}")
-            print(f"   ✅ M2M client: {'dedicated' if self.has_m2m_client else 'app-client fallback'}")
+            print("   ✅ M2M client: dedicated")
 
     def _get(self, name: str, secure: bool = False) -> str:
         try:
@@ -157,7 +160,8 @@ class SSMConfig:
 
     def store_gateway_parameters(self, gateway_id: str, gateway_arn: str, gateway_url: str, gateway_name: str):
         """Persist OBO gateway info to SSM (net-new keys)."""
-        print("\n💾 Storing OBO gateway configuration in SSM Parameter Store...")
+        noun = "OBO gateway" if self.idp_provider == "okta" else "notes gateway"
+        print(f"\n💾 Storing {noun} configuration in SSM Parameter Store...")
         parameters = [
             {
                 "name": f"{SSM_PREFIX}notes-gateway-id",
@@ -496,12 +500,12 @@ def create_obo_target(client, config: SSMConfig, gateway_id: str) -> dict[str, A
         raise
 
 
-def wait_for_gateway_active(client, gateway_id: str, max_wait_seconds: int = 300) -> bool:
+def wait_for_gateway_active(client, gateway_id: str, max_wait_seconds: int = 300, label: str = "OBO_Gateway") -> bool:
     """
     Wait for gateway to reach ACTIVE / READY status.
     Mirrors wait_for_gateway_active() in 5a-gateway-setup/create_gateway.py.
     """
-    print("\n⏳ Checking OBO_Gateway status...")
+    print(f"\n⏳ Checking {label} status...")
     start = time.time()
     while time.time() - start < max_wait_seconds:
         try:
@@ -548,8 +552,8 @@ def create_notes_cognito_provider(client, config: SSMConfig) -> str:
     user_pool_id = config.cognito_user_pool_arn.split("/")[-1]
     cognito_issuer = f"https://cognito-idp.{config.region}.amazonaws.com/{user_pool_id}"
     cognito_token_endpoint = f"{config.cognito_domain}/oauth2/token"
-    client_id = config.cognito_m2m_client_id if config.has_m2m_client else config.cognito_app_client_id
-    client_secret = config.cognito_m2m_client_secret if config.has_m2m_client else config.cognito_app_client_secret
+    client_id = config.cognito_m2m_client_id
+    client_secret = config.cognito_m2m_client_secret
 
     print(f"\n🔐 Creating Cognito M2M OAuth2 provider: {provider_name}")
     try:
@@ -786,11 +790,14 @@ def wait_for_target_ready(
 
 
 def main():
+    # Read the IdP first so the banner can name the right gateway; SSMConfig reuses it.
+    idp_provider = get_idp_provider(boto3.client("ssm", region_name=boto3.Session().region_name))
+    label = GATEWAY_LABELS[idp_provider]
     print("=" * 70)
-    print("OBO_Gateway Setup")
+    print(f"{label} Setup")
     print("=" * 70)
 
-    config = SSMConfig()
+    config = SSMConfig(idp_provider=idp_provider)
     client = boto3.client("bedrock-agentcore-control", region_name=config.region)
 
     print("\n📋 Configuration:")
@@ -802,7 +809,7 @@ def main():
     try:
         # Step 1: Gateway IAM role
         print("\n" + "=" * 70)
-        print("Step 1: OBO_Gateway IAM role")
+        print(f"Step 1: {label} IAM role")
         print("=" * 70)
         role_arn = create_obo_gateway_role(config)
 
@@ -816,7 +823,7 @@ def main():
             gateway = create_notes_interceptor_gateway(client, config, role_arn)
 
         # Wait for gateway ACTIVE before creating target
-        if not wait_for_gateway_active(client, gateway["gatewayId"]):
+        if not wait_for_gateway_active(client, gateway["gatewayId"], label=label):
             print("\n⚠️  Gateway not active; cannot create target. Re-run after gateway reaches ACTIVE.")
             sys.exit(1)
 
@@ -838,7 +845,7 @@ def main():
 
         # Step 4: Persist gateway info to SSM (read by notebook 06 / the agent)
         print("\n" + "=" * 70)
-        print("Step 4: Persist OBO_Gateway info to SSM")
+        print(f"Step 4: Persist {label} info to SSM")
         print("=" * 70)
         config.store_gateway_parameters(
             gateway["gatewayId"],
@@ -849,7 +856,7 @@ def main():
 
         # Summary
         print("\n" + "=" * 70)
-        print("OBO_Gateway Setup Complete!")
+        print(f"{label} Setup Complete!")
         print("=" * 70)
         print(f"\n✅ Gateway: {GATEWAY_NAME}")
         print(f"   ID:  {gateway['gatewayId']}")
@@ -862,14 +869,18 @@ def main():
         else:  # cognito
             print("   Auth: Cognito M2M (client_credentials) + REQUEST interceptor for identity")
         print("\n📋 Next Steps:")
-        print("   - The agent deliberately holds NO OBO grant — the GW2 gateway role")
-        print("     performs the RFC 8693 exchange.")
+        if config.idp_provider == "okta":
+            print("   - The agent deliberately holds NO OBO grant — the GW2 gateway role")
+            print("     performs the RFC 8693 exchange.")
+        else:  # cognito
+            print("   - The notes REQUEST interceptor forwards the caller's sub; the gateway")
+            print("     calls the OpenSearch MCP runtime with the Cognito M2M client.")
         print("   - Deploy the agent (06-deploy-agent.ipynb) with its two MCP clients:")
-        print("     claims/* via Interceptor_Gateway, notes/* via OBO_Gateway.")
+        print(f"     claims/* via Interceptor_Gateway, notes/* via {label}.")
         print("=" * 70)
 
     except Exception as e:
-        print(f"\n❌ OBO_Gateway setup failed: {e}")
+        print(f"\n❌ {label} setup failed: {e}")
         import traceback
 
         traceback.print_exc()
