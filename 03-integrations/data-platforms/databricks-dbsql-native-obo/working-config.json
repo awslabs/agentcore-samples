@@ -27,6 +27,9 @@
           "grantType": "TOKEN_EXCHANGE",
           "tokenExchangeGrantTypeConfig": {
             "actorTokenContent": "NONE"
+          },
+          "onBehalfOfAuthenticationConfig": {
+            "clientAuthenticationMethod": "NO_CLIENT"
           }
         }
       }
