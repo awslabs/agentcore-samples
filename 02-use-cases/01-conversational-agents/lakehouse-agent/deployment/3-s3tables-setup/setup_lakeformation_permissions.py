@@ -10,8 +10,7 @@ It configures column-level filtering and tenant-role table grants for:
 
 WHY PER-USER ROW SCOPE IS NOT DONE WITH LAKE FORMATION DATA-CELL FILTERS
 ------------------------------------------------------------------------
-This is the canonical explanation for the whole sample. Other files state the
-conclusion in one line and point here; keep the reasoning in one place.
+Other files in the sample state the conclusion in one line and point here.
 
 A data filter's row expression is a subset of the PartiQL ``WHERE`` grammar. It
 compares columns with **constants** and permits **no PartiQL functions at all** --
@@ -26,10 +25,10 @@ objects; per-user is unbounded.
 
 Rows are instead scoped at query time by a predicate bound to the caller's verified
 identity (``WHERE user_id = <caller sub>``) in the claims tools. ``_apply_row_filter``
-below remains as a hook for static, GROUP-level row policies; no caller passes
+below remains as a hook for static, group-level row policies; no caller passes
 ``row_filter``, so no data-cell filter is invoked in this sample.
 
-Read this as a choice of mechanism, NOT as a gap in row isolation. Row isolation is
+Read this as a choice of mechanism, not as a gap in row isolation. Row isolation is
 enforced by the bound predicate and verified live -- see the isolation matrix in
 ``07-optional-multi-user-isolation-test.ipynb``. Both approaches are commonly called
 "user-level permissions", which is why the mechanism is named explicitly here: the

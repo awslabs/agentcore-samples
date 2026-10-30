@@ -1,9 +1,10 @@
 #!/bin/bash
-# Cleanup the Notes (OpenSearch) Gateway REQUEST Interceptor Lambda — Cognito GW2 path.
-# Mirrors interceptor-notes/deploy.sh: deletes exactly what deploy.sh creates
-# (Lambda, dedicated least-priv role, CloudWatch log group, SSM ARN key, local
-# build artifacts). Idempotent — every resource is safe-if-absent and the script
-# exits 0 even on a second run (logs ⏭️ skips, not errors).
+# Cleanup the Notes (OpenSearch) Gateway REQUEST Interceptor Lambda — Cognito path.
+# Deletes what interceptor-notes/deploy.sh creates: the Lambda
+# lakehouse-notes-interceptor, its role lakehouse-notes-interceptor-role, its
+# CloudWatch log group, the SSM key /app/lakehouse-agent/notes-interceptor-lambda-arn
+# (unless --keep-ssm) and the local dist/ and zip. Each step checks for the
+# resource first and logs a skip if it is absent, so a second run is a no-op.
 #
 # Only relevant on the Cognito path (the notes interceptor is Cognito-only); on
 # Okta these resources never existed, so every step is a ⏭️ no-op.

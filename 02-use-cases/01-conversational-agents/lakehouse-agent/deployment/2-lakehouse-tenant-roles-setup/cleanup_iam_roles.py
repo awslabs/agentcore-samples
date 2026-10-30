@@ -9,7 +9,7 @@ Deletes:
 - LakeFormationS3TablesDataAccessRole
 - SSM parameters for role ARNs
 
-⚠️ RUN THE LAKE FORMATION REVOKE FIRST. All four roles above are Lake Formation grant
+Run the Lake Formation revoke first. All four roles above are Lake Formation grant
 principals (see 3-s3tables-setup/setup_lakeformation_permissions.py). Deleting a role that
 still holds grants leaves each grant keyed to a principal ARN that no longer resolves, and
 this script cannot detect or report that — it deletes roles, not permissions.

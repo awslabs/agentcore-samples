@@ -216,10 +216,14 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
     """
     Extract the appropriate claim for authorization check from JWT claims.
 
-    Priority order:
+    Priority order (Cognito):
     1. cognito:groups - for group-based authorization
     2. email - for user-specific authorization
     3. username - for username-based authorization
+
+    Okta: the first non-built-in entry of ``groups`` (as a one-element JSON
+    array), then email, then sub. This matches get_claim_for_exchange in
+    token_exchange.py, so tool gating and role exchange read the same table row.
 
     Args:
         claims: Decoded JWT claims
@@ -230,7 +234,7 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
     import json
 
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim: cognito:groups (whole-array) → email → username
+        # Cognito: the whole cognito:groups array, JSON-encoded, is the lookup key.
         groups = claims.get("cognito:groups")
         if groups:
             claim_value = json.dumps(groups)
@@ -247,7 +251,8 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
             logger.info(f"Found username claim for authorization: {username}")
             return ("username", username)
     else:  # okta
-        # [OKTA] fork verbatim: filter built-in `Everyone` + iterate; then email → sub.
+        # Okta: skip the built-in `Everyone` group and key on the first remaining
+        # group as a one-element JSON array.
         OKTA_BUILTIN_GROUPS = {"Everyone"}  # Okta-specific; sibling IdPs revisit
         groups = claims.get("groups")
         if groups:

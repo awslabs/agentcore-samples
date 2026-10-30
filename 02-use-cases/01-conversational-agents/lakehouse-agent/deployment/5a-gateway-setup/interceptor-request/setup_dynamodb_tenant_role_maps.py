@@ -51,11 +51,11 @@ class TenantRoleMappingSetup:
 
         self.table_name = table_name
 
-        # Read the IdP flag ONCE (same SSM substrate the interceptors use).
-        # The interceptor's get_claim_for_authorization builds the DynamoDB key with
-        # claim_name = "cognito:groups" (Cognito) vs "groups" (Okta); seed the rows to
-        # match the ACTIVE IdP so the lookup hits on both paths. claim_value is
-        # IdP-invariant ('["<group>"]'); only claim_name branches.
+        # Read the IdP flag once (the same SSM flag the interceptors read).
+        # The interceptors' get_claim_for_authorization / get_claim_for_exchange build
+        # the DynamoDB key with claim_name = "cognito:groups" (Cognito) or "groups"
+        # (Okta), so the rows are seeded with the active IdP's claim_name. claim_value
+        # has the same shape on both IdPs ('["<group>"]').
         self.idp_provider = get_idp_provider(self.ssm_client)
         self.claim_name = "cognito:groups" if self.idp_provider == "cognito" else "groups"
 

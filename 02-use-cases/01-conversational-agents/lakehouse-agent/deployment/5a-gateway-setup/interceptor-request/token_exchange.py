@@ -152,10 +152,13 @@ def get_claim_for_exchange(claims: dict[str, Any]) -> tuple | None:
     """
     Extract the appropriate claim for token exchange from JWT claims.
 
-    Priority order:
+    Priority order (Cognito):
     1. cognito:groups - for group-based role mapping
     2. email - for user-specific role mapping
     3. username - for username-based role mapping
+
+    Okta: the first non-built-in entry of ``groups`` (as a one-element JSON
+    array), then email, then sub.
 
     Args:
         claims: Decoded JWT claims
@@ -166,7 +169,7 @@ def get_claim_for_exchange(claims: dict[str, Any]) -> tuple | None:
     import json
 
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim: cognito:groups (whole-array) → email → username
+        # Cognito: the whole cognito:groups array, JSON-encoded, is the lookup key.
         groups = claims.get("cognito:groups")
         if groups:
             claim_value = json.dumps(groups)
@@ -183,8 +186,8 @@ def get_claim_for_exchange(claims: dict[str, Any]) -> tuple | None:
             logger.info(f"Found username claim: {username}")
             return ("username", username)
     else:  # okta
-        # [OKTA] fork verbatim: Okta `groups` includes built-in `Everyone`, so filter
-        # built-ins + iterate (per-app-group seed shape); then email → sub.
+        # Okta: `groups` can include the built-in `Everyone`, so skip built-ins and
+        # key on the first remaining group as a one-element JSON array.
         OKTA_BUILTIN_GROUPS = {"Everyone"}  # Okta-specific; sibling IdPs revisit
         groups = claims.get("groups")
         if groups:

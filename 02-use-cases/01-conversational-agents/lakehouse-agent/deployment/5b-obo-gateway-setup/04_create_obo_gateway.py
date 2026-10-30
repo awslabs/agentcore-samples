@@ -523,9 +523,11 @@ def wait_for_gateway_active(client, gateway_id: str, max_wait_seconds: int = 300
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# [COGNITO] GW2 interceptor path. No OBO/TOKEN_EXCHANGE — a REQUEST
-# interceptor forwards the caller sub; the gateway→runtime leg uses a Cognito
-# M2M provider. Mirrors GW1's interceptor gateway, pointed at the OpenSearch MCP.
+# [COGNITO] notes gateway with a REQUEST interceptor. There is no OBO token
+# exchange: the interceptor Lambda (5a-gateway-setup/interceptor-notes) forwards
+# the caller sub, and the gateway→runtime leg authenticates with a Cognito M2M
+# OAuth2 credential provider. Same shape as the claims gateway, pointed at the
+# OpenSearch MCP runtime.
 # ─────────────────────────────────────────────────────────────────────────
 
 COGNITO_M2M_PROVIDER_NAME = "lakehouse-notes-cognito-oauth-provider"
@@ -534,8 +536,13 @@ COGNITO_M2M_PROVIDER_NAME = "lakehouse-notes-cognito-oauth-provider"
 def create_notes_cognito_provider(client, config: SSMConfig) -> str:
     """Create (or reuse) the Cognito M2M OAuth2 provider for the gateway→runtime leg.
 
-    Cognito has no OIDC token-endpoint discovery, so pass authorization-server
-    metadata directly (mirrors 5a-gateway-setup/create_gateway.py's Cognito branch).
+    create_oauth2_credential_provider stores the client id and secret in AgentCore
+    Identity; the gateway uses it to fetch a client_credentials token when it
+    calls the runtime. Authorization-server metadata (issuer, token endpoint) is
+    passed directly, as in 5a-gateway-setup/create_gateway.py's Cognito branch.
+    Uses the dedicated M2M app client that SSMConfig reads from SSM
+    (cognito-m2m-client-id / -secret). If the provider already exists, its ARN is
+    looked up and reused.
     """
     provider_name = COGNITO_M2M_PROVIDER_NAME
     user_pool_id = config.cognito_user_pool_arn.split("/")[-1]
@@ -590,11 +597,14 @@ def create_notes_cognito_provider(client, config: SSMConfig) -> str:
 
 
 def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, Any]:
-    """Create the GW2 notes gateway (Cognito): customJWTAuthorizer + REQUEST interceptor.
+    """Create the notes gateway (Cognito): customJWTAuthorizer + REQUEST interceptor.
 
-    Same GW2 name/keys as the OBO path (topology symmetric) — only the auth
-    mechanism differs. No interceptorConfigurations RESPONSE (notes has one tool);
-    identity is forwarded by the thin notes REQUEST interceptor.
+    Uses the same gateway name and SSM keys as the Okta OBO path; only the auth
+    mechanism differs. Inbound JWTs are checked against the user pool's OIDC
+    discovery URL and must come from the app client. The notes interceptor Lambda
+    (ARN from SSM notes-interceptor-lambda-arn) runs at the REQUEST point with
+    request headers passed in; there is no RESPONSE interceptor. If the gateway
+    already exists it is reused after an IdP-mismatch check.
     """
     user_pool_id = config.cognito_user_pool_arn.split("/")[-1]
     issuer = f"https://cognito-idp.{config.region}.amazonaws.com/{user_pool_id}"
@@ -659,8 +669,9 @@ def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -
 def create_notes_target(client, config: SSMConfig, gateway_id: str, provider_arn: str) -> dict[str, Any]:
     """Create the notes gateway target → OpenSearch MCP runtime (Cognito M2M provider).
 
-    client_credentials (scopes []); NO grantType TOKEN_EXCHANGE. Identity reaches
-    the server via the interceptor's body-context injection, not this leg.
+    The target's OAuth credential provider uses client_credentials with no scopes
+    and no TOKEN_EXCHANGE grant. The caller's identity reaches the server through
+    the interceptor's params.arguments.context, not through this token.
     """
     mcp_url = get_runtime_mcp_url(config.opensearch_mcp_runtime_arn, config.region)
     print(f"\n🎯 Creating notes gateway target: {TARGET_NAME}")

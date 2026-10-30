@@ -3,7 +3,8 @@
 Update Interceptor Lambda Environment Variables
 
 This script updates the interceptor Lambda function's environment variables
-to use the correct Cognito configuration from SSM Parameter Store.
+to use the active IdP's (Cognito or Okta) configuration from SSM Parameter
+Store, and sets IDP_PROVIDER so the Lambda takes the matching branch.
 
 Usage:
     python update_interceptor_env.py
@@ -36,7 +37,7 @@ def main():
     new_vars = {"IDP_PROVIDER": idp_provider}
     try:
         if idp_provider == "cognito":
-            # [COGNITO] upstream verbatim keys
+            # [COGNITO] pool id + app client id; the interceptor builds its issuer from them
             user_pool_id = ssm.get_parameter(Name="/app/lakehouse-agent/cognito-user-pool-id")["Parameter"]["Value"]
             app_client_id = ssm.get_parameter(Name="/app/lakehouse-agent/cognito-app-client-id")["Parameter"]["Value"]
             new_vars.update(

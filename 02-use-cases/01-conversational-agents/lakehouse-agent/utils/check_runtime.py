@@ -14,10 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.env_file import load_env_file
 
-# Was `from dotenv import load_dotenv; load_dotenv()` — python-dotenv is not a
-# declared dependency of this sample, so that import worked only where the package
-# happened to be installed. The shared loader keeps the same precedence
-# (already-exported variables win) with no dependency to pin.
+# Load .env with the sample's own loader (utils/env_file.py), so no python-dotenv
+# dependency is needed. Variables already exported in the environment win.
 load_env_file()
 
 runtime_id = os.getenv("LAKEHOUSE_AGENT_RUNTIME_ID", "lakehouse_agent-Hhb3lX6y7M")

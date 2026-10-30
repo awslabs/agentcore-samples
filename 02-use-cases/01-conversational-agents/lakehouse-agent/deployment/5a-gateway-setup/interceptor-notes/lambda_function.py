@@ -1,24 +1,25 @@
 """
 AgentCore Gateway REQUEST Interceptor for the Notes (OpenSearch) gateway — Cognito path.
 
-This is the GW2 counterpart to the claims REQUEST interceptor. On the **Cognito**
-path GW2 cannot use OBO (no RFC 8693 token exchange), so a thin REQUEST
-interceptor validates the Cognito JWT, extracts the caller `sub`, and forwards
-it to the OpenSearch MCP server on the **proven body-context channel**
-(`params.arguments.context.user_id`) — mirroring how the claims interceptor
-propagates identity. The OpenSearch server then applies its `owner_user_sub`
-term filter using that `sub` (match-by-construction with the seeded value).
+This is the notes-gateway counterpart to the claims REQUEST interceptor. On the
+Cognito path the notes gateway has no OBO token exchange (RFC 8693), so this
+REQUEST interceptor validates the Cognito JWT, extracts the caller `sub`, and
+forwards it to the OpenSearch MCP server in the request body
+(`params.arguments.context.user_id`), the same channel the claims interceptor
+uses. The OpenSearch server then applies its `owner_user_sub` term filter with
+that `sub`, which equals the value the notes loader seeded for that user.
 
-Deliberately THIN vs the claims REQUEST interceptor: it does NOT perform the
-DynamoDB tenant-role → STS exchange and does NOT do tool-gating (notes RLS is
-the `owner_user_sub` filter; there is a single notes tool). It only validates
-identity and forwards the `sub`. Fail-closed: no resolvable `sub` → error, no
-data.
+Unlike the claims REQUEST interceptor it does no DynamoDB tenant-role lookup,
+no STS exchange and no tool gating: per-user scope on notes is the
+`owner_user_sub` filter. It only validates identity and forwards the `sub`.
+Fail-closed: a missing token, invalid JWT or missing `sub` returns a 401 error
+response and the request never reaches the target.
 
 The shared JWT-validation helpers (`get_config`, `get_public_keys`,
 `validate_and_decode_jwt`) mirror the claims interceptor's Cognito|Okta
-branch so the code is familiar; in practice this Lambda is only attached on the
-Cognito GW2 path (Okta GW2 is interceptor-less / OBO).
+branch so the code is familiar; in practice this Lambda is only attached to the
+notes gateway on the Cognito path (on Okta that gateway uses OBO and no
+interceptor).
 """
 
 import json
@@ -62,7 +63,7 @@ def get_config() -> dict[str, str]:
         return _config
 
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] user-pool issuer (access tokens carry no 'aud' → client_id check)
+        # Cognito: pool id and app client id from env, else SSM; issuer is the pool URL.
         region = os.environ.get("COGNITO_REGION") or os.environ.get("AWS_REGION", "us-west-2")
         user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
         app_client_id = os.environ.get("COGNITO_APP_CLIENT_ID", "")
@@ -91,7 +92,8 @@ def get_config() -> dict[str, str]:
         }
         logger.info(f"Cognito configuration loaded: region={region}, user_pool_id={user_pool_id}")
     else:  # okta
-        # [OKTA] custom-auth-server issuer (present for parity; GW2-Okta is OBO/no-interceptor)
+        # Okta: custom authorization server issuer. Kept for parity with the claims
+        # interceptor; the Okta notes gateway does not attach this Lambda.
         region = os.environ.get("AWS_REGION", "us-east-1")
         okta_org_url = os.environ.get("OKTA_ORG_URL", "")
         okta_auth_server_id = os.environ.get("OKTA_AUTH_SERVER_ID", "")
@@ -152,7 +154,7 @@ def get_public_keys() -> dict[str, Any]:
 
 
 def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
-    """Validate JWT and decode claims (Cognito|Okta branch, mirrors GW1)."""
+    """Validate JWT and decode claims (Cognito|Okta branch, as in the claims interceptor)."""
     try:
         config = get_config()
         jwks = get_public_keys()
@@ -171,7 +173,8 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
             return None
 
         if IDP_PROVIDER == "cognito":
-            # [COGNITO] access tokens carry no 'aud' → validate client_id
+            # Cognito: decode with audience = app client id. An aud-related JWTError
+            # triggers a second decode without aud plus a client_id comparison.
             try:
                 claims = jwt.decode(
                     token,
@@ -271,14 +274,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             logger.error("❌ JWT validation failed")
             return build_error_response("Invalid or expired JWT token", body, 401)
 
-        # Notes RLS keys on the caller `sub` — matches the seeded owner_user_sub
-        # by construction (loader seeds each user's Cognito `sub`). Fail-closed.
+        # Per-user notes scope keys on the caller `sub`, the value the notes loader
+        # seeds as owner_user_sub. No `sub` means a 401 and no data.
         user_sub = claims.get("sub")
         if not user_sub:
             logger.error("❌ `sub` not found in token claims — refusing (fail-closed)")
             return build_error_response("User identity (sub) not found in token claims", body, 401)
 
-        # Inject on the PROVEN body-context channel (mirrors the claims interceptor);
+        # Inject into params.arguments.context, as the claims interceptor does;
         # the OpenSearch server reads context.user_id on the Cognito path.
         transformed_body = body.copy()
         params = transformed_body.get("params")

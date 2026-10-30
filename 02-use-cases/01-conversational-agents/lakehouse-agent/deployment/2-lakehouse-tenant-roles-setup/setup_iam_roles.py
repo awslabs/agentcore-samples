@@ -9,6 +9,10 @@ This script creates IAM roles for tenant-based access control:
 4. Configures trust policies for AgentCore Runtime
 5. Attaches necessary permissions for Athena and S3 access
 
+Run by notebook 02 (Step 2), after create_lambda_role.py has stored the
+interceptor Lambda role ARN at /app/lakehouse-agent/interceptor-lambda-role-arn.
+Each role ARN is written to /app/lakehouse-agent/roles/<role-name>.
+
 Usage:
     python setup_iam_roles.py
     python setup_iam_roles.py --account-id 123456789012
@@ -292,9 +296,8 @@ class IAMRolesSetup:
         """Return True only for the MalformedPolicyDocument variant that means
         "the principal is not valid *yet*".
 
-        This distinction is the whole point. ``MalformedPolicyDocument`` is also
-        what IAM raises for a genuinely broken policy document — a typo, a bad
-        Action, malformed JSON. Retrying those for 30 seconds would turn a
+        ``MalformedPolicyDocument`` is also what IAM raises for a genuinely
+        broken policy document: a typo, a bad Action, malformed JSON. Retrying those for 30 seconds would turn a
         clear, immediate failure into a slow one, so the retry is narrowed to
         the invalid-principal message and everything else fails fast.
         """
@@ -311,26 +314,18 @@ class IAMRolesSetup:
     ) -> dict[str, Any]:
         """Create the role, waiting out IAM's principal-validation lag.
 
-        WHY THIS EXISTS -- IAM's read path and its principal-validation path are
-        SEPARATELY eventually consistent. A role can already be returned by
-        ``GetRole`` and still be rejected as an invalid principal in another
-        role's trust policy for a few seconds after it was created. So the
-        ``get_role`` check in ``get_trust_policy`` is a necessary precondition
-        but NOT a sufficient one: it proves the role exists, not that IAM will
-        accept it as a principal yet.
+        IAM's read path and its principal-validation path are separately
+        eventually consistent. A role that ``GetRole`` already returns can still
+        be rejected as an invalid principal in another role's trust policy for a
+        few seconds after it was created. The ``get_role`` check in
+        ``get_trust_policy`` proves the role exists, not that IAM will accept it
+        as a principal yet.
 
         The trust policy names the interceptor Lambda role explicitly, and
-        ``create_lambda_role.py`` creates that role moments earlier in the same
-        deployment (notebook 02, cells 4 and 6 are adjacent). Measured window on
-        a clean-slate deploy: the role was created at 23:11:05Z and referenced
-        at 23:11:09Z -- four seconds -- and IAM rejected it.
-
-        Two non-fixes, deliberately avoided:
-          * Dropping the explicit-principal statement.
-          * Substituting the account-root principal for it.
-        Either makes the error disappear by discarding the least-privilege
-        intent. The explicit interceptor principal is the reason the statement
-        exists, and root delegation is the broad fallback it narrows.
+        ``create_lambda_role.py`` creates that role in the cell just before this
+        script in notebook 02, so a "Run All" can reference it within seconds.
+        The retry keeps the explicit interceptor-role statement in place rather
+        than dropping it to make the error go away.
 
         Backoff is 2/4/8/16s across 5 attempts (~30s total), comfortably beyond
         the observed window without stalling a failed deploy for long.

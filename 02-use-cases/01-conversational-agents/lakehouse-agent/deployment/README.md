@@ -891,12 +891,12 @@ python cleanup_cognito.py
 
 # Step 1 [OKTA]: Delete the Okta app, OBO exchange app, auth server, the three
 # groups, the five test users, and the okta-* SSM keys. This reaches INTO your
-# Okta tenant — skip this one step if you want the AWS side gone but your Okta
-# objects left alone.
-# (Requires OKTA_ORG_URL + OKTA_API_TOKEN in .env — the script exits early
+# Okta tenant — opt-in. Without --yes the script deletes nothing: it prints what
+# it would delete and exits with status 2. Leave this step out to keep your Okta
+# objects. (Requires OKTA_ORG_URL + OKTA_API_TOKEN in .env — the script exits early
 #  without them, so run this only on the Okta path.)
 cd ../1-okta-setup
-python cleanup_okta.py
+python cleanup_okta.py --yes
 ```
 
 > 🔑 **[OKTA] Your API token survives cleanup — revoke it yourself.** You created

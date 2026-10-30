@@ -380,10 +380,9 @@ def load_config_from_ssm():
         # Shared params both IdPs need.
         params = {
             "runtime_arn": "/app/lakehouse-agent/agent-runtime-arn",
-            # GW1 claims-gateway URL — consumed by the shared per-persona tools
-            # panel (fetch_interceptor_tools); written by 05a on BOTH paths. (The
-            # fork called this key interceptor-gateway-url; the consolidated
-            # tutorial uses upstream's canonical gateway-url.)
+            # GW1 claims-gateway URL, used by the per-persona tools panel
+            # (fetch_interceptor_tools). 5a-gateway-setup/create_gateway.py writes it
+            # for both identity providers.
             "gateway_url": "/app/lakehouse-agent/gateway-url",
         }
         if IDP_PROVIDER == "okta":
@@ -576,11 +575,11 @@ def invoke_agent(runtime_arn: str, prompt: str, access_token: str, id_token: str
             "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": st.session_state.session_id,
         }
 
-        # Prepare payload. The access token is NOT sent in the body: the agent reads
-        # it from the Authorization header above, which the runtime validates and
-        # forwards. The agent still accepts a body token as a transitional fallback
-        # and logs a warning when it uses one, so leaving it out here is what makes
-        # that warning meaningful.
+        # Prepare payload. The access token is not sent in the body: the runtime's JWT
+        # authorizer validates the Authorization header above and forwards it to the
+        # agent, which passes the same token on to both gateways. The agent still
+        # accepts a body `bearer_token` as a fallback and logs a warning when it uses
+        # one, so leaving it out here keeps that warning meaningful.
         payload = {"prompt": prompt, "id_token": id_token}
 
         st.info("🔗 Invoking AgentCore Runtime with OAuth")
@@ -781,7 +780,7 @@ with st.sidebar:
                 else:
                     st.error("❌ Okta not configured. Run `01-deploy-idp.ipynb` first.")
         else:
-            # ── Cognito: password-grant flow (upstream, preserved) ───────────
+            # ── Cognito: username/password form (ADMIN_NO_SRP_AUTH) ──────────
             with st.expander("🔐 User Login", expanded=True):
                 # The test-persona password is documented in notebook 08, immediately
                 # before the reader is told to sign in. It is deliberately NOT shown

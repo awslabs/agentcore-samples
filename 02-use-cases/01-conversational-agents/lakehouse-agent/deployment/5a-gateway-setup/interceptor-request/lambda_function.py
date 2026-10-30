@@ -3,12 +3,19 @@ AgentCore Gateway Interceptor for Health Lakehouse Data
 
 This Lambda function acts as a Gateway Interceptor following the AgentCore MCP protocol:
 1. Extracts JWT bearer tokens from MCP gateway request structure
-2. Validates JWT tokens against Cognito
+2. Validates the JWT signature and issuer against the IdP's JWKS (Cognito or Okta,
+   chosen by IDP_PROVIDER or SSM /app/lakehouse-agent/idp-provider)
 3. Extracts user principal (email/username) from JWT claims
-4. Validates tool access based on user groups and allowed tools in DynamoDB
-5. Exchanges JWT claims to IAM credentials via DynamoDB role mapping
+4. For tools/call requests, checks the tool name against the allowed_tools list of
+   the caller's group row in the DynamoDB table lakehouse_tenant_role_map
+5. Looks up the same row's role_value (an IAM role ARN) and calls sts:AssumeRole on it
 6. Adds user identity and credentials to request for downstream MCP server
 7. Returns responses in proper MCP interceptor format
+
+What reaches the target: headers X-User-Identity and X-User-Scopes, plus
+X-Tenant-Role and X-Tenant-Role-Arn when the exchange returned credentials; and,
+for requests with params.arguments, a ``context`` object holding user_id, scopes
+and the tenant role's temporary credentials.
 
 Reference: https://github.com/awslabs/amazon-bedrock-agentcore-samples/blob/main/06-workshops/02-AgentCore-gateway/14-token-exchange-at-request-interceptor/
 
@@ -74,7 +81,7 @@ def get_config() -> dict[str, str]:
         return _config
 
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim
+        # Cognito: pool id and app client id from env, else SSM; issuer is the pool URL.
         region = os.environ.get("COGNITO_REGION") or os.environ.get("AWS_REGION", "us-west-2")
         user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
         app_client_id = os.environ.get("COGNITO_APP_CLIENT_ID", "")
@@ -107,7 +114,7 @@ def get_config() -> dict[str, str]:
         }
         logger.info(f"Cognito configuration loaded: region={region}, user_pool_id={user_pool_id}")
     else:  # okta
-        # [OKTA] fork verbatim (okta-* keys)
+        # Okta: org URL, auth server id and audience from env, else the SSM okta-* keys.
         region = os.environ.get("AWS_REGION", "us-east-1")
         okta_org_url = os.environ.get("OKTA_ORG_URL", "")
         okta_auth_server_id = os.environ.get("OKTA_AUTH_SERVER_ID", "")
@@ -209,10 +216,10 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
             logger.error("Public key not found for token")
             return None
 
-        # Decode differs by IdP: Cognito access tokens have no 'aud' →
-        # validate client_id; Okta access tokens carry 'aud' → validate directly.
+        # Both paths verify RS256 signature and issuer. The audience check differs.
         if IDP_PROVIDER == "cognito":
-            # [COGNITO] upstream verbatim
+            # Cognito: decode with audience = app client id. An aud-related JWTError
+            # triggers a second decode without aud plus a client_id comparison.
             try:
                 claims = jwt.decode(
                     token,
@@ -239,7 +246,7 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
                 else:
                     raise
         else:  # okta
-            # [OKTA] fork verbatim: single-path decode with audience validation
+            # Okta: one decode, audience = the authorization server's audience.
             claims = jwt.decode(
                 token,
                 key,
@@ -329,10 +336,10 @@ def extract_user_principal(claims: dict[str, Any]) -> str | None:
     """
     # Principal claim priority differs by IdP.
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim
+        # Cognito: email, then username, cognito:username, sub.
         principal = claims.get("email") or claims.get("username") or claims.get("cognito:username") or claims.get("sub")
     else:  # okta
-        # [OKTA] fork verbatim (email when scope grants it; sub always present)
+        # Okta: email, then sub.
         principal = claims.get("email") or claims.get("sub")
 
     if principal:
@@ -356,12 +363,10 @@ def get_user_scopes(claims: dict[str, Any]) -> list:
     # Scope/group claim names + shapes differ by IdP: Cognito 'scope' is a
     # space-delimited string + 'cognito:groups'; Okta 'scp' is an array + 'groups'.
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim
         scope_string = claims.get("scope", "")
         scopes = scope_string.split() if scope_string else []
         groups = claims.get("cognito:groups", [])
     else:  # okta
-        # [OKTA] fork verbatim
         scopes = list(claims.get("scp", []))
         groups = claims.get("groups", [])
 
@@ -508,11 +513,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     f"🔑 Obtained temporary credentials for role: {tenant_credentials['RoleName']}"
                 )  # codeql[py/clear-text-logging-sensitive-data]
             else:
-                # Fail CLOSED: a tenant role was required (the claim matched) but
-                # the STS exchange failed. DENY rather than forwarding identity
-                # with no tenant creds (which would let the downstream tool run
-                # under the runtime's default role and bypass the tenant role's
-                # Lake Formation column filtering and table grants).
+                # Fail closed: a claim was found but no tenant credentials came back
+                # (no mapping row, a role_type other than iam_role, or AssumeRole
+                # failed). Deny with 403 instead of forwarding the identity without
+                # the tenant role that carries the Lake Formation grants.
                 logger.error("🚫 Failed to exchange JWT to IAM credentials — denying request")
                 return build_error_response("tenant role exchange failed", body, 403)
         else:

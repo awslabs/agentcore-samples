@@ -26,8 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
 from utils.idp_config import get_idp_provider
 
-# GW1's name, matching create_gateway.py's `gateway_name` default. Used only as the
-# last resort in the by-name fallback below — the persisted SSM `gateway-name` is
+# Name of the step-5a interceptor gateway (GW1 in this script's output; the 5b
+# OBO gateway is GW2), matching create_gateway.py's `gateway_name` default. Used
+# only as the last resort in the by-name fallback below — the persisted SSM `gateway-name` is
 # preferred so a non-default name still resolves. Mirrors GATEWAY_NAME in
 # 5b-obo-gateway-setup/06_cleanup_obo_gateway.py.
 GATEWAY_NAME = "lakehouse-gateway"
@@ -135,15 +136,14 @@ class GatewayCleanup:
 
     def delete_oauth_providers(self):
         print("\n🗑️  Deleting GW1 OAuth2 credential providers...")
-        # EXACT-name deletes for the ACTIVE IdP's GW1 provider(s) only,
-        # safe-if-absent. The prior lakehouse-prefix substring match collaterally
-        # deleted the GW2 notes/OBO providers — those are owned by
-        # 06_cleanup_obo_gateway.py and are intentionally NOT deleted here.
+        # Exact-name deletes for the active IdP's GW1 provider(s) only,
+        # safe-if-absent. The GW2 notes/OBO providers also carry "lakehouse" in
+        # their names; they are owned by 06_cleanup_obo_gateway.py and are not
+        # deleted here.
         if self.idp_provider == "cognito":
-            # create_gateway.py now REQUIRES the dedicated M2M client and no
-            # longer creates the hybrid "lakehouse-mcp-oauth-provider". We KEEP the
-            # hybrid name in the delete list anyway (safe-if-absent) so teardown still
-            # cleans up any provider left behind by a pre-hardening deploy.
+            # create_gateway.py creates only the M2M provider. The name
+            # "lakehouse-mcp-oauth-provider" is also listed (skipped if absent) so a
+            # stack deployed by an older version of this sample is still cleaned up.
             provider_names = ["lakehouse-mcp-m2m-oauth-provider", "lakehouse-mcp-oauth-provider"]
         else:  # okta
             provider_names = ["lakehouse-mcp-okta-oauth-provider"]

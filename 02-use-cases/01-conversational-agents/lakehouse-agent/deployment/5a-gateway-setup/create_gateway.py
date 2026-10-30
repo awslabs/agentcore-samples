@@ -325,7 +325,7 @@ class GatewaySetup:
             # JWT authorizer differs by IdP: Cognito validates by client_id
             # (Cognito access tokens carry no 'aud'); Okta validates by audience.
             if self.config.idp_provider == "cognito":
-                # [COGNITO] upstream verbatim
+                # [COGNITO] derive the pool's issuer and OIDC discovery URL from its ARN
                 user_pool_id = self.config.cognito_user_pool_arn.split("/")[-1]
                 issuer = f"https://cognito-idp.{self.config.region}.amazonaws.com/{user_pool_id}"
                 discovery_url = f"{issuer}/.well-known/openid-configuration"
@@ -345,7 +345,7 @@ class GatewaySetup:
                     }
                 }
 
-            # Interceptor config (pure-delta A1, both paths): TWO entries — a REQUEST
+            # Interceptor config (both IdP paths): two entries, a REQUEST
             # interceptor (call-time 403 gate + identity extraction) and a RESPONSE
             # interceptor (filters tools/list per persona). RESPONSE must set
             # passRequestHeaders so it can resolve the caller's group from the bearer.
@@ -487,7 +487,7 @@ class GatewaySetup:
             # directly; Okta exposes /.well-known on its custom auth server → use
             # the discoveryUrl form.
             if self.config.idp_provider == "cognito":
-                # [COGNITO] upstream verbatim
+                # [COGNITO] inline issuer/authorize/token endpoints, client_secret_post auth
                 oauth2_config = {
                     "customOauth2ProviderConfig": {
                         "oauthDiscovery": {
@@ -823,14 +823,14 @@ def main():
             # dedicated M2M client; Okta uses discovery + its single app client.
             # Target scopes: Cognito [] (client_credentials); Okta ['claims.query'].
             if config.idp_provider == "cognito":
-                # [COGNITO] upstream verbatim
+                # [COGNITO] issuer from the pool ARN; token endpoint on the pool's domain
                 user_pool_id = config.cognito_user_pool_arn.split("/")[-1]
                 cognito_issuer = f"https://cognito-idp.{config.region}.amazonaws.com/{user_pool_id}"
                 cognito_token_endpoint = f"{config.cognito_domain}/oauth2/token"
 
-                # M2M client is REQUIRED — the user-app-client hybrid fallback
-                # (provider "lakehouse-mcp-oauth-provider") has been removed; always use
-                # the dedicated M2M provider, symmetric with GW2.
+                # The Gateway authenticates to the MCP runtime with the dedicated
+                # Cognito M2M client (client_credentials), stored in the
+                # "lakehouse-mcp-m2m-oauth-provider" credential provider.
                 print("\n🔐 Using M2M client for Gateway-to-Runtime authentication")
                 auth_client_id = config.cognito_m2m_client_id
                 auth_client_secret = config.cognito_m2m_client_secret

@@ -65,7 +65,7 @@ def get_config() -> dict[str, str]:
         return _config
 
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim
+        # Cognito: pool id and app client id from env, else SSM; issuer is the pool URL.
         region = os.environ.get("COGNITO_REGION") or os.environ.get("AWS_REGION", "us-west-2")
         user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
         app_client_id = os.environ.get("COGNITO_APP_CLIENT_ID", "")
@@ -98,7 +98,7 @@ def get_config() -> dict[str, str]:
         }
         logger.info(f"Cognito configuration loaded: region={region}, user_pool_id={user_pool_id}")
     else:  # okta
-        # [OKTA] fork verbatim (okta-* keys)
+        # Okta: org URL, auth server id and audience from env, else the SSM okta-* keys.
         region = os.environ.get("AWS_REGION", "us-east-1")
         okta_org_url = os.environ.get("OKTA_ORG_URL", "")
         okta_auth_server_id = os.environ.get("OKTA_AUTH_SERVER_ID", "")
@@ -200,10 +200,10 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
             logger.error("Public key not found for token")
             return None
 
-        # Decode differs by IdP: Cognito access tokens have no 'aud' →
-        # validate client_id; Okta access tokens carry 'aud' → validate directly.
+        # Both paths verify RS256 signature and issuer. The audience check differs.
         if IDP_PROVIDER == "cognito":
-            # [COGNITO] upstream verbatim
+            # Cognito: decode with audience = app client id. An aud-related JWTError
+            # triggers a second decode without aud plus a client_id comparison.
             try:
                 claims = jwt.decode(
                     token,
@@ -230,7 +230,7 @@ def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
                 else:
                     raise
         else:  # okta
-            # [OKTA] fork verbatim: single-path decode with audience validation
+            # Okta: one decode, audience = the authorization server's audience.
             claims = jwt.decode(
                 token,
                 key,
@@ -266,7 +266,7 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
         Tuple of (claim_name, claim_value) or None if no suitable claim found
     """
     if IDP_PROVIDER == "cognito":
-        # [COGNITO] upstream verbatim: cognito:groups (whole-array) → email → username.
+        # Cognito: the whole cognito:groups array, JSON-encoded, is the lookup key.
         # Priority 1: Check for cognito:groups
         groups = claims.get("cognito:groups")
         if groups:
@@ -287,9 +287,9 @@ def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | Non
             logger.info(f"Found username claim for authorization: {username}")
             return ("username", username)
     else:  # okta
-        # [OKTA] fork verbatim: Okta `groups` (value '.*') includes built-in groups
-        # like `Everyone`, so filter built-ins and iterate; the per-app-group seed
-        # (e.g. ["policyholders"]) matches a single-group key, not the whole array.
+        # Okta: `groups` can include built-in groups like `Everyone`, so skip them and
+        # key on the first remaining group as a one-element JSON array (the table's
+        # Okta rows are seeded per group, e.g. ["policyholders"]).
         OKTA_BUILTIN_GROUPS = {"Everyone"}  # Okta-specific; sibling IdPs revisit
         groups = claims.get("groups")
         if groups:

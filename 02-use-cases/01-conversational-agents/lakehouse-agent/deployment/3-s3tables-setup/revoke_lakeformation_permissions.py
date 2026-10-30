@@ -6,20 +6,20 @@ Revokes the Lake Formation grants held by the deployment's principals so the IAM
 not deleted out from under live grants. Deleting a role that still holds Lake Formation
 permissions leaves the grant keyed to a principal ARN that no longer resolves.
 
-ORDERING IS LOAD-BEARING — run this BEFORE both:
+Run this before both of the following:
   1. ``cleanup_s3tables.py``  — it deletes the ``claims``/``users`` tables and the SSM keys
-     ``table-bucket-name`` / ``namespace``. Those identifiers are REQUIRED to build the
+     ``table-bucket-name`` / ``namespace``. Those identifiers are required to build the
      Resource filter this script queries with (see the Resource-qualification note below),
      so once that script has run the grants can no longer be located by resource.
-  2. ``cleanup_iam_roles.py`` — it deletes the three tenant roles AND
+  2. ``cleanup_iam_roles.py`` — it deletes the three tenant roles and
      ``LakeFormationS3TablesDataAccessRole``, which are the grant principals themselves.
 
 Notebook ``09-optional-cleanup.ipynb`` runs this as Step 5, immediately before both.
 
-WHY THIS SHIPS: ``setup_lakeformation_permissions.py`` issues grants for every tenant role
-(a DESCRIBE on the database, plus Table / TableWithColumns SELECT grants), and until this
-script existed nothing in the deployment tree revoked them -- ``cleanup_s3tables.py`` calls
-only ``deregister_resource``, which does not revoke principal grants.
+``setup_lakeformation_permissions.py`` issues grants for every tenant role (a DESCRIBE on
+the database, plus Table / TableWithColumns SELECT grants). ``cleanup_s3tables.py`` calls
+only ``deregister_resource``, which does not revoke principal grants, so this script is the
+teardown step that removes them.
 
 Usage:
     python revoke_lakeformation_permissions.py              # revoke (default)

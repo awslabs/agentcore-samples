@@ -111,12 +111,12 @@ def get_config() -> dict[str, str | None]:
     else:
         logger.info(f"✅ Gateway ARN from environment: {config['gateway_arn']}")
 
-    # GW2 (notes / OpenSearch) URL — REQUIRED. Read from env or SSM
-    # `notes-gateway-url` (written by 5b/04 on BOTH IdP paths — Okta OBO gateway
-    # and Cognito notes interceptor gateway share the GW2 SSM keys, so this is
-    # IdP-agnostic). GW2 is mandatory: the agent must expose notes/* alongside
-    # claims/*, so a missing URL is a hard error surfaced at connect time (no
-    # silent claims-only degradation).
+    # Notes gateway (GW2, OpenSearch claim notes) URL, required. Read from the
+    # OBO_GATEWAY_URL env var, else SSM /app/lakehouse-agent/notes-gateway-url, which
+    # 5b-obo-gateway-setup/04_create_obo_gateway.py writes for both identity providers
+    # (the Okta OBO gateway and the Cognito notes interceptor gateway use the same
+    # key). A missing value is left as None here and raised in handle_request, so
+    # the agent never runs with claims tools only.
     config["obo_gateway_url"] = os.environ.get("OBO_GATEWAY_URL")
     if not config["obo_gateway_url"]:
         try:
@@ -156,11 +156,11 @@ def _extract_tool_events(agent_obj) -> list:
     """Return the tool names actually invoked this turn, in call order (with
     duplicates), read from the Strands message log.
 
-    This is the REAL event log — each assistant `toolUse` content block records a
-    tool the model actually called — NOT LLM self-narration. Tools reach the model
-    namespaced by their MCPClient prefix (e.g. `claims___get_claims_summary`); we
-    strip the namespace to the bare tool name for display. Fail-soft: any parsing
-    hiccup yields an empty list so the response is never broken by this add-on.
+    Each assistant `toolUse` content block records a tool the model called, so this
+    reflects real calls rather than the model's own description of them. Tools reach
+    the model namespaced by their MCPClient prefix (e.g. `claims___get_claims_summary`);
+    the namespace is stripped to the bare tool name for display. Any parsing error is
+    logged and yields the events collected so far, so the response is never broken.
     """
     events = []
     try:
@@ -182,7 +182,7 @@ def _extract_tool_events(agent_obj) -> list:
 def _looks_like_jwt(value: str) -> bool:
     """Return True if `value` has the three dot-separated segments of a JWS.
 
-    Deliberately a SHAPE check, not a validation: the AgentCore Runtime authorizer
+    Deliberately a shape check, not a validation: the AgentCore Runtime authorizer
     has already validated signature, issuer, audience and expiry before any request
     reaches this code. What this guards against is a value that is not a bearer
     token at all.
@@ -225,8 +225,8 @@ def _extract_bearer_token(payload: dict[str, Any], context: Any) -> str:
             logger.info("🔑 Bearer token source: Authorization header")
             return header_value
         # Not a JWT: almost certainly a SigV4 signature from an IAM-authorized
-        # runtime. Fall through to the payload so this path keeps failing the way it
-        # failed before the header was read, rather than in a new way.
+        # runtime. Ignore it and fall through to the payload field, so a SigV4 string
+        # is never forwarded to the gateways as a bearer token.
         logger.warning(
             "⚠️  Authorization header is present but is not JWT-shaped "
             "(expected three dot-separated segments); ignoring it. This is expected "
@@ -261,17 +261,18 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
     """
     Handle requests to the lakehouse agent.
 
-    Wires TWO prefixed MCP clients: claims/* → GW1 (Interceptor_Gateway,
-    SSM gateway-arn) and notes/* → GW2 (Notes_Gateway, SSM notes-gateway-url). The
-    SAME inbound user bearer authenticates both gateways; the agent is
-    IdP-agnostic (GW2's auth flip — Cognito interceptor vs Okta OBO — is entirely
-    gateway-side). The union of both tool catalogs is exposed to the model.
+    Opens two prefixed MCP clients: claims/* on the claims gateway (GW1, resolved
+    from SSM gateway-arn) and notes/* on the notes gateway (GW2, SSM
+    notes-gateway-url). The same inbound user bearer token authenticates both. The
+    agent code is the same for Cognito and Okta: whether GW2 runs the notes
+    interceptor or the Okta OBO token exchange is configured on the gateway. Both
+    tool lists are combined and given to the model.
 
     The caller's bearer token is read from the inbound `Authorization` header, which
     the runtime validates and forwards. The `bearer_token` payload field is still
     honoured as a transitional fallback and logs a warning when used.
 
-    NOTE ON THE SIGNATURE: the second parameter MUST be named `context`. The runtime
+    Note on the signature: the second parameter must be named `context`. The runtime
     SDK inspects the handler's parameter names and passes the request context only
     when the second one is called `context`; with any other name it invokes the
     handler with the payload alone, and no request headers are available. Renaming it
@@ -296,9 +297,9 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
     obo_gateway_url = config["obo_gateway_url"]
     region = config["region"]
 
-    # The SAME inbound user JWT authenticates BOTH gateways (they validate the
-    # same token). GW1 runs its interceptor flow; GW2 runs the Cognito interceptor
-    # or Okta OBO (TOKEN_EXCHANGE) transparently — identical at the agent.
+    # The user's JWT is forwarded unchanged to both gateways, which validate it
+    # themselves. GW1's interceptor Lambda and GW2's interceptor or Okta OBO token
+    # exchange happen gateway-side, so the agent sends the same header to each.
     auth_headers = {"Authorization": f"Bearer {bearer_token}"}
 
     # Track opened MCP clients so we deterministically close them in finally.
@@ -306,7 +307,9 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
     tools = []
 
     try:
-        # ── GW1 Interceptor_Gateway → claims/* tools ────────────────────────
+        # ── GW1 claims gateway → claims/* tools ─────────────────────────────
+        # The ARN is resolved to the gateway URL with get_gateway; no try/except, so
+        # a connect or list_tools failure propagates to the caller.
         logger.info(f"🔗 Connecting to GW1 (claims): {gateway_arn}")
         gateway_url = get_gateway_url(gateway_arn, region)
 
@@ -320,11 +323,10 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
         tools += claims_tools
         logger.info(f"✅ Loaded {len(claims_tools)} tools from GW1")
 
-        # ── GW2 Notes_Gateway → notes/* tools (REQUIRED) ────────────────────
-        # GW2 is mandatory: the agent must expose notes/* alongside claims/*.
-        # Fail LOUD (symmetric with GW1, which has no try/except) rather than
-        # silently degrading to claims-only — a missing URL or a connect/
-        # list_tools failure is a hard error you must fix.
+        # ── GW2 notes gateway → notes/* tools (required) ────────────────────
+        # The system prompt promises notes/* alongside claims/*, so a missing URL
+        # raises here, and a connect or list_tools failure propagates the same way
+        # as GW1's. The agent never answers with claims tools only.
         if not obo_gateway_url:
             raise RuntimeError(
                 "notes gateway required — run notebook 05b to deploy it and ensure "

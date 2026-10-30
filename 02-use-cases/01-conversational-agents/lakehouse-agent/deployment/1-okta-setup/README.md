@@ -160,7 +160,7 @@ It confirms both apps exist, the exchange app carries the token-exchange grant, 
 
 ## What teardown removes, and what survives
 
-**The teardown reaches into your Okta tenant. That is deliberate — cleanup is a full reset on both IdP paths, not an AWS-only one.** `09-optional-cleanup.ipynb` **Step 8** branches on `IDP_PROVIDER`, and on `okta` it runs `cleanup_okta.py`:
+**The teardown can reach into your Okta tenant, but only when you turn it on.** `09-optional-cleanup.ipynb` **Step 8** branches on `IDP_PROVIDER`; on `okta`, its cell runs `cleanup_okta.py --yes` only when `RUN_OKTA_CLEANUP = True` (the default is `False`). With it on, this is what gets deleted:
 
 | Removed by `cleanup_okta.py` | Matched by |
 |---|---|
@@ -171,7 +171,7 @@ It confirms both apps exist, the exchange app carries the token-exchange grant, 
 | Users `policyholder001/002@example.com`, `adjuster001/002@example.com`, `admin@example.com` | login |
 | The twelve `/app/lakehouse-agent/okta-*` SSM parameters | exact name |
 
-**If you want the AWS resources gone but your Okta tenant untouched, skip Step 8.** Every other teardown step is Okta-independent, and `cleanup_okta.py` is a standalone script you can simply not run. Pass `--keep-ssm` if you also want the `okta-*` parameters preserved for a re-deploy.
+**By default your Okta tenant is left untouched.** The Okta cell in Step 8 starts with `RUN_OKTA_CLEANUP = False` and prints what it left in place, and every other teardown step is Okta-independent. Run directly, `cleanup_okta.py` deletes nothing unless you pass `--yes`: without it, it prints what it would delete and exits with status 2. Pass `--keep-ssm` together with `--yes` if you also want the `okta-*` parameters kept.
 
 **Deletion is by name, so re-read the adoption warning above before running it.** If your deploy log showed `ℹ️  … already exists` for an object you care about, that object will be deleted.
 
