@@ -201,8 +201,28 @@ class OBOCleanup:
             print(f"   ❌ Error: {e}")
 
     # ─── 4: OAuth2 credential providers (Okta OBO + Cognito M2M) ───────
+    def _oauth_provider_names(self):
+        """Exact names of every OAuth2 credential provider in the account (paginated).
+
+        Raises on a failed read, so a failed check is never mistaken for "absent".
+        """
+        names = set()
+        for page in self.bedrock.get_paginator("list_oauth2_credential_providers").paginate():
+            names.update(p.get("name", "") for p in page.get("credentialProviders", []))
+        return names
+
     def delete_oauth_provider(self, provider_name=PROVIDER_NAME):
         print(f"\n🗑️  Deleting OAuth2 credential provider: {provider_name}")
+        # Check existence first, by exact name. A delete call that returns
+        # without an error is not, on its own, proof that a provider existed.
+        try:
+            present = provider_name in self._oauth_provider_names()
+        except Exception as e:
+            print(f"   ❌ Error listing OAuth2 credential providers, nothing deleted: {e}")
+            return
+        if not present:
+            print(f"   ⏭️  Not present, skipped: {provider_name}")
+            return
         try:
             self.bedrock.delete_oauth2_credential_provider(name=provider_name)
             print(f"   ✅ Deleted: {provider_name}")

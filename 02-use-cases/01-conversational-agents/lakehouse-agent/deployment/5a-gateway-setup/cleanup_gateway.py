@@ -148,8 +148,22 @@ class GatewayCleanup:
         else:  # okta
             provider_names = ["lakehouse-mcp-okta-oauth-provider"]
 
+        # Check existence first, by exact name (paginated list). A delete call
+        # that returns without an error is not, on its own, proof that a
+        # provider existed, so "Deleted" is printed only for names that did.
+        try:
+            existing = set()
+            for page in self.bedrock.get_paginator("list_oauth2_credential_providers").paginate():
+                existing.update(p.get("name", "") for p in page.get("credentialProviders", []))
+        except Exception as e:
+            print(f"   ❌ Error listing OAuth2 credential providers, nothing deleted: {e}")
+            return
+
         deleted = 0
         for name in provider_names:
+            if name not in existing:
+                print(f"   ⏭️  Not present, skipped: {name}")
+                continue
             try:
                 self.bedrock.delete_oauth2_credential_provider(name=name)
                 print(f"   ✅ Deleted: {name}")  # codeql[py/clear-text-logging-sensitive-data]

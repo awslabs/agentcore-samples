@@ -366,11 +366,18 @@ def build_documents_for_user(user_sub: str, user_label: str) -> list[dict]:
     return docs
 
 
-def bulk_load(client: OpenSearch, docs: list[dict]) -> None:
-    """Bulk-index documents into the claim-notes index."""
+def bulk_load(client: OpenSearch, docs: list[dict]) -> tuple[int, int, list]:
+    """Bulk-index documents into the claim-notes index.
+
+    Returns (indexed, total, errors): `indexed` is the count the bulk helper
+    reports as successful, `total` is the number of documents sent, and
+    `errors` is the helper's list of per-document failures. The caller decides
+    the exit code from these, so a partial or failed load is never reported as
+    success.
+    """
     if not docs:
         print("   ⏭️  No documents to load")
-        return
+        return 0, 0, []
 
     print(f"\n📥 Bulk-loading {len(docs)} document(s)...")
 
@@ -395,14 +402,18 @@ def bulk_load(client: OpenSearch, docs: list[dict]) -> None:
     # AOSS does not support refresh on bulk; let it propagate naturally.
     try:
         success, errors = helpers.bulk(client, actions, raise_on_error=False, raise_on_exception=False)
-        print(f"   ✅ Indexed {success} document(s)")
-        if errors:
-            print(f"   ⚠️  {len(errors)} error(s) reported by bulk helper:")
-            for err in errors[:5]:
-                print(f"      {err}")
     except Exception as e:
         print(f"   ❌ Bulk load failed: {e}")
         raise
+
+    total = len(docs)
+    marker = "✅" if success == total else "❌"
+    print(f"   {marker} Indexed {success}/{total} document(s)")
+    if errors:
+        print(f"   ⚠️  {len(errors)} error(s) reported by bulk helper:")
+        for err in errors[:5]:
+            print(f"      {err}")
+    return success, total, errors
 
 
 def main():
@@ -459,13 +470,24 @@ def main():
             print(f"   - claim_id={d['claim_id']}, note_type={d['note_type']}")
         all_docs.extend(docs)
 
-    # Bulk load
-    bulk_load(client, all_docs)
+    # Bulk load. The exit code follows what OpenSearch actually indexed, not
+    # how many documents were built: a partial load exits non-zero so callers
+    # (notebooks 05b and 07) stop instead of reporting a seeded index.
+    indexed, total, errors = bulk_load(client, all_docs)
+    if total == 0 or indexed < total:
+        print("\n" + "=" * 70)
+        print("Sample-data load INCOMPLETE")
+        print("=" * 70)
+        print(f"\n❌ Indexed {indexed}/{total} document(s) across {len(users)} user(s); {len(errors)} error(s)")
+        print(f"   Index: {CLAIM_NOTES_INDEX}")
+        print("   Re-run this script. Uploads use fixed document ids, so a re-run")
+        print("   overwrites in place and does not create duplicates.")
+        sys.exit(1)
 
     print("\n" + "=" * 70)
     print("Sample-data load complete!")
     print("=" * 70)
-    print(f"\n✅ Loaded {len(all_docs)} document(s) across {len(users)} user(s)")
+    print(f"\n✅ Indexed {indexed}/{total} document(s) across {len(users)} user(s)")
     print(f"   Index: {CLAIM_NOTES_INDEX}")
     print("\n📋 Next Steps:")
     print("   1. Verify per-user RLS via search_claim_notes (notebook 07)")
