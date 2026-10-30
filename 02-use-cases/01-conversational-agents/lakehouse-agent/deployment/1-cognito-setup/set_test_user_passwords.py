@@ -82,11 +82,7 @@ def set_test_user_passwords(ssm_client, cognito_client, password: str | None = N
         # Name the SOURCE, never the value. When the environment overrides the default,
         # the password in use and the one notebook 08 documents differ, and the reader
         # needs to know which one won in order to sign in.
-        source = (
-            "LAKEHOUSE_TEST_PASSWORD (environment)"
-            if env_password
-            else "the documented default (see notebook 08)"
-        )
+        source = "LAKEHOUSE_TEST_PASSWORD (environment)" if env_password else "the documented default (see notebook 08)"
         print(f"   ℹ️  Using password from: {source}")
     else:
         print("   ℹ️  Using password supplied by the caller.")
