@@ -453,7 +453,7 @@ Copy [`.env.example`](.env.example) to **`.env` in this directory** (the sample 
 ### Development Environment
 
 ```bash
-# Python 3.10 or later
+# Python 3.12 or later
 python --version
 
 # Create virtual environment

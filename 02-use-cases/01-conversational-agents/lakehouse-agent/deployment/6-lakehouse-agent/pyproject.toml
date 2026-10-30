@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lakehouse-agent"
 version = "0.1.0"
 description = "Lakehouse claims agent (Strands) for AgentCore Runtime"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # Packaged by the AgentCore CLI (CodeZip).
 dependencies = [
     "aws-opentelemetry-distro==0.12.2",

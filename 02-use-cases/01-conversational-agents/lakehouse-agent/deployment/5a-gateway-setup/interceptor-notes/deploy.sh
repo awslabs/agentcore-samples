@@ -83,8 +83,11 @@ fi
 # not the machine running this script.
 echo ""
 echo "📦 Packaging Lambda function..."
+# Start from an empty build folder so no file from an earlier build (for example a
+# compiled module built for another Python version) ends up in the package.
+rm -rf "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-notes/dist"
 mkdir -p dist
-"$PYTHON_BIN" -m pip install -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --only-binary=:all:
+"$PYTHON_BIN" -m pip install -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
 cp lambda_function.py dist/
 cd dist
 zip -r ../notes-interceptor-lambda.zip . >/dev/null
@@ -148,7 +151,7 @@ else
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         if aws lambda create-function \
             --function-name lakehouse-notes-interceptor \
-            --runtime python3.11 \
+            --runtime python3.12 \
             --role $LAMBDA_ROLE_ARN \
             --handler lambda_function.lambda_handler \
             --zip-file fileb://notes-interceptor-lambda.zip \

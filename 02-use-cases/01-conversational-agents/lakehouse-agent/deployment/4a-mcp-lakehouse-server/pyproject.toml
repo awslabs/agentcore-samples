@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lakehouse-mcp-server"
 version = "0.1.0"
 description = "Claims lakehouse MCP server (Athena) for AgentCore Runtime"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # Packaged by the AgentCore CLI (CodeZip). Only runtime dependencies are listed here;
 # deploy-time tooling is not.
 dependencies = [

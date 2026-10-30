@@ -137,7 +137,7 @@ cd deployment/5a-gateway-setup/interceptor-response
 3. Resolves the shared Lambda role from SSM `interceptor-lambda-role-arn` (falls back to the IAM role
    `InsuranceClaimsGatewayInterceptorRole`).
 4. Creates (or updates) the Lambda:
-   - runtime **`python3.11`**, handler `lambda_function.lambda_handler`
+   - runtime **`python3.12`**, handler `lambda_function.lambda_handler`
    - environment, branched on the flag:
      ```
      # [COGNITO]

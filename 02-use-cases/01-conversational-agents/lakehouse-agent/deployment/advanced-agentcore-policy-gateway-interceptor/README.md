@@ -61,7 +61,7 @@ Required tooling:
   inline policies to the Gateway role.
 - AWS CLI v2 configured for the same account and region as the base deployment.
 - Node.js 18+ and npm.
-- Python 3.10+ (for the pre-deploy and verification scripts) with the same
+- Python 3.12 or later (for the pre-deploy and verification scripts) with the same
   virtual environment used for Phase 1.
 
 > **Region note**: All commands below assume `AWS_REGION=us-east-1`, matching

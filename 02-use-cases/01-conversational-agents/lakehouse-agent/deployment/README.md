@@ -66,7 +66,7 @@ The agent (Step 8) is IdP-agnostic: it wires two prefixed MCP clients
 ## Prerequisites
 
 1. AWS CLI configured with appropriate permissions
-2. Python 3.10+ with virtual environment
+2. Python 3.12 or later with virtual environment
 3. Node.js 20+ and the AgentCore CLI at exactly 0.30.0, installed globally (outside the venv):
    `npm install -g @aws/agentcore@0.30.0`
 4. [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (the CLI uses it to package each runtime's Python dependencies)

@@ -13,7 +13,7 @@
       "build": "CodeZip",
       "entrypoint": "server.py",
       "codeLocation": "./",
-      "runtimeVersion": "PYTHON_3_10",
+      "runtimeVersion": "PYTHON_3_12",
       "networkMode": "PUBLIC",
       "instrumentation": {
         "enableOtel": true

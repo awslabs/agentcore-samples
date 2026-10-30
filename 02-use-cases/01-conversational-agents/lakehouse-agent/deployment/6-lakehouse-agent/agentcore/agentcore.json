@@ -13,7 +13,7 @@
       "build": "CodeZip",
       "entrypoint": "lakehouse_agent.py",
       "codeLocation": "./",
-      "runtimeVersion": "PYTHON_3_10",
+      "runtimeVersion": "PYTHON_3_12",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
       "requestHeaderAllowlist": [
