@@ -10,7 +10,9 @@ streamlit>=1.30.0
 requests>=2.31.0
 
 # MCP
-mcp>=1.9.0
+mcp>=1.9.0,<2
+# Okta SDK: the Okta setup, verify and cleanup scripts (deployment/1-okta-setup)
+okta>=2.9.0,<3
 
 # Reader path — needed so a single venv runs the notebooks + the app:
 # opensearch-py + aws-requests-auth: notebook 07 queries AOSS with SigV4-signed requests

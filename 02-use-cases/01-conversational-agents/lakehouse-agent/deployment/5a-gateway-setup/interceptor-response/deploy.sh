@@ -86,6 +86,8 @@ mkdir -p dist
 "$PYTHON_BIN" -m pip install -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
 cp lambda_function.py dist/
 
+# zip adds to an existing archive rather than replacing it, so remove the old package first.
+rm -f "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-response/response-interceptor-lambda.zip"
 cd dist
 zip -r ../response-interceptor-lambda.zip .
 cd ..

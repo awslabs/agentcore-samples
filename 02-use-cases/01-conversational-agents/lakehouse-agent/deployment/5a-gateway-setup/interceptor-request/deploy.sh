@@ -119,6 +119,8 @@ cp lambda_function.py dist/
 cp token_exchange.py dist/
 cp tool_validation.py dist/
 
+# zip adds to an existing archive rather than replacing it, so remove the old package first.
+rm -f "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-request/interceptor-lambda.zip"
 cd dist
 zip -r ../interceptor-lambda.zip .
 cd ..
