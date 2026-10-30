@@ -86,9 +86,7 @@ class PreviewApp:
             self._server = None
         if self.local:
             self.local.stop()
-        self.client.stop_runtime_session(
-            agentRuntimeArn=self.config["runtime_arn"], runtimeSessionId=self.session_id
-        )
+        self.client.stop_runtime_session(agentRuntimeArn=self.config["runtime_arn"], runtimeSessionId=self.session_id)
 
     def _handler(self):
         app = self
@@ -102,14 +100,19 @@ class PreviewApp:
             def do_GET(self):
                 if self.path != "/":
                     return self.send_error(404)
+
                 def chip(entry):
                     prompt, hint = entry if isinstance(entry, (tuple, list)) else (entry, "")
                     look = f'<small class="look">Look for: {html.escape(hint)}</small>' if hint else ""
                     return f'<div class="suggest"><button type="button">{html.escape(prompt)}</button>{look}</div>'
 
                 buttons = "\n".join(chip(entry) for entry in app.prompts)
-                body = (page.replace("{{SITE_URL}}", app.local.url).replace("{{PROXY_PORT}}", str(app.local.listen_port))
-                        .replace("{{PROMPT_BUTTONS}}", buttons).encode())
+                body = (
+                    page.replace("{{SITE_URL}}", app.local.url)
+                    .replace("{{PROXY_PORT}}", str(app.local.listen_port))
+                    .replace("{{PROMPT_BUTTONS}}", buttons)
+                    .encode()
+                )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -121,8 +124,10 @@ class PreviewApp:
                 # read here because start() may have moved to a free one after this was built.
                 local = {f"localhost:{app.ui_port}", f"127.0.0.1:{app.ui_port}"}
                 origin = self.headers.get("Origin", "")
-                if self.path != "/prompt" or self.headers.get("Host") not in local or (
-                    origin and origin.split("//", 1)[-1] not in local
+                if (
+                    self.path != "/prompt"
+                    or self.headers.get("Host") not in local
+                    or (origin and origin.split("//", 1)[-1] not in local)
                 ):
                     return self.send_error(403)
                 length = int(self.headers.get("Content-Length") or 0)

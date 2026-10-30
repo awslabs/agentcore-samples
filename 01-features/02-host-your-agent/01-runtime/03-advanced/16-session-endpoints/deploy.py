@@ -58,33 +58,39 @@ def create_execution_role() -> str:
     role_name = f"agentcore-{AGENT_NAME}-role"
     trust = {
         "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
-            "Action": "sts:AssumeRole",
-            "Condition": {"StringEquals": {"aws:SourceAccount": account_id()}},
-        }],
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+                "Action": "sts:AssumeRole",
+                "Condition": {"StringEquals": {"aws:SourceAccount": account_id()}},
+            }
+        ],
     }
     policy = {
         "Version": "2012-10-17",
         "Statement": [
-            {"Effect": "Allow",
-             "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-             "Resource": "*"},
-            {"Effect": "Allow",
-             "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-             "Resource": "arn:aws:logs:*:*:*"},
+            {
+                "Effect": "Allow",
+                "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                "Resource": "*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+                "Resource": "arn:aws:logs:*:*:*",
+            },
         ],
     }
     try:
         role_arn = iam.create_role(
-            RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust),
+            RoleName=role_name,
+            AssumeRolePolicyDocument=json.dumps(trust),
             Description=f"Execution role for {AGENT_NAME}",
         )["Role"]["Arn"]
     except iam.exceptions.EntityAlreadyExistsException:
         role_arn = f"arn:aws:iam::{account_id()}:role/{role_name}"
-    iam.put_role_policy(RoleName=role_name, PolicyName=f"{AGENT_NAME}-policy",
-                        PolicyDocument=json.dumps(policy))
+    iam.put_role_policy(RoleName=role_name, PolicyName=f"{AGENT_NAME}-policy", PolicyDocument=json.dumps(policy))
     print(f"IAM role: {role_arn}")
     time.sleep(10)
     return role_arn
@@ -102,10 +108,14 @@ def build_package() -> str:
     shutil.copyfile(os.path.join(HERE, "agent", "dist", "app.js"), os.path.join(build, "app.js"))
 
     print("Installing the site's dependencies for linux-arm64...")
-    shutil.copytree(os.path.join(HERE, SITE_DIR), os.path.join(build, "site"),
-                    ignore=shutil.ignore_patterns("node_modules"))
-    subprocess.run(["npm", "install", "--silent", "--os=linux", "--cpu=arm64", "--libc=glibc"],
-                   cwd=os.path.join(build, "site"), check=True)
+    shutil.copytree(
+        os.path.join(HERE, SITE_DIR), os.path.join(build, "site"), ignore=shutil.ignore_patterns("node_modules")
+    )
+    subprocess.run(
+        ["npm", "install", "--silent", "--os=linux", "--cpu=arm64", "--libc=glibc"],
+        cwd=os.path.join(build, "site"),
+        check=True,
+    )
 
     archive = shutil.make_archive(os.path.join(HERE, "code"), "zip", build)
     print(f"Package: {os.path.getsize(archive) / (1024 * 1024):.1f} MB")
@@ -130,8 +140,11 @@ def create_runtime(role_arn: str) -> dict:
     """Create the runtime. allowedPorts is what lets the Session endpoint reach 8090 and 8081."""
     client = AgentCoreRuntimeClient(region=REGION)
     control = boto3.client("bedrock-agentcore-control", region_name=REGION)
-    existing = [runtime for runtime in control.list_agent_runtimes()["agentRuntimes"]
-                if runtime["agentRuntimeName"] == AGENT_NAME]
+    existing = [
+        runtime
+        for runtime in control.list_agent_runtimes()["agentRuntimes"]
+        if runtime["agentRuntimeName"] == AGENT_NAME
+    ]
     if existing:
         raise SystemExit(
             f"A runtime named {AGENT_NAME} already exists ({existing[0]['agentRuntimeId']}). "
@@ -140,11 +153,13 @@ def create_runtime(role_arn: str) -> dict:
     print("Creating the runtime and waiting for READY...")
     runtime = client.create_agent_runtime_and_wait(
         agentRuntimeName=AGENT_NAME,
-        agentRuntimeArtifact={"codeConfiguration": {
-            "code": {"s3": {"bucket": code_bucket(), "prefix": S3_PREFIX}},
-            "runtime": "NODE_22",
-            "entryPoint": ["app.js"],
-        }},
+        agentRuntimeArtifact={
+            "codeConfiguration": {
+                "code": {"s3": {"bucket": code_bucket(), "prefix": S3_PREFIX}},
+                "runtime": "NODE_22",
+                "entryPoint": ["app.js"],
+            }
+        },
         roleArn=role_arn,
         networkConfiguration={"networkMode": "PUBLIC"},
         protocolConfiguration={"serverProtocol": "HTTP", "port": SERVING_PORT, "path": SERVING_PATH},
@@ -178,9 +193,18 @@ def main():
     upload(archive)
     runtime = create_runtime(role_arn)
     with open(CONFIG_FILE, "w") as handle:
-        json.dump({"agent_name": AGENT_NAME, **runtime, "region": REGION,
-                   "preview_port": PREVIEW_PORT, "status_port": STATUS_PORT,
-                   "allowed_ports": ALLOWED_PORTS}, handle, indent=2)
+        json.dump(
+            {
+                "agent_name": AGENT_NAME,
+                **runtime,
+                "region": REGION,
+                "preview_port": PREVIEW_PORT,
+                "status_port": STATUS_PORT,
+                "allowed_ports": ALLOWED_PORTS,
+            },
+            handle,
+            indent=2,
+        )
     print("\nDeployment complete.")
 
 

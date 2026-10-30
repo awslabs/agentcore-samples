@@ -50,8 +50,7 @@ def main():
 
     bucket = f"agentcore-code-{account_id}-{region}"
     try:
-        boto3.client("s3", region_name=region).delete_object(
-            Bucket=bucket, Key=f"{agent_name}/code.zip")
+        boto3.client("s3", region_name=region).delete_object(Bucket=bucket, Key=f"{agent_name}/code.zip")
         print(f"Deleted s3://{bucket}/{agent_name}/code.zip")
     except ClientError as error:
         print(f"Code object: {error}")
@@ -62,8 +61,7 @@ def main():
         role_name = f"agentcore-{agent_name}-role"
         iam = boto3.client("iam", region_name=region)
         try:
-            iam.delete_role_policy(RoleName=role_name,
-                                   PolicyName=f"{agent_name}-policy")
+            iam.delete_role_policy(RoleName=role_name, PolicyName=f"{agent_name}-policy")
             iam.delete_role(RoleName=role_name)
             print(f"Deleted role {role_name}")
         except ClientError as error:
