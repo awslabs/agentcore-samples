@@ -3,8 +3,12 @@
 Cleanup Okta Resources
 
 Okta path only. Run by 09-optional-cleanup.ipynb ([OKTA] step) as
-``python cleanup_okta.py`` from this directory. Needs OKTA_ORG_URL and
-OKTA_API_TOKEN (exported, or read from .env); exits 1 without them.
+``python cleanup_okta.py --yes`` from this directory, and only when that
+cell's RUN_OKTA_CLEANUP switch is True. Needs OKTA_ORG_URL and OKTA_API_TOKEN
+(exported, or read from .env); exits 1 without them.
+
+Deletes nothing unless ``--yes`` is passed. Without it, the script prints what
+it would delete and exits with status 2, so running it by accident is harmless.
 
 DESTRUCTIVE for the Okta org it points at: it calls the Okta management API
 with your API token and deletes, by exact name or login, the objects
@@ -33,7 +37,8 @@ setup_okta.py). The AWS-side OBO substrate (provider / gateway / target / AOSS
 deployment/5b-obo-gateway-setup/06_cleanup_obo_gateway.py — no double ownership.
 
 Usage:
-    python cleanup_okta.py [--keep-ssm]
+    python cleanup_okta.py              # print what would be deleted; delete nothing
+    python cleanup_okta.py --yes [--keep-ssm]
 """
 
 import argparse
@@ -60,6 +65,21 @@ USER_LOGINS = [
     "adjuster001@example.com",
     "adjuster002@example.com",
     "admin@example.com",
+]
+SSM_PREFIX = "/app/lakehouse-agent/"
+SSM_PARAMS = [
+    "okta-org-url",
+    "okta-auth-server-id",
+    "okta-app-client-id",
+    "okta-app-client-secret",
+    "okta-obo-client-id",
+    "okta-obo-client-secret",
+    "okta-api-token",
+    "okta-resource-server-audience",
+    "okta-discovery-url",
+    "okta-policyholders-group-id",
+    "okta-adjusters-group-id",
+    "okta-administrators-group-id",
 ]
 
 
@@ -183,22 +203,8 @@ class OktaCleanup:
             print("\n⏭️  Keeping SSM parameters (--keep-ssm)")
             return
         print("\n🗑️  Deleting SSM parameters...")
-        params = [
-            "okta-org-url",
-            "okta-auth-server-id",
-            "okta-app-client-id",
-            "okta-app-client-secret",
-            "okta-obo-client-id",
-            "okta-obo-client-secret",
-            "okta-api-token",
-            "okta-resource-server-audience",
-            "okta-discovery-url",
-            "okta-policyholders-group-id",
-            "okta-adjusters-group-id",
-            "okta-administrators-group-id",
-        ]
-        for p in params:
-            full = f"/app/lakehouse-agent/{p}"
+        for p in SSM_PARAMS:
+            full = f"{SSM_PREFIX}{p}"
             try:
                 self.ssm.delete_parameter(Name=full)
                 print(f"   ✅ Deleted: {full}")
@@ -219,15 +225,41 @@ class OktaCleanup:
         print("\n✨ Okta cleanup complete!")
 
 
+def print_plan(keep_ssm: bool) -> None:
+    """Print what a run with --yes would delete. Makes no Okta or AWS call."""
+    print("🧹 Okta Cleanup: DRY RUN, nothing deleted (pass --yes to delete)")
+    print(f"   Org URL: {os.environ.get('OKTA_ORG_URL') or '(OKTA_ORG_URL not set)'}")
+    print("   With --yes, this deletes from that Okta org, by exact name or login:")
+    print(f"     - apps: {OKTA_APP_NAME}, {OKTA_EXCHANGE_APP_NAME}")
+    print(f"     - authorization server: {OKTA_AUTH_SERVER_NAME}")
+    print(f"     - groups: {', '.join(GROUP_NAMES)}")
+    print(f"     - users: {', '.join(USER_LOGINS)}")
+    if keep_ssm:
+        print("     - SSM parameters: none (--keep-ssm)")
+    else:
+        print(f"     - SSM parameters under {SSM_PREFIX}: {', '.join(SSM_PARAMS)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Cleanup Okta resources")
     parser.add_argument("--keep-ssm", action="store_true", help="Keep SSM parameters")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Required to delete anything. Without it, print what would be deleted and exit 2.",
+    )
     args = parser.parse_args()
 
     # Same as setup_okta.py: this script reads OKTA_ORG_URL / OKTA_API_TOKEN
     # from os.environ and exits 1 without them, so load .env into the
     # environment first. Already-exported variables still win.
     load_env_file()
+
+    # Opt-in: the deletes reach into your Okta org, so they need an explicit --yes.
+    # No interactive prompt, because the notebook that calls this has no terminal.
+    if not args.yes:
+        print_plan(args.keep_ssm)
+        sys.exit(2)
 
     cleanup = OktaCleanup(keep_ssm=args.keep_ssm)
     asyncio.run(cleanup.run())

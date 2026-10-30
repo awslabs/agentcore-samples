@@ -713,7 +713,7 @@ The system includes an optional login audit feature that records every Cognito a
 
 > **`IDP_PROVIDER=okta` only.**
 
-**Cleanup is a full reset on both paths — it does not stop at the AWS boundary.** On the Okta path, `09-optional-cleanup.ipynb` Step 8 runs `deployment/1-okta-setup/cleanup_okta.py`, which deletes the user-login app `lakehouse-agent-app`, the OBO exchange app `lakehouse-obo-exchange-client`, the custom authorization server `lakehouse-agent`, the three groups, the five test users, and the twelve `/app/lakehouse-agent/okta-*` SSM parameters. If you want the AWS side gone but your Okta tenant left alone, **skip Step 8** — every other step is Okta-independent.
+**Cleanup can reach past the AWS boundary, into your Okta tenant, but only if you ask it to.** On the Okta path, `09-optional-cleanup.ipynb` Step 8 can run `deployment/1-okta-setup/cleanup_okta.py`, which deletes the user-login app `lakehouse-agent-app`, the OBO exchange app `lakehouse-obo-exchange-client`, the custom authorization server `lakehouse-agent`, the three groups, the five test users, and the twelve `/app/lakehouse-agent/okta-*` SSM parameters. **The Okta part is opt-in.** The Okta cell in Step 8 starts with `RUN_OKTA_CLEANUP = False`, so by default it deletes nothing in your Okta tenant and prints what it left in place; set it to `True` and re-run that cell to delete the objects above. Run directly, `cleanup_okta.py` also deletes nothing unless you pass `--yes`: without it, it prints what it would delete and exits with status 2. Every other step is Okta-independent.
 
 **Exactly one thing survives, and it is a live credential:**
 
@@ -757,7 +757,7 @@ cd ../2-lakehouse-tenant-roles-setup && python cleanup_iam_roles.py
 
 # Identity provider  [branch on IDP_PROVIDER]
 cd ../1-cognito-setup && python cleanup_cognito.py   # [COGNITO]
-cd ../1-okta-setup && python cleanup_okta.py         # [OKTA] (needs OKTA_ORG_URL + OKTA_API_TOKEN)
+cd ../1-okta-setup && python cleanup_okta.py --yes   # [OKTA] opt-in; without --yes it only prints the plan (needs OKTA_ORG_URL + OKTA_API_TOKEN)
 ```
 
 The `cleanup_*` scripts support `--keep-ssm` to preserve SSM parameters for re-deployment. A runtime `--destroy` always deletes the SSM parameters that runtime's deploy wrote (its ARN and ID, plus the agent name for the agent); the next deploy rewrites them.
