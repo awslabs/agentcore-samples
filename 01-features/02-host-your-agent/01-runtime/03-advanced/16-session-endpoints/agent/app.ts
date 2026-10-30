@@ -222,12 +222,14 @@ http
       }
       return json(response, 200, done);
     } catch (error) {
+      // The details go to the runtime's logs; the caller gets a message without them.
       console.error("agent failed:", error);
+      const message = "The agent couldn't finish this request. Check the runtime logs for details.";
       if (stream) {
-        send({ error: String(error) });
+        send({ error: message });
         return response.end();
       }
-      return json(response, 500, { error: String(error), changed });
+      return json(response, 500, { error: message, changed });
     } finally {
       report = () => {};
     }

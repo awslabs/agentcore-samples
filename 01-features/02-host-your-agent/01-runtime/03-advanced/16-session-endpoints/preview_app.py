@@ -92,7 +92,8 @@ class PreviewApp:
 
     def _handler(self):
         app = self
-        page = open(os.path.join(HERE, "ui.html"), encoding="utf-8").read()
+        with open(os.path.join(HERE, "ui.html"), encoding="utf-8") as handle:
+            page = handle.read()
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
