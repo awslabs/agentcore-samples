@@ -3,25 +3,37 @@ MCP Server for OpenSearch Claim Notes - AgentCore Identity OBO Pattern
 
 This MCP server provides full-text search over claim-note documents in
 Amazon OpenSearch Serverless, with per-user row-level security enforced by
-a query-time `owner_user_sub` term filter.
+a query-time `owner_user_sub` term filter (opensearch_tools.py).
 
-Security Architecture:
-- OAuth authentication (Okta JWT tokens, validated by AgentCore Runtime
-  customJWTAuthorizer)
-- User identity extracted from the validated Authorization header forwarded
-  via requestHeaderAllowlist: ["Authorization"] (this server reads the
-  forwarded header directly)
-- Query-time term filter on owner_user_sub (no SQL string interpolation,
-  no application-level identity propagation; AOSS document-field contract)
+Deployment: notebook 05b-deploy-notes-gateway runs
+`agentcore_cli_deploy.py opensearch-mcp`, which deploys the agentcore/ project
+in this directory as an AgentCore Runtime (its own CloudFormation stack) and
+stores the runtime ARN/ID in SSM (opensearch-mcp-runtime-arn / -id). The notes
+gateway created later in the same notebook targets this runtime.
 
-IMPORTANT: This server reads the validated Authorization header from
-ctx.request_context.request.headers. The AgentCore Runtime authorizer has
-already validated signature/issuer/audience/expiry, so this code uses an
-unverified PyJWT decode purely to extract claims.
+Identity: the caller's `sub` is resolved differently per IdP, selected by
+IDP_PROVIDER (see `_resolve_idp_provider`):
+- [OKTA] The notes gateway's target performs an OBO token exchange and
+  forwards the exchanged, user-scoped token in the Authorization header.
+  The runtime's customJWTAuthorizer validates it, and agentcore.json's
+  `requestHeaderAllowlist: ["Authorization"]` makes the header readable here
+  (`extract_user_sub_from_headers`).
+- [COGNITO] The notes REQUEST interceptor Lambda
+  (5a-gateway-setup/interceptor-notes) validates the user JWT and injects
+  the caller `sub` as params.arguments.context.user_id; the tool reads it
+  from its `context` argument.
+In both cases this code does no signature verification of its own: the
+Okta-path decode is an unverified PyJWT decode used purely to extract claims,
+because the runtime authorizer has already validated signature, issuer,
+audience and expiry.
 
-Configuration:
-- Reads from SSM Parameter Store under /app/lakehouse-agent/
-- Auto-detects region from boto3 session
+Configuration (env vars are set from agentcore.json envVars at deploy time;
+each falls back to SSM under /app/lakehouse-agent/ when unset):
+- IDP_PROVIDER            → SSM idp-provider (default "cognito")
+- OPENSEARCH_COLLECTION_ENDPOINT → SSM opensearch-collection-endpoint
+  (written by 5b-obo-gateway-setup/01_deploy_opensearch_collection.py)
+- AWS_REGION (falls back to the boto3 session region, then us-east-1)
+- LOG_LEVEL (optional, default INFO)
 """
 
 import logging
@@ -42,7 +54,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Also add a stderr handler to ensure logs appear
+# Also send log lines to stderr; stderr is line-buffered below, so each line is
+# written as soon as it is logged.
 stderr_handler = logging.StreamHandler(sys.stderr)
 stderr_handler.setLevel(logging.INFO)
 stderr_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
@@ -52,7 +65,8 @@ logger.addHandler(stderr_handler)
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# Initialize MCP server
+# Initialize MCP server (stateless streamable-http, the transport the
+# AgentCore Runtime fronts)
 mcp = FastMCP(host="0.0.0.0", stateless_http=True)
 
 from opensearch_tools import OpenSearchClaimNotesTools
@@ -60,15 +74,16 @@ from opensearch_tools import OpenSearchClaimNotesTools
 logger.info("🔒 Using AOSS query-time owner_user_sub filter (OBO production mode)")
 print("🔒 Using AOSS query-time owner_user_sub filter (OBO production mode)")
 
-# Global tools instance
+# Global tools instance (one SigV4-signed OpenSearch client per process)
 opensearch_tools = None
 
-# Configuration cache
+# Configuration cache, filled on the first get_config() call
 _config_cache = None
 
 
 def _resolve_idp_provider() -> str:
-    """IdP selector: env (set at deploy time) → SSM → cognito default."""
+    """IdP selector: IDP_PROVIDER env (set from agentcore.json envVars at deploy
+    time) → SSM /app/lakehouse-agent/idp-provider → "cognito" default."""
     v = os.environ.get("IDP_PROVIDER")
     if v:
         return v.strip().lower()
@@ -87,6 +102,9 @@ IDP_PROVIDER = _resolve_idp_provider()
 def get_config() -> dict[str, str | None]:
     """
     Load configuration from environment variables and SSM Parameter Store.
+
+    Env vars win; each missing one is read from SSM /app/lakehouse-agent/<name>.
+    The result is cached for the life of the process.
     """
     global _config_cache
 
@@ -108,7 +126,7 @@ def get_config() -> dict[str, str | None]:
         print(f"⚠️  Could not detect region: {e}")
         config["region"] = "us-east-1"
 
-    # Get account ID
+    # Get account ID (diagnostic only; nothing below depends on it)
     try:
         sts = boto3.client("sts", region_name=config["region"])
         config["account_id"] = sts.get_caller_identity()["Account"]
@@ -149,6 +167,7 @@ def get_config() -> dict[str, str | None]:
 
 
 def validate_config(config: dict[str, str | None]) -> bool:
+    """Fail loudly at startup if region or the AOSS collection endpoint is missing."""
     required_params = [
         ("region", "AWS Region"),
         ("opensearch_collection_endpoint", "OpenSearch Serverless Collection Endpoint"),
@@ -167,6 +186,7 @@ def validate_config(config: dict[str, str | None]) -> bool:
 
 
 def get_opensearch_tools():
+    """Lazily build the OpenSearchClaimNotesTools client on first tool call and reuse it."""
     global opensearch_tools
     if opensearch_tools is None:
         config = get_config()
@@ -191,10 +211,12 @@ def extract_user_sub_from_headers() -> str | None:
     """
     Extract the Okta `sub` claim from the validated Authorization header.
 
-    The AgentCore Runtime customJWTAuthorizer has already validated
-    signature/issuer/audience/expiry; this code uses an unverified PyJWT
-    decode purely to extract claims. The requestHeaderAllowlist:
-    ["Authorization"] runtime config makes the header readable here.
+    [OKTA] path only. The bearer is the OBO-exchanged token the notes gateway
+    forwarded, not the user's original login token. The AgentCore Runtime
+    customJWTAuthorizer has already validated signature/issuer/audience/expiry;
+    this code uses an unverified PyJWT decode purely to extract claims. The
+    `requestHeaderAllowlist: ["Authorization"]` entry in agentcore.json makes
+    the header readable here.
 
     Returns:
         The `sub` claim string, or None if header is missing / malformed.
@@ -222,7 +244,7 @@ def extract_user_sub_from_headers() -> str | None:
         token = parts[1]
 
         # Unverified decode — the authorizer already validated the token;
-        # same pattern as the Claims-side server.py reads its claims.
+        # same pattern as the claims server (4a-mcp-lakehouse-server/server.py).
         claims = jwt.decode(token, options={"verify_signature": False})
         sub = claims.get("sub")
 
@@ -260,8 +282,9 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
     """Search claim notes for the authenticated user.
 
     `context` carries interceptor-injected identity on the Cognito path
-    (params.arguments.context.user_id = caller sub); unused on the Okta OBO path
-    (identity comes from the forwarded bearer).
+    (params.arguments.context.user_id = caller sub, set by the notes REQUEST
+    interceptor); unused on the Okta OBO path, where identity comes from the
+    forwarded bearer. `limit` is validated (1-100) in opensearch_tools.
     """
     msg = f"{'=' * 60}\n🔧 TOOL INVOKED: search_claim_notes\n{'=' * 60}"
     logger.info(msg)
@@ -281,9 +304,8 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
     print(f"   limit: {limit}")
 
     try:
-        # Write to a file as absolute proof the tool was called
-        # (mirrors the Claims-side debug pattern; handy for confirming the
-        # tool actually ran end-to-end)
+        # Append an invocation record to /tmp as a debugging aid (same pattern
+        # as the claims server); failure to write never affects the tool.
         try:
             with open("/tmp/mcp_tool_invoked.log", "a") as f:
                 import datetime
@@ -310,9 +332,9 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
         print(f"👤 USER SUB: {user_sub}")
 
         if not user_sub:
-            # If no Authorization header / no sub, return error and
-            # do NOT return any data. This is the load-bearing fail-closed
-            # behavior of the OBO path.
+            # No bearer `sub` (Okta) or no context.user_id (Cognito): return an
+            # error and no data. Without a `sub` there is nothing to filter
+            # owner_user_sub on, so the only safe answer is an empty one.
             logger.error("❌ User sub not found — refusing to query without identity")
             return {
                 "success": False,
@@ -360,7 +382,8 @@ def search_claim_notes(query: str, limit: int = 10, context: dict[str, Any] = No
 
 
 if __name__ == "__main__":
-    # Log startup
+    # Startup: validate config (exit 1 if incomplete), then serve MCP over
+    # streamable-http, the transport the AgentCore Runtime expects.
     logger.info("=" * 70)
     logger.info("🚀 MCP SERVER STARTING (OpenSearch / OBO)")
     logger.info("=" * 70)

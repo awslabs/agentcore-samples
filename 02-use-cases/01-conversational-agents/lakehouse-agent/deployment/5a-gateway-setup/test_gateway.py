@@ -56,6 +56,10 @@ def get_user_token(region: str, username: str, password: str):
     """
     Authenticate user with Cognito and get JWT token (Cognito path only).
 
+    Reads the app client and user pool from SSM (cognito-app-client-id,
+    cognito-app-client-secret, cognito-user-pool-id) and calls
+    admin_initiate_auth with ADMIN_USER_PASSWORD_AUTH.
+
     Args:
         region: AWS region
         username: Cognito username
@@ -427,13 +431,16 @@ def main():
     print("AgentCore Gateway Test with User Authentication")
     print("=" * 70 + "\n")
 
+    # IDP_PROVIDER is read from SSM /app/lakehouse-agent/idp-provider (set by
+    # notebook 01); get_idp_provider raises if notebook 01 has not been run.
     session = boto3.Session()
     region = session.region_name
     ssm = boto3.client("ssm", region_name=region)
     idp_provider = get_idp_provider(ssm)
     print(f"📍 IDP_PROVIDER: {idp_provider}\n")
 
-    # Step 1: Obtain the user token
+    # Step 1: Obtain the user token. A pasted --token is used as-is (no IdP
+    # call); the Cognito mint path is refused on Okta before any call is made.
     if args.token:
         print("=" * 70)
         print("Step 1: Using Pasted User Token")

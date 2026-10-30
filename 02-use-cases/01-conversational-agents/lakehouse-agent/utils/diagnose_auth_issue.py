@@ -111,7 +111,14 @@ def get_jwt_authorizer(region, runtime_arn):
 
 
 def diagnose_cognito(ssm, params, jwt_config):
-    """Cognito-path diagnostics: issuer + allowedClients, then a live token mint."""
+    """
+    Cognito-path diagnostics: issuer + allowedClients, then a live token mint.
+
+    The mint uses ADMIN_NO_SRP_AUTH for the sample's seeded test user
+    (policyholder001@example.com, created by setup_cognito.py) and reads the
+    app-client secret from SSM to build the SECRET_HASH. Returns early with
+    guidance on the first mismatch.
+    """
     discovery_url = jwt_config.get("discoveryUrl", "")
     allowed_clients = jwt_config.get("allowedClients", [])
 
@@ -338,7 +345,7 @@ def main():
             print("   3. python deployment/agentcore_cli_deploy.py lakehouse-agent")
         return
 
-    # Get agent runtime configuration
+    # Fetch the runtime's JWT authorizer, then hand off to the per-IdP comparison.
     jwt_config = get_jwt_authorizer(region, params["/app/lakehouse-agent/agent-runtime-arn"])
     if jwt_config is None:
         return

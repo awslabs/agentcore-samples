@@ -436,7 +436,7 @@ def load_config_from_ssm():
 
 
 def authenticate_user(username: str, password: str, user_pool_id: str, client_id: str, region: str) -> dict | None:
-    """Authenticate user with Cognito using USER_PASSWORD_AUTH flow"""
+    """Authenticate a user with Cognito: AdminInitiateAuth with AuthFlow ADMIN_NO_SRP_AUTH plus SECRET_HASH."""
     try:
         client = boto3.client("cognito-idp", region_name=region)
 

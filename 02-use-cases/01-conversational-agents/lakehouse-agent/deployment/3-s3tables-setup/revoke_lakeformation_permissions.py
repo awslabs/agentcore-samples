@@ -70,6 +70,7 @@ NEVER_REVOKE_SUBSTRINGS = (
 
 class LakeFormationRevoke:
     def __init__(self, dry_run: bool = False):
+        """Create the Lake Formation and SSM clients; with dry_run, enumerate but never revoke."""
         _session, self.region, self.account_id = get_aws_session()
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
         self.ssm = boto3.client("ssm", region_name=self.region)
@@ -222,7 +223,11 @@ class LakeFormationRevoke:
         return True
 
     def revoke_grants(self, grants: list[dict]):
-        """Revoke each grant using the exact Resource/Permissions shape Lake Formation returned."""
+        """Revoke each grant using the exact Resource/Permissions shape Lake Formation returned.
+
+        EntityNotFoundException / InvalidInputException mean the grant or its resource is
+        already gone and are skipped; any other error counts as a failure (exit code 2).
+        """
         print(f"\n🔓 Revoking {len(grants)} grant(s)...")
         for grant in grants:
             resource_kind = next(iter(grant["Resource"]))
@@ -281,6 +286,12 @@ class LakeFormationRevoke:
         return remaining if verified else None
 
     def run(self) -> int:
+        """Resolve identifiers, enumerate, revoke, re-read, and return the process exit code.
+
+        Order of checks: unresolved identifiers -> 1; no list_permissions call answered -> 1;
+        zero grants found -> 0 (or 1 if any read failed); after revoking, any revoke failure
+        -> 2, any read failure -> 1, otherwise 0. The re-read is skipped in dry-run mode.
+        """
         print("\n🔐 Lake Formation Permissions Revoke")
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
@@ -318,7 +329,8 @@ class LakeFormationRevoke:
         return 0
 
     def _report(self, remaining, principals_queried: int):
-        """Print the denominator. Never a bare count, never a bare zero."""
+        """Print the summary with its denominators (principals and filters queried), so a
+        zero can be read as "queried and empty" rather than "nothing checked"."""
         print("\n📊 Lake Formation grant revoke summary")
         print(f"   principals queried : {principals_queried} (3 tenant roles + {LAKEFORMATION_ROLE_NAME})")
         print(

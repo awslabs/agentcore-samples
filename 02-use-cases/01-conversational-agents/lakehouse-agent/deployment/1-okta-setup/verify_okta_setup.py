@@ -12,8 +12,9 @@ This script is READ-ONLY and idempotent: it inspects Okta + SSM and reports a
 ✅/❌ checklist. It never creates, updates, or deletes anything. Safe to run
 repeatedly.
 
-Default mode (Okta-only) — runnable right after notebook 01-deploy-idp, with
-no dependency on the AgentCore gateways:
+Default mode (Okta-only) — notebook 01-deploy-idp runs it right after
+setup_okta.py, and it can be re-run by hand at any time, with no dependency on
+the AgentCore gateways:
   • both apps exist (by label) and both SSM client-id/secret pairs are present
   • the exchange app carries the token-exchange grant type
   • the auth-server access policy includes the exchange client in clients.include
@@ -21,9 +22,11 @@ no dependency on the AgentCore gateways:
   • the 5 expected scopes (incl. opensearch.search) + the groups claim exist
   • the 3 groups and 5 test users exist
 
-Optional --check-provider mode — cross-checks the 5b OBO credential provider is
-wired to the exchange client (okta-obo-client-*). Skips with a note if the 5b
-substrate has not been deployed yet.
+Optional --check-provider mode — cross-checks that the OBO credential provider
+created by 5b-obo-gateway-setup/03_create_oauth_provider.py
+(lakehouse-obo-okta-provider, ARN in SSM obo-credential-provider-arn) is wired
+to the exchange client (okta-obo-client-*). Skips with a note if that SSM key
+is absent, i.e. 5b has not been deployed yet.
 
 Usage:
     python verify_okta_setup.py
@@ -190,7 +193,8 @@ async def check_apps(okta, ssm, cl: Checklist):
             "Run setup_okta.py — the dedicated exchange app is required (gate 4: unsupported_token_exchange_flow).",
         )
 
-    # SSM key pairs.
+    # SSM key pairs written by setup_okta.py; later steps (create_gateway.py,
+    # 03_create_oauth_provider.py, the Streamlit UI) read these rather than Okta.
     pairs = [
         ("okta-app-client-id", "okta-app-client-secret", "user-login app"),
         ("okta-obo-client-id", "okta-obo-client-secret", "OBO exchange app"),
@@ -372,7 +376,8 @@ def check_obo_provider(ssm, cl: Checklist):
     region = session.region_name
     try:
         client = boto3.client("bedrock-agentcore-control", region_name=region)
-        # Resolve provider name from ARN tail; list + match to read its config.
+        # List providers and match on the fixed name 03_create_oauth_provider.py
+        # uses; the response key differs across SDK versions, so try each.
         providers = []
         try:
             resp = client.list_oauth2_credential_providers()
@@ -421,6 +426,7 @@ def check_obo_provider(ssm, cl: Checklist):
 
 
 async def run(check_provider: bool) -> int:
+    """Run the checklist sections in order; return 0 if every check passed, else 1."""
     print("=" * 70)
     print("Verify Okta two-client OBO topology (read-only)")
     print("=" * 70)
@@ -451,6 +457,7 @@ async def run(check_provider: bool) -> int:
 
 
 def main():
+    """CLI entry point; exits with the checklist's status code."""
     parser = argparse.ArgumentParser(description="Read-only verification of the Okta two-client OBO topology.")
     parser.add_argument(
         "--check-provider",
@@ -459,9 +466,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # This script's documented prerequisite is "OKTA_ORG_URL + OKTA_API_TOKEN in
-    # env (.env), as for setup_okta.py" — but nothing loaded .env, so the stated
-    # prerequisite was only satisfiable by exporting by hand.
+    # Pick up OKTA_ORG_URL / OKTA_API_TOKEN from the sample's .env (searched
+    # upward from the cwd); variables already exported in the shell win.
     load_env_file()
 
     exit_code = asyncio.run(run(args.check_provider))

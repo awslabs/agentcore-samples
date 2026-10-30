@@ -4,8 +4,37 @@ Cognito Setup for Health Lakehouse Data
 Creates User Pool, App Client, Resource Server, and test users with OAuth scopes
 Writes configuration to SSM Parameter Store
 
+Run by 01-deploy-idp.ipynb (IDP_PROVIDER == "cognito") via subprocess. Every call is
+idempotent: existing resources are found by name and reused or updated.
+
+What it creates in Cognito (setup()):
+  - User pool "lakehouse-pool"; email is the username (UsernameAttributes is not set).
+  - Resource server "lakehouse-api" with scopes claims.query / claims.submit /
+    claims.update / claims.approve.
+  - App client "lakehouse-client" (secret generated): SRP, ADMIN_USER_PASSWORD and
+    refresh-token auth flows plus the client_credentials OAuth flow on the four scopes.
+    Used by the Streamlit UI and the user-token tests.
+  - App client "lakehouse-m2m-client" (create_m2m_client): client_credentials only, no
+    user auth flows. Used for gateway-to-runtime and service-to-service tokens.
+  - Hosted domain "lakehouse-<pool id suffix>", which provides the /oauth2/token endpoint.
+  - Groups policyholders / adjusters / administrators and five test users
+    (policyholder001/002, adjuster001/002, admin @example.com) with the temporary
+    password "TempPass123!", each added to its group.
+  - If the Lambda "lakehouse-cognito-post-auth" exists (deploy_post_auth_lambda.sh), it is
+    attached as the pool's PostAuthentication trigger (add_post_auth_trigger).
+
+SSM parameters written (store_parameters_in_ssm), all under /app/lakehouse-agent/:
+  cognito-user-pool-id, cognito-user-pool-arn, cognito-app-client-id, cognito-domain,
+  cognito-resource-server-id, cognito-region, cognito-m2m-client-id, and as SecureString
+  cognito-app-client-secret and cognito-m2m-client-secret.
+Later steps read them: 5a-gateway-setup/create_gateway.py (pool ARN, app client id,
+domain, M2M client id/secret), the interceptor Lambdas (pool id, app client id),
+deployment/agentcore_cli_deploy.py (pool id/ARN, client ids for the runtime authorizer),
+streamlit-ui/streamlit_app.py and notebooks 07/08 (pool id, app client id/secret, domain).
+
 Usage:
     python setup_cognito.py
+    python setup_cognito.py --add-post-auth-trigger   # only attach the Lambda trigger
 """
 
 import json
@@ -346,13 +375,10 @@ class CognitoSetup:
             # hosted-domain namespace is shared by every AWS account in the region, so the
             # name has to be genuinely unlikely to collide.
             #
-            # Derive it from the pool id's UNIQUE segment -- the part after the underscore.
-            # A user pool id looks like "us-east-1_UkB4mHbEr", so a fixed-length slice of the
-            # whole id is mostly region: the first eight alphanumeric characters are
-            # "useast1u", which is seven characters of region and one of identity. That
-            # leaves a 36-wide space of possible names, narrow enough that two unrelated
-            # deployments collide readily -- and a collision here is not cosmetic, because
-            # the pool then has no hosted domain at all.
+            # Derive it from the pool id's unique segment, the part after the underscore. A
+            # user pool id looks like "us-east-1_UkB4mHbEr", so a slice taken from the start
+            # of the whole id would be mostly region and collide readily; the suffix is the
+            # per-pool identity. A collision here leaves the pool with no hosted domain.
             pool_suffix = user_pool_id.split("_", 1)[-1]
             pool_id_clean = re.sub(r"[^a-zA-Z0-9]", "", pool_suffix).lower()
             domain_name = f"lakehouse-{pool_id_clean}"
@@ -668,17 +694,11 @@ if __name__ == "__main__":
     )  # codeql[py/clear-text-logging-sensitive-data]
     # Neither client secret is printed. Both were written to SSM Parameter Store as
     # SecureStrings earlier in this run (store_parameters_in_ssm), and every component that
-    # needs them reads them from there -- so printing the value adds exposure and no
-    # capability.
-    #
-    # The exposure is not hypothetical. This script is run from 01-deploy-idp.ipynb via
-    # subprocess.run(...) with no capture_output, so its stdout is inherited by the Jupyter
-    # kernel, captured as that cell's output, and SAVED INTO THE .ipynb FILE. A printed
-    # secret is therefore committed by any reader who commits their completed notebook, and
-    # readers also paste console output into issues and chats.
-    #
-    # Masking convention matches deployment/5a-gateway-setup/create_gateway.py, which prints
-    # a fixed-width mask when it loads a secret rather than the value.
+    # needs them reads them from there. This script is run from 01-deploy-idp.ipynb via
+    # subprocess.run() without capture_output, so its stdout becomes that cell's output and
+    # is saved into the .ipynb file; a printed secret would be committed with the notebook.
+    # The "******" mask matches what 5a-gateway-setup/create_gateway.py prints when it loads
+    # a secret.
     if "client_secret" in result:
         print("\n🔐 User App Client Secret: ****** (stored in SSM Parameter Store)")
     if "m2m_client_secret" in result:

@@ -71,8 +71,8 @@ def _as_sql_literal(value: Any) -> str:
     Two consequences follow, and they are the whole reason this helper exists.
 
     1. A value carrying an unescaped single quote breaks the literal it is placed
-       in. `' OR '1'='1` was previously wrapped as `'' OR '1'='1'`, which Athena
-       parsed as an empty string followed by trailing tokens and rejected with
+       in. Wrapping `' OR '1'='1` naively gives `'' OR '1'='1'`, which Athena
+       parses as an empty string followed by trailing tokens and rejects with
        `TYPE_MISMATCH: Logical expression term must evaluate to a boolean
        (actual: varchar(0))`. Doubling the internal quotes keeps it a single
        well-formed literal, so the comparison simply does not match and the
@@ -198,13 +198,19 @@ class SecureAthenaClaimsTools:
         """
         Execute Athena query with tenant-scoped credentials.
 
+        Credentials: _get_athena_client builds the boto3 Athena client from the
+        interceptor-supplied tenant_credentials (access_key_id / secret_access_key /
+        session_token, the STS AssumeRole output for the caller's group role), so
+        StartQueryExecution and the Glue/Lake Formation lookups it triggers run as that
+        role. Without tenant credentials it raises PermissionError unless
+        LOCAL_DEVELOPMENT=true.
+
         Row scoping is the CALLER's responsibility: the scoped claims tools already
         embed a bound ``WHERE`` predicate on the interceptor-propagated caller identity
         (passed here as execution_parameters). This method just runs the given SQL;
         Lake Formation then applies the tenant role's column/table grants (per-role
         filtering + admin full-table). LF data-cell filters are not used (see the module
-        docstring),
-        so this method adds no row filter itself.
+        docstring), so this method adds no row filter itself.
 
         Args:
             user_id: Caller email/ID (used by callers to build the bound WHERE predicate)
@@ -214,7 +220,7 @@ class SecureAthenaClaimsTools:
             execution_parameters: Optional positional values for Athena "?" query
                 parameters, applied in order. String values must be single-quoted
                 per Athena convention (e.g. "'alice@example.com'"). When None/empty,
-                the query is executed with no bound parameters (unchanged behavior).
+                ExecutionParameters is omitted and the query runs as plain SQL.
 
         Returns:
             Query results
@@ -255,8 +261,8 @@ class SecureAthenaClaimsTools:
                 "QueryExecutionContext": query_context,
                 "ResultConfiguration": {"OutputLocation": self.s3_output_location},
             }
-            # Only attach ExecutionParameters when values are present, so callers
-            # that pass no params (e.g. text_to_sql) execute exactly as before.
+            # Only attach ExecutionParameters when values are present; text_to_sql
+            # passes none because its model-authored SQL has no "?" markers.
             if execution_parameters:
                 start_params["ExecutionParameters"] = execution_parameters
 
@@ -339,9 +345,10 @@ class SecureAthenaClaimsTools:
             # Bind all caller-derived values as Athena "?" execution parameters
             # (injection-safe) rather than interpolating them into the SQL string.
             # The identity group is parenthesized so the optional filters below AND
-            # against it (fixes the prior unparenthesized-OR precedence bug that
-            # silently dropped a policyholder's status/type filter). Params are pushed
-            # in the exact positional order the "?" placeholders appear in the query.
+            # against the whole "own rows OR assigned rows" group; an unparenthesized
+            # OR would let a status/type filter bind to the adjuster branch only.
+            # Params are pushed in the exact positional order the "?" placeholders
+            # appear in the query.
             #
             # Role-branch (mirrors get_claim_details._is_policyholder_role): the
             # policyholder LF grant does NOT include adjuster_user_id, so a query that
@@ -679,9 +686,13 @@ class SecureAthenaClaimsTools:
         Convert natural language query to SQL and execute it.
 
         This tool:
-        1. Retrieves database schema from Glue Data Catalog
-        2. Uses Bedrock to generate SQL from natural language
-        3. Executes the generated SQL with tenant credentials
+        1. Retrieves database schema from Glue Data Catalog (cached per server process)
+        2. Calls Bedrock InvokeModel on ``us.anthropic.claude-haiku-4-5-20251001-v1:0``
+           (Anthropic Messages API, temperature 0.0, max_tokens 1000) with the schema
+           and the request in the prompt; the model runs under the MCP server runtime's
+           own credentials, not the tenant role
+        3. Executes the generated SQL with tenant credentials via _execute_query, with
+           no execution parameters (the SQL is model-authored, not parameterized)
         4. Returns results with the generated SQL for transparency
 
         SECURITY: admin-only tool. It is intentionally unscoped — the administrators

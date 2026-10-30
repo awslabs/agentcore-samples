@@ -6,8 +6,15 @@ with per-user row scoping via a bound identity SQL predicate and Lake Formation
 column filtering.
 
 Security Architecture:
-- OAuth authentication (Cognito JWT tokens)
-- User identity extraction from Gateway interceptor
+- OAuth authentication: the gateway validates the caller's JWT (Cognito or Okta,
+  per the /app/lakehouse-agent/idp-provider SSM parameter) before this server is reached
+- Caller identity and tenant credentials come from the gateway REQUEST interceptor
+  (deployment/5a-gateway-setup/interceptor-request/lambda_function.py). It maps the
+  JWT group claim to a tenant IAM role via sts:AssumeRole (token_exchange.py), then writes
+  params.arguments.context = {user_id, scopes, tenant_credentials} into the MCP
+  tools/call body and sets X-User-Identity / X-Tenant-Role headers. Every tool here
+  receives that dict as its `context` argument and reads it through
+  get_user_id_with_fallback(); the server never decodes the JWT itself
 - Row scope = bound identity SQL predicate (interceptor-supplied caller); LF data-cell
   filters are not used — a filter's row expression takes constants only, so it cannot
   express per-caller scope (see 3-s3tables-setup/setup_lakeformation_permissions.py)
@@ -127,9 +134,11 @@ def get_config() -> dict[str, str | None]:
     config["s3_bucket_name"] = get_param("s3-bucket-name", "S3_BUCKET_NAME")
     config["database_name"] = get_param("database-name", "ATHENA_DATABASE_NAME")
     config["catalog_name"] = get_param("catalog-name", "CATALOG_NAME")  # For S3 Tables
-    # Active IdP, used only to phrase tool errors correctly (the login-audit trail
-    # is a Cognito-path feature). Defaults to cognito so an unmodified checkout
-    # reproduces the upstream single-IdP behaviour.
+    # Active IdP ("cognito" or "okta"), written to SSM by utils/idp_config.py at IdP setup.
+    # The only IdP-specific behaviour in this server is the wording of the
+    # query_login_audit error when the audit table is missing: the login-audit
+    # trail is populated by a Cognito post-authentication Lambda and has no Okta
+    # counterpart. Defaults to cognito when the parameter is absent.
     config["idp_provider"] = get_param("idp-provider", "IDP_PROVIDER", "cognito")
     config["log_level"] = os.environ.get("LOG_LEVEL", "INFO")
 
@@ -493,10 +502,11 @@ def query_login_audit(
         if not authenticated_user:
             return {"success": False, "error": "User identity not found in request"}
 
-        # Access control (admin-only tool gating) is enforced upstream at the gateway
-        # REQUEST interceptor (JWT group claim → tenant-role STS) and RESPONSE interceptor
-        # (tool-list filter). The MCP server does not re-check group membership; the
-        # interceptor injects only user_id + scopes into request context.
+        # Access control (admin-only tool gating) is enforced before this server at the
+        # gateway REQUEST interceptor (403 on a tool the caller's group may not call,
+        # then JWT group claim → tenant-role STS) and RESPONSE interceptor (tool-list
+        # filter). The MCP server does not re-check group membership; the interceptor
+        # injects user_id, scopes and tenant_credentials into request context.
 
         # Validate limit
         if limit < 1 or limit > 100:
@@ -611,10 +621,10 @@ def query_login_audit(
             # differs by IdP, and on Okta there is nothing to remediate.
             #
             # The tool deliberately REMAINS in the administrators' allowed-tools
-            # list on both paths: notebook 07's tool-gating assertion (policyholder
-            # sees 3 tools, admin sees 2) and its 403 call-gate both use
-            # query_login_audit as the admin-only discriminator. Removing it from
-            # the Okta row would make those assertions vacuous.
+            # list on both IdPs: notebook 07 asserts that administrators see
+            # query_login_audit and policyholders do not, and that a policyholder
+            # calling it gets 403 from the REQUEST interceptor. Removing it from
+            # the Okta tool-access mapping would make those assertions vacuous.
             if get_config().get("idp_provider") == "okta":
                 error_msg = (
                     f"Login-audit table '{table_name}' does not exist on the Okta path. "

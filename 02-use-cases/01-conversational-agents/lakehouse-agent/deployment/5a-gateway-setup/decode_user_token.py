@@ -2,6 +2,13 @@
 """
 Decode User JWT Token and Check Gateway Configuration
 
+Manual troubleshooting helper for the claims gateway (not called by any
+notebook). Use it when the Gateway rejects a user token with 401/403: it shows
+the token's claims next to the Gateway's customJWTAuthorizer settings
+(discoveryUrl / allowedAudience / allowedClients) so the mismatch is visible.
+Reads SSM /app/lakehouse-agent/gateway-id (written by create_gateway.py) and
+the active IdP's SSM contract; makes no changes to any resource.
+
 Works on both IdPs (IDP_PROVIDER = "cognito" | "okta"). This script:
 1. Obtains a user JWT — either pasted via --token, or (Cognito only) minted from
    --username/--password
@@ -47,7 +54,12 @@ OKTA_ROPC_HELP = (
 
 
 def decode_jwt(token):
-    """Decode JWT token without verification."""
+    """Decode a JWT's header and payload (base64url, no signature check).
+
+    Returns (header, payload), or (None, None) if the string does not have the
+    three '.'-separated parts of a JWT. The "==" padding makes urlsafe_b64decode
+    accept unpadded JWT segments.
+    """
     parts = token.split(".")
     if len(parts) != 3:
         return None, None
@@ -62,7 +74,15 @@ def decode_jwt(token):
 
 
 def get_user_tokens(ssm, region, username, password):
-    """Get user tokens from Cognito (Cognito path only)."""
+    """Mint (access_token, id_token) from Cognito (Cognito path only).
+
+    Reads the app client id/secret and user pool id from SSM
+    (cognito-app-client-id, cognito-app-client-secret, cognito-user-pool-id)
+    and calls admin_initiate_auth with ADMIN_USER_PASSWORD_AUTH: an admin API
+    call made with your AWS credentials, which the app client allows through
+    ALLOW_ADMIN_USER_PASSWORD_AUTH (set by setup_cognito.py). Returns
+    (None, None) on any authentication error.
+    """
     cognito = boto3.client("cognito-idp", region_name=region)
 
     print("=" * 70)
@@ -86,6 +106,8 @@ def get_user_tokens(ssm, region, username, password):
     import hashlib
     import hmac
 
+    # SECRET_HASH is required because the app client has a secret:
+    # HMAC-SHA256(client_secret, username + client_id), base64-encoded.
     message = username + client_id
     secret_hash = base64.b64encode(hmac.new(client_secret.encode(), message.encode(), hashlib.sha256).digest()).decode()
 
@@ -114,13 +136,19 @@ def get_user_tokens(ssm, region, username, password):
 
 
 def resolve_expected_issuer(ssm, region, idp_provider):
-    """Resolve the issuer the Gateway expects, from the active IdP's SSM contract."""
+    """Resolve the issuer the Gateway expects, from the active IdP's SSM contract.
+
+    Cognito: https://cognito-idp.<region>.amazonaws.com/<cognito-user-pool-id>.
+    Okta: https://<okta-org-url>/oauth2/<okta-auth-server-id>. Returns None if
+    the SSM keys are missing, so the caller reports "could not resolve" instead
+    of a false mismatch.
+    """
     try:
         if idp_provider == "cognito":
             user_pool_id = ssm.get_parameter(Name="/app/lakehouse-agent/cognito-user-pool-id")["Parameter"]["Value"]
             return f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}"
 
-        # [OKTA] custom authorization server issuer
+        # [OKTA] custom authorization server issuer (setup_okta.py writes both keys)
         org_url = ssm.get_parameter(Name="/app/lakehouse-agent/okta-org-url")["Parameter"]["Value"]
         auth_server_id = ssm.get_parameter(Name="/app/lakehouse-agent/okta-auth-server-id")["Parameter"]["Value"]
         return f"https://{org_url}/oauth2/{auth_server_id}"
@@ -130,7 +158,12 @@ def resolve_expected_issuer(ssm, region, idp_provider):
 
 
 def check_gateway_config(region):
-    """Check Gateway JWT authorizer configuration."""
+    """Fetch the claims gateway's customJWTAuthorizer block via get_gateway.
+
+    Looks the gateway up by SSM /app/lakehouse-agent/gateway-id. Returns the
+    authorizer dict, or None if the gateway has no JWT authorizer or cannot be
+    read (the caller then skips the comparison).
+    """
     print("\n" + "=" * 70)
     print("Step 2: Check Gateway JWT Authorizer Configuration")
     print("=" * 70)
@@ -162,7 +195,11 @@ def check_gateway_config(region):
 
 
 def validate_cognito_token(gateway_config, access_payload, expected_issuer):
-    """Compare a Cognito access token's claims against the Gateway authorizer config."""
+    """Compare a Cognito access token's claims against the Gateway authorizer config.
+
+    Checks iss, client_id (against allowedClients), aud (only if allowedAudience
+    is set) and token_use. Returns (issues, solutions) for the summary.
+    """
     print("\n🔍 Checking token compatibility...")
 
     # Check issuer
@@ -230,7 +267,11 @@ def validate_cognito_token(gateway_config, access_payload, expected_issuer):
 
 
 def validate_okta_token(gateway_config, payload, expected_issuer):
-    """Compare an Okta access token's claims against the Gateway authorizer config."""
+    """Compare an Okta access token's claims against the Gateway authorizer config.
+
+    Checks iss and aud (against allowedAudience); `cid` is printed for
+    information only. Returns (issues, solutions) for the summary.
+    """
     print("\n🔍 Checking token compatibility...")
 
     # Check issuer
@@ -360,7 +401,8 @@ def main():
     # Check Gateway configuration
     gateway_config = check_gateway_config(region)
 
-    # Compare token with Gateway expectations
+    # Compare token with Gateway expectations, using the validator for the
+    # active IdP (Cognito checks client_id; Okta checks aud).
     print("\n" + "=" * 70)
     print("Step 3: Validate Token Against Gateway Configuration")
     print("=" * 70)
