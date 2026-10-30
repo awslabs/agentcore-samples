@@ -7,6 +7,12 @@ flow for one of the test users and decodes it to see what's inside. Used to
 verify the custom authorization server emits the expected claims (sub, aud,
 scp, groups).
 
+Optional diagnostic; no notebook runs it. It needs the SSM parameters that
+setup_okta.py (notebook 01) writes under /app/lakehouse-agent/: okta-org-url,
+okta-auth-server-id, okta-app-client-id, okta-app-client-secret and
+okta-resource-server-audience. It prompts for a test-user login and password,
+and creates nothing.
+
 Usage:
     python decode_token.py
 """
@@ -66,11 +72,12 @@ def main():
         print("   Run setup_okta.py first.")
         sys.exit(1)
 
-    # Acquire a token via Resource Owner Password Credentials flow. The
-    # operator supplies a test-user login + password (default TempPass123!
+    # Acquire a token via Resource Owner Password Credentials flow. You
+    # supply a test-user login + password (default TempPass123!
     # from setup_okta.py — user must change on first login). ROPC is
     # acceptable for tutorial token-inspection; Streamlit UI uses
-    # Authorization Code + PKCE.
+    # Authorization Code + PKCE. If the org's sign-on policy does not allow
+    # the password grant, the request fails and the HTTP error prints below.
     print("\n🔐 Acquiring user token via ROPC flow...")
     print("   Default test-user password: TempPass123! (change required on first login)")
     username = input("   Username (e.g. policyholder001@example.com): ").strip()

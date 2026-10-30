@@ -111,7 +111,7 @@ def get_config() -> dict[str, str | None]:
     else:
         logger.info(f"✅ Gateway ARN from environment: {config['gateway_arn']}")
 
-    # GW2 (notes / OpenSearch) URL — REQUIRED (R6/R10). Read from env or SSM
+    # GW2 (notes / OpenSearch) URL — REQUIRED. Read from env or SSM
     # `notes-gateway-url` (written by 5b/04 on BOTH IdP paths — Okta OBO gateway
     # and Cognito notes interceptor gateway share the GW2 SSM keys, so this is
     # IdP-agnostic). GW2 is mandatory: the agent must expose notes/* alongside
@@ -261,7 +261,7 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
     """
     Handle requests to the lakehouse agent.
 
-    Wires TWO prefixed MCP clients (R6): claims/* → GW1 (Interceptor_Gateway,
+    Wires TWO prefixed MCP clients: claims/* → GW1 (Interceptor_Gateway,
     SSM gateway-arn) and notes/* → GW2 (Notes_Gateway, SSM notes-gateway-url). The
     SAME inbound user bearer authenticates both gateways; the agent is
     IdP-agnostic (GW2's auth flip — Cognito interceptor vs Okta OBO — is entirely
@@ -320,11 +320,11 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
         tools += claims_tools
         logger.info(f"✅ Loaded {len(claims_tools)} tools from GW1")
 
-        # ── GW2 Notes_Gateway → notes/* tools (REQUIRED, R6/R10) ────────────
+        # ── GW2 Notes_Gateway → notes/* tools (REQUIRED) ────────────────────
         # GW2 is mandatory: the agent must expose notes/* alongside claims/*.
         # Fail LOUD (symmetric with GW1, which has no try/except) rather than
         # silently degrading to claims-only — a missing URL or a connect/
-        # list_tools failure is a hard error the operator must fix.
+        # list_tools failure is a hard error you must fix.
         if not obo_gateway_url:
             raise RuntimeError(
                 "notes gateway required — run notebook 05b to deploy it and ensure "

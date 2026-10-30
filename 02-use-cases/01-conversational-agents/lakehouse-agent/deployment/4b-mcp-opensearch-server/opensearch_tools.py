@@ -2,24 +2,28 @@
 OpenSearch Tools
 
 Per-document row-level security via the `owner_user_sub` keyword field.
-Identity-claim source: the user's Okta `sub`, extracted upstream by server.py
-from the validated Authorization header (the authorizer already validated
-signature/issuer/audience/expiry; the tool layer extracts claims only). v1 RLS
-scope: per-user filter only, policyholder archetype;
-policyholder archetype; adjuster/admin scope expansion is a v2 deferral.
+server.py resolves the caller's `sub` and passes it in; this module only
+builds and runs the filtered query. Tokens were already validated upstream
+(signature/issuer/audience/expiry); the tool layer extracts claims only.
+Scope is per-user: every caller, whatever their role, sees only notes whose
+owner_user_sub equals their own `sub`.
 
-Security Flow:
-1. OBO_Gateway customJWTAuthorizer validates inbound JWT (Okta discovery URL,
-   allowedAudience api://lakehouse-api).
-2. OBO_Gateway TOKEN_EXCHANGE deposits the user's exchanged token into the
-   AgentCore Identity vault (per-user, sub-keyed) and forwards a vault-issued
-   Authorization header to this server.
+Security Flow, [OKTA] path:
+1. The notes gateway's customJWTAuthorizer validates the inbound user JWT
+   (Okta discovery URL and resource-server audience).
+2. The gateway's TOKEN_EXCHANGE step exchanges that token on behalf of the
+   user through AgentCore Identity and forwards the exchanged token to this
+   server in the Authorization header.
 3. Runtime authorizer revalidates the inbound JWT.
 4. requestHeaderAllowlist makes the Authorization header readable in tool
    code via FastMCP ctx.request_context.request.headers.
 5. server.py extracts `sub` from the Bearer token (PyJWT unverified decode).
 6. opensearch_tools.search_claim_notes() filters AOSS query with
    term: { owner_user_sub: <sub> }.
+
+On the [COGNITO] path the notes REQUEST interceptor validates the user JWT and
+injects the caller's `sub` into the request body context; server.py reads it
+from there, and step 6 is the same.
 """
 
 from typing import Any, Optional
@@ -119,18 +123,15 @@ class OpenSearchClaimNotesTools:
                     "message": "Invalid limit parameter",
                 }
 
-            # Build query body: term filter on owner_user_sub is the ONLY hard
-            # constraint (per-user RLS — per-user
-            # filter only, no group-archetype broadening in v1).
+            # Build query body: the term filter on owner_user_sub is the only hard
+            # constraint (per-user RLS).
             #
-            # The note_text match must NOT be a hard gate. Previously it sat in
-            # `must`, so a blank/generic search phrase (e.g. "show me my notes") that
-            # had no lexical overlap with the note bodies returned zero hits even
-            # though the owner filter matched — an owner could fail to see their own
-            # notes. Now: if the query is blank/whitespace, match_all; otherwise the
-            # note_text match is a `should` (relevance boost only). Either way the
-            # owner_user_sub filter alone determines which notes are returned, so an
-            # owner always gets their own notes regardless of phrasing.
+            # The note_text match is not a hard gate: a generic phrase such as
+            # "show me my notes" may share no words with the note bodies. A blank
+            # query uses match_all; otherwise the note_text match is a `should`
+            # (relevance boost only). Either way the owner_user_sub filter alone
+            # decides which notes are returned, so an owner always gets their own
+            # notes regardless of phrasing.
             if query and query.strip():
                 bool_query = {
                     "should": [{"match": {"note_text": query}}],

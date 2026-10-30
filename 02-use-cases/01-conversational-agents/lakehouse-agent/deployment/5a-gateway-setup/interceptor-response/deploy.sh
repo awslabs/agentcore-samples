@@ -3,7 +3,7 @@
 
 set -e
 
-# Resolve the Python interpreter explicitly rather than trusting PATH (finding O4).
+# Resolve the Python interpreter explicitly rather than trusting PATH.
 # A reader who has not activated the sample venv would otherwise get the system
 # interpreter, installing the Lambda dependencies against a different Python than
 # the one that runs the rest of the tutorial. Prefer the sample venv, fall back to

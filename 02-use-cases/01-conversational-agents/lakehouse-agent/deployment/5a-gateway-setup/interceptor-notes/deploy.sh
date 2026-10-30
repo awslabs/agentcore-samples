@@ -2,10 +2,20 @@
 # Deploy the Notes (OpenSearch) Gateway REQUEST Interceptor Lambda — Cognito GW2 path.
 # Thin identity-forwarding interceptor (validate JWT → inject caller sub on the
 # body-context channel). Only attached on the Cognito path; harmless on Okta.
+#
+# Run by notebook 05b (cwd = this directory) on the Cognito path. Needs the IdP flag
+# and IdP settings from notebook 01 in SSM. Creates or updates:
+#   - IAM role lakehouse-notes-interceptor-role (CloudWatch Logs only)
+#   - Lambda lakehouse-notes-interceptor, configured through environment variables
+#   - SSM /app/lakehouse-agent/notes-interceptor-lambda-arn, which
+#     5b-obo-gateway-setup/04_create_obo_gateway.py reads to attach the interceptor
+#     to the notes gateway
+#   - log group /aws/lambda/lakehouse-notes-interceptor with 30-day retention
+# cleanup.sh in this directory deletes the same resources.
 
 set -e
 
-# Resolve the Python interpreter explicitly rather than trusting PATH (finding O4).
+# Resolve the Python interpreter explicitly rather than trusting PATH.
 # A reader who has not activated the sample venv would otherwise get the system
 # interpreter, installing the Lambda dependencies against a different Python than
 # the one that runs the rest of the tutorial. Prefer the sample venv, fall back to
@@ -68,7 +78,9 @@ else
     LAMBDA_ENV_VARS="OKTA_ORG_URL=$OKTA_ORG_URL,OKTA_AUTH_SERVER_ID=$OKTA_AUTH_SERVER_ID,OKTA_RESOURCE_SERVER_AUDIENCE=$OKTA_RESOURCE_SERVER_AUDIENCE,IDP_PROVIDER=$IDP_PROVIDER"
 fi
 
-# Package Lambda function (thin: only lambda_function.py; no token_exchange/tool_validation)
+# Package Lambda function (thin: only lambda_function.py; no token_exchange/tool_validation).
+# Dependencies are installed as manylinux x86_64 wheels so they match the Lambda runtime,
+# not the machine running this script.
 echo ""
 echo "📦 Packaging Lambda function..."
 mkdir -p dist
@@ -101,6 +113,7 @@ aws iam attach-role-policy --role-name "$ROLE_NAME" \
     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 LAMBDA_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
 echo "✅ Lambda role ready: $LAMBDA_ROLE_ARN"
+# A newly created role is not usable by Lambda until IAM propagates it.
 echo "⏳ Waiting for IAM role to propagate (10 seconds)..."
 sleep 10
 
@@ -108,6 +121,8 @@ echo ""
 echo "🔍 Checking if Lambda function exists..."
 if aws lambda get-function --function-name lakehouse-notes-interceptor --region $AWS_REGION 2>/dev/null; then
     echo "📝 Updating existing Lambda function..."
+    # Each update returns before Lambda finishes applying it; wait in between so the
+    # configuration update does not fail with ResourceConflictException.
     aws lambda update-function-code \
         --function-name lakehouse-notes-interceptor \
         --zip-file fileb://notes-interceptor-lambda.zip \
@@ -127,6 +142,7 @@ if aws lambda get-function --function-name lakehouse-notes-interceptor --region 
     echo "✅ Lambda function updated!"
 else
     echo "📝 Creating new Lambda function..."
+    # Retry: create-function can still reject a role that IAM has not finished propagating.
     MAX_RETRIES=3
     RETRY_COUNT=0
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
@@ -171,7 +187,8 @@ aws ssm put-parameter \
     --region $AWS_REGION
 echo "✅ Stored parameter: /app/lakehouse-agent/notes-interceptor-lambda-arn"
 
-# CloudWatch Logs retention
+# CloudWatch Logs retention. The log group is created up front (ignoring "already exists")
+# so the retention policy can be set before the function's first invocation.
 echo ""
 echo "🪵 Configuring CloudWatch Logs retention for Lambda log group..."
 LOG_GROUP_NAME="/aws/lambda/lakehouse-notes-interceptor"

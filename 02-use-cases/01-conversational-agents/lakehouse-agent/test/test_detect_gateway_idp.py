@@ -92,7 +92,7 @@ def main():
     expect_error("detect(no authorizer) -> ValueError", lambda: detect_gateway_idp(NO_AUTHZ_GW), ValueError)
     expect_error("detect(ambiguous) -> ValueError", lambda: detect_gateway_idp(AMBIGUOUS_GW), ValueError)
 
-    # Error message should name the offending signals (operator-actionable).
+    # Error message should name the offending signals, so the reader can act on it.
     try:
         detect_gateway_idp(AMBIGUOUS_GW)
     except ValueError as e:

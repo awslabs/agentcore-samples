@@ -6,7 +6,7 @@ The OBO path uses an AgentCore Identity credential provider of
 vendor `CustomOauth2` configured against the Okta authorization server's
 discovery URL. The provider declares (a) basic OAuth2 client credentials and
 (b) the on-behalf-of TOKEN_EXCHANGE grant configuration. The grant type is
-then RE-DECLARED at gateway-target-create time (9.4 / 04_create_obo_gateway.py)
+then RE-DECLARED at gateway-target-create time (04_create_obo_gateway.py)
 to actually request it on a given invocation; the provider is grant-agnostic
 beyond declaring which grants it CAN execute.
 
@@ -27,15 +27,24 @@ Idempotent: try-create -> on AlreadyExistsException, list-by-name and reuse
 the existing provider's ARN. Mirrors the interceptor side's
 create_oauth_provider() shape from 5a-gateway-setup/create_gateway.py.
 
-Per botocore probe of CreateOAuth2CredentialProvider, the OBO config
+In the CreateOAuth2CredentialProvider request, the OBO config
 envelope is:
 
     customOauth2ProviderConfig.onBehalfOfTokenExchangeConfig:
         grantType: 'TOKEN_EXCHANGE'
         tokenExchangeGrantTypeConfig.actorTokenContent: 'NONE'
 
-This shape was empirically validated — the credential provider reached READY
-status against this exact envelope on the operator's Okta tenant.
+The credential provider reaches READY status with this envelope against an
+Okta tenant.
+
+What create_oauth2_credential_provider registers: the OBO client id and
+secret (stored in the AgentCore Identity token vault, not returned again),
+the discovery URL from which AgentCore resolves Okta's token endpoint, and
+the TOKEN_EXCHANGE grant. 04_create_obo_gateway.py binds this provider's
+ARN to the notes gateway target. When the gateway calls the target, it posts the
+caller's inbound Okta JWT as the subject_token to that token endpoint,
+authenticating with these client credentials, and sends the exchanged
+user-scoped token to the OpenSearch MCP runtime.
 
 SSM keys:
   Reads:  okta-discovery-url, okta-obo-client-id, okta-obo-client-secret

@@ -3,7 +3,7 @@
 
 set -e
 
-# Resolve the Python interpreter explicitly rather than trusting PATH (finding O4).
+# Resolve the Python interpreter explicitly rather than trusting PATH.
 # A reader who has not activated the sample venv would otherwise get the system
 # interpreter, installing the Lambda dependencies against a different Python than
 # the one that runs the rest of the tutorial. Prefer the sample venv, fall back to
@@ -59,7 +59,7 @@ echo ""
 echo "🔍 Loading configuration from SSM Parameter Store..."
 
 if [ "$IDP_PROVIDER" = "cognito" ]; then
-    # [COGNITO] upstream verbatim param loads
+    # [COGNITO] user pool ID and app client ID written by notebook 01
     set +e
     COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name /app/lakehouse-agent/cognito-user-pool-id --query 'Parameter.Value' --output text 2>&1)
     COGNITO_RESULT=$?

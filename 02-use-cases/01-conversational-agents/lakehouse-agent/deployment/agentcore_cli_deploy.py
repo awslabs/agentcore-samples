@@ -20,8 +20,34 @@ no IdP identifiers, no deployment-specific values. For the selected runtime this
      failing with the notebook that produces any value that is missing;
   4. writes the project's aws-targets.json from the caller's identity (gitignored);
   5. injects the authorizer, environment variables and role ARN into agentcore.json,
-     runs `agentcore deploy`, and restores the placeholders afterwards, even on failure;
+     runs `agentcore validate` then `agentcore deploy --yes --verbose`, and restores
+     the placeholders afterwards, even on failure;
   6. stores the runtime ARN/ID in SSM under the names the later steps read.
+
+What the CLI deploys: both commands run from the runtime's source directory
+(deployment/<runtime>/), which is the project root that agentcore/agentcore.json
+refers to with codeLocation "./". `agentcore deploy` hands the project spec to the
+CDK app in agentcore/cdk/ (built on @aws/agentcore-cdk; this script runs `npm ci`
+there first if node_modules is missing). The app synthesizes and deploys one
+CloudFormation stack, AgentCore-<project name>-default, that contains the
+AgentCore Runtime: the source directory packaged as a CodeZip, the custom JWT
+authorizer and environment variables injected in step 5, and the execution role
+from step 2. The stack outputs the runtime ARN and ID, which step 6 reads.
+
+SSM keys written (under /app/lakehouse-agent/):
+    lakehouse-mcp    mcp-server-runtime-arn, mcp-server-runtime-id         (gateway target in 05a)
+    opensearch-mcp   opensearch-mcp-runtime-arn, opensearch-mcp-runtime-id (gateway target in 05b)
+    lakehouse-agent  agent-runtime-arn, agent-runtime-id, agent-name       (invoked by 07 and 08)
+
+`--destroy` deletes that stack, the same SSM keys and the CLI's local
+agentcore/.cli/deployed-state.json. The execution role is kept.
+
+Why the CLI binary is chosen explicitly: the older pip-installed starter toolkit
+also installs a command named `agentcore`. When it is installed in a virtual
+environment and that venv is active, it comes first on PATH. The script
+therefore skips any `agentcore` inside a virtual environment and requires `--version` to report 0.30.x, the release whose
+agentcore.json schema and generated CDK stack (stack name, output descriptions)
+this script depends on.
 
 Usage (with the sample's venv Python; an activated venv is fine):
     .venv/bin/python deployment/agentcore_cli_deploy.py lakehouse-mcp
@@ -153,6 +179,7 @@ global bin directory is on PATH (`npm prefix -g` shows it; the CLI is in its bin
 
 
 def _venv_roots() -> list[Path]:
+    """Virtual environments to exclude: the active one and the one running this script."""
     roots = []
     if os.environ.get("VIRTUAL_ENV"):
         roots.append(Path(os.environ["VIRTUAL_ENV"]).resolve())
@@ -162,6 +189,7 @@ def _venv_roots() -> list[Path]:
 
 
 def _in_venv(path_dir: Path, roots: list[Path]) -> bool:
+    """True if a PATH directory is the bin/ of a known or any other virtual environment."""
     resolved = path_dir.resolve()
     if any(resolved == root or root in resolved.parents for root in roots):
         return True
@@ -199,6 +227,8 @@ def resolve_agentcore_cli() -> str:
 
 
 class AwsContext:
+    """Region, account and SSM client from the default boto3 session."""
+
     def __init__(self):
         session = boto3.Session()
         self.region = session.region_name
@@ -219,6 +249,7 @@ class AwsContext:
 
 
 def check_role_exists(project: Project, aws: AwsContext) -> str:
+    """Fail early if the execution role named in agentcore.json does not exist yet."""
     rt = json.loads(project.config_path.read_text())["runtimes"][0]
     role_name = rt["executionRoleArn"].split("/")[-1]
     iam = aws.client("iam")
@@ -257,6 +288,7 @@ def authorizer(project: Project, aws: AwsContext, idp: str) -> dict:
 
 
 def placeholder_values(project: Project, aws: AwsContext, idp: str) -> dict[str, str]:
+    """Map each envVars placeholder in agentcore.json to its value from SSM."""
     values = {"__AWS_REGION__": aws.region, "__IDP_PROVIDER__": idp}
     for placeholder, (key, produced_by) in project.spec.inputs.items():
         values[placeholder] = aws.get(key, produced_by)
@@ -288,6 +320,7 @@ def assert_placeholder_state(project: Project, spec: dict) -> None:
 
 
 def inject(spec: dict, jwt: dict, values: dict[str, str], account_id: str) -> dict:
+    """Fill in the authorizer, role account and env vars; fail on any placeholder left over."""
     rt = spec["runtimes"][0]
     rt["authorizerConfiguration"] = {"customJwtAuthorizer": jwt}
     rt["executionRoleArn"] = rt["executionRoleArn"].replace(f"::{PLACEHOLDER_ACCOUNT}:", f"::{account_id}:")
@@ -299,6 +332,7 @@ def inject(spec: dict, jwt: dict, values: dict[str, str], account_id: str) -> di
 
 
 def write_targets(project: Project, aws: AwsContext) -> None:
+    """Write aws-targets.json: the single deploy target (account, region) the CLI deploys to."""
     targets = [{"name": TARGET_NAME, "account": aws.account_id, "region": aws.region}]
     project.targets_path.write_text(json.dumps(targets, indent=2) + "\n")
     print(f"✅ Wrote {project.targets_path.relative_to(SAMPLE_DIR)} for region {aws.region} (gitignored)")
@@ -331,6 +365,7 @@ def read_runtime_outputs(project: Project, aws: AwsContext) -> dict[str, str]:
 
 
 def ssm_writes(project: Project, runtime: dict[str, str]) -> list[tuple[str, str]]:
+    """SSM (key, value) pairs to store for this runtime after deploy."""
     arn_key, id_key = project.spec.ssm_runtime_keys
     puts = [(arn_key, runtime["arn"]), (id_key, runtime["id"])]
     if "agent-name" in project.spec.extra_ssm_keys:
@@ -339,6 +374,7 @@ def ssm_writes(project: Project, runtime: dict[str, str]) -> list[tuple[str, str
 
 
 def deploy(project: Project, cli: str) -> None:
+    """Steps 2-6: check, inject, validate and deploy via the CLI, restore, store outputs in SSM."""
     aws = AwsContext()
     check_role_exists(project, aws)
     idp = get_idp_provider(aws.ssm)
@@ -376,6 +412,7 @@ def deploy(project: Project, cli: str) -> None:
 
 
 def destroy(project: Project, assume_yes: bool) -> None:
+    """Delete the runtime's stack and SSM keys; keep the execution role."""
     session = boto3.Session()
     region = session.region_name
     if not region:

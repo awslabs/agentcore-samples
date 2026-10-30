@@ -2,13 +2,15 @@
 """
 Deploy Amazon OpenSearch Serverless collection for the OBO_Gateway path.
 
-This script provisions the AOSS substrate the OpenSearch_MCP_Server queries:
+Run by notebook 05b-deploy-notes-gateway.ipynb, Step 1, on both IdP paths.
+This script provisions the AOSS resources the OpenSearch_MCP_Server queries:
 
-  1. Encryption policy (AWS-owned KMS key)
-  2. Network policy (public access)
-  3. Collection (SEARCH type)
-  4. Wait until the collection reaches ACTIVE status
-  5. Data-access policy granting BOTH:
+  1. Encryption policy lakehouse-claim-notes-encryption (AWS-owned KMS key)
+  2. Network policy lakehouse-claim-notes-network (public access)
+  3. Collection lakehouse-claim-notes (SEARCH type, standby replicas off)
+  4. Wait until the collection reaches ACTIVE status (up to 15 minutes),
+     so the endpoint stored in SSM is ready to serve requests
+  5. Data-access policy lakehouse-claim-notes-data granting BOTH:
        (a) the OpenSearch MCP runtime role by its predictable ARN
            (read-only on collection + index), and
        (b) the loader principal (sts:GetCallerIdentity --> role ARN)
@@ -25,7 +27,12 @@ IAM role's aoss:APIAccessAll statement scopes to a specific collection ARN).
 
 SSM keys produced:
   /app/lakehouse-agent/opensearch-collection-arn
+      read by setup_runtime_roles.py to scope the runtime role's
+      aoss:APIAccessAll statement
   /app/lakehouse-agent/opensearch-collection-endpoint
+      read by agentcore_cli_deploy.py opensearch-mcp, which sets it as the
+      runtime's OPENSEARCH_COLLECTION_ENDPOINT environment variable, and by
+      4b-mcp-opensearch-server/load_sample_opensearch_data.py
 
 Idempotent: each create call is preceded by a list/get probe; existing
 resources are left in place. Re-running the script after a successful first
@@ -309,7 +316,7 @@ def ensure_data_access_policy(aoss, collection_name: str, runtime_role_arn: str,
         aoss:WriteDocument, aoss:UpdateIndex, aoss:DescribeIndex) on
         collection + indexes.
 
-    Single-write at step 1 with both principals.
+    Written once, with both principals in the same policy.
     AOSS does not validate principal existence at policy-create time, so the
     runtime role can be referenced even before setup_runtime_roles.py creates it.
     """
@@ -320,10 +327,9 @@ def ensure_data_access_policy(aoss, collection_name: str, runtime_role_arn: str,
     try:
         aoss.get_access_policy(name=DATA_ACCESS_POLICY_NAME, type="data")
         print("   ⏭️  Already exists; skipping create")
-        # Note: We do not diff the existing policy against the desired
-        # principals. Tutorial-reader recovery path: run cleanup then
-        # re-deploy. Drift between runs is the cleanup-script's
-        # responsibility.
+        # The existing policy is not compared against the desired
+        # principals. If the loader identity changes between runs, run
+        # cleanup (06_cleanup_obo_gateway.py) and then re-deploy.
         return
     except aoss.exceptions.ResourceNotFoundException:
         pass

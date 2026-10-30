@@ -324,9 +324,11 @@ def _lakehouse_save_token_if_enabled(access_token, user_email):
     local-part (``policyholder001@example.com`` -> ``policyholder001``).
 
     The ``<.tmp>`` directory is resolved by walking UP from cwd for an existing
-    ``.tmp`` — identical to nb07's ``_find_tmp_dir`` — so writer (this app) and
-    reader (nb07) rendezvous on the same file. ``.tmp`` is outside the git repo,
-    so saved tokens can never be committed.
+    ``.tmp`` — the same walk as nb07's ``_find_tmp_dir`` — so writer (this app)
+    and reader (nb07) meet on the same file. If no ``.tmp`` exists anywhere up
+    the tree, one is created in the app's working directory. Where the tokens
+    land therefore depends on where you run from; inside this sample a ``.tmp``
+    directory is gitignored (``*.tmp`` in the sample's ``.gitignore``).
 
     SECURITY: this NEVER displays the token. When enabled it may show the file
     PATH only (not the token value) as minimal dev feedback. Off by default, it
@@ -341,7 +343,8 @@ def _lakehouse_save_token_if_enabled(access_token, user_email):
 
     # Resolve <.tmp> the SAME way nb07 READS it: walk up from cwd for an existing
     # `.tmp`. Fall back to creating one at cwd only if none exists anywhere up the
-    # tree (the workspace `.tmp` normally already exists).
+    # tree. nb07 only walks up from its own cwd, so a `.tmp` created here below
+    # nb07's cwd (e.g. streamlit-ui/.tmp when nb07 launches the app) is not found.
     d = os.path.abspath(os.getcwd())
     tmp_dir = None
     while True:

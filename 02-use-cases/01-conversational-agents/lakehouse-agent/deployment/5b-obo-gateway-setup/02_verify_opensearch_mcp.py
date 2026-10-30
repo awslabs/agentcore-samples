@@ -2,7 +2,7 @@
 """
 Verify the OpenSearch MCP runtime deploy.
 
-Thin orchestrator. The actual runtime deploy is owned by
+Thin wrapper. The actual runtime deploy is owned by
 deployment/agentcore_cli_deploy.py opensearch-mcp — notebook 05b runs
 that script directly. This verifier:
 
@@ -14,11 +14,13 @@ that script directly. This verifier:
 This script does NOT redeploy the runtime — it is read-only on AWS state
 (GetAgentRuntime + SSM read). Re-running is safe and idempotent.
 
-Notebook 05b's cell order is
-  5b/01_deploy_opensearch_collection.py  (creates AOSS substrate)
-  agentcore_cli_deploy.py opensearch-mcp (deploys the runtime)
+Notebook 05b runs, in order:
+  5b/01_deploy_opensearch_collection.py  (AOSS collection + policies)
+  setup_runtime_roles.py + agentcore_cli_deploy.py opensearch-mcp
+                                         (runtime role, then the runtime)
+  seed + sample-data load                (4b-mcp-opensearch-server)
   5b/02_verify_opensearch_mcp.py         (this verifier)
-  5b/03..05                              (oauth provider + OBO gateway + agent IAM)
+  5b/03 (Okta) or notes interceptor (Cognito), then 5b/04 (notes gateway)
 
 Usage:
     python 02_verify_opensearch_mcp.py

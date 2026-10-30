@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
 """
-Create the OBO_Gateway and TOKEN_EXCHANGE target.
+Create the notes gateway (GW2) and its target, branched on IDP_PROVIDER.
 
-The OBO_Gateway is the architectural centerpiece of this
-demo. It has NO Lambda interceptor — identity propagation is performed
-natively by AgentCore Identity via on-behalf-of TOKEN_EXCHANGE (RFC 8693).
-This is the structural contrast to the Interceptor_Gateway path.
+Run by notebook 05b-deploy-notes-gateway.ipynb, Step 7. Needs the OpenSearch
+MCP runtime (agentcore_cli_deploy.py opensearch-mcp) and, on Okta, the OBO
+credential provider from 03_create_oauth_provider.py; on Cognito, the notes
+REQUEST interceptor Lambda from 5a-gateway-setup/interceptor-notes/deploy.sh.
 
-This script does three things, in order:
+[OKTA] The OBO_Gateway has NO Lambda interceptor. Identity propagation is
+performed natively by AgentCore Identity via on-behalf-of TOKEN_EXCHANGE
+(RFC 8693). Request path: the agent calls the gateway with the user's Okta
+access token; the gateway's customJWTAuthorizer validates it (Okta discovery
+URL, allowedAudience = the resource-server audience); when the gateway calls
+the target it uses the bound OBO credential provider to exchange that token
+at Okta for a user-scoped token (scope opensearch.search) and sends it to the
+OpenSearch MCP runtime, which filters notes by the token's subject.
 
-  1. Create an IAM role agentcore-lakehouse-notes-gateway-role with the same
-     permissions as the interceptor gateway's role (workload-identity +
-     OAuth2 token vault access). Mirrors the interceptor side's defect of
-     unconditionally deleting-and-recreating the role on already-exists
-     (preserved here).
-  2. Create the OBO_Gateway with customJWTAuthorizer against Okta and
-     protocolConfiguration.mcp.supportedVersions=['2025-11-25'].
-     Crucially, NO interceptorConfigurations is supplied — the OBO
-     path is interceptor-less by design.
-  3. Create the gateway target pointing at the OpenSearch_MCP_Server
-     runtime, with oauthCredentialProvider.grantType='TOKEN_EXCHANGE'
-     referencing the OBO credential provider. The scopes field is non-empty
-     and uses the OpenSearch-side scope 'opensearch.search'.
+[COGNITO] The same gateway name and target name, but with a REQUEST
+interceptor that forwards the caller's sub, and a Cognito M2M
+client_credentials provider for the gateway-to-runtime leg.
 
-Per botocore probe of CreateGatewayTarget, the OBO grant is requested at
-the target level under
+This script does, in order:
+
+  1. Create or update the IAM role agentcore-lakehouse-notes-gateway-role,
+     assumed by bedrock-agentcore.amazonaws.com. It grants runtime invoke,
+     workload-identity token and OAuth2 token-vault access, which the
+     gateway needs to run the credential provider. An existing role is
+     updated in place (trust policy + GatewayExecutionPolicy inline policy).
+  2. Create the gateway (CUSTOM_JWT authorizer, MCP protocol,
+     supportedVersions=['2025-11-25']). An existing gateway is reused only
+     if it was deployed for the same IdP (pre-flight IdP-mismatch guard).
+  3. Wait for the gateway to be ACTIVE; targets cannot be added before that.
+  4. Create the target pointing at the OpenSearch MCP runtime's invocation
+     URL, bound to the credential provider (Okta: TOKEN_EXCHANGE grant).
+  5. Wait for the target to be READY: only then has the gateway fetched the
+     server's tool list, so the agent sees the tools. Re-syncs once on FAILED.
+  6. Store the gateway id, ARN, URL and name in SSM for notebook 06.
+
+In the CreateGatewayTarget request, the OBO grant is requested at the
+target level under
 
     credentialProviderConfigurations[].credentialProvider
     .oauthCredentialProvider.grantType = 'TOKEN_EXCHANGE'
@@ -32,16 +46,16 @@ the target level under
 The OAuthGrantType enum is {CLIENT_CREDENTIALS, AUTHORIZATION_CODE,
 TOKEN_EXCHANGE}; TOKEN_EXCHANGE is the OBO value per RFC 8693.
 
-MCP protocol version gate:
-  Default protocolConfiguration.mcp.supportedVersions = ['2025-11-25'].
-  - PASS expected: gateway create succeeds; record empirically.
-  - If gateway create rejects '2025-11-25' for TOKEN_EXCHANGE targets,
-    surface the error and document. Do NOT silently fall back to a
-    different version.
+MCP protocol version: the gateway advertises ['2025-11-25']. If create_gateway
+rejects it, the error is raised as-is; there is no fallback to another version.
 
-SSM keys:
-  Reads:  okta-discovery-url, okta-resource-server-audience,
-          opensearch-mcp-runtime-arn, obo-credential-provider-arn
+SSM keys (under /app/lakehouse-agent/):
+  Reads:  the IdP flag (utils.idp_config), opensearch-mcp-runtime-arn;
+          Okta: okta-discovery-url, okta-resource-server-audience,
+                obo-credential-provider-arn;
+          Cognito: cognito-user-pool-arn, cognito-app-client-{id,secret},
+                cognito-domain, cognito-m2m-client-{id,secret},
+                notes-interceptor-lambda-arn
   Writes: notes-gateway-id, notes-gateway-arn, notes-gateway-url, notes-gateway-name
 
 Usage:
@@ -68,9 +82,8 @@ TARGET_NAME = "lakehouse-obo-target"
 # create_gateway_role() naming convention (`agentcore-{gateway-name}-role`).
 GATEWAY_ROLE_NAME = f"agentcore-{GATEWAY_NAME}-role"
 
-# Non-empty scopes; smallest-scope-that-works
-# is the OBO-side scope. Verified against the demo's auth server /scopes
-# inventory (5 scopes total; opensearch.search is one of them).
+# Scope requested in the OBO exchange: the smallest scope the OpenSearch
+# server needs. It must exist on the Okta authorization server.
 OBO_TARGET_SCOPES = ["opensearch.search"]
 
 # Default MCP protocol version advertised by the gateway.
@@ -102,7 +115,7 @@ class SSMConfig:
         self.opensearch_mcp_runtime_arn = self._get(f"{SSM_PREFIX}opensearch-mcp-runtime-arn")
 
         if self.idp_provider == "okta":
-            # [OKTA] OBO path (verbatim)
+            # [OKTA] OBO path: authorizer settings + the OBO provider from 03.
             self.okta_discovery_url = self._get(f"{SSM_PREFIX}okta-discovery-url")
             self.okta_resource_server_audience = self._get(f"{SSM_PREFIX}okta-resource-server-audience")
             self.obo_credential_provider_arn = self._get(f"{SSM_PREFIX}obo-credential-provider-arn")
@@ -188,9 +201,7 @@ def create_obo_gateway_role(config: SSMConfig) -> str:
 
     Mirrors 5a-gateway-setup/create_gateway.py:create_gateway_role(). Same
     trust policy + same permissions shape (workload-identity + OAuth2
-    token-vault access). Preserves the original's defect of
-    deleting-and-recreating the role on already-exists (not corrected
-    here).
+    token-vault access). If the role already exists it is updated in place.
     """
     iam = boto3.client("iam", region_name=config.region)
 
@@ -793,17 +804,17 @@ def main():
         else:  # cognito
             gateway = create_notes_interceptor_gateway(client, config, role_arn)
 
-        # Step 3: Wait for gateway ACTIVE before creating target
+        # Wait for gateway ACTIVE before creating target
         if not wait_for_gateway_active(client, gateway["gatewayId"]):
             print("\n⚠️  Gateway not active; cannot create target. Re-run after gateway reaches ACTIVE.")
             sys.exit(1)
 
-        # Step 4: Create the GW2 target
+        # Step 3: Create the GW2 target
         print("\n" + "=" * 70)
         print("Step 3: Create GW2 target")
         print("=" * 70)
         if config.idp_provider == "okta":
-            # [OKTA] OBO target (TOKEN_EXCHANGE — locked shape)
+            # [OKTA] OBO target bound to the TOKEN_EXCHANGE provider
             create_obo_target(client, config, gateway["gatewayId"])
         else:  # cognito
             # [COGNITO] Cognito M2M provider + client_credentials target (identity via interceptor)
@@ -814,7 +825,7 @@ def main():
         target_id = find_target_id(client, gateway["gatewayId"], TARGET_NAME)
         wait_for_target_ready(client, gateway["gatewayId"], target_id, TARGET_NAME)
 
-        # Step 5: Persist gateway info to SSM
+        # Step 4: Persist gateway info to SSM (read by notebook 06 / the agent)
         print("\n" + "=" * 70)
         print("Step 4: Persist OBO_Gateway info to SSM")
         print("=" * 70)

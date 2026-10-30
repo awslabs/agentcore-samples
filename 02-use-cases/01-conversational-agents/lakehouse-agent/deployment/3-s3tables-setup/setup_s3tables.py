@@ -97,8 +97,8 @@ def main():
 
     # Tag the table bucket (fail-soft). Uses s3tables TagResource separately from
     # create so a missing s3tables:TagResource permission leaves the bucket
-    # untagged rather than breaking the create. (Phase-7: grant the deploy
-    # identity s3tables:TagResource.)
+    # untagged rather than breaking the create. To get the tags, grant the
+    # deploy identity s3tables:TagResource.
     try:
         s3tables.tag_resource(
             resourceArn=table_bucket_arn,

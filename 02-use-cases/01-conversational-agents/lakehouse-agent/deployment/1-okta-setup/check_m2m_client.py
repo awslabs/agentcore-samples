@@ -4,12 +4,19 @@ Check Okta M2M Client Configuration
 
 This script verifies the Okta OIDC application's client-credentials
 configuration and tests that an M2M token can be acquired against the
-custom authorization server's lakehouse-api audience.
+custom authorization server's audience (api://lakehouse-api).
 
 Note: Unlike the original Cognito demo (which had a separate M2M-only app
-client), Okta uses a single OIDC application for both user authentication
-and machine-to-machine flows. The same client_id + client_secret can be used
-for both. This script verifies the M2M side works.
+client), the Okta login app (lakehouse-agent-app) is granted
+client_credentials as well as authorization_code, so the same client_id +
+client_secret serve both user sign-in and M2M requests. This script checks
+the M2M side. The OBO token exchange uses a separate service app
+(lakehouse-obo-exchange-client), which this script does not test.
+
+Optional diagnostic; no notebook runs it. It reads okta-org-url,
+okta-auth-server-id, okta-app-client-id, okta-app-client-secret and
+okta-resource-server-audience from SSM under /app/lakehouse-agent/, all
+written by setup_okta.py (notebook 01), and creates nothing.
 
 Usage:
     python check_m2m_client.py

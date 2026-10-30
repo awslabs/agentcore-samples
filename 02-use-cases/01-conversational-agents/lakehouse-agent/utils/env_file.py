@@ -3,22 +3,19 @@
 Dependency-free ``.env`` loader for the script (CLI) path.
 
 Why this exists: the notebooks call ``init_aws()``, which loads ``.env`` as a
-side effect, so the notebook path has always worked. The **scripts** documented
-as ``python setup_okta.py`` never loaded ``.env`` at all — they read
-``os.environ`` directly, so the documented CLI path only worked if the reader had
-already exported the variables by hand. A harness-driven or CI deploy takes the
-script path, which made this a real gap rather than a cosmetic one.
+side effect. Deployment scripts such as ``setup_okta.py`` read ``os.environ``
+directly, so when run as ``python setup_okta.py`` (from a terminal, or from a
+scripted or CI deploy) they call this loader first to pick up the same ``.env``.
+Notebook 01's Okta pre-flight cell calls it too, so both paths resolve one file.
 
-``python-dotenv`` is deliberately NOT used: it is not a declared dependency of
-this sample, and the one script that imported it (``utils/check_runtime.py``) was
-relying on an undeclared import that happens to be present in some environments.
-The parser below is ~15 lines, so removing the dependency is cheaper than pinning
-it (every unpinned dependency is a future breakage).
+``python-dotenv`` is deliberately not used: it is not a declared dependency of
+this sample, and the parser below is ~15 lines, which is cheaper than adding and
+pinning another dependency.
 
 Semantics match ``python-dotenv``'s default: **an already-exported environment
 variable wins.** ``.env`` supplies values that are missing, it never overrides
-the shell. That precedence matters — it is what lets an operator override one
-value for a single run without editing the file.
+the shell. That precedence is what lets you override one value for a single run
+without editing the file.
 
 Note the deliberate contrast with ``aws_session_utils.load_env_credentials``,
 which **overwrites** ``os.environ`` and is AWS-credential-specific (it reports
@@ -55,17 +52,13 @@ def find_env_file(start: Path | None = None) -> Path | None:
     works from anywhere in the tree, and the sample root (where ``.env.example``
     lives, and therefore where readers put ``.env``) is always on the path.
 
-    Args:
-        start: Directory to begin the search from. Defaults to the current
-            working directory.
-
     The **nearest** ``.env`` wins, which is the conventional rule but has one
     consequence worth knowing: if a ``.env`` exists both at the sample root and in
     ``deployment/``, a script under ``deployment/<step>/`` reads the latter while a
     notebook run from the sample root reads the former. The loader always prints
     the path it used, so a divergence is visible rather than silent.
 
-    Upward search alone is NOT sufficient, which is easy to get wrong. "Upward"
+    Upward search alone is not sufficient. "Upward"
     means toward the filesystem root, so a notebook running at the sample root
     cannot reach a ``.env`` that lives *below* it in ``deployment/`` — the walk
     goes the other way. Since the scripts run from ``deployment/<step>/`` and the
@@ -101,7 +94,7 @@ def sample_root_env_candidates() -> list[Path]:
     Ordered ``.env`` locations relative to the sample root, nearest-to-root first.
 
     ``.env.example`` ships at the sample root, so a reader following the README
-    creates ``<sample root>/.env``. An operator working inside the deployment tree
+    creates ``<sample root>/.env``. A reader working inside the deployment tree
     tends to create ``deployment/.env`` (or one per step) instead. Both layouts are
     supported, and the resolved path is always printed so it is obvious which file
     a given run actually used.
@@ -122,8 +115,9 @@ def load_env_file(
     """
     Load ``.env`` into ``os.environ`` without overriding existing variables.
 
-    Blank lines and ``#`` comments are skipped, as is any line without ``=``. A
-    surrounding pair of single or double quotes is stripped from the value. An
+    Blank lines and ``#`` comments are skipped, as is any line without ``=``.
+    Leading and trailing single or double quote characters are stripped from the
+    value. An
     ``export `` prefix is tolerated so a file that doubles as a shell snippet
     still parses.
 

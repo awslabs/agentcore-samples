@@ -15,8 +15,8 @@ where <label> is the username local-part (e.g. policyholder001@example.com →
 policyholder001) — the Cognito analogue of the Okta `okta-user-<label>-sub`
 keys that notebook 07 writes. Because the `sub` attribute IS the pool subject
 that appears as the `sub` claim in the user's access token, forwarded-sub ==
-seeded-owner_user_sub by construction. (The AWS smoke — Phase 7 — confirms the
-live token `sub` equals this attribute.)
+seeded-owner_user_sub by construction. (Decoding a live access token confirms
+its `sub` claim equals this attribute.)
 
 Read-only against Cognito (ListUsers), writes only SSM. Idempotent.
 

@@ -12,13 +12,14 @@ Flag persistence:
     2. ``set_idp_provider`` validates the value and mirrors it into SSM at
        ``/app/lakehouse-agent/idp-provider``.
     3. Every downstream notebook / script calls ``get_idp_provider(...)`` to read
-       the flag back from SSM (the demo's existing cross-cell coordination
-       substrate) and fails fast if it is missing.
+       the flag back from SSM (where the sample already passes values between
+       steps) and fails fast if it is missing.
 
 The ``IDP_PROVIDER`` environment variable is only a **fallback** in the
 resolution order (used when the notebook passes no explicit ``value=``); it is
-NOT the documented way to choose the IdP. No new dependency is introduced: this
-reuses the ``/app/lakehouse-agent/*`` SSM contract already used throughout the tutorial.
+NOT the documented way to choose the IdP. The flag lives alongside the other
+``/app/lakehouse-agent/*`` SSM parameters, so it is removed by notebook 09's
+SSM cleanup like the rest.
 
 Usage in notebook 01 (choose here, in the Step-0 cell):
     from utils.idp_config import set_idp_provider
@@ -88,7 +89,8 @@ def set_idp_provider(ssm_client, value: str | None = None, verbose: bool = True)
 
     Args:
         ssm_client: A boto3 SSM client.
-        value: Optional explicit flag value; overrides the .env / default lookup.
+        value: Optional explicit flag value; overrides the environment-variable
+            and default lookup.
         verbose: If True, print a short confirmation.
 
     Returns:
@@ -231,6 +233,7 @@ def assert_gateway_idp_matches(live_gateway, flag: str, gateway_name: str) -> No
 
 
 def main(argv=None) -> int:
+    """Parse the IdP choice from the command line and persist it to SSM."""
     import argparse
 
     parser = argparse.ArgumentParser(

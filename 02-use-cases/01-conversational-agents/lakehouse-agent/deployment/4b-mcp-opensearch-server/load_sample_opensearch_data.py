@@ -70,9 +70,8 @@ INDEX_MAPPING = {
 # its own list of 3 disjoint free-text notes; each note is a 3-tuple of
 # (note_type, claim_id_suffix, note_text). Assignment is by LABEL (not by the
 # user's position in the sorted sub list), so a user always receives the same
-# notes regardless of how many other users are seeded — this prevents the
-# earlier off-by-one (12 templates / 4 slices vs 5 seeded users) and the
-# positional-slice coupling. claim_id is "CLM-<label>-<suffix>", so both
+# notes regardless of how many other users are seeded or in what order.
+# claim_id is "CLM-<label>-<suffix>", so both
 # claim_ids and narrative content are disjoint across users by construction.
 #
 # All notes describe insurance-claim *narratives* with no structured amount/
@@ -259,12 +258,9 @@ def ensure_index(client: OpenSearch) -> None:
     try:
         if client.indices.exists(index=CLAIM_NOTES_INDEX):
             print("   ⏭️  Index already exists; skipping create")
-            # Note: We do not validate the existing mapping shape here. An
-            # "idempotent IaC pattern" would suggest fail-loud
-            # on drift, but the original demo's data-load scripts do not
-            # mapping-diff either. Tutorial-reader cleanup path: run
-            # agentcore_cli_deploy.py opensearch-mcp --destroy + re-deploy the AOSS collection
-            # to drop and recreate the index.
+            # The existing index's mapping is not compared with INDEX_MAPPING.
+            # To change the mapping, delete the index (or re-create the AOSS
+            # collection) and re-run this script.
             return
     except Exception as e:
         print(f"   ⚠️  exists() probe failed: {e}; attempting create anyway")
@@ -329,9 +325,8 @@ def assert_label_coverage(users: list[dict[str, str]]) -> None:
     Fail-fast if any discovered user LABEL has no NOTES_BY_LABEL entry.
 
     Assignment is label-keyed, so every seeded test user must have a fixture
-    entry before we index anything. This replaces the old positional
-    pool-exhaustion RuntimeError and keeps the loader correct even if the
-    seeded-user set changes (add a NOTES_BY_LABEL entry for any new label).
+    entry before we index anything. If the seeded-user set changes, add a
+    NOTES_BY_LABEL entry for each new label.
     """
     missing = sorted(u["label"] for u in users if u["label"] not in NOTES_BY_LABEL)
     if missing:
@@ -399,6 +394,11 @@ def bulk_load(client: OpenSearch, docs: list[dict]) -> tuple[int, int, list]:
         for doc in docs
     ]
 
+    # helpers.bulk serializes the actions into newline-delimited JSON and sends
+    # them in chunks to the collection's _bulk API through this client, so each
+    # request is SigV4-signed for the aoss service. With raise_on_error=False and
+    # raise_on_exception=False it does not stop on a failed document; it returns
+    # (count indexed successfully, list of per-document error items) instead.
     # AOSS does not support refresh on bulk; let it propagate naturally.
     try:
         success, errors = helpers.bulk(client, actions, raise_on_error=False, raise_on_exception=False)

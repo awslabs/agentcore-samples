@@ -2,13 +2,29 @@
 """
 Cleanup Okta Resources
 
-Deletes:
-- Okta OIDC application (user-login app)
-- Okta OBO token-exchange service application (dedicated exchange client)
-- Okta custom authorization server (and its scopes/claims)
+Okta path only. Run by 09-optional-cleanup.ipynb ([OKTA] step) as
+``python cleanup_okta.py`` from this directory. Needs OKTA_ORG_URL and
+OKTA_API_TOKEN (exported, or read from .env); exits 1 without them.
+
+DESTRUCTIVE for the Okta org it points at: it calls the Okta management API
+with your API token and deletes, by exact name or login, the objects
+setup_okta.py created. Any object in that org that happens to share one of
+these names is deleted too, so point it only at the tenant you used for the
+sample.
+
+Deletes, in run() order:
+- Okta OIDC application lakehouse-agent-app (user-login app)
+- Okta OBO token-exchange service application lakehouse-obo-exchange-client
+- Okta custom authorization server lakehouse-agent (its scopes, claims and
+  access policies go with it)
 - Okta groups (policyholders, adjusters, administrators)
-- Okta test users (5 users matching the original demo's user list)
-- SSM parameters under /app/lakehouse-agent/okta-*
+- Okta test users: the 5 logins in USER_LOGINS
+- A fixed list of 12 okta-* SSM parameters under /app/lakehouse-agent/
+  (skipped with --keep-ssm). The okta-user-<label>-sub keys are not in that
+  list; the notebook's final SSM sweep removes them.
+
+Apps and the auth server are deactivated before they are deleted, because
+Okta refuses to delete an active one.
 
 Cleanup ownership note: this script OWNS teardown of the OBO exchange app and
 the okta-obo-client-* SSM keys (both Okta-side resources created by
@@ -154,7 +170,8 @@ class OktaCleanup:
                 print(f"   ⏭️  User not found: {login}")
                 continue
             try:
-                # Okta requires deactivation before deletion.
+                # Okta requires deactivation before deletion: on an active user
+                # the first call deactivates, the second deletes permanently.
                 await self.okta.deactivate_or_delete_user(u.id)
                 await self.okta.deactivate_or_delete_user(u.id)
                 print(f"   ✅ Deleted user: {login}")
@@ -207,9 +224,9 @@ def main():
     parser.add_argument("--keep-ssm", action="store_true", help="Keep SSM parameters")
     args = parser.parse_args()
 
-    # Same reason as setup_okta.py: this script reads OKTA_ORG_URL /
-    # OKTA_API_TOKEN from os.environ and exits 1 without them, but nothing on the
-    # CLI path ever loaded .env. Already-exported variables still win.
+    # Same as setup_okta.py: this script reads OKTA_ORG_URL / OKTA_API_TOKEN
+    # from os.environ and exits 1 without them, so load .env into the
+    # environment first. Already-exported variables still win.
     load_env_file()
 
     cleanup = OktaCleanup(keep_ssm=args.keep_ssm)

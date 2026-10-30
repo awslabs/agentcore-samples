@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-Cleanup OBO_Gateway substrate.
+Cleanup of the notes gateway (GW2) and its substrate, for both IdPs.
 
-Mirrors deployment/5a-gateway-setup/cleanup_gateway.py shape. Tears down what
-9.1-9.4 created (and only that — by-name scoping prevents collateral damage
-to the interceptor side or to other workloads in the account).
+Run by 09-optional-cleanup.ipynb, Step 2 (``python 06_cleanup_obo_gateway.py``
+from this directory). Same shape as deployment/5a-gateway-setup/cleanup_gateway.py.
+Tears down what 01_deploy_opensearch_collection.py, 03_create_oauth_provider.py
+and 04_create_obo_gateway.py created, and only that: every resource is
+addressed by its fixed name or by the id stored in SSM, so the interceptor
+gateway (GW1) and other workloads in the account are not touched.
 
-Cleanup coverage:
-  1. OBO_Gateway target (lakehouse-obo-target)
-  2. OBO_Gateway (lakehouse-notes-gateway)
-  3. OBO_Gateway IAM role (agentcore-lakehouse-notes-gateway-role)
-  4. OAuth2 credential providers: Okta OBO (lakehouse-obo-okta-provider) +
-     Cognito M2M (lakehouse-notes-cognito-oauth-provider) — each safe-if-absent
-  5. AOSS data-access policy   (lakehouse-claim-notes-data)        [9.1 created]
-  6. AOSS network policy       (lakehouse-claim-notes-network)     [9.1 created]
-  7. AOSS encryption policy    (lakehouse-claim-notes-encryption)  [9.1 created]
-  8. AOSS collection           (lakehouse-claim-notes)             [9.1 created]
-  9. Net-new SSM keys: notes-gateway-* (4 keys), opensearch-collection-{arn,endpoint},
-     obo-credential-provider-arn
+What is deleted, in run() order:
+  1. Every target on the notes gateway (lakehouse-obo-target), then a poll of
+     up to ~60 s until the target list is empty
+  2. The notes gateway (lakehouse-notes-gateway); its id comes from SSM
+     notes-gateway-id, else a paginated by-name search
+  3. The gateway's IAM role (agentcore-lakehouse-notes-gateway-role): inline
+     policies deleted and managed policies detached first, which IAM requires
+  4. OAuth2 credential providers: Okta OBO (lakehouse-obo-okta-provider) and
+     Cognito M2M (lakehouse-notes-cognito-oauth-provider); each is skipped if
+     absent, so only the active IdP's provider is actually deleted
+  5. AOSS data-access policy   (lakehouse-claim-notes-data)
+  6. AOSS collection           (lakehouse-claim-notes), polled up to ~10 min
+  7. AOSS network policy       (lakehouse-claim-notes-network)
+  8. AOSS encryption policy    (lakehouse-claim-notes-encryption)
+  9. SSM keys under /app/lakehouse-agent/ created by this directory:
+     notes-gateway-{id,arn,url,name}, obo-credential-provider-arn,
+     opensearch-collection-{arn,endpoint} (skipped with --keep-ssm)
 
 Note: there is no agent-IAM revert step — the agent deliberately holds NO OBO
 grant (the GW2 gateway role performs the RFC 8693 exchange), so
@@ -35,10 +43,13 @@ Resources NOT cleaned here (owned by sibling cleanup scripts):
   - Okta OBO exchange app (lakehouse-obo-exchange-client) + okta-obo-client-* SSM keys
     -> deployment/1-okta-setup/cleanup_okta.py  (Okta-side resource; owned there)
 
-Cleanup ordering (load-bearing): targets BEFORE gateway, gateway BEFORE role,
-data-access policy BEFORE collection (AOSS rejects collection delete while a
-data-access policy references it). Encryption + network policies can be
-removed anytime after the collection is gone.
+Cleanup ordering (load-bearing): targets BEFORE gateway (the gateway delete waits
+up to ~60 s for its targets to go), gateway BEFORE its role (so the gateway never
+exists without the role it runs as), data-access policy BEFORE collection (AOSS rejects
+collection delete while a data-access policy references it). Network and
+encryption policies go last, after the collection delete has been polled to
+completion. SSM keys go last of all, so a partial run can be re-run and still
+find the gateway id.
 
 Idempotent: re-running after a successful first run logs
 all ⏭️ and exits 0.
@@ -57,7 +68,7 @@ import boto3
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
 
-# Names match the create-side scripts (9.1, 9.3, 9.4, 9.5)
+# Names match the create-side scripts in this directory (01, 03, 04)
 COLLECTION_NAME = "lakehouse-claim-notes"
 # Default GW2 name. Used at create time and as the last resort in the by-name
 # fallback below — the persisted SSM `notes-gateway-name` is preferred so a
@@ -141,7 +152,7 @@ class OBOCleanup:
     def delete_gateway(self):
         print(f"\n🗑️  Deleting OBO_Gateway: {GATEWAY_NAME}")
 
-        # SSM key may be missing if 9.4 partially failed; fall back to a by-name
+        # SSM key may be missing if 04_create_obo_gateway.py partially failed; fall back to a by-name
         # lookup rather than reporting a clean teardown over a live gateway.
         gateway_id = self._get_ssm_param("notes-gateway-id")
         if not gateway_id:
@@ -162,6 +173,8 @@ class OBOCleanup:
                 except Exception as e:
                     print(f"   ⚠️  Error deleting target {tid}: {e}")
 
+            # Target deletion completes asynchronously; poll (12 x 5 s) until the
+            # list is empty so the gateway delete below does not race it.
             if targets:
                 print("   ⏳ Waiting for targets to delete...")
                 for _ in range(12):
@@ -259,6 +272,9 @@ class OBOCleanup:
                 try:
                     self.aoss.delete_collection(id=collection_id)
                     print(f"   ✅ Delete initiated: {COLLECTION_NAME} (id={collection_id})")
+                    # delete_collection only starts the delete; poll until the
+                    # collection disappears so the network and encryption
+                    # policies below are removed after it, not alongside it.
                     print("   ⏳ Waiting for collection to delete...")
                     for _ in range(40):  # up to ~10 min
                         details = self.aoss.batch_get_collection(ids=[collection_id])
@@ -304,14 +320,14 @@ class OBOCleanup:
         print("\n🗑️  Deleting SSM parameters...")
         # All net-new keys this 5b/ directory owns
         params = [
-            # GW2 notes gateway (9.4)
+            # GW2 notes gateway (04_create_obo_gateway.py)
             "notes-gateway-id",
             "notes-gateway-arn",
             "notes-gateway-url",
             "notes-gateway-name",
-            # OBO credential provider (9.3)
+            # OBO credential provider (03_create_oauth_provider.py)
             "obo-credential-provider-arn",
-            # AOSS collection (9.1)
+            # AOSS collection (01_deploy_opensearch_collection.py)
             "opensearch-collection-arn",
             "opensearch-collection-endpoint",
         ]

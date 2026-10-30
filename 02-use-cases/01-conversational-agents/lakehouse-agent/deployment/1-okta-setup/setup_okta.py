@@ -1,8 +1,34 @@
 #!/usr/bin/env python3
 """
 Okta Setup for Health Lakehouse Data
-Creates Okta OIDC application + custom authorization server + scopes + groups + test users
-Writes configuration to SSM Parameter Store
+
+The Okta counterpart of setup_cognito.py. Notebook 01 (01-deploy-idp.ipynb) runs
+it when IDP_PROVIDER is "okta"; it can also be run directly. Every object is
+looked up by name first and reused if present, so re-running is safe.
+
+What it creates in the Okta org (via the Okta management API, python-okta-sdk):
+    - OIDC web app "lakehouse-agent-app": the user-login client that issues the
+      users' access tokens (the subject token for the OBO exchange).
+    - API Services app "lakehouse-obo-exchange-client": the client that performs
+      the RFC 8693 token exchange. Okta requires it to differ from the login app.
+    - Custom authorization server "lakehouse-agent" with audience
+      api://lakehouse-api, scopes claims.query / claims.submit / claims.update /
+      claims.approve / opensearch.search, a `groups` claim, and an access policy
+      plus rule that admits both client ids.
+    - Groups policyholders, adjusters and administrators, assigned to the login
+      app, and five test users (policyholder001/002, adjuster001/002, admin, all
+      @example.com) placed in those groups.
+
+What it writes to SSM Parameter Store under /app/lakehouse-agent/:
+    - okta-org-url (bare host, no scheme), okta-auth-server-id,
+      okta-app-client-id, okta-obo-client-id, okta-resource-server-audience,
+      okta-discovery-url, okta-policyholders-group-id, okta-adjusters-group-id,
+      okta-administrators-group-id (String).
+    - okta-app-client-secret, okta-obo-client-secret, okta-api-token
+      (SecureString; each is skipped when no value is available).
+    - okta-user-<label>-sub per test user (String), where <label> is the part of
+      the login before "@". load_sample_opensearch_data.py (notebook 05b) reads
+      these as the owner key for the OpenSearch notes row-level security.
 
 Usage:
     python setup_okta.py
@@ -885,9 +911,9 @@ class OktaSetup:
                 print(f"⚠️  Error creating user {u['login']}: {e}")
 
         # Seed the per-user subject key for the OpenSearch notes RLS
-        # (FINDING-1: load_sample_opensearch_data.py in 05b consumes
-        # okta-user-<label>-sub; setup_okta is the PRODUCER, mirroring the
-        # Cognito seed_cognito_user_subs.py convention). CRITICAL: the Okta
+        # (load_sample_opensearch_data.py in notebook 05b consumes
+        # okta-user-<label>-sub; setup_okta is the producer, mirroring the
+        # Cognito seed_cognito_user_subs.py convention). Note that the Okta
         # access-token `sub` claim is the user's EMAIL (login), NOT created.id
         # (the 00u… Okta user id) — seeding the id would make owner_user_sub
         # match nothing at query time (vacuous-pass). The
@@ -1014,10 +1040,9 @@ class OktaSetup:
 
 
 def main():
-    # Load .env before anything reads os.environ. The notebook path gets this for
-    # free via init_aws(); the documented `python setup_okta.py` path did not, so
-    # OKTA_ORG_URL / OKTA_API_TOKEN had to be exported by hand. Already-exported
-    # variables still win.
+    # Load .env before anything reads os.environ, so OKTA_ORG_URL /
+    # OKTA_API_TOKEN come from the same file whether this runs from notebook 01
+    # or as `python setup_okta.py`. Already-exported variables still win.
     load_env_file()
 
     setup = OktaSetup()

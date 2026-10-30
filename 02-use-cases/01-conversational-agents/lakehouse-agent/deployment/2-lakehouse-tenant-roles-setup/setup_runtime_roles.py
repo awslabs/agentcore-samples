@@ -8,6 +8,24 @@ Creates or deletes the IAM roles the runtimes run as:
     opensearch-mcp   AgentCoreRuntimeRole-opensearch-mcp   notes MCP server   (4b-mcp-opensearch-server)
     lakehouse-agent  AgentCoreRuntimeRole-lakehouse-agent  Strands agent      (6-lakehouse-agent)
 
+Each role is created at its runtime's own notebook step, just before that
+runtime deploys: `create --role lakehouse-mcp` in notebook 04, `--role
+opensearch-mcp` in 05b, `--role lakehouse-agent` in 06. Notebook 09 runs
+`delete --role <key>` for each, after that runtime's stack delete succeeds.
+
+What each role's inline policy grants (all three also get ECR image pull,
+CloudWatch Logs, X-Ray writes, and ssm:GetParameter(s) on
+/app/lakehouse-agent/*):
+
+    lakehouse-mcp    Athena query execution, Glue catalog reads, read/write on
+                     the data bucket, lakeformation:GetDataAccess, Bedrock
+                     InvokeModel (for text_to_sql), Marketplace subscription
+                     actions for model access
+    opensearch-mcp   aoss:APIAccessAll on the one OpenSearch Serverless collection
+    lakehouse-agent  Bedrock InvokeModel, Marketplace subscription actions,
+                     bedrock-agentcore:InvokeGateway / GetGateway on gateways in
+                     this account and region
+
 The role names are fixed on purpose. The runtime deployment imports these roles
 by name instead of generating its own, and the OpenSearch collection's
 data-access policy grants the opensearch-mcp role by name
@@ -72,6 +90,7 @@ ECR_PULL_STATEMENT: dict[str, Any] = {
 
 
 def ssm_read_statement(region: str, account_id: str) -> dict[str, Any]:
+    """Read access to this sample's SSM parameters under /app/lakehouse-agent/."""
     return {
         "Effect": "Allow",
         "Action": ["ssm:GetParameter", "ssm:GetParameters"],
@@ -231,6 +250,7 @@ ROLES: dict[str, dict[str, Any]] = {
 
 
 def role_tags(purpose: str) -> list[dict[str, str]]:
+    """Tags applied when a role is first created (an existing role's tags are not changed)."""
     return [
         {"Key": "Application", "Value": "lakehouse-agent"},
         {"Key": "Purpose", "Value": purpose},
@@ -238,7 +258,10 @@ def role_tags(purpose: str) -> list[dict[str, str]]:
 
 
 class RuntimeRoles:
+    """Create or delete the runtime execution roles listed in ROLES."""
+
     def __init__(self, account_id: str | None = None, iam_client=None, ssm_client=None):
+        # IAM and SSM clients can be injected so the class is testable offline.
         session = boto3.Session()
         self.region = session.region_name
         if not self.region:
@@ -266,6 +289,11 @@ class RuntimeRoles:
         return values
 
     def create(self, role_keys: list[str]) -> dict[str, str]:
+        """Create or update the selected roles; return {role name: role ARN}.
+
+        All SSM inputs are read before any IAM call, so a missing input stops
+        the run before a role is half-configured.
+        """
         print("\n🚀 Creating AgentCore Runtime execution roles")
         print(f"   Region: {self.region}")
         print(f"   Account ID: {self.account_id}")
@@ -285,6 +313,7 @@ class RuntimeRoles:
         return arns
 
     def create_one(self, spec: dict[str, Any], permissions_policy: dict[str, Any]) -> str:
+        """Create one role with the trust policy and inline policy; update it in place if it exists."""
         role_name = spec["name"]
         try:
             print(f"\nCreating IAM role: {role_name}")
@@ -328,6 +357,8 @@ class RuntimeRoles:
         return ok
 
     def delete_one(self, role_name: str) -> bool:
+        """Delete one role. IAM refuses to delete a role that still has policies,
+        so every inline policy is deleted and every managed policy detached first."""
         try:
             self.iam.get_role(RoleName=role_name)
         except self.iam.exceptions.NoSuchEntityException:
@@ -347,6 +378,7 @@ class RuntimeRoles:
 
 
 def main(argv=None) -> int:
+    """CLI entry point. Exit code is 1 only when a delete fails."""
     parser = argparse.ArgumentParser(description="Create or delete the AgentCore Runtime execution roles")
     parser.add_argument(
         "--account-id",
