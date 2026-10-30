@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 REGION = os.getenv("AWS_REGION", "us-east-1")
 ACTOR_ID = "user-alex"
 SESSION_ID = f"sess-{int(time.time())}"
-EXTRACTION_WAIT_SECONDS = 75
+EXTRACTION_WAIT_SECONDS = 100  # polling budget; summary consolidation measured 75-104s
 # Summary consolidation is semantic-class; the high-level sdk run waits
 # 90s (with margin) — consolidation surfaced ~64s in semantic-class testing.
 SESSION_EXTRACTION_WAIT_SECONDS = 90
@@ -89,15 +89,22 @@ def run_with_boto3(cleanup: bool = False) -> None:
             eventTimestamp=datetime.now(timezone.utc),
             payload=[{"conversational": {"role": role, "content": {"text": text}}}],
         )
-    print(f"[boto3] Waiting {EXTRACTION_WAIT_SECONDS}s for summary consolidation...")
-    time.sleep(EXTRACTION_WAIT_SECONDS)
-
+    # Consolidation is asynchronous and its latency varies — poll instead of sleeping a
+    # fixed amount, so a slow run still shows records instead of printing an empty list.
+    print(f"[boto3] Polling up to {EXTRACTION_WAIT_SECONDS}s for summary consolidation...")
     namespace = NAMESPACE_TEMPLATE.format(sessionId=SESSION_ID)
-    hits = data.retrieve_memory_records(
-        memoryId=memory_id,
-        namespace=namespace,
-        searchCriteria={"searchQuery": "trip plan", "topK": 5},
-    )["memoryRecordSummaries"]
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    while True:
+        hits = data.retrieve_memory_records(
+            memoryId=memory_id,
+            namespace=namespace,
+            searchCriteria={"searchQuery": "trip plan", "topK": 5},
+        )["memoryRecordSummaries"]
+        if hits or time.time() >= deadline:
+            break
+        time.sleep(10)
+    if not hits:
+        print(f"[boto3] No records after {EXTRACTION_WAIT_SECONDS}s — consolidation may still be running.")
     print(f"\n[boto3] Summary records in {namespace}:")
     for h in hits:
         print(f"  - {h['content']['text']}")

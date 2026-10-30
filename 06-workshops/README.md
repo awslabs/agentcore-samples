@@ -1,5 +1,9 @@
 # 📚 Amazon Bedrock AgentCore Tutorials
 
+⚠️ Recommendation: [The Starter Toolkit CLI](https://github.com/aws/bedrock-agentcore-starter-toolkit) is no longer supported. Please use the AgentCore CLI.
+
+The AgentCore CLI (@aws/agentcore) is now the recommended way to create, develop, and deploy AI agents on Amazon Bedrock AgentCore. It supports a broader set of frameworks (Strands, LangGraph, LangChain, Google ADK, OpenAI Agents, and BYO), provides local development with hot reload, built-in evaluations, gateway management, and more.
+
 This folder contains Hands-on tutorials for building, deploying, and managing AI agents with Amazon Bedrock AgentCore.
 
 AgentCore services work independently or together, with any agentic framework (Strands Agents, LangChain, LangGraph, CrewAI, etc.) and any model.

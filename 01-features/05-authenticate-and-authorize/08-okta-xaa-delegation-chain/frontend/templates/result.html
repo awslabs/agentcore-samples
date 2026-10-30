@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Result</h1>
+<p class="muted">You asked: <em>{{ prompt }}</em></p>
+
+{% if error %}
+  <div class="card warn">
+    <p><strong>The request did not complete.</strong></p>
+    <pre>{{ error }}</pre>
+  </div>
+{% else %}
+  <div class="card">
+    <p><strong>The agent answered</strong></p>
+    <p style="white-space: pre-wrap;">{{ answer }}</p>
+  </div>
+{% endif %}
+
+<p><a href="/">&larr; back</a></p>
+{% endblock %}

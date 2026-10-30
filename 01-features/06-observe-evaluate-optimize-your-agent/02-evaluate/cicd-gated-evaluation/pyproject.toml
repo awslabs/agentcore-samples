@@ -1,0 +1,23 @@
+[project]
+name = "agentcore-a2a-combined"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.172.0",
+    "constructs>=10.0.0",
+]
+
+# Dependencies for the scripts/ evaluation tools. Install: pip install ".[evaluation]"
+[project.optional-dependencies]
+evaluation = [
+    "boto3",
+    "requests",
+    "bedrock-agentcore",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["infrastructure*"]

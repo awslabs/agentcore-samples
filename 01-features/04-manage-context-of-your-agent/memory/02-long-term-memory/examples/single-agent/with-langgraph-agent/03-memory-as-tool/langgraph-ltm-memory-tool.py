@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # # LangGraph with AgentCore Memory — Memory as a Tool (Long-term Memory)
 #
 # ## Introduction
@@ -91,17 +89,17 @@
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
+# AgentCore Memory client + the StrategyType enum (exact strategy wire key).
+from bedrock_agentcore.memory import MemoryClient
+from bedrock_agentcore.memory.constants import StrategyType
 
 # LangGraph v1.0 agent factory (replaces the deprecated create_react_agent).
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
-
-# AgentCore Memory client + the StrategyType enum (exact strategy wire key).
-from bedrock_agentcore.memory import MemoryClient
-from bedrock_agentcore.memory.constants import StrategyType
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -147,7 +145,7 @@ SYSTEM_PROMPT = (
     "\n"
     "Use these tools proactively and on your own judgment — the user will not remind you. "
     "Be friendly and concise. "
-    f"Today's date: {datetime.today().strftime('%Y-%m-%d')}."
+    f"Today's date: {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d')}."
 )
 
 # A single MemoryClient is reused by both tools (created in Step 2).
@@ -280,7 +278,8 @@ def wait_for_extraction(memory_id: str) -> None:
             if records:
                 logger.info("✅ Long-term records are available")
                 return
-        except Exception as e:
+        # The probe is only a poll: any failure just means "retry until the deadline".
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Retrieval probe failed (will retry): {e}")
         time.sleep(EXTRACTION_POLL_INTERVAL_SECONDS)
     logger.warning(
@@ -307,7 +306,7 @@ def run_turn(graph, messages: list, user_text: str) -> str:
     # create_agent returns the full message list (including any tool calls/results and the
     # final AI message). Sync our local history to it and return the last message's text.
     messages[:] = result["messages"]
-    return messages[-1].text()
+    return messages[-1].text
 
 
 # ## Step 5: Run the demo
@@ -372,7 +371,9 @@ def main() -> None:
             try:
                 memory_client.delete_memory_and_wait(memory_id=memory_id)
                 logger.info(f"✅ Deleted memory: {memory_id}")
-            except Exception as e:
+            # Cleanup runs in a finally block: report the failure, never mask the
+            # original exception (if any) by raising from here.
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to delete memory {memory_id}: {e}")
 
 

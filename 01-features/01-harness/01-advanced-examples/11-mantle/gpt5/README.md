@@ -59,7 +59,7 @@ The harness is auto-instrumented exactly like any other — no ADOT setup, no `O
 
 ## Prerequisites
 
-- **AgentCore CLI (preview):** `npm install -g @aws/agentcore@preview`
+- **AgentCore CLI:** `npm install -g @aws/agentcore@0.30.0`
 - **AWS CLI v2** with credentials for a harness preview region
   (`us-east-1`, `us-west-2`, `ap-southeast-2`, `eu-central-1`).
 - Amazon Bedrock access to `openai.gpt-5.4` in that region (enable it under Bedrock model access).

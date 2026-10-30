@@ -61,7 +61,7 @@ The Coinbase x402 Bazaar is an MCP marketplace exposing 10,000+ pay-per-use x402
 
 * Tutorial 00 completed (`.env` exists)
 * Wallet funded with testnet USDC from https://faucet.circle.com/
-* AgentCore CLI: `npm install -g @aws/agentcore` (requires Node.js 20+)
+* AgentCore CLI: `npm install -g @aws/agentcore@0.30.0` (requires Node.js 20+)
 * AWS CLI configured (`aws configure`)
 
 This tutorial works with either wallet provider you configured in Tutorial 00 (Coinbase CDP or Stripe/Privy). The agent code is the same regardless of your choice.

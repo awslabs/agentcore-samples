@@ -83,7 +83,7 @@ The single namespace template `"/research-team/{actorId}/knowledge/"` produces a
 
 | Step | Where | How |
 |---|---|---|
-| **Create** | Once, at startup | `create_memory_and_wait(name=..., strategies=[{semanticMemoryStrategy: {namespaces: ["/research-team/{actorId}/knowledge/"]}}])` |
+| **Create** | Once, at startup | `create_memory_and_wait(name=..., strategies=[{semanticMemoryStrategy: {namespaceTemplates: ["/research-team/{actorId}/knowledge/"]}}])` |
 | **Produce** | Each agent, after it answers | `create_event(memory_id, actor_id="team-shared", session_id, messages=[(output, "USER")])` — publish to the blackboard |
 | **Wait** | Between stages | Poll `retrieve_memories` on the shared namespace until the producer's records surface (extraction is asynchronous) |
 | **Consume** | Next agent, before it answers | `retrieve_memories(memory_id, namespace="/research-team/team-shared/knowledge/", query=..., top_k=...)` and fold the results into the agent's user turn |

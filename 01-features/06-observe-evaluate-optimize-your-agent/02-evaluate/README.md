@@ -16,7 +16,7 @@ While AgentCore observability provides operational insights into agent health, A
 
 ### Built-in and Custom Evaluators
 
-AgentCore evaluations offers **13 built-in evaluators** for critical dimensions like correctness, helpfulness, and safety, plus the ability to create custom evaluators for business-specific requirements.
+AgentCore evaluations offers **15 built-in evaluators** for critical dimensions like correctness, helpfulness, safety, tool use, and skill use, plus the ability to create custom evaluators for business-specific requirements.
 
 Test your agents during development and deployment using the on-demand evaluations API, or monitor production agents with the online evaluations API.
 
@@ -91,12 +91,17 @@ AgentCore relies on **AWS Distro for OpenTelemetry (ADOT)** to instrument differ
 | `Builtin.Refusal`               | TRACE   | None                | Detects when agent evades questions or directly refuses to answer                      |
 | `Builtin.GoalSuccessRate`       | SESSION | `assertions`        | Evaluates whether the conversation successfully meets the user's goals                 |
 | `Builtin.ToolSelectionAccuracy` | SESSION | None                | Evaluates whether the agent selected the appropriate tool for the task                 |
-| `Builtin.ToolParameterAccuracy` | SESSION | None                | Evaluates how accurately the agent extracts parameters from user queries               |
-| `Builtin.Harmfulness`           | TRACE   | None                | Evaluates whether the response contains harmful content                                |
+| `Builtin.ToolParameterAccuracy` | SESSION   | None                | Evaluates how accurately the agent extracts parameters from user queries               |
+| `Builtin.SkillSelectionAccuracy` | TOOL_CALL | None                | Evaluates whether the agent loaded the appropriate skill for the task                  |
+| `Builtin.SkillInstructionFollowing` | TOOL_CALL | None              | Evaluates how completely the agent followed the loaded skill's instructions            |
+| `Builtin.Harmfulness`           | TRACE      | None                | Evaluates whether the response contains harmful content                                |
 | `Builtin.Stereotyping`          | TRACE   | None                | Detects content that makes generalizations about individuals or groups                 |
 
 **TRACE** evaluators produce one score per conversational turn.
+
 **SESSION** evaluators produce one score per complete conversation.
+
+**TOOL_CALL** skill evaluators produce one score per detected skill invocation.
 
 ![Metrics Per Level](images/metrics_per_level.png)
 
@@ -116,21 +121,27 @@ Three evaluation interfaces are available depending on your use case:
 | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`ground-truth-based-evaluation/`](ground-truth-based-evaluation/) | EvaluationClient + DatasetRunner + BatchRunner with expected responses, expected tool trajectories, and session assertions                                          |
 | [`llm-as-a-judge-evaluation/`](llm-as-a-judge-evaluation/)         | Custom LLM-as-a-judge evaluators (TRACE + SESSION) with ground-truth placeholders alongside built-in evaluators                                                     |
-| [`custom-code-based-evaluation/`](custom-code-based-evaluation/)   | Lambda-backed deterministic evaluators (code-based) for exact data validation, mixed with built-in LLM evaluators; on-demand and online modes                       |
+| [`custom-code-based-evaluation/`](custom-code-based-evaluation/)   | Lambda-backed deterministic evaluators (code-based) for exact data validation, mixed with built-in LLM evaluators; on-demand and online modes. Also includes Jev and Strands Decider decision-model evaluators (opt-in via `--with-jev` / `--with-decider`) |
+| [`skills-evaluation/`](skills-evaluation/)                         | Native Strands Agent Skills evaluated with `Builtin.SkillSelectionAccuracy` and `Builtin.SkillInstructionFollowing`                                               |
 | [`supported-frameworks/`](supported-frameworks/)                   | The same HR Assistant re-implemented in other supported frameworks (OpenAI Agents SDK, LlamaIndex), each deployed and evaluated with built-in and custom evaluators |
+| [`typescript-agents/`](typescript-agents/)                         | A TypeScript (LangGraph.js) HR Assistant in a custom container, evaluated across the full lifecycle: on-demand, dataset, batch, and online evaluation |
 
-The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the same HR Assistant agent deployed from `utils/`. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders.
+The `ground-truth-based-evaluation/`, `llm-as-a-judge-evaluation/`, and `custom-code-based-evaluation/` samples share the default HR Assistant agent deployed from `utils/`. The `skills-evaluation/` sample uses the same agent source with an opt-in skills directory and a separate runtime config. The `supported-frameworks/` samples re-implement that agent in each framework and deploy it from their own folders. The `typescript-agents/` sample ports the agent to TypeScript and deploys it as a custom Docker container with its own `deploy.py`.
 
 ## Agent Architecture
 
-![Agent Architecture](images/agent_architecture.png)
+![Agent Architecture](images/hr_agent_arch.png)
 
 ## AgentCore CLI
 
 The AgentCore CLI supports evaluation workflows. Install it:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ### On-demand evaluation — single session
@@ -202,8 +213,8 @@ agentcore deploy
 ## Prerequisites
 
 - Python 3.10+
-- AWS CLI configured with credentials
-- Permissions for: `bedrock-agentcore:*`, `bedrock-agentcore-control:*`, `logs:*`, `iam:CreateRole`, `iam:PutRolePolicy`, `s3:PutObject`, `bedrock:InvokeModel`
+- AWS CLI installed and configured with credentials
+- Permissions for: `bedrock-agentcore:*`, `bedrock-agentcore-control:*`, `logs:*`, `iam:CreateRole`, `iam:PutRolePolicy`, `iam:PassRole`, `s3:CreateBucket`, `s3:PutObject`, `bedrock:InvokeModel`
 
 ## Running the Python Scripts
 
@@ -228,5 +239,17 @@ python evaluate.py
 # Code-based evaluation (Lambda evaluators)
 cd custom-code-based-evaluation
 pip install -r requirements.txt
+python evaluate.py
+
+# Skill selection and instruction-following evaluation (from 02-evaluate/)
+cd skills-evaluation
+pip install -r requirements.txt
+python ../utils/deploy.py --skills-dir skills --config-output agent_config.json
+python evaluate.py
+
+# TypeScript agent: on-demand, dataset, batch, and online evaluation (from 02-evaluate/)
+cd typescript-agents
+pip install -r requirements.txt
+python deploy.py
 python evaluate.py
 ```

@@ -133,6 +133,13 @@ then deletes the memory resource.
 - **Agents never share a conversation.** Each `create_agent` invocation is standalone;
   everything that crosses between agents goes *through memory*. The orchestrator retrieves
   the upstream output and folds it into the next agent's user turn.
+- **No checkpointer, deliberately.** None of the three agents is compiled with
+  `checkpointer=`, because each one runs exactly once and needs no multi-turn continuity —
+  the handoff is the shared namespace, not shared conversation state. If an agent in your
+  pipeline *does* hold a multi-turn conversation (a user-facing front-end agent, say), give
+  that agent an `AgentCoreMemorySaver` with its own `thread_id`; the pipeline agents can stay
+  stateless. See
+  [checkpointer vs. store](../../../../00-getting-started/06-usage-patterns.md#langgraph-specifically-checkpointer-vs-store).
 - **Sequential handoff needs a wait.** Because extraction is asynchronous and stage N+1
   reads stage N's output, `wait_for_records` polls the shared namespace before handing off.
 - **Retrieval namespaces must be fully resolved.** `retrieve_memories` does not accept
@@ -152,4 +159,3 @@ then deletes the memory resource.
 - The Strands multi-agent example: [`../with-strands-agent/`](../with-strands-agent/)
 - The long-term memory overview (all strategies, retrieval, namespaces):
   [`../../../README.md`](../../../README.md)
-```

@@ -16,6 +16,7 @@ Covers NL2Cedar (natural language → Cedar) and hand-authored attribute-based a
 ## Prerequisites
 
 - Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - AWS CLI configured with credentials
 - Amazon Bedrock model access (Nova Lite) in your region
 - Node.js (for Lambda function packaging during deploy)
@@ -23,16 +24,14 @@ Covers NL2Cedar (natural language → Cedar) and hand-authored attribute-based a
 ## Quick Start
 
 ```bash
-pip install -r requirements.txt
-
 # Deploy gateway, Lambda tools, Cognito OAuth, and policy Engine
-python deploy.py
+uv run python deploy.py
 
 # Run the full policy demo (NL2Cedar + ABAC + agent)
-python policy_demo.py
+uv run python policy_demo.py
 
 # Clean up all AWS resources
-python cleanup.py
+uv run python cleanup.py
 ```
 
 ## AgentCore CLI
@@ -40,7 +39,11 @@ python cleanup.py
 Add a policy engine and Cedar policies to an existing project with the AgentCore CLI:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 # Add a policy engine (interactive)
 agentcore add policy-engine
@@ -72,7 +75,7 @@ For the full policy demo in this folder, `deploy.py` (boto3) provisions all reso
 
 ### Testing gateway access after deploy
 
-After running `python deploy.py`, test the gateway directly:
+After running `uv run python deploy.py`, test the gateway directly:
 
 ```bash
 # Read values from policy_config.json
@@ -108,9 +111,9 @@ curl -X POST "$GATEWAY_URL" \
 Run individual demo sections:
 
 ```bash
-python policy_demo.py --section A   # NL2Cedar only
-python policy_demo.py --section B   # Fine-grained ABAC only
-python policy_demo.py --section C   # Agent end-to-end only
+uv run python policy_demo.py --section A   # NL2Cedar only
+uv run python policy_demo.py --section B   # Fine-grained ABAC only
+uv run python policy_demo.py --section C   # Agent end-to-end only
 ```
 
 ## How It Works

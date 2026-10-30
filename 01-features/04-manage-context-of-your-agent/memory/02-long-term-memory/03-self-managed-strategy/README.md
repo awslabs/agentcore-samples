@@ -30,9 +30,10 @@ You may set multiple triggers — the strategy fires when any matches.
 
 ```bash
 pip install boto3 bedrock-agentcore
-export MEMORY_EXECUTION_ROLE_ARN=arn:aws:iam::<acct>:role/<role>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export MEMORY_EXECUTION_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/<your-memory-execution-role>"
 export PAYLOAD_BUCKET=my-agentcore-payload-bucket
-export TOPIC_ARN=arn:aws:sns:<region>:<acct>:agentcore-self-managed
+export TOPIC_ARN="arn:aws:sns:$AWS_REGION:$ACCOUNT_ID:agentcore-self-managed"
 python self-managed-strategy.py boto3   # default — direct service calls
 python self-managed-strategy.py sdk     # documents the SDK gap (no selfManagedConfiguration helper)
 ```
@@ -60,8 +61,8 @@ The same flow expressed with the AWS CLI:
 ```bash
 # 1. Create the memory with a self-managed strategy. The role must allow
 #    PutObject + GetBucketLocation to the bucket and Publish + GetTopicAttributes to the topic.
-aws bedrock-agentcore-control create-memory \
-  --region "$AWS_REGION" --name "SelfManagedCli-$(date +%s)" \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
+  --region "$AWS_REGION" --name "SelfManagedCli_$(date +%s)" \
   --event-expiry-duration 30 --client-token "$(uuidgen)" \
   --memory-execution-role-arn "$MEMORY_EXECUTION_ROLE_ARN" \
   --memory-strategies "[{
@@ -83,8 +84,15 @@ aws bedrock-agentcore-control create-memory \
         }
       }
     }
-  }]"
-export MEMORY_ID=<id>
+  }]" \
+  --query 'memory.id' --output text)
+
+# Wait until ACTIVE. CreateEvent is rejected while the memory is still CREATING,
+# and creation takes a couple of minutes. This also exits on FAILED, so it cannot hang.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Send events; AgentCore drops payloads to S3 and publishes to SNS.
 aws bedrock-agentcore create-event \

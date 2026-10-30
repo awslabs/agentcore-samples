@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY src/ui/package.json ./
+RUN npm install
+
+COPY src/ui/public ./public
+RUN mkdir -p src
+COPY src/ui/*.js ./src/
+COPY src/ui/*.css ./src/
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+CMD ["npm", "start"]

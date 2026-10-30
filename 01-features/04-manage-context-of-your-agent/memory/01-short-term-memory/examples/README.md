@@ -4,7 +4,7 @@ End-to-end agent examples that wire AgentCore **short-term memory** (raw events,
 
 | Folder | What's inside |
 |---|---|
-| [`single-agent/`](./single-agent/) | One agent per example — Claude SDK, Strands, LangGraph, LlamaIndex — using built-in/custom hooks and branching |
+| [`single-agent/`](./single-agent/) | One agent per example — Claude SDK, Strands, LangGraph, LlamaIndex — using the framework's session manager / checkpointer adapter, built-in/custom hooks, or branching |
 | [`multi-agent/`](./multi-agent/) | Multiple agents sharing one memory resource, including branch-per-subagent parallel execution |
 
 ## Where to go next

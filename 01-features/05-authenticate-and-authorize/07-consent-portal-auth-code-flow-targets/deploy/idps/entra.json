@@ -1,0 +1,18 @@
+{
+  "name": "entra",
+  "displayName": "Microsoft Entra ID",
+  "vendor": "CustomOauth2",
+  "providerConfigKey": "customOauth2ProviderConfig",
+  "discoveryUrlMustContain": "/v2.0/",
+  "discoveryUrlExample": "https://login.microsoftonline.com/<TENANT_ID>/v2.0/.well-known/openid-configuration",
+  "resourcePrefix": "entra",
+  "audienceNote": "the gateway resource app GUID, not api://<GUID> -- with requestedAccessTokenVersion 2, Entra sets aud to the application id",
+  "portalCallbackHint": [
+    "    az ad app update --id $GATEWAY_CLIENT_ID \\",
+    "      --web-redirect-uris \"<PORTAL_CALLBACK_URL>\"",
+    "",
+    "  --web-redirect-uris REPLACES the whole array. Under Entra this app is",
+    "  the gateway resource app AND the portal's login client; pass every web",
+    "  redirect URI you need in one call so you do not drop the others."
+  ]
+}

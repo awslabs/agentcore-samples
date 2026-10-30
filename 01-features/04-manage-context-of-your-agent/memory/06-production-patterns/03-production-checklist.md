@@ -68,7 +68,7 @@ Wire these up *before* launch — the first time you need them is during an inci
 | Ingestion health | `NumberOfMemoryRecords` per strategy | Alarm on a sudden drop — the canary for an extraction regression. |
 | Ingestion errors | Log group `/aws/bedrock-agentcore/memory/<memoryId>` | **Enable log delivery in production** — without it, ingestion failures are invisible. |
 
-- **Pair every alarm with a runbook.** Streaming failures usually want a redrive ([`../02-long-term-memory/08-redrive/`](../02-long-term-memory/08-redrive/)); user errors want an IAM/KMS fix.
+- **Pair every alarm with a runbook.** Streaming failures usually want a redrive ([`../02-long-term-memory/08-manage-extraction/`](../02-long-term-memory/08-manage-extraction/)); user errors want an IAM/KMS fix.
 - **Audit `bedrock-agentcore:actorId` and `kms:Decrypt` in CloudTrail** — the two signals that tell you who read what.
 
 ## 4. Rate limits and quotas
@@ -111,7 +111,33 @@ AgentCore Memory is regional — a memory resource and its data live in one regi
 - **Data residency:** if records must stay in-region for compliance, make `actorId`/namespace and the resource region-aware so a user is always routed to the compliant region.
 - **Verify regional availability** of AgentCore Memory before committing an architecture to a given region.
 
-## 6. Resource cleanup on teardown
+## 6. Conversation persistence (session manager / checkpointer)
+
+If your agent framework holds the conversation, make sure the thing holding it survives a
+process restart. This is the most common way a "memory-enabled" agent still forgets.
+
+- **Do not ship an in-process saver.** LangGraph's `InMemorySaver` lives in the Python heap:
+  every conversation dies with the process, and two runtime replicas don't share state. Swap
+  it for `AgentCoreMemorySaver(memory_id, region_name=region)` before launch. Note that the two
+  are not drop-in swaps, since the saver also requires `actor_id` in `configurable`
+  (next bullet). See [06-usage-patterns.md](../00-getting-started/06-usage-patterns.md) for usage with frameworks.
+- **Pass a stable, non-empty session id on every invocation.** `AgentCoreMemorySaver`
+  requires both `thread_id` (→ AgentCore `sessionId`) and `actor_id` (→ `actorId`) in
+  `configurable` and raises `InvalidConfigError` without them. On AgentCore Runtime,
+  `context.session_id` is optional and can be `None` — default it explicitly rather than
+  letting a falsy value reach the checkpointer.
+- **Derive `actor_id` from the authenticated principal, not from the request body.** It is
+  the value your IAM `bedrock-agentcore:actorId` condition (section 1) is compared against;
+  a client-supplied actor id makes that condition decorative.
+- **Budget for the write amplification.** A checkpointer writes an event per graph state update, not
+  per user turn, so a multi-tool ReAct loop can be several `CreateEvent` calls per turn.
+  `CreateEvent` is rate-limited (section 4) and events are billable storage — set
+  `eventExpiryDuration` accordingly.
+- **Tune the adapter's retries rather than wrapping it.** `AgentCoreMemorySaver` takes
+  `max_retries` (default 3), `initial_backoff` (0.1s) and `max_backoff` (2.0s); prefer those
+  over a custom retry layer that would double-retry. See [`01-error-handling.md`](./01-error-handling.md).
+
+## 7. Resource cleanup on teardown
 
 Orphaned memory resources keep costing money (event + record storage). Make teardown deliberate.
 
@@ -133,5 +159,6 @@ Orphaned memory resources keep costing money (event + record storage). Make tear
 - [ ] Ingestion log delivery enabled
 - [ ] Current quotas checked in Service Quotas; increases requested ahead of launch
 - [ ] Region pinned explicitly; multi-region/DR posture decided
+- [ ] Conversation persistence uses the durable adapter (`AgentCoreMemorySaver` / `AgentCoreMemorySessionManager`)
+- [ ] `actor_id` derived from the authenticated principal; session id always non-empty
 - [ ] Teardown path deletes ephemeral/offboarded resources; long-lived ones excluded
-</content>

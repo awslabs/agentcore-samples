@@ -385,7 +385,7 @@ memory = memory_client.create_or_get_memory(
 memory_id = memory["id"]
 logger.info("✅ Memory ready:")
 logger.info(f"   Memory ID: {memory_id}")
-logger.info(f"   Memory Name: {memory['name']}")
+logger.info(f"   Memory Name: {memory_name}")
 
 
 # Test memory client basic functionality
@@ -402,7 +402,7 @@ except Exception as e:
 
 # Display memory information
 print(f"Memory ID: {memory_id}")
-print(f"Memory Name: {memory['name']}")
+print(f"Memory Name: {memory_name}")
 print(f"Number of strategies: {len(strategies)}")
 
 
@@ -858,7 +858,7 @@ except Exception as e:
 # ### Install the CLI
 #
 # ```bash
-# npm install -g @aws/agentcore@0.11.0
+# npm install -g @aws/agentcore@0.30.0
 # agentcore --version   # should print 0.11.0
 # ```
 #

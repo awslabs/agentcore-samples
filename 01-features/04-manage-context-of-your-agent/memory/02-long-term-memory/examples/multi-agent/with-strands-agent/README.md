@@ -7,7 +7,7 @@
 
 See also: short-term multi-agent branching in [`../../../../01-short-term-memory/examples/multi-agent/with-strands-agent/multi-agent-parallel-branches/`](../../../../01-short-term-memory/examples/multi-agent/with-strands-agent/multi-agent-parallel-branches/).
 
-## Running the Python Scripts
+## Run
 
 Install dependencies and run scripts from the relevant sub-folders:
 

@@ -1,0 +1,43 @@
+# Mirrors the repo-root Ruff config for the memory samples, and relaxes the
+# additional rules that Ruff enabled by default in 0.16. CI installs Ruff
+# unpinned (`uv tool install ruff`), so without this the 0.16 defaults fail
+# these tutorial files on issues that pre-date any given change.
+#
+# Same precedent and rationale as
+# 01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/ruff.toml
+line-length = 120
+
+[lint]
+ignore = [
+    # --- as at the repo root, for tutorial-style code ---
+    "E402",    # imports after os.environ setup
+    "E722",    # bare except
+    "F401",    # imports kept to show usage patterns
+    "F811",    # redefinition in re-runnable cells
+    "F841",    # results named for clarity, then unused
+
+    # --- added by Ruff 0.16's expanded defaults ---
+    # Most of these files are exported Jupyter notebooks, which is why the
+    # cell-structure and import-order rules fire.
+    "B018",    # bare expression: a notebook cell's trailing value
+    "PLR2044", # empty comment: notebook cell separator
+    "I001",    # import order follows the tutorial's teaching order, not isort's
+    "EXE001",  # shebang present on a sample that is run via `python <file>`
+    "RUF100",  # noqa directives retained so the files also lint under <0.16
+
+    # broad catches, deliberate in demos: same rationale as E722 above
+    "BLE001",  # except Exception
+    "TRY002",  # raise Exception(...) rather than a custom class
+
+    # naive datetimes are intentional: they build demo memory names and
+    # session ids, where a timezone adds noise and no correctness
+    "DTZ002",  # datetime.today()
+    "DTZ005",  # datetime.now() without tz
+
+    # style modernisation, not worth churning working tutorial code
+    "RUF010",  # explicit str() inside an f-string
+    "RUF013",  # implicit Optional
+    "UP006",   # typing.Dict -> dict
+    "UP031",   # printf-style formatting
+    "UP035",   # deprecated typing imports
+]

@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Self-managed warm pool of sessions for Amazon Bedrock AgentCore Runtime (sample, not production-ready)
+
+Parameters:
+  CodeBucket:
+    Type: String
+    Description: S3 bucket that holds the Lambda package (deploy.sh creates and fills it)
+  CodeKey:
+    Type: String
+    Description: S3 key of the Lambda package (content-hashed, so a code change updates the functions)
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+
+Resources:
+  # Single-table design: every tunable setting lives here, not in Lambda env vars, so changing
+  # one takes effect on the pool manager's next sweep (seconds) instead of a redeploy (~1 min).
+  #   PK="AGENT#<arn>"  SK="ENDPOINT#<endpoint>"  -> one pool: minPoolSize, and optional
+  #                                                  per-pool overrides (retireAfterS, etc.)
+  #   PK="GLOBAL"       SK="CONFIG"               -> shared settings and the defaults pools
+  #                                                  inherit when they don't override them
+  AgentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  PoolTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: sessionId, AttributeType: S }
+        - { AttributeName: pool, AttributeType: S }
+        - { AttributeName: createdAt, AttributeType: N }
+      KeySchema:
+        - { AttributeName: sessionId, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        # Sparse index: only items that still carry "pool" (AVAILABLE) appear here.
+        # pool = "<arn>#<endpoint>" - one partition per registered (arn, endpoint) pool.
+        - IndexName: available
+          KeySchema:
+            - { AttributeName: pool, KeyType: HASH }
+            - { AttributeName: createdAt, KeyType: RANGE }
+          Projection: { ProjectionType: KEYS_ONLY }
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      TimeToLiveSpecification: { AttributeName: expiresAt, Enabled: true }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  BrokerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: broker
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
+                Resource: [!GetAtt PoolTable.Arn, !Sub "${PoolTable.Arn}/index/*"]
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt AgentsTable.Arn
+              - Effect: Allow   # scoped to this account/region, not one ARN: see README Security notes
+                Action: bedrock-agentcore:StopRuntimeSession
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+              - Effect: Allow   # fire-and-forget replenish trigger on claim; scoped to this one function
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt PoolManagerFunction.Arn
+
+  ManagerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: pool-manager
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
+                Resource: [!GetAtt PoolTable.Arn, !Sub "${PoolTable.Arn}/index/*"]
+              - Effect: Allow
+                Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator, dynamodb:ListStreams]
+                Resource: !GetAtt PoolTable.StreamArn
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:GetItem]
+                Resource: !GetAtt AgentsTable.Arn
+              - Effect: Allow   # scoped to this account/region, not one ARN: see README Security notes
+                Action: [bedrock-agentcore:InvokeAgentRuntime, bedrock-agentcore:StopRuntimeSession]
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+              - Effect: Allow   # read each endpoint's live version, to retire sessions from older versions
+                Action: bedrock-agentcore:GetAgentRuntimeEndpoint
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+      Policies:
+        - PolicyName: invoke-pool-manager
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt PoolManagerFunction.Arn
+
+  SessionBrokerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Claims and releases pooled AgentCore sessions, across any registered agent
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: broker.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt BrokerRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref PoolTable
+          AGENTS_TABLE_NAME: !Ref AgentsTable
+          POOL_MANAGER_FUNCTION: !Ref PoolManagerFunction
+
+  PoolManagerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Refills every registered pool and retires sessions by age or stale version
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: pool_manager.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt ManagerRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref PoolTable
+          AGENTS_TABLE_NAME: !Ref AgentsTable
+
+  BrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SessionBrokerFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  ManagerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PoolManagerFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  TableStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt PoolTable.StreamArn
+      FunctionName: !Ref PoolManagerFunction
+      StartingPosition: LATEST
+      BatchSize: 25
+      MaximumBatchingWindowInSeconds: 1
+      MaximumRetryAttempts: 2
+      FilterCriteria:
+        Filters:
+          # a session left the pool: claimed or retired (pool removed), or its item was deleted.
+          # Exclude the lease lock item itself (sessionId "#lock#pool-manager") from the REMOVE
+          # filter - release_or_continue() deletes it on every successful sweep, and without this
+          # exclusion that delete is itself a REMOVE event, which re-triggers this same function
+          # forever, independent of any real pool activity.
+          - Pattern: '{"eventName": ["MODIFY"], "dynamodb": {"OldImage": {"pool": {"S": [{"exists": true}]}}, "NewImage": {"pool": {"S": [{"exists": false}]}}}}'
+          - Pattern: '{"eventName": ["REMOVE"], "dynamodb": {"Keys": {"sessionId": {"S": [{"anything-but": {"prefix": "#lock#"}}]}}}}'
+
+  RefillSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Retire pooled sessions by age/version and top every registered pool back up
+      ScheduleExpression: rate(5 minutes)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt PoolManagerFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"source": "schedule"}'
+
+Outputs:
+  PoolTableName: { Value: !Ref PoolTable }
+  AgentsTableName: { Value: !Ref AgentsTable }
+  SessionBrokerFunctionName: { Value: !Ref SessionBrokerFunction }
+  PoolManagerFunctionName: { Value: !Ref PoolManagerFunction }

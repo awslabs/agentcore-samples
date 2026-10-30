@@ -4,8 +4,18 @@
 # AgentCore SDK
 bedrock-agentcore>=0.1.0
 
-# AWS SDK
-boto3>=1.34.0
+# Builds the ARM64 container image with CodeBuild, so no local Docker is needed.
+# deploy.py imports the private _execute_codebuild_workflow(..., ecr_only=True) to do
+# this without also creating the runtime, since no version of the toolkit or CLI has
+# a public build-only entry point. That symbol has no compatibility guarantee, so this
+# is capped to the range actually tested rather than left open -- widen only after
+# confirming the private function's signature and return shape are unchanged.
+bedrock-agentcore-starter-toolkit>=0.3.12,<0.4.0
+
+# AWS SDK. 1.43.95 is the first release with platformVersion on
+# CreateAgentRuntime, which deploy.py needs to target AgentCore Runtime V2.
+# An older boto3 fails with ParamValidationError on an unknown parameter.
+boto3>=1.43.95
 
 # YAML support for configuration
 PyYAML>=6.0

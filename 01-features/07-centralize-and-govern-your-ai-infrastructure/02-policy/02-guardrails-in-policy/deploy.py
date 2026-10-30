@@ -3,17 +3,17 @@ Deploy all resources for the AgentCore Guardrails-as-Policies demo.
 
 Creates an insurance underwriting environment with content safety guardrails:
 
-  1. Lambda tools   — ApplicationTool (with customer_notes), RiskModelTool, ApprovalTool
+  1. Lambda tools   — ApplicationTool (with message), RiskModelTool, ApprovalTool
   2. IAM role       — Lambda execution role
   3. Gateway        — AgentCore MCP Gateway (IAM auth)
   4. Targets        — Three Lambda targets with tool schemas
   5. Policy Engine  — Cedar policy engine
   6. Base permit    — Cedar PERMIT allowing all traffic (guardrail FORBIDs override)
   7. Guardrail policies:
-       - block_violence       : content filter on customer_notes (VIOLENCE >= 0.5)
-       - block_jailbreak      : prompt attack on customer_notes (JAILBREAK >= 0.7)
-       - block_pii            : sensitive info on customer_notes (SSN >= 0.5)
-       - block_credit_cards   : sensitive info on customer_notes (CREDIT_CARD >= 0.5)
+       - block_violence       : content filter on message (VIOLENCE >= 0.5)
+       - block_jailbreak      : prompt attack on message (JAILBREAK >= 0.7)
+       - block_ssn            : sensitive info on message (SSN >= 0.5)
+       - block_credit_cards   : sensitive info on message (CREDIT_CARD >= 0.5)
   8. Attach engine   — ENFORCE mode on the gateway
 
 All output is written to guardrail_config.json.
@@ -46,7 +46,7 @@ LAMBDA_TARGETS = {
         "schema": [
             {
                 "name": "create_application",
-                "description": "Create an insurance application with geographic validation. Use customer_notes for any free-text notes about the applicant.",
+                "description": "Create an insurance application with geographic validation. Use message for any free-text notes about the applicant.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -120,7 +120,7 @@ LAMBDA_TARGETS = {
 # ── AWS Session Setup ─────────────────────────────────────────────────────────
 
 
-def get_aws_context(region: str = None, profile: str = None) -> tuple:
+def get_aws_context(region: str | None = None, profile: str | None = None) -> tuple:
     """Return (session, REGION, ACCOUNT_ID)."""
     session = boto3.Session(profile_name=profile)
     resolved_region = region or session.region_name or os.environ.get("AWS_DEFAULT_REGION")
@@ -196,7 +196,8 @@ def add_lambda_gateway_permission(lambda_client, function_name: str, gateway_arn
     statement_id = "AllowAgentCoreGateway"
     try:
         lambda_client.remove_permission(FunctionName=function_name, StatementId=statement_id)
-    except Exception:
+    except ClientError:
+        # Statement does not exist yet on first run — safe to ignore and re-add below.
         pass
     lambda_client.add_permission(
         FunctionName=function_name,
@@ -469,7 +470,7 @@ def create_all_guardrail_policies(ctrl, engine_id: str, gateway_arn: str) -> dic
     print("\n[Step 5] Creating guardrail policies...")
 
     resource = f'AgentCore::Gateway::"{gateway_arn}"'
-    # Action that carries the customer_notes free-text field.
+    # Action that carries the message free-text field.
     # Format: <TargetName>___<toolMethodName>
     action = 'AgentCore::Action::"ApplicationToolTarget___create_application"'
     scope = f"principal, action == {action}, resource == {resource}"

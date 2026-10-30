@@ -1,0 +1,6 @@
+# Track only the sample files. Everything else in this folder (logs, caches, run output) stays local.
+*
+!.gitignore
+!README.md
+!research_coordinator_harness_truncation.py
+!system_prompt.md

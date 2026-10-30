@@ -2,4 +2,4 @@ command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 env:
   - name: 'MODEL_ID'
-    value: 'claude-sonnet-4'
+    value: 'databricks-claude-sonnet-4'

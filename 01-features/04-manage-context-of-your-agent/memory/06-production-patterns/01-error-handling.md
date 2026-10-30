@@ -135,7 +135,7 @@ if failed:
     # Decide per errorCode whether the failed subset is worth re-submitting.
 ```
 
-Cap each batch at **100 records** (the documented maximum for `records`); split larger workloads into chunks. See [`../02-long-term-memory/07-batch-apis/`](../02-long-term-memory/07-batch-apis/).
+Cap each batch at **100 records** (the documented maximum for `records`); split larger workloads into chunks. See [`../02-long-term-memory/07-skip-STM/`](../02-long-term-memory/07-skip-STM/).
 
 ## try / finally cleanup
 
@@ -158,7 +158,7 @@ finally:
 Key points:
 - The cleanup itself is wrapped — a failing `delete_memory` must not replace the real exception from the `try` block.
 - `delete_memory` takes a `clientToken` for idempotency; pass a fresh UUID.
-- For long-lived production resources you do **not** delete per request — see the teardown guidance in [`03-production-checklist.md`](./03-production-checklist.md#resource-cleanup-on-teardown).
+- For long-lived production resources you do **not** delete per request — see the teardown guidance in [`03-production-checklist.md`](./03-production-checklist.md#7-resource-cleanup-on-teardown).
 
 See [`production-patterns.py`](./production-patterns.py) for all of these composed into one reference module.
 </content>

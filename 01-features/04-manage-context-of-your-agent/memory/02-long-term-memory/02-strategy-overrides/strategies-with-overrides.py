@@ -35,7 +35,7 @@ MEMORY_ROLE_ARN = os.environ.get("MEMORY_EXECUTION_ROLE_ARN", "")
 MODEL_ID = os.getenv("OVERRIDE_MODEL_ID", "global.anthropic.claude-opus-4-6-v1")
 ACTOR_ID = "user-alex"
 SESSION_ID = f"sess-{int(time.time())}"
-EXTRACTION_WAIT_SECONDS = 75
+EXTRACTION_WAIT_SECONDS = 100  # polling budget; override extraction measured ~73s
 NAMESPACE_TEMPLATE = "/users/{actorId}/medical-facts/"
 
 EXTRACTION_ADDENDUM = (
@@ -61,7 +61,7 @@ def _override_strategy() -> dict:
         "customMemoryStrategy": {
             "name": "MedicalFacts",
             "description": "Health-only semantic extraction",
-            "namespaces": [NAMESPACE_TEMPLATE],
+            "namespaceTemplates": [NAMESPACE_TEMPLATE],
             "configuration": {
                 "semanticOverride": {
                     "extraction": {
@@ -110,19 +110,31 @@ def run_with_boto3(cleanup: bool = False) -> None:
             eventTimestamp=datetime.now(timezone.utc),
             payload=[{"conversational": {"role": role, "content": {"text": text}}}],
         )
-    print(f"[boto3] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
-    time.sleep(EXTRACTION_WAIT_SECONDS)
-
+    # Override extraction is asynchronous and invokes MODEL_ID for both extraction and
+    # consolidation — poll instead of sleeping a fixed amount. This lesson asserts a
+    # fact is *absent*, so an empty result would satisfy it vacuously.
+    print(f"[boto3] Polling up to {EXTRACTION_WAIT_SECONDS}s for extraction...")
     namespace = NAMESPACE_TEMPLATE.format(actorId=ACTOR_ID)
-    hits = data.retrieve_memory_records(
-        memoryId=memory_id,
-        namespace=namespace,
-        searchCriteria={"searchQuery": "user's medical history", "topK": 10},
-    )["memoryRecordSummaries"]
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    while True:
+        hits = data.retrieve_memory_records(
+            memoryId=memory_id,
+            namespace=namespace,
+            searchCriteria={"searchQuery": "user's medical history", "topK": 10},
+        )["memoryRecordSummaries"]
+        if hits or time.time() >= deadline:
+            break
+        time.sleep(10)
     print(f"\n[boto3] Medical facts ({len(hits)}):")
     for h in hits:
         print(f"  - {h['content']['text']}")
-    print("\n[boto3] The Godfather mention should NOT appear — override suppresses it.")
+    if hits:
+        print("\n[boto3] The Godfather mention should NOT appear — override suppresses it.")
+    else:
+        print(
+            f"\n[boto3] No records after {EXTRACTION_WAIT_SECONDS}s — extraction may still be "
+            "running, so suppression cannot be demonstrated from this run."
+        )
 
     if cleanup:
         control.delete_memory(memoryId=memory_id, clientToken=str(uuid.uuid4()))
@@ -155,19 +167,28 @@ def run_with_sdk(cleanup: bool = False) -> None:
         session_id=SESSION_ID,
         messages=[(text, role) for role, text in TURNS],
     )
-    print(f"[sdk] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
-    time.sleep(EXTRACTION_WAIT_SECONDS)
-
+    # Same polling rationale as the boto3 path above.
+    print(f"[sdk] Polling up to {EXTRACTION_WAIT_SECONDS}s for extraction...")
     namespace = NAMESPACE_TEMPLATE.format(actorId=ACTOR_ID)
-    hits = client.retrieve_memories(
-        memory_id=memory_id,
-        namespace=namespace,
-        query="user's medical history",
-        top_k=10,
-    )
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    while True:
+        hits = client.retrieve_memories(
+            memory_id=memory_id,
+            namespace=namespace,
+            query="user's medical history",
+            top_k=10,
+        )
+        if hits or time.time() >= deadline:
+            break
+        time.sleep(10)
     print(f"\n[sdk] Medical facts ({len(hits)}):")
     for h in hits:
         print(f"  - {h['content']['text']}")
+    if not hits:
+        print(
+            f"\n[sdk] No records after {EXTRACTION_WAIT_SECONDS}s — extraction may still be "
+            "running, so suppression cannot be demonstrated from this run."
+        )
 
     if cleanup:
         client.delete_memory_and_wait(memory_id=memory_id)

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AgentCore cold start: default vs warm pool</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --dim: #8b95a3;
+    --cold: #e8833a; --pool: #2bb8a3; --claim: #6c8cff; --agent: #4a5260;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 22px 32px 10px; }
+  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  header p { margin: 0; color: var(--dim); }
+  .controls { display: flex; gap: 10px; align-items: center; padding: 14px 32px; flex-wrap: wrap; }
+  input[type=text] { flex: 1; min-width: 280px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+                     background: var(--panel); color: var(--text); font-size: 14px; }
+  button { padding: 10px 16px; border-radius: 8px; border: 0; background: #2d3540; color: var(--text);
+           font-weight: 600; cursor: pointer; }
+  button.primary { background: #e6e9ee; color: #0f1216; }
+  button:disabled { opacity: .45; cursor: default; }
+  .chip { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); font-size: 12px; }
+  .chip b { color: var(--pool); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 8px 32px 32px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .panel h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .sub { color: var(--dim); font-size: 12px; margin: 2px 0 16px; }
+  .big { font-size: 56px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; line-height: 1; }
+  .big small { font-size: 18px; font-weight: 500; color: var(--dim); margin-left: 4px; }
+  .label { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  .bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: #0c0f13; margin: 18px 0 6px; }
+  .bar div { height: 100%; transition: width .4s ease; }
+  .legend { display: flex; gap: 14px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+                         margin-right: 5px; background: var(--c); vertical-align: -1px; }
+  .answer { margin-top: 14px; min-height: 42px; padding: 10px 12px; border-radius: 8px; background: #0c0f13;
+            color: #c3c9d2; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+  .stat { background: #0c0f13; border-radius: 8px; padding: 8px 10px; }
+  .stat div:first-child { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .stat div:last-child { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hist { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin-top: 14px; border-bottom: 1px solid var(--line); }
+  .hist div { flex: 1; max-width: 18px; border-radius: 2px 2px 0 0; }
+  .line1s { position: relative; }
+  .spin { color: var(--dim); }
+  .err { color: #ff6b6b; }
+  footer { padding: 0 32px 28px; color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent session cold start on AgentCore Runtime V2</h1>
+  <p>Each run starts a <b>new conversation</b> and sends one prompt to the same agent and runtime. The headline number is the time to get a session ready, with the agent's own (model) time subtracted.</p>
+</header>
+
+<div class="controls">
+  <input id="prompt" type="text" value="In one sentence, what is a cold start?">
+  <button class="primary" id="run1">Run both</button>
+  <button id="run5">Run both ×5</button>
+  <button id="reset">Reset</button>
+  <span class="chip">warm pool depth: <b id="depth">–</b></span>
+</div>
+
+<div class="grid">
+  <section class="panel" id="cold" style="--accent: var(--cold)">
+    <h2><span class="dot" style="background: var(--cold)"></span>Default: cold start on Runtime V2</h2>
+    <div class="sub">new session ID, so InvokeAgentRuntime starts a fresh microVM from the snapshot</div>
+    <div class="big"><span class="v">–</span><small>ms</small></div>
+    <div class="label">cold-start overhead (end-to-end invoke minus the agent's handler time)</div>
+    <div class="bar"><div class="b-claim" style="background: var(--claim)"></div><div class="b-start" style="background: var(--cold)"></div><div class="b-agent" style="background: var(--agent)"></div></div>
+    <div class="legend"><span style="--c: var(--cold)">session start</span><span style="--c: var(--agent)">agent / model</span><span class="tot"></span></div>
+    <div class="answer">–</div>
+    <div class="stats"></div>
+    <div class="hist"></div>
+  </section>
+
+  <section class="panel" id="pool" style="--accent: var(--pool)">
+    <h2><span class="dot" style="background: var(--pool)"></span>Fast: claimed from the DIY warm pool</h2>
+    <div class="sub">the broker claims a pre-started session from DynamoDB, then InvokeAgentRuntime runs on it</div>
+    <div class="big"><span class="v">–</span><small>ms</small></div>
+    <div class="label">claim + session overhead (end-to-end minus the agent's handler time)</div>
+    <div class="bar"><div class="b-claim" style="background: var(--claim)"></div><div class="b-start" style="background: var(--pool)"></div><div class="b-agent" style="background: var(--agent)"></div></div>
+    <div class="legend"><span style="--c: var(--claim)">claim</span><span style="--c: var(--pool)">session overhead</span><span style="--c: var(--agent)">agent / model</span><span class="tot"></span></div>
+    <div class="answer">–</div>
+    <div class="stats"></div>
+    <div class="hist"></div>
+  </section>
+</div>
+<footer>The bars and histograms share one scale across both panels. Sessions are released or stopped after each run. The pool refills in the background from the DynamoDB stream.</footer>
+
+<script>
+const hist = { cold: [], pool: [] };
+const SCALE_FLOOR = 2500;
+const $ = (id, sel) => document.querySelector(`#${id} ${sel}`);
+
+function pct(a, p) {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.max(0, Math.ceil(p / 100 * s.length) - 1)];
+}
+function overhead(r) { return r.claim_ms + r.startup_ms; }
+
+function render() {
+  const all = [...hist.cold, ...hist.pool];
+  const scaleTotal = Math.max(SCALE_FLOOR, ...all.map(r => r.total_ms));
+  const scaleOver = Math.max(SCALE_FLOOR, ...all.map(overhead));
+  for (const mode of ["cold", "pool"]) {
+    const rs = hist[mode], last = rs[rs.length - 1];
+    if (last) {
+      $(mode, ".v").textContent = overhead(last).toLocaleString();
+      $(mode, ".b-claim").style.width = (100 * last.claim_ms / scaleTotal) + "%";
+      $(mode, ".b-start").style.width = (100 * last.startup_ms / scaleTotal) + "%";
+      $(mode, ".b-agent").style.width = (100 * last.agent_ms / scaleTotal) + "%";
+      $(mode, ".tot").textContent = `total ${last.total_ms.toLocaleString()} ms` +
+        (mode === "pool" ? (last.pooled ? " · pool hit" : " · pool MISS (cold)") : "");
+      $(mode, ".answer").textContent = last.result || "–";
+      $(mode, ".answer").classList.remove("err");
+    } else {
+      $(mode, ".v").textContent = "–";
+      ["b-claim", "b-start", "b-agent"].forEach(c => $(mode, "." + c).style.width = "0");
+      $(mode, ".tot").textContent = "";
+      $(mode, ".answer").textContent = "–";
+    }
+    const o = rs.map(overhead);
+    const fmt = v => v == null ? "–" : v.toLocaleString();
+    $(mode, ".stats").innerHTML = [["runs", rs.length], ["p50", fmt(pct(o, 50))], ["p90", fmt(pct(o, 90))],
+      ["max", fmt(o.length ? Math.max(...o) : null)]]
+      .map(([k, v]) => `<div class="stat"><div>${k}${k === "runs" ? "" : " ms"}</div><div>${v}</div></div>`).join("");
+    $(mode, ".hist").innerHTML = o.slice(-40).map(v =>
+      `<div title="${v} ms" style="height:${Math.max(3, 100 * v / scaleOver)}%; background: var(--${mode === "cold" ? "cold" : "pool"})"></div>`).join("");
+  }
+}
+
+async function runOne(mode, prompt) {
+  $(mode, ".answer").innerHTML = '<span class="spin">running…</span>';
+  try {
+    const r = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ mode, prompt }) });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || r.statusText);
+    hist[mode].push(body);
+    render();
+  } catch (e) {
+    $(mode, ".answer").textContent = e.message;
+    $(mode, ".answer").classList.add("err");
+  }
+}
+
+async function runBoth(times) {
+  const buttons = document.querySelectorAll("button");
+  buttons.forEach(b => b.disabled = true);
+  const prompt = document.getElementById("prompt").value;
+  for (let i = 0; i < times; i++) {
+    await Promise.all([runOne("cold", prompt), runOne("pool", prompt)]);
+  }
+  buttons.forEach(b => b.disabled = false);
+}
+
+async function pollDepth() {
+  try {
+    const r = await fetch("/api/depth");
+    document.getElementById("depth").textContent = (await r.json()).depth;
+  } catch (e) { /* server restarting */ }
+}
+
+document.getElementById("run1").onclick = () => runBoth(1);
+document.getElementById("run5").onclick = () => runBoth(5);
+document.getElementById("reset").onclick = () => { hist.cold = []; hist.pool = []; render(); };
+render();
+pollDepth();
+setInterval(pollDepth, 2000);
+</script>
+</body>
+</html>

@@ -9,6 +9,9 @@
 | Components          | AgentCore CLI (`create` / `add payment-manager` / `add payment-connector` / `deploy`) + AgentCore SDK (`PaymentManager.create_payment_instrument` / `create_payment_session`) |
 | Example complexity  | Beginner                                                                         |
 
+
+To learn more about AgentCore CLI Commands, see [this link] (https://github.com/aws/agentcore-cli/blob/main/docs/payments.md)
+
 > **Complementary tools.** The AgentCore CLI provisions your shared payment infrastructure
 > (credential provider, payment manager, connector, IAM roles) in one `agentcore deploy`. The AgentCore
 > SDK (`PaymentManager`) then creates the per-user wallet (instrument) and spending session,
@@ -35,7 +38,8 @@ written to the shared `../.env` so downstream tutorials pick them up unchanged.
 > **Testnet only.** Base Sepolia (`NETWORK=ETHEREUM`) or Solana Devnet (`NETWORK=SOLANA`), with free
 > USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no monetary value.
 
-> **Supported regions:** `us-east-1`, `us-west-2`, `eu-central-1`, `ap-southeast-2`. Set `AWS_REGION`
+> **Supported regions:** 
+Set `AWS_REGION`
 > in `../.env` to one of these.
 
 ## Architecture
@@ -69,16 +73,19 @@ Management / ProcessPayment / ResourceRetrieval **4-role separation**, see the b
 
 ## Prerequisites
 
-- **AWS account + region** where AgentCore payments is available (`us-east-1`, `us-west-2`,
-  `eu-central-1`, `ap-southeast-2`), and AWS CLI configured (`aws sts get-caller-identity`).
+- **AWS account + region** where AgentCore payments is available, and AWS CLI configured (`aws sts get-caller-identity`).
 - **Python 3.10+** and dependencies:
   ```bash
   pip install -r requirements.txt
   ```
 - **AgentCore CLI** (Node.js 20+) — this tutorial runs `agentcore` commands. These tutorials were
-  validated against the 1.0.0-preview line; run `agentcore --version` to check yours:
+  validated against the 1.0.0-preview line and have not been re-verified on `0.30.0`; run `agentcore --version` to check yours:
   ```bash
-  npm install -g @aws/agentcore
+  npm install -g @aws/agentcore@0.30.0
+  node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+    || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+  agentcore --version | grep -q '^0\.' \
+    || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
   ```
 - **Wallet-provider credentials in `../.env`** — captured in Step 1 by running one of the
   `providers/*_account_setup.py` scripts. Coinbase CDP needs `COINBASE_API_KEY_ID`,
@@ -105,6 +112,10 @@ python providers/coinbase_cdp_account_setup.py     # Coinbase CDP
 python providers/stripe_privy_account_setup.py     # Stripe (Privy)
 ```
 
+> **Using Coinbase Quick create?** You can skip `coinbase_cdp_account_setup.py` — Quick create provisions
+> the CDP API key and Wallet secret for you in Step 2, so there are no keys to generate or paste. Still set
+> the `.env` values below.
+
 Then set `AWS_REGION`, `CREDENTIAL_PROVIDER_TYPE` (`CoinbaseCDP` or `StripePrivy`), `USER_ID`,
 `LINKED_EMAIL` (a real inbox — used for the wallet and provider OTP), and `NETWORK`
 (`ETHEREUM` or `SOLANA`) in `../.env`.
@@ -124,10 +135,25 @@ cd PaymentSetup
 agentcore add payment-manager --name MyPaymentManager --auto-payment true --default-spend-limit 1.00
 ```
 
+> **`add payment-manager` defaults to auto-payment ON with a $10.00 spend cap.** If you omit
+> `--auto-payment` and `--default-spend-limit`, the CLI defaults to `--auto-payment true` and
+> `--default-spend-limit 10.00`. This command explicitly lowers that cap to `1.00` for the tutorial —
+> when adapting this command for your own project, set `--default-spend-limit` deliberately rather
+> than relying on the $10 default.
+
 Add a payment connector for the provider you chose in Step 1 — run **one** of these:
 
 ```bash
-# Coinbase CDP:
+# Coinbase CDP — Quick create (recommended): no keys, you authorize through Coinbase at deploy time
+agentcore add payment-connector \
+  --manager MyPaymentManager \
+  --name MyCoinbaseConnector \
+  --provider CoinbaseCDP \
+  --provision-mode QUICK_CREATE
+```
+
+```bash
+# Coinbase CDP — existing credentials: paste the keys captured in Step 1
 agentcore add payment-connector \
   --manager MyPaymentManager \
   --name MyCoinbaseConnector \
@@ -161,6 +187,13 @@ agentcore deploy -y
 # 4. Read back the created resource ARNs/IDs
 agentcore status --type payment
 ```
+
+> **Using Coinbase Quick create?** `agentcore deploy` creates the connector in `PENDING_AUTHENTICATION`
+> and prints an `authorizationUrl`. Open it, sign in to Coinbase, and grant access — the connector then
+> moves to `READY`. The link is single-use and short-lived; if it expires before you finish, re-run
+> `agentcore deploy` to issue a fresh one. Re-run `agentcore status --type payment` and confirm `READY` before continuing to Step 3.
+> Quick create requires an active [Coinbase Wallets for AgentCore Payments Marketplace subscription](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-marketplace-subscription.html);
+> without it, deploy fails with `SubscriptionRequiredException` (HTTP 403) and the error message includes the listing URL to subscribe.
 
 From the `agentcore status --type payment` output, copy the **Payment Manager ARN** and **Payment
 Connector ID** and export them (you'll pass them to the commands in Step 3):
@@ -309,7 +342,7 @@ print(f"balance: {micro / 1_000_000:.2f} USDC")
 
 | Error | Cause | Fix |
 |---|---|---|
-| `agentcore: command not found` | CLI not installed | `npm install -g @aws/agentcore` |
+| `agentcore: command not found` | CLI not installed | `npm install -g @aws/agentcore@0.30.0` |
 | `add payment-connector` fails on a missing credential | Required provider flag not provided | Re-check the credential keys in `../.env`; re-run with all flags |
 | Payment Manager stuck in `CREATING` | IAM propagation | Wait ~2 min; if `CREATE_FAILED`, check the service role |
 | Instrument status stays `CREATING` | Wallet provisioning is async | Ensure `LINKED_EMAIL` is a real address; keep polling |

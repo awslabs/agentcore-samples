@@ -1,0 +1,16 @@
+# Local secrets + environment
+.env
+
+# Python + tooling caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+reports/
+.DS_Store
+
+# CDK build artifacts (agent/cdk/)
+cdk.out/
+outputs.json

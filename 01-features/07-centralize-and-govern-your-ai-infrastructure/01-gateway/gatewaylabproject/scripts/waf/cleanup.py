@@ -84,11 +84,15 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"  Error: {e}")
 
-    # --- Delete the gateway (and its targets) ---
-    if gateway_id:
-        print("--- Deleting gateway (targets + gateway) ---")
+    # --- Delete only the target created by this tutorial ---
+    target_id = os.environ.get("TARGET_ID", "")
+    if gateway_id and target_id:
+        print(f"--- Deleting target {target_id} from gateway ---")
         try:
-            admin.delete_gateway(gateway_id)
+            admin.client.delete_gateway_target(
+                gatewayIdentifier=gateway_id, targetId=target_id
+            )
+            print(f"  Deleted target: {target_id}")
         except Exception as e:  # noqa: BLE001
             print(f"  Error: {e}")
 

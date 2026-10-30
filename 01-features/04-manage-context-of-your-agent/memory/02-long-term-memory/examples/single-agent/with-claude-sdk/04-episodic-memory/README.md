@@ -89,7 +89,7 @@ strategies = [
         StrategyType.EPISODIC.value: {        # "episodicMemoryStrategy"
             "name": "DebuggingEpisodes",
             "description": "Captures complete debugging sessions as episodes ...",
-            "namespaces": ["/episodes/{actorId}/"],
+            "namespaceTemplates": ["/episodes/{actorId}/"],
         }
     }
 ]
@@ -122,17 +122,11 @@ aws bedrock-agentcore-control get-memory --region "$AWS_REGION" --memory-id "$ME
 # Expect: [ "EPISODIC" ]
 ```
 
-## What makes Episodic different (concepts)
+## Two decisions specific to this sample
 
-| | Semantic | Episodic |
-|---|---|---|
-| **Captures** | Standalone facts | Whole interaction sequences (episodes) |
-| **Pipeline** | Extraction → Consolidation | Extraction → Consolidation → **Reflection** |
-| **Unit of memory** | A fact | An episode (situation, intent, actions, outcome) + cross-episode reflections |
-| **Answers** | "What do I know?" | "What happened last time, and how did it go?" |
-| **Good for** | Personalization, static knowledge | Stateful multi-session workflows, learning from experience |
-
-The Reflection step is unique to Episodic: after multiple episodes accumulate, AgentCore generates higher-level insights spanning them (recurring root causes, effective strategies, common pitfalls). Reflections and episodes share the namespace prefix; a reflection namespace must be the same as, or a prefix of, the episodic namespace.
+How Episodic compares to the other three strategies, and what the Reflection step does, is covered
+once in [`../../../../01-built-in-strategies/`](../../../../01-built-in-strategies/). Two choices
+here are worth calling out because they are easy to get wrong:
 
 ### Session boundaries = episode boundaries
 
@@ -180,4 +174,3 @@ Expected output: two full debugging sessions (a memory leak, then API timeouts),
 - The long-term memory overview (all strategies, retrieval, namespaces): [`../../../../README.md`](../../../../README.md)
 - The same Claude SDK patterns: [`../01-built-in-strategies/`](../01-built-in-strategies/) (Semantic), [`../02-custom-strategy-override/`](../02-custom-strategy-override/), [`../03-memory-as-tool/`](../03-memory-as-tool/)
 - Episodic memory in a framework: [`../../with-strands-agent/`](../../with-strands-agent/), [`../../with-langgraph-agent/`](../../with-langgraph-agent/)
-```

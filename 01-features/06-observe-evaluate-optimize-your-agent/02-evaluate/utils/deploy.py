@@ -6,17 +6,19 @@ in this directory for use by evaluation scripts in sibling folders.
 
 Usage:
     python deploy.py [--region REGION]
+    python deploy.py --skills-dir ../skills-evaluation/skills \
+        --config-output ../skills-evaluation/agent_config.json [--region REGION]
 
 Output:
-    utils/agent_config.json  — AGENT_ID, AGENT_ARN, CW_LOG_GROUP, OTEL_SERVICE_NAME, REGION
+    utils/agent_config.json by default, or the path supplied with --config-output.
 
 Deployment steps:
   1. Create an IAM execution role for the runtime
-  2. Package hr_assistant_agent.py + ARM64 dependencies into a zip
+  2. Package hr_assistant_agent.py, optional Agent Skills, and ARM64 dependencies
   3. Upload the zip to S3
   4. Create an AgentCore Runtime via create_agent_runtime (codeConfiguration)
   5. Poll until READY
-  6. Write agent_config.json
+  6. Write the deployment configuration
 
 See https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/getting-started-custom.html
 """
@@ -40,14 +42,35 @@ from boto3.session import Session
 # ---------------------------------------------------------------------------
 
 _SCRIPT_DIR = Path(__file__).parent
-_CONFIG_FILE = _SCRIPT_DIR / "agent_config.json"
+_DEFAULT_CONFIG_FILE = _SCRIPT_DIR / "agent_config.json"
 
 parser = argparse.ArgumentParser(description="Deploy the HR Assistant agent to AgentCore Runtime")
 parser.add_argument("--region", default=None, help="AWS region (default: boto3 session region)")
+parser.add_argument(
+    "--skills-dir",
+    type=Path,
+    default=None,
+    help="Optional directory containing */SKILL.md files to package and enable",
+)
+parser.add_argument(
+    "--config-output",
+    type=Path,
+    default=None,
+    help="Config output path (default: utils/agent_config.json)",
+)
 args = parser.parse_args()
+
+_CONFIG_FILE = (args.config_output or _DEFAULT_CONFIG_FILE).expanduser().resolve()
+_SKILLS_DIR = args.skills_dir.expanduser().resolve() if args.skills_dir else None
+_SKILL_FILES = sorted(_SKILLS_DIR.glob("*/SKILL.md")) if _SKILLS_DIR and _SKILLS_DIR.is_dir() else []
+if _SKILLS_DIR and not _SKILL_FILES:
+    parser.error(f"--skills-dir must contain at least one */SKILL.md file: {_SKILLS_DIR}")
+_SKILL_NAMES = [skill_file.parent.name for skill_file in _SKILL_FILES]
 
 REGION = args.region or Session().region_name or "us-east-1"
 print(f"Region: {REGION}")
+if _SKILLS_DIR:
+    print(f"Skills: {', '.join(_SKILL_NAMES)}")
 
 _sts = boto3.client("sts", region_name=REGION)
 _ACCOUNT_ID = _sts.get_caller_identity()["Account"]
@@ -55,8 +78,10 @@ _iam = boto3.client("iam", region_name=REGION)
 _s3 = boto3.client("s3", region_name=REGION)
 _ctrl = boto3.client("bedrock-agentcore-control", region_name=REGION)
 
-_AGENT_NAME = f"hr_assistant_{uuid.uuid4().hex[:8]}"
+_AGENT_PREFIX = "hr_skills_assistant" if _SKILLS_DIR else "hr_assistant"
+_AGENT_NAME = f"{_AGENT_PREFIX}_{uuid.uuid4().hex[:8]}"
 _ROLE_NAME = f"{_AGENT_NAME}_role"
+_POLICY_NAME = f"{_AGENT_NAME}_policy"
 _S3_BUCKET = f"bedrock-agentcore-code-{_ACCOUNT_ID}-{REGION}"
 _S3_KEY = f"{_AGENT_NAME}/deployment_package.zip"
 _BUILD_DIR = Path(f"/tmp/{_AGENT_NAME}_build")  # nosec B108
@@ -82,6 +107,11 @@ _TRUST = json.dumps(
     }
 )
 
+# Execution policy attached to the runtime's IAM role:
+#   bedrock:InvokeModel / InvokeModelWithResponseStream — call the Nova Lite model
+#   logs:*            — write the unified runtime log group used by AgentCore observability
+#   xray:*            — emit OTel trace segments for AgentCore spans
+#   cloudwatch:PutMetricData — publish agent metrics to CloudWatch
 _POLICY = json.dumps(
     {
         "Version": "2012-10-17",
@@ -118,7 +148,7 @@ except _iam.exceptions.EntityAlreadyExistsException:
 
 _iam.put_role_policy(
     RoleName=_ROLE_NAME,
-    PolicyName=f"{_AGENT_NAME}_policy",
+    PolicyName=_POLICY_NAME,
     PolicyDocument=_POLICY,
 )
 print("  Policy attached. Waiting 10s for IAM propagation ...")
@@ -156,6 +186,9 @@ subprocess.run(
     check=True,
 )
 shutil.copy(_SCRIPT_DIR / "hr_assistant_agent.py", _PKG / "hr_assistant_agent.py")
+if _SKILLS_DIR:
+    shutil.copytree(_SKILLS_DIR, _PKG / "skills")
+    print(f"  Packaged {len(_SKILL_FILES)} skill(s)")
 
 _ZIP = _BUILD_DIR / "deployment_package.zip"
 with zipfile.ZipFile(_ZIP, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -239,9 +272,14 @@ _config = {
     "otel_service_name": OTEL_SERVICE_NAME,
     "region": REGION,
     "role_arn": _ROLE_ARN,
+    "role_name": _ROLE_NAME,
+    "policy_name": _POLICY_NAME,
     "s3_bucket": _S3_BUCKET,
     "s3_key": _S3_KEY,
+    "skills_enabled": bool(_SKILLS_DIR),
+    "skills": _SKILL_NAMES,
 }
+_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 _CONFIG_FILE.write_text(json.dumps(_config, indent=2))
 
 print("\nDeploy complete.")

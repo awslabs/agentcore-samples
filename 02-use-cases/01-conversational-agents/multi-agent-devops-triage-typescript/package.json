@@ -1,0 +1,39 @@
+{
+  "name": "multi-agent-devops-triage-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-agent sample: Claude Agent SDK (TypeScript) on Amazon Bedrock AgentCore Runtime with A2A and Gateway",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "agents/*",
+    "scripts/*",
+    "tests",
+    "infra"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "dev:mock-catalog": "npm run dev --workspace scripts/mock-service-catalog",
+    "dev:log-analyst": "npm run dev --workspace agents/log-analyst",
+    "dev:runbook": "npm run dev --workspace agents/runbook",
+    "dev:lead": "npm run dev --workspace agents/lead"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "20.19.43",
+    "eslint": "9.39.5",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10",
+    "globals": "17.7.0"
+  }
+}

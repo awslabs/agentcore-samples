@@ -130,15 +130,25 @@ control.update_memory(
             {
                 "semanticMemoryStrategy": {
                     "name": "UserFacts",
-                    "namespaces": ["/users/{actorId}/facts"],
+                    "namespaceTemplates": ["/users/{actorId}/facts/"],
                 }
             }
         ]
     },
 )
 
-# Extraction is asynchronous — give it ~60s before retrieving.
-time.sleep(60)
+# UpdateMemory is asynchronous. Wait for ACTIVE before relying on the new strategy —
+# extraction only runs once it is applied, and DeleteMemory below is rejected while
+# the resource is still UPDATING.
+deadline = time.time() + 300
+while time.time() < deadline:
+    status = control.get_memory(memoryId=memory_id)["memory"]["status"]
+    if status == "ACTIVE":
+        break
+    time.sleep(5)
+
+# Extraction is asynchronous — give it ~90s before retrieving.
+time.sleep(90)
 
 hits = data.retrieve_memory_records(
     memoryId=memory_id,

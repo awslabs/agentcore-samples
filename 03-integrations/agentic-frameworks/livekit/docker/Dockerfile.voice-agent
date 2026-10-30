@@ -1,0 +1,46 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install livekit-agents and dependencies
+RUN pip install --no-cache-dir livekit-agents aioboto3 amazon-transcribe
+
+# Copy and install smithy packages with dependencies
+COPY smithy_core-0.1.0.tar.gz .
+COPY smithy_aws_core-0.1.0.tar.gz .
+COPY aws_sdk_signers-0.1.0.tar.gz .
+COPY aws_sdk_bedrock_runtime-0.1.0.tar.gz .
+RUN pip install --no-cache-dir ./smithy_core-0.1.0.tar.gz ./smithy_aws_core-0.1.0.tar.gz ./aws_sdk_signers-0.1.0.tar.gz ./aws_sdk_bedrock_runtime-0.1.0.tar.gz
+
+# Install livekit-plugins-aws without overwriting smithy packages
+RUN pip install --no-cache-dir --no-deps livekit-plugins-aws
+
+# Copy requirements and install remaining packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/ ./src/
+
+# Copy and apply patch for SigV4AuthScheme
+COPY fix_sigv4.py .
+RUN python fix_sigv4.py
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Run the Nova Realtime agent
+CMD ["python", "-m", "src.agents.nova_realtime_agent", "start"]

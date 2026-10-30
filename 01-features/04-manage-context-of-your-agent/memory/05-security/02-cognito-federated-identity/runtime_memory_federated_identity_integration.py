@@ -100,7 +100,7 @@ try:
 except ClientError as e:
     if e.response["Error"]["Code"] == "ValidationException" and "already exists" in str(e):
         memories = memory_client.list_memories()
-        MEMORY_ID = next((m["id"] for m in memories if m["name"] == memory_name), None)
+        MEMORY_ID = next((m["id"] for m in memories if m["id"].startswith(memory_name)), None)
     else:
         raise
 

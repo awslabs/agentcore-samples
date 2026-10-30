@@ -20,6 +20,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from gateway_mcp_client import GatewayMCPClient
 
 
+def extract_search_tools(result):
+    """Return the tool list from a semantic-search response, tolerating the
+    shapes the gateway can return: result.structuredContent.tools, result.tools,
+    or a JSON string in result.content[*].text carrying {"tools": [...]}."""
+    import json
+
+    res = result.get("result", {}) if isinstance(result, dict) else {}
+    tools = res.get("structuredContent", {}).get("tools")
+    if tools:
+        return tools
+    if res.get("tools"):
+        return res["tools"]
+    for item in res.get("content", []) or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            try:
+                payload = json.loads(item.get("text", ""))
+            except (ValueError, TypeError):
+                continue
+            if isinstance(payload, dict) and isinstance(payload.get("tools"), list):
+                return payload["tools"]
+    return []
+
+
 def load_env():
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     if os.path.exists(env_path):
@@ -177,11 +200,53 @@ def main():
     else:
         print(f"  FAIL: Expected 4 tools, got {len(tool_names)}")
 
+    # --- Test 8: semantic search with limited scope → filtered ---
+    print("\n" + "=" * 60)
+    print("Test 8: semantic search with getOrder scope (SHOULD SHOW ONLY getOrder)")
+    print("=" * 60)
+
+    scope = "fgac/fgac-mcp-target:getOrder"
+    token = get_token(token_endpoint, fgac_client_id, fgac_client_secret, scope)
+    mcp = GatewayMCPClient(gateway_url, lambda: token, protocol_version="2025-11-25")
+
+    result = mcp.call_tool(
+        "x_amz_bedrock_agentcore_search",
+        {"query": "tools to look up or read an order"},
+    )
+    search_tools = extract_search_tools(result)
+    tool_names = [t["name"] for t in search_tools if "___" in t.get("name", "")]
+    print(f"  Tools returned: {tool_names}")
+    if tool_names and all("getOrder" in n for n in tool_names):
+        print("  PASS: Only getOrder-scoped tools returned by search")
+    else:
+        print(f"  FAIL: Expected only getOrder, got {tool_names}")
+
+    # --- Test 9: semantic search with full scope → all relevant ---
+    print("\n" + "=" * 60)
+    print("Test 9: semantic search with full access scope (SHOULD SHOW ALL RELEVANT)")
+    print("=" * 60)
+
+    scope = "fgac/fgac-mcp-target"
+    token = get_token(token_endpoint, fgac_client_id, fgac_client_secret, scope)
+    mcp = GatewayMCPClient(gateway_url, lambda: token, protocol_version="2025-11-25")
+
+    result = mcp.call_tool(
+        "x_amz_bedrock_agentcore_search",
+        {"query": "tools to manage an order"},
+    )
+    search_tools = extract_search_tools(result)
+    tool_names = [t["name"] for t in search_tools if "___" in t.get("name", "")]
+    print(f"  Tools returned: {tool_names}")
+    if len(tool_names) > 1:
+        print(f"  PASS: Full scope surfaces multiple tools ({len(tool_names)})")
+    else:
+        print(f"  FAIL: Expected multiple tools with full scope, got {tool_names}")
+
     print("\n" + "=" * 60)
     print("Summary")
     print("=" * 60)
     print("  REQUEST interceptor: blocks unauthorized tool/call")
-    print("  RESPONSE interceptor: filters tools/list by scope")
+    print("  RESPONSE interceptor: filters tools/list AND semantic search by scope")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 REGION = os.getenv("AWS_REGION", "us-east-1")
 ACTOR_ID = "user-alex"
 SESSION_ID = f"sess-{int(time.time())}"
-EXTRACTION_WAIT_SECONDS = 60
+EXTRACTION_WAIT_SECONDS = 100  # polling budget; semantic extraction measured ~93s
 SESSION_EXTRACTION_WAIT_SECONDS = 90  # semantic extraction surfaces ~60-90s; extra margin
 NAMESPACE_TEMPLATE = "/users/{actorId}/facts/"
 
@@ -65,7 +65,7 @@ def run_with_boto3(cleanup: bool = False) -> None:
             {
                 "semanticMemoryStrategy": {
                     "name": "Facts",
-                    "namespaces": [NAMESPACE_TEMPLATE],
+                    "namespaceTemplates": [NAMESPACE_TEMPLATE],
                 }
             }
         ],
@@ -85,15 +85,20 @@ def run_with_boto3(cleanup: bool = False) -> None:
             eventTimestamp=datetime.now(timezone.utc),
             payload=[{"conversational": {"role": role, "content": {"text": text}}}],
         )
-    print(f"[boto3] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
-    time.sleep(EXTRACTION_WAIT_SECONDS)
-
+    # Extraction is asynchronous and its latency varies — poll instead of sleeping a
+    # fixed amount, so a slow run still shows records instead of printing an empty list.
+    print(f"[boto3] Polling up to {EXTRACTION_WAIT_SECONDS}s for extraction...")
     namespace = NAMESPACE_TEMPLATE.format(actorId=ACTOR_ID)
-    semantic = data.retrieve_memory_records(
-        memoryId=memory_id,
-        namespace=namespace,
-        searchCriteria={"searchQuery": "dietary restrictions", "topK": 5},
-    )["memoryRecordSummaries"]
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    while True:
+        semantic = data.retrieve_memory_records(
+            memoryId=memory_id,
+            namespace=namespace,
+            searchCriteria={"searchQuery": "dietary restrictions", "topK": 5},
+        )["memoryRecordSummaries"]
+        if semantic or time.time() >= deadline:
+            break
+        time.sleep(10)
     print(f"\n[boto3] Semantic search 'dietary restrictions' ({len(semantic)}):")
     for h in semantic:
         print(f"  - score={h.get('score'):.3f} | {h['content']['text']}")

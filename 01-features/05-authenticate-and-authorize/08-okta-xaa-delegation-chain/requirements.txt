@@ -1,0 +1,19 @@
+# Deploy scripts, the BFF and the local test harness. The agent's container and the
+# resource app have their own requirements files.
+
+# AWS. 1.43.91 is the first release whose bedrock-agentcore-control model carries the
+# gateway interceptor and policy-engine shapes this sample needs.
+boto3>=1.43.91
+botocore>=1.43.91
+
+# BFF
+fastapi>=0.115
+uvicorn[standard]>=0.32
+itsdangerous>=2.2
+jinja2>=3.1
+python-multipart>=0.0.18
+httpx>=0.27
+
+# Signing the AI Agent's private_key_jwt client assertion, and decoding claims
+pyjwt[crypto]>=2.9
+cryptography>=43

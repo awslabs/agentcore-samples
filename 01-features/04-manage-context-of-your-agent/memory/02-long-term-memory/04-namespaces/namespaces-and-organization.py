@@ -1,15 +1,22 @@
 """Namespaces — organising long-term memory records.
 
-What you learn:
-    - Namespace templates with {actorId} (also available: {sessionId}, {memoryStrategyId})
-    - Querying by exact namespace (`namespace=`) vs by hierarchy (`namespacePath=`)
-    - Multi-tenancy: put the tenant inside actorId ("tenantA/user1") and
-      `namespacePath` can then target a single tenant.
+A namespace is the path a long-term record is written to. You set it per strategy
+as a *template*, and the built-in variables resolve from each event:
 
-The template leads with the data type — "/facts/{actorId}/" — so both actorId
-shapes land in one queryable tree:
-    actorId "user1"         -> /facts/user1/
-    actorId "tenantA/user1" -> /facts/tenantA/user1/
+    {actorId}    {sessionId}    {memoryStrategyId}
+
+Three strategies share one actor-first tree, so everything about a user sits
+under one prefix and each kind of record still has its own subtree:
+
+    /users/{actorId}/facts/                  <- semantic
+    /users/{actorId}/preferences/            <- user preference
+    /users/{actorId}/sessions/{sessionId}/   <- summary
+
+The queries below then read it at three depths: exact (`namespace=`) for one
+strategy, and `namespacePath=` for one user or for all of them. A type-first tree
+(`/facts/{actorId}/`) would invert which of those is cheap — see README.md.
+
+Custom variables (tenant, agent, region) are in flexible-namespaces.py.
 
 Two ways to run it:
     python namespaces-and-organization.py boto3    # the raw AWS API. Shows exactly what's on the wire.
@@ -31,37 +38,59 @@ import uuid
 from datetime import datetime, timezone
 
 REGION = os.getenv("AWS_REGION", "us-east-1")
-EXTRACTION_WAIT_SECONDS = 60
-SDK_EXTRACTION_WAIT_SECONDS = 90  # semantic extraction surfaces ~60-90s; extra margin
-FACTS_TEMPLATE = "/facts/{actorId}/"
+EXTRACTION_WAIT_SECONDS = 120  # extraction is async; poll, don't assume
 
-# Two plain actors and two actors under one tenant — same memory, same template.
-ACTORS = [
-    ("user1", "Hi, I'm Priya and I love jazz."),
-    ("user2", "Hi, I'm Ben and I love bouldering."),
-    ("tenantA/user1", "Hi, I'm Carol from AcmeCorp and I love chess."),
-    ("tenantA/user2", "Hi, I'm Dan from AcmeCorp and I love sailing."),
+# Every template starts *and* ends with "/" — the trailing slash is what keeps
+# /users/alice/ from also matching /users/alice2/. A summary template must contain
+# {sessionId}: summaries are generated and maintained per session.
+STRATEGIES = [
+    {"semanticMemoryStrategy": {"name": "Facts", "namespaceTemplates": ["/users/{actorId}/facts/"]}},
+    {
+        "userPreferenceMemoryStrategy": {
+            "name": "Preferences",
+            "namespaceTemplates": ["/users/{actorId}/preferences/"],
+        }
+    },
+    {
+        "summaryMemoryStrategy": {
+            "name": "Sessions",
+            "namespaceTemplates": ["/users/{actorId}/sessions/{sessionId}/"],
+        }
+    },
 ]
 
-# The three query scopes both paths demonstrate:
-#   namespace="/facts/user1/"          -> one user (exact)
-#   namespacePath="/facts/tenantA/"    -> every user under tenantA, nobody else
-#   namespacePath="/facts/"            -> everything: plain users and all tenants
-QUERIES = [
-    ("Exact — /facts/user1/", "user1's interests", {"namespace": "/facts/user1/"}),
+# Two actors, one session each. Each turn carries a fact and a preference, so
+# more than one strategy has something to extract.
+CONVERSATIONS = [
     (
-        "Tenant — /facts/tenantA/*",
-        "tenantA users",
-        {"namespacePath": "/facts/tenantA/"},
+        "alice",
+        [
+            ("I'm Alice, I lead the data platform team in Berlin.", "Good to know."),
+            ("Always answer in metric units, and keep it short.", "Understood."),
+        ],
     ),
-    ("All — /facts/*", "anything we know", {"namespacePath": "/facts/"}),
+    (
+        "bob",
+        [
+            ("I'm Bob, a backend engineer in Seattle.", "Nice to meet you."),
+            ("I prefer Python examples over Java ones.", "Python it is."),
+        ],
+    ),
+]
+
+# The three scopes this tree supports.
+QUERIES = [
+    ("Exact — alice's facts", "what does alice work on", {"namespace": "/users/alice/facts/"}),
+    ("Prefix — everything about alice", "alice", {"namespacePath": "/users/alice/"}),
+    ("Prefix — every user", "who are these users", {"namespacePath": "/users/"}),
 ]
 
 
-def _print_hits(prefix: str, label: str, hits: list) -> None:
-    print(f"\n[{prefix}] {label} ({len(hits)}):")
+def _print_hits(prefix: str, label: str, scope: dict, hits: list) -> None:
+    print(f"\n[{prefix}] {label} — {next(iter(scope.values()))} ({len(hits)}):")
     for h in hits:
-        print(f"  - [{','.join(h.get('namespaces', []))}] {h['content']['text']}")
+        # `namespaces` is the *resolved* path. Read it rather than assuming.
+        print(f"  - [{','.join(h.get('namespaces', []))}] {h['content']['text'][:80]}")
 
 
 # === boto3 ============================================================
@@ -75,40 +104,43 @@ def run_with_boto3(cleanup: bool = False) -> None:
         name=f"Namespaces_{int(time.time())}",
         description="Namespaces tutorial (boto3)",
         eventExpiryDuration=30,
-        memoryStrategies=[
-            {
-                "semanticMemoryStrategy": {
-                    "name": "Facts",
-                    "namespaceTemplates": [FACTS_TEMPLATE],
-                }
-            }
-        ],
+        memoryStrategies=STRATEGIES,
     )["memory"]["id"]
     print(f"[boto3] Created memory {memory_id}")
     deadline = time.time() + 300
-    while time.time() < deadline:
-        if control.get_memory(memoryId=memory_id)["memory"]["status"] == "ACTIVE":
-            break
+    while control.get_memory(memoryId=memory_id)["memory"]["status"] != "ACTIVE":
+        if time.time() > deadline:
+            raise TimeoutError(f"{memory_id} never became ACTIVE")
         time.sleep(5)
 
-    for actor_id, intro in ACTORS:
-        data.create_event(
+    # actorId and sessionId on the event are what the templates substitute.
+    for actor_id, turns in CONVERSATIONS:
+        session_id = f"{actor_id}-{int(time.time())}"
+        for user_text, assistant_text in turns:
+            data.create_event(
+                memoryId=memory_id,
+                actorId=actor_id,
+                sessionId=session_id,
+                eventTimestamp=datetime.now(timezone.utc),
+                payload=[
+                    {"conversational": {"role": "USER", "content": {"text": user_text}}},
+                    {"conversational": {"role": "ASSISTANT", "content": {"text": assistant_text}}},
+                ],
+            )
+        print(f"[boto3] Wrote {len(turns)} turns for {actor_id} in session {session_id}")
+
+    # Latency varies, so poll the broadest query rather than sleeping a fixed amount.
+    print(f"[boto3] Polling up to {EXTRACTION_WAIT_SECONDS}s for extraction...")
+    deadline = time.time() + EXTRACTION_WAIT_SECONDS
+    _, probe_query, probe_scope = QUERIES[-1]
+    while time.time() < deadline:
+        if data.retrieve_memory_records(
             memoryId=memory_id,
-            actorId=actor_id,
-            sessionId=f"{actor_id.replace('/', '-')}-{int(time.time())}",
-            eventTimestamp=datetime.now(timezone.utc),
-            payload=[
-                {"conversational": {"role": "USER", "content": {"text": intro}}},
-                {
-                    "conversational": {
-                        "role": "ASSISTANT",
-                        "content": {"text": "Nice to meet you."},
-                    }
-                },
-            ],
-        )
-    print(f"[boto3] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
-    time.sleep(EXTRACTION_WAIT_SECONDS)
+            searchCriteria={"searchQuery": probe_query, "topK": 20},
+            **probe_scope,
+        )["memoryRecordSummaries"]:
+            break
+        time.sleep(10)
 
     for label, query, scope in QUERIES:
         hits = data.retrieve_memory_records(
@@ -116,7 +148,7 @@ def run_with_boto3(cleanup: bool = False) -> None:
             searchCriteria={"searchQuery": query, "topK": 20},
             **scope,
         )["memoryRecordSummaries"]
-        _print_hits("boto3", label, hits)
+        _print_hits("boto3", label, scope, hits)
 
     if cleanup:
         control.delete_memory(memoryId=memory_id, clientToken=str(uuid.uuid4()))
@@ -133,47 +165,39 @@ def run_with_sdk(cleanup: bool = False) -> None:
     from bedrock_agentcore.memory.constants import ConversationalMessage, MessageRole
 
     client = MemoryClient(region_name=REGION)
-    memory = client.create_memory_and_wait(
+    memory_id = client.create_memory_and_wait(
         name=f"NamespacesSdk_{int(time.time())}",
         description="Namespaces tutorial (SDK)",
-        strategies=[
-            {
-                "semanticMemoryStrategy": {
-                    "name": "Facts",
-                    "namespaceTemplates": [FACTS_TEMPLATE],
-                }
-            }
-        ],
+        strategies=STRATEGIES,
         event_expiry_days=30,
-    )
-    memory_id = memory["id"]
+    )["id"]
     print(f"[sdk] Created memory {memory_id}")
 
-    # One MemorySession per actor — including the tenant-qualified actorIds.
+    # One MemorySession per actor: the session carries the actorId and sessionId
+    # the templates resolve from.
     manager = MemorySessionManager(memory_id=memory_id, region_name=REGION)
-    for actor_id, intro in ACTORS:
-        session = manager.create_memory_session(
-            actor_id=actor_id,
-            session_id=f"{actor_id.replace('/', '-')}-{int(time.time())}",
-        )
-        session.add_turns(
-            messages=[
-                ConversationalMessage(intro, MessageRole.USER),
-                ConversationalMessage("Nice to meet you.", MessageRole.ASSISTANT),
-            ]
-        )
-    print(f"[sdk] Waiting {SDK_EXTRACTION_WAIT_SECONDS}s for extraction...")
-    time.sleep(SDK_EXTRACTION_WAIT_SECONDS)
+    for actor_id, turns in CONVERSATIONS:
+        session = manager.create_memory_session(actor_id=actor_id, session_id=f"{actor_id}-{int(time.time())}")
+        for user_text, assistant_text in turns:
+            session.add_turns(
+                messages=[
+                    ConversationalMessage(user_text, MessageRole.USER),
+                    ConversationalMessage(assistant_text, MessageRole.ASSISTANT),
+                ]
+            )
+        print(f"[sdk] Wrote {len(turns)} turns for {actor_id} in session {session.session_id}")
+    print(f"[sdk] Waiting {EXTRACTION_WAIT_SECONDS}s for extraction...")
+    time.sleep(EXTRACTION_WAIT_SECONDS)
 
-    # Retrieval is scoped by the namespace argument, not the session's bound
+    # Retrieval is scoped by the namespace argument, not by the session's bound
     # actor, so one session can run all three scopes.
-    query_session = manager.create_memory_session(actor_id=ACTORS[0][0])
+    query_session = manager.create_memory_session(actor_id=CONVERSATIONS[0][0])
     for label, query, scope in QUERIES:
         kwargs = (
             {"namespace": scope["namespace"]} if "namespace" in scope else {"namespace_path": scope["namespacePath"]}
         )
         hits = query_session.search_long_term_memories(query=query, top_k=20, **kwargs)
-        _print_hits("sdk", label, hits)
+        _print_hits("sdk", label, scope, hits)
 
     if cleanup:
         client.delete_memory_and_wait(memory_id=memory_id)

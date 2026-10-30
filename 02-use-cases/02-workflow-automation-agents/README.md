@@ -31,6 +31,7 @@ Agents that run without a user in the loop. They are triggered by system events 
 | [enterprise-web-intelligence-agent](./enterprise-web-intelligence-agent/) | Market Intelligence | Intermediate | Runtime, Browser; automated web scraping pipeline implemented twice (LangGraph and Strands) for comparison |
 | [intelligent-event-agent](./intelligent-event-agent/) | General | Beginner | Runtime, Memory, Gateway *(in development, no README yet)* |
 | [multi-isv-orchestration](./multi-isv-orchestration/) | Enterprise CRM + ERP | Intermediate | Gateway (multi-target), Identity (Cognito inbound + CustomOauth2 outbound); Salesforce + SAP MCP Server through one Gateway for cross-system queries |
+| [gpu-music-production-agent](./gpu-music-production-agent/) | Media & Entertainment | Advanced | Runtime (EC2 capacity provider, GPU), Memory; a generative audio model runs on the instance GPU and three collocated agents hand files to each other over a shared EBS volume, with a computed verdict that escalates to human review |
 
 
 ## See also

@@ -27,6 +27,7 @@ Agents that help developers write, execute, or fix code. Tasks are typically lon
 |--------|----------|------------|-------------------|
 | [text-to-python-ide](./text-to-python-ide/) | Full-stack IDE where users describe what they want in plain text and the agent writes and runs the Python code | Intermediate | Runtime, Code Interpreter, Memory, Policy (Guardrails) |
 | [claude-code-gateway-mcp-server](./claude-code-gateway-mcp-server/) | Consolidate multiple MCP servers behind one AgentCore Gateway endpoint for use with Claude Code | Intermediate | Gateway, Identity |
+| [securing-coding-agents](./securing-coding-agents/) | Enforce fine-grained file, shell, and tool access on a coding agent with Cedar policies evaluated at the Gateway | Intermediate | Runtime, Gateway, Policy, Identity (Cognito) |
 
 ## See also
 

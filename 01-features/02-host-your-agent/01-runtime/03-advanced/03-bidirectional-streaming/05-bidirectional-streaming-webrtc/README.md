@@ -17,6 +17,7 @@ server/
   index.html          - Browser client (WebRTC + optional AgentCore runtime)
   server.py           - Static file server
   requirements.txt
+deploy.py               - Builds the image and deploys to AgentCore Runtime V2 (VPC mode)
 kvs-iam-policy.json     - Minimal IAM policy for KVS
 bedrock-iam-policy.json - Minimal IAM policy for Nova Sonic
 ```
@@ -50,7 +51,7 @@ From the VPC console, copy:
 - **Private subnet ID** (e.g. `subnet-0123456789abcdef0`) — this is where the agent runs
 - **Security group ID** — the default security group created with the VPC (e.g. `sg-0123456789abcdef0`)
 
-You'll use these in the `agentcore configure` step below.
+You'll pass these to `deploy.py` as `--subnets` and `--security-groups` below.
 
 ## Local Setup
 
@@ -77,71 +78,68 @@ python server.py       # http://localhost:7860
 
 Open `http://localhost:7860` and click "Connect".
 
-## Deploying to AgentCore runtime
+## Deploying to AgentCore Runtime
 
-### 1. Install the starter toolkit
+The agent runs on **AgentCore Runtime V2**. `deploy.py` builds the ARM64 container with CodeBuild (no local Docker needed), creates the execution role with the KVS and Bedrock permissions already attached, and then creates the runtime with `platformVersion="V2"`.
 
-```bash
-pip install bedrock-agentcore-starter-toolkit
-```
-
-### 2. Configure
-
-From the `agent/` directory:
+### 1. Install the deployment dependencies
 
 ```bash
-cd agent
-
-export SUBNET_IDS=subnet-0123456789abcdef0  # private subnet (with NAT gateway for internet egress)
-export SECURITY_GROUP_ID=sg-0123456789abcdef0
-
-agentcore configure \
-  -e bot.py \
-  --deployment-type container \
-  --disable-memory \
-  --vpc \
-  --subnets $SUBNET_IDS \
-  --security-groups $SECURITY_GROUP_ID \
-  --non-interactive
+pip install "boto3>=1.43.95" bedrock-agentcore-starter-toolkit PyYAML
 ```
 
-VPC network mode is required because PUBLIC network mode does not support outbound UDP connectivity. 
+`boto3>=1.43.95` is required to pass `platformVersion` on `CreateAgentRuntime`. An older version fails with `ParamValidationError`.
 
-### 3. Deploy
+### 2. Deploy
+
+From this directory, using the private subnet and security group from the VPC setup above:
 
 ```bash
-agentcore deploy --env KVS_CHANNEL_NAME=voice-agent-minimal --env AWS_REGION=us-west-2
+export ACCOUNT_ID=123456789012
+
+python deploy.py \
+  --region us-west-2 \
+  --subnets subnet-0123456789abcdef0 \
+  --security-groups sg-0123456789abcdef0
 ```
 
-This builds an ARM64 container via CodeBuild (no Docker required locally) and deploys it to AgentCore runtime. Note the ARN in the output.
+The account ID must match the credentials you are deploying with -- it is substituted into the IAM policy resource ARNs, so a mismatch produces a runtime that starts but is denied access to KVS and Bedrock. `deploy.py` prints the account it is using before creating anything.
 
-### 4. Attach IAM permissions
+**VPC network mode is required.** PUBLIC network mode does not support outbound UDP, which WebRTC needs to reach the KVS TURN servers. The subnet must be private with internet egress through a NAT gateway.
 
-The execution role created by the toolkit needs KVS and Bedrock permissions. First, update `ACCOUNT_ID` in `kvs-iam-policy.json` and `bedrock-iam-policy.json` with your AWS account ID. Then replace `ROLE_NAME` with the role name from the deploy output (e.g. `AmazonBedrockAgentCoreSDKRuntime-us-west-2-9d74932bdb`):
+**Expect this to take a while.** VPC mode adds network interface provisioning on top of the snapshot preparation, and how long that takes varies between runs. The script polls and prints status, so a long `CREATING` phase is normal rather than a hang.
+
+The Agent ARN is printed at the end and saved to `setup_config.json`.
+
+> **Note on IAM ordering.** `deploy.py` attaches the policies from `kvs-iam-policy.json` and `bedrock-iam-policy.json` to the execution role *before* creating the runtime. This ordering is required: Runtime V2 starts the container during creation, and `bot.py` calls `kvs.init()` at FastAPI startup, so a runtime created before those permissions exist fails with `AccessDeniedException` on `kinesisvideo:DescribeSignalingChannel`.
+
+### 3. Test
+
+Start the browser client:
 
 ```bash
-ROLE_NAME=ROLE_HERE
-
-aws iam put-role-policy \
-  --role-name $ROLE_NAME \
-  --policy-name kvs-access \
-  --policy-document file://kvs-iam-policy.json
-
-aws iam put-role-policy \
-  --role-name $ROLE_NAME \
-  --policy-name bedrock-nova-sonic \
-  --policy-document file://bedrock-iam-policy.json
+cd server
+pip install -r requirements.txt
+python server.py       # http://localhost:7860
 ```
 
-### 5. Test
+Open `http://localhost:7860`, paste the Agent ARN from the deploy output, then click Connect. Allow microphone access and speak -- the agent replies with spoken audio in real time.
 
-Enter the agent ARN output from `agentcore deploy` in the browser client at `http://localhost:7860` along with AWS credentials, then click Connect. Once connected, speak into your microphone — the agent will respond with spoken audio in real time.
+### 4. Cleanup
 
-### Cleanup
+Delete the runtime, then the VPC resources:
 
 ```bash
-agentcore destroy
+aws bedrock-agentcore-control delete-agent-runtime \
+  --agent-runtime-id <runtime-id-from-setup_config.json> \
+  --region us-west-2
 ```
+
+Deleting a runtime is asynchronous and does not complete immediately. Wait for it to disappear before deleting the subnets -- a live runtime holds an elastic network interface in the subnet and the deletion will fail while it exists.
+
+If you created a VPC for this sample, remember to delete the **NAT gateway** as well. It bills hourly whether or not the agent is running.
+
+See [Troubleshooting](#troubleshooting) if the deployment does not reach `READY`.
 
 ## How It Works
 
@@ -181,9 +179,9 @@ agentcore destroy
 
 ## IAM Permissions
 
-The agent needs KVS permissions for TURN server access. See `kvs-iam-policy.json` for the minimal policy — replace `ACCOUNT_ID` with your AWS account ID.
+The agent needs KVS permissions for TURN server access. See `kvs-iam-policy.json` for the minimal policy. Additionally, the agent needs `bedrock:InvokeModelWithBidirectionalStream` permission for the Nova Sonic model, in `bedrock-iam-policy.json`.
 
-Additionally, the agent needs `bedrock:InvokeModelWithBidirectionalStream` permission for the Nova Sonic model.
+`deploy.py` attaches both policies to the execution role, substituting the `ACCOUNT_ID` placeholder with the account ID you supply, so these files do not need to be edited.
 
 ## Troubleshooting
 
@@ -199,6 +197,15 @@ Use Python 3.12+.
 - Ensure both agent and server are running
 - Check KVS IAM permissions
 - Verify TURN server connectivity
+
+**Deployment never reaches `READY`:**
+Check the runtime's log group `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`:
+- `build-logs-*` holds container output from when Runtime V2 created its snapshot
+- `runtime-logs-*` holds container output during invocation
+- **No container log stream at all** means provisioning failed before the container started -- check the execution role rather than the application code
+
+**Deployment fails with `ParamValidationError` on `platformVersion`:**
+Upgrade boto3. Runtime V2 requires `boto3>=1.43.95`.
 
 ## Reference
 

@@ -163,4 +163,3 @@ despite having no in-session history. The script then deletes the memory resourc
   [`../../with-claude-sdk/03-memory-as-tool/`](../../with-claude-sdk/03-memory-as-tool/),
   [`../../with-strands-agent/03-memory-tool/`](../../with-strands-agent/03-memory-tool/),
   [`../../with-llamaindex-agent/03-memory-tool/`](../../with-llamaindex-agent/03-memory-tool/)
-```

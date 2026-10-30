@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # # LangGraph with AgentCore Memory Checkpointer (Short term memory)
 #
 # ## Introduction
@@ -53,18 +51,18 @@
 # Run: pip install -qr requirements.txt
 
 
+import logging
+import os
+
+from bedrock_agentcore.memory import MemoryClient
+
 # Import LangGraph and LangChain components
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 from langgraph.prebuilt import create_react_agent
 
-
 # Import the AgentCoreMemorySaver that we will use as a checkpointer
-import os
-import logging
-
 from langgraph_checkpoint_aws import AgentCoreMemorySaver
-from bedrock_agentcore.memory import MemoryClient
 
 region = os.getenv("AWS_REGION", "us-west-2")
 logging.getLogger("math-agent").setLevel(logging.DEBUG)
@@ -126,8 +124,6 @@ graph = create_react_agent(
     checkpointer=checkpointer,
 )
 
-graph
-
 
 # ## Step 4: Run the LangGraph Agent
 # We can now run the agent with our AgentCore Memory checkpointer integration.
@@ -174,7 +170,7 @@ for chunk in graph.stream(inputs, stream_mode="updates", config=config):
 
 
 for message in graph.get_state(config).values.get("messages"):
-    print(f"{message.type}: {message.text()}")
+    print(f"{message.type}: {message.text}")
     print("=========================================")
 
 

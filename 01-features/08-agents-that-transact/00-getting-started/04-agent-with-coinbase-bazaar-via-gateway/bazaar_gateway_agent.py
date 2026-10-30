@@ -83,7 +83,7 @@ if not GATEWAY_URL:
         "then add GATEWAY_URL=<your-gateway-url> to .env and re-run."
     )
 
-from bedrock_agentcore.payments import PaymentManager  # noqa: E402
+from bedrock_agentcore.payments import PaymentManager
 
 manager = PaymentManager(payment_manager_arn=PAYMENT_MANAGER_ARN, region_name=REGION)
 instr = manager.get_payment_instrument(user_id=USER_ID, payment_instrument_id=INSTRUMENT_ID)
@@ -117,15 +117,14 @@ print(f"Created payment session: {SESSION_ID} (budget ${SESSION_BUDGET['maxSpend
 
 # ── Step 4: Connect to Gateway and Create Agent ───────────────────────────────
 print("\n── Step 4: Connect to Gateway and Create Agent ──")
-from mcp.client.streamable_http import streamablehttp_client  # noqa: E402
-from strands import Agent  # noqa: E402
-from strands.models import BedrockModel  # noqa: E402
-from strands.tools.mcp.mcp_client import MCPClient  # noqa: E402
-
-from bedrock_agentcore.payments.integrations.strands import (  # noqa: E402
+from bedrock_agentcore.payments.integrations.strands import (
     AgentCorePaymentsPlugin,
     AgentCorePaymentsPluginConfig,
 )
+from mcp.client.streamable_http import streamablehttp_client
+from strands import Agent
+from strands.models import BedrockModel
+from strands.tools.mcp.mcp_client import MCPClient
 
 # Gateway auth — auto-detect from .env
 gateway_headers = {}
@@ -259,6 +258,19 @@ with mcp_client:
 
     if getattr(result, "stop_reason", None) == "interrupt" or getattr(result, "interrupts", None):
         print("\n⚠️  A payment did not settle in Step 5d. Continuing to spend report.")
+
+    # ── Step 5e: Verify Bazaar Curation ──────────────────────────────────────
+    # Discovery-only (no proxy_tool_call, so no payment): exercises the curatedOnly
+    # filter to confirm Coinbase's curation layer is active. A single search returns
+    # at most 20 results, so this samples categories rather than counting the catalog.
+    print("\n── Step 5e: Verify Bazaar Curation ──")
+    result = agent(
+        "Use search_resources with curatedOnly=true to look at Coinbase-curated tools only. "
+        "Do NOT call any tool (no proxy_tool_call) — this is a read-only curation check. "
+        "List 5 example categories you see among the curated results (for example: web search, "
+        "finance, travel, crypto, maps), and confirm whether the curation layer appears active."
+    )
+    print(result.message)
 
 # ── Step 6: Check Session Spend ──────────────────────────────────────────────
 print("\n── Step 6: Check Session Spend ──")

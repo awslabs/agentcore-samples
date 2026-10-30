@@ -13,7 +13,7 @@ New to AgentCore Memory? → [`00-getting-started/`](./00-getting-started/). You
 | Folder | What's inside |
 |---|---|
 | [`00-getting-started/`](./00-getting-started/) | Concepts, surface decision guide, three quickstarts (CLI, boto3, AgentCore SDK) |
-| [`01-short-term-memory/`](./01-short-term-memory/) | Events, sessions, isolation, branching — plus framework examples under `examples/` |
+| [`01-short-term-memory/`](./01-short-term-memory/) | Events, sessions, isolation, branching, payload types — plus framework examples under `examples/` |
 | [`02-long-term-memory/`](./02-long-term-memory/) | Strategies, overrides, self-managed, namespaces, retrieval, metadata, batch CRUD, redrive, streaming — plus framework examples |
 | [`03-integrations/`](./03-integrations/) | Runtime, identity, Guardrails, memory-browser |
 | [`04-observability/`](./04-observability/) | CloudWatch metrics, alarms, ingestion logs |
@@ -53,7 +53,11 @@ You'll find these patterns under `examples/single-agent/` and `examples/multi-ag
 Add memory to an existing runtime agent project with the AgentCore CLI:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 # Interactive
 agentcore add memory

@@ -42,7 +42,7 @@
     <rect x="285" y="70" width="220" height="60" rx="6" ry="6" fill="url(#boxGradient)" stroke="#1a1a1a" stroke-width="1.5"/>
   </g>
   <text x="395" y="97" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">AgentCore Runtime</text>
-  <text x="395" y="117" font-family="Arial, sans-serif" font-size="9" fill="#aaaaaa" text-anchor="middle">HR Assistant (Strands + Nova Lite)</text>
+  <text x="395" y="117" font-family="Arial, sans-serif" font-size="9" fill="#aaaaaa" text-anchor="middle">HR Assistant (Strands)</text>
 
   <!-- Arrow: Agent -> CloudWatch -->
   <line x1="505" y1="100" x2="580" y2="100" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
@@ -102,7 +102,7 @@
   <text x="540" y="335" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Evaluators</text>
 
   <rect x="345" y="350" width="120" height="22" rx="3" ry="3" fill="#0d0d0d"/>
-  <text x="405" y="365" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Builtin (13)</text>
+  <text x="405" y="365" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Builtin (15)</text>
 
   <rect x="480" y="350" width="120" height="22" rx="3" ry="3" fill="#0d0d0d"/>
   <text x="540" y="365" font-family="Courier, monospace" font-size="8" fill="#cc9999" text-anchor="middle">Custom LLM</text>

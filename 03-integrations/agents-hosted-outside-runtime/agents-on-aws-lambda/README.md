@@ -1,6 +1,6 @@
 # Agents on AWS Lambda — AgentCore Observability
 
-This folder contains two complementary patterns for running agents in AWS Lambda with
+This folder contains three complementary patterns for running agents on AWS Lambda with
 AgentCore observability.
 
 ## Patterns at a glance
@@ -9,6 +9,7 @@ AgentCore observability.
 |:--------|:-------|:--------------|
 | Agent wrapped in Lambda | [`02-agent-in-lambda/`](./02-agent-in-lambda/) | Lambda execution environment |
 | Lambda invokes AgentCore runtime | [`01-lambda-invokes-runtime/`](./01-lambda-invokes-runtime/) | AgentCore runtime (container) |
+| Agent in Lambda MicroVM | [`03-agent-in-lambda-microvm/`](./03-agent-in-lambda-microvm/) | Lambda MicroVM (Firecracker VM) |
 
 ---
 
@@ -35,3 +36,19 @@ Best for: long-running agents, agents that need persistent state, agents already
 AgentCore runtimes.
 
 → [01-lambda-invokes-runtime/README.md](./01-lambda-invokes-runtime/README.md)
+
+---
+
+### Pattern 3 — Agent in Lambda MicroVM
+
+The Strands agent runs inside a **Lambda MicroVM** — a Firecracker VM with VM-level
+isolation, snapshot start and resume, and a per-VM HTTPS endpoint. The ADOT SDK
+(`aws-opentelemetry-distro`) is installed into the container image and OTEL configuration is
+baked into the MicroVM snapshot at image build time. OTLP requests are SigV4-signed with
+the execution role's temporary credentials and delivered to the agent's own log group under
+`/aws/bedrock-agentcore/runtimes/<agent-id>`.
+
+Best for: agents that need a full Linux environment, long-lived process state across
+invocations, or a code-execution sandbox.
+
+→ [03-agent-in-lambda-microvm/README.md](./03-agent-in-lambda-microvm/README.md)

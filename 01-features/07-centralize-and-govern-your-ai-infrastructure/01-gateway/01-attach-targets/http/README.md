@@ -2,16 +2,11 @@
 
 For HTTP targets, the gateway sends traffic directly to the target without aggregation or protocol translation. Unlike MCP targets, HTTP targets do not support capability synchronization or semantic tool search. Clients address each target individually through path-based routing.
 
-The following topics describe the HTTP target types that you can add to your gateway.
 ![http](./images/agents.png)
-
-For HTTP targets, the gateway sends traffic directly to the target without aggregation or protocol translation. Unlike MCP targets, HTTP targets do not support capability synchronization or semantic tool search. Clients address each target individually through path-based routing.
 
 ![architecture](../../images/proxy.png)
 
 You can attach different AgentCore identity Credential Providers to each HTTP target to securely manage outbound authentication on a per-target basis. You can also configure Token passthrough, in which gateway validates the inbound token and passes it through to the runtime target without modification. This is useful when the runtime handles its own authorization.
-
-The following topics describe the HTTP target types that you can add to your gateway.
 
 ## Tutorials
 

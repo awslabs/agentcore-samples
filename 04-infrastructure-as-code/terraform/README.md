@@ -162,6 +162,7 @@ terraform destroy
 - **[mcp-server-agentcore-runtime/](./mcp-server-agentcore-runtime/)** - MCP Server with JWT authentication and API Gateway
 - **[multi-agent-runtime/](./multi-agent-runtime/)** - Multi-agent system with Agent-to-Agent (A2A) communication
 - **[end-to-end-weather-agent/](./end-to-end-weather-agent/)** - Weather agent with Browser, Code Interpreter, and Memory tools
+- **[web-search-gateway/](./web-search-gateway/)** - AgentCore Gateway with the managed Web Search connector and domain governance (no agent runtime)
 
 ## Terraform Advantages
 
@@ -181,6 +182,7 @@ terraform destroy
 | mcp-server | 1 | - | ❌ | ✅ | API integration with JWT auth |
 | multi-agent | 2 | - | ✅ | ❌ | Orchestrator + Specialist pattern |
 | weather-agent | 1 | Browser, Code Interpreter, Memory | ❌ | ❌ | Full-featured agent with tools |
+| web-search-gateway | 0 | Web Search (managed connector) | ❌ | ✅ | Governed web grounding for any MCP client |
 
 ## Troubleshooting
 

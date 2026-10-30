@@ -3,5 +3,7 @@ langchain-aws
 langchain-core
 boto3
 playwright
-bedrock-agentcore
+bedrock-agentcore==1.8.0
+strands-agents[otel]==1.38.0
+aws-opentelemetry-distro==0.19.0
 jsonschema>=4.24.0,<4.25.0

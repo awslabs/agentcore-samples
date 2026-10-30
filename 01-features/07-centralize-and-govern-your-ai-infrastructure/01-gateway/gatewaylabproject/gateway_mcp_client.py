@@ -28,7 +28,8 @@ without server-emitted intermediate frames.
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import requests
 
@@ -43,7 +44,7 @@ class GatewayMCPClient:
         gateway_url: str,
         get_token: Callable[[], str],
         protocol_version: str = DEFAULT_PROTOCOL_VERSION,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> None:
         """Construct a client.
 
@@ -57,23 +58,25 @@ class GatewayMCPClient:
         If ``initialize()`` is later called and the gateway returns a
         session id, the captured value replaces this one.
         """
+        if not gateway_url.rstrip("/").endswith("/mcp"):
+            gateway_url = gateway_url.rstrip("/") + "/mcp"
         self.gateway_url = gateway_url
         self._get_token = get_token
         self._protocol_version = protocol_version
-        self._session_id: Optional[str] = session_id
+        self._session_id: str | None = session_id
 
     @property
-    def session_id(self) -> Optional[str]:
+    def session_id(self) -> str | None:
         return self._session_id
 
-    def set_session_id(self, session_id: Optional[str]) -> None:
+    def set_session_id(self, session_id: str | None) -> None:
         """Override the client-side ``Mcp-Session-Id`` that gets echoed on
         every subsequent request."""
         self._session_id = session_id
 
     def _headers(
         self, accept: str = "application/json, text/event-stream"
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         h = {
             "Content-Type": "application/json",
             "Accept": accept,
@@ -84,10 +87,8 @@ class GatewayMCPClient:
             h["Mcp-Session-Id"] = self._session_id
         return h
 
-    def _rpc(
-        self, method: str, params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
+    def _rpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": method.replace("/", "-") + "-request",
             "method": method,
@@ -99,7 +100,7 @@ class GatewayMCPClient:
         ).json()
 
     def rpc_raw(
-        self, method: str, params: Optional[Dict[str, Any]] = None
+        self, method: str, params: dict[str, Any] | None = None
     ) -> requests.Response:
         """Like :meth:`_rpc` but returns the raw ``requests.Response`` so the
         caller can inspect HTTP status, response headers, and the un-parsed
@@ -108,7 +109,7 @@ class GatewayMCPClient:
         and ``response.json()`` would either succeed (with an error body) or
         fail to parse — in either case, the status code is the signal.
         """
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": method.replace("/", "-") + "-raw",
             "method": method,
@@ -119,10 +120,10 @@ class GatewayMCPClient:
             self.gateway_url, headers=self._headers(), json=payload, timeout=3600
         )
 
-    def _paginate(self, method: str, items_key: str) -> List[Dict[str, Any]]:
+    def _paginate(self, method: str, items_key: str) -> list[dict[str, Any]]:
         """Follow ``result.nextCursor`` across pages and return merged items."""
-        items: List[Dict[str, Any]] = []
-        cursor: Optional[str] = None
+        items: list[dict[str, Any]] = []
+        cursor: str | None = None
         while True:
             params = {"cursor": cursor} if cursor else None
             resp = self._rpc(method, params)
@@ -136,9 +137,9 @@ class GatewayMCPClient:
 
     def initialize(
         self,
-        capabilities: Optional[Dict[str, Any]] = None,
-        client_info: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        capabilities: dict[str, Any] | None = None,
+        client_info: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Send `initialize` then `notifications/initialized`.
 
         Captures `Mcp-Session-Id` from the response header (set on
@@ -184,15 +185,15 @@ class GatewayMCPClient:
 
     # --- Tools ----------------------------------------------------------
 
-    def list_tools(self, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def list_tools(self, cursor: str | None = None) -> dict[str, Any]:
         params = {"cursor": cursor} if cursor else None
         return self._rpc("tools/list", params)
 
-    def list_all_tools(self) -> List[Dict[str, Any]]:
+    def list_all_tools(self) -> list[dict[str, Any]]:
         """Return tools from every target, following per-target pagination."""
         return self._paginate("tools/list", "tools")
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Buffered tool invocation. Only safe for tools that return a single
         result with no server-emitted intermediate frames. For tools that
         emit progress, logging, elicitation, or sampling, use
@@ -203,9 +204,9 @@ class GatewayMCPClient:
     def call_tool_json_only(
         self,
         name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         request_id: Any = "tools-call-request",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Buffered tool invocation forcing `Accept: application/json` only.
 
         Demonstrates backward-compatibility with non-streaming clients on a
@@ -236,10 +237,10 @@ class GatewayMCPClient:
     def stream_tool_call(
         self,
         name: str,
-        arguments: Dict[str, Any],
-        progress_token: Optional[str] = None,
+        arguments: dict[str, Any],
+        progress_token: str | None = None,
         request_id: Any = "tools-call-request",
-    ) -> Iterator[Dict[str, Any]]:
+    ) -> Iterator[dict[str, Any]]:
         """Generator yielding parsed JSON-RPC frames from a streaming tools/call.
 
         Yields, in arrival order:
@@ -257,7 +258,7 @@ class GatewayMCPClient:
 
         After the matching response frame is yielded the generator exits.
         """
-        params: Dict[str, Any] = {"name": name, "arguments": arguments}
+        params: dict[str, Any] = {"name": name, "arguments": arguments}
         if progress_token is not None:
             params["_meta"] = {"progressToken": progress_token}
         body = {
@@ -289,7 +290,7 @@ class GatewayMCPClient:
                 except json.JSONDecodeError:
                     continue
 
-    def _post_response(self, request_id: Any, result: Dict[str, Any]) -> int:
+    def _post_response(self, request_id: Any, result: dict[str, Any]) -> int:
         """POST a JSON-RPC response back to the gateway. Used to reply to
         server-initiated requests (`elicitation/create`, `sampling/createMessage`)
         that arrive on the SSE stream of an in-flight `tools/call`.
@@ -305,17 +306,15 @@ class GatewayMCPClient:
     def call_tool_streaming(
         self,
         name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         *,
-        elicitation_callback: Optional[
-            Callable[[Dict[str, Any]], Dict[str, Any]]
-        ] = None,
-        sampling_callback: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-        notification_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-        progress_token: Optional[str] = None,
+        elicitation_callback: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        sampling_callback: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        notification_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        progress_token: str | None = None,
         request_id: Any = "tools-call-streaming",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Call a tool and dispatch any server-initiated requests to callbacks.
 
         Callbacks (all optional, all sync):
@@ -362,31 +361,31 @@ class GatewayMCPClient:
 
     # --- Prompts --------------------------------------------------------
 
-    def list_prompts(self, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def list_prompts(self, cursor: str | None = None) -> dict[str, Any]:
         params = {"cursor": cursor} if cursor else None
         return self._rpc("prompts/list", params)
 
-    def list_all_prompts(self) -> List[Dict[str, Any]]:
+    def list_all_prompts(self) -> list[dict[str, Any]]:
         return self._paginate("prompts/list", "prompts")
 
-    def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def get_prompt(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return self._rpc("prompts/get", {"name": name, "arguments": arguments})
 
     # --- Resources ------------------------------------------------------
 
-    def list_resources(self, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def list_resources(self, cursor: str | None = None) -> dict[str, Any]:
         params = {"cursor": cursor} if cursor else None
         return self._rpc("resources/list", params)
 
-    def list_all_resources(self) -> List[Dict[str, Any]]:
+    def list_all_resources(self) -> list[dict[str, Any]]:
         return self._paginate("resources/list", "resources")
 
-    def read_resource(self, uri: str) -> Dict[str, Any]:
+    def read_resource(self, uri: str) -> dict[str, Any]:
         return self._rpc("resources/read", {"uri": uri})
 
-    def list_resource_templates(self, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def list_resource_templates(self, cursor: str | None = None) -> dict[str, Any]:
         params = {"cursor": cursor} if cursor else None
         return self._rpc("resources/templates/list", params)
 
-    def list_all_resource_templates(self) -> List[Dict[str, Any]]:
+    def list_all_resource_templates(self) -> list[dict[str, Any]]:
         return self._paginate("resources/templates/list", "resourceTemplates")

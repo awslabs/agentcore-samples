@@ -57,12 +57,14 @@ The same flow expressed with the AWS CLI:
 # Prereqs: a Kinesis stream and an IAM role whose trust policy allows
 # bedrock-agentcore.amazonaws.com to assume it, with kinesis:PutRecords +
 # kinesis:DescribeStream on the stream ARN.
-export STREAM_ARN=arn:aws:kinesis:$AWS_REGION:<acct>:stream/my-mem-stream
-export ROLE_ARN=arn:aws:iam::<acct>:role/AgentCoreMemoryStreamingRole
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+STREAM_NAME=my-mem-stream
+export STREAM_ARN="arn:aws:kinesis:$AWS_REGION:$ACCOUNT_ID:stream/$STREAM_NAME"
+export ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/AgentCoreMemoryStreamingRole"
 
 # 1. Create memory with streaming enabled
-aws bedrock-agentcore-control create-memory \
-  --region "$AWS_REGION" --name "StreamingCli-$(date +%s)" \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
+  --region "$AWS_REGION" --name "StreamingCli_$(date +%s)" \
   --event-expiry-duration 7 --client-token "$(uuidgen)" \
   --memory-execution-role-arn "$ROLE_ARN" \
   --stream-delivery-resources "{
@@ -78,8 +80,15 @@ aws bedrock-agentcore-control create-memory \
       "name":"UserPreferences",
       "namespaces":["/{actorId}/user_preferences/"]
     }
-  }]'
-export MEMORY_ID=<id>
+  }]' \
+  --query 'memory.id' --output text)
+
+# Wait until ACTIVE. BatchCreateMemoryRecords is rejected while the memory is still
+# CREATING, and creation takes a couple of minutes. This also exits on FAILED.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Trigger events directly (no extraction wait)
 aws bedrock-agentcore batch-create-memory-records \
@@ -92,9 +101,9 @@ aws bedrock-agentcore batch-create-memory-records \
   }]'
 
 # 3. Read from Kinesis (production: use Lambda event source mapping or KCL).
-SHARD=$(aws kinesis describe-stream --stream-name <name> \
+SHARD=$(aws kinesis describe-stream --stream-name "$STREAM_NAME" \
   --query 'StreamDescription.Shards[0].ShardId' --output text)
-ITER=$(aws kinesis get-shard-iterator --stream-name <name> \
+ITER=$(aws kinesis get-shard-iterator --stream-name "$STREAM_NAME" \
   --shard-id "$SHARD" --shard-iterator-type TRIM_HORIZON \
   --query 'ShardIterator' --output text)
 aws kinesis get-records --shard-iterator "$ITER"

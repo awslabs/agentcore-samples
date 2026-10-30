@@ -6,7 +6,7 @@ searchType: "SEMANTIC" (required for URL elicitation).
 Requires COGNITO_STACK_NAME in environment. Reads CRED_PROVIDER_ARN from .env.
 
 Usage:
-    uv run python scripts/github-auth-code/deploy_gateway.py
+    uv run python scripts/linkedin-auth-code/deploy_gateway.py
 """
 
 import os

@@ -4,6 +4,8 @@ Deploy the persistent filesystem agent.
 Key difference from other examples: includes filesystemConfigurations
 to mount persistent storage at /mnt/data.
 
+Deployed on AgentCore Runtime V2 (platformVersion="V2").
+
 Usage:
     python deploy.py
 """
@@ -12,11 +14,24 @@ import json
 import os
 import sys
 import time
+
 import boto3
 from boto3.session import Session
 
 AGENT_NAME = "persistent_fs_agent"
 PROTOCOL = "HTTP"
+
+# AgentCore Runtime platform version. "V2" prepares the execution environment
+# once, at create/update time, and snapshots it; new execution environments
+# resume from that snapshot instead of loading your code on every cold start.
+# This field must be set explicitly — omitting it does not give you V2.
+#
+# Session storage composes with this, but note the ordering: the mount is
+# provisioned per session and is only writable at request time, whereas the
+# snapshot captures the process as it was at deploy time — before any session
+# exists. Filesystem work at import raises PermissionError and kills the build.
+# See the README for the verification and the safe pattern.
+PLATFORM_VERSION = "V2"
 PYTHON_RUNTIME = "PYTHON_3_12"
 ENTRY_POINT = "agent.py"
 CODE_FILES = ["agent.py", "requirements.txt"]
@@ -166,9 +181,14 @@ def create_runtime(role_arn: str) -> dict:
         description="Persistent filesystem demo — notes survive session restarts",
         # ── This is the key addition: persistent storage at /mnt/data ──
         filesystemConfigurations=[{"sessionStorage": {"mountPath": "/mnt/data"}}],
+        platformVersion=PLATFORM_VERSION,
     )
     runtime_id, runtime_arn = response["agentRuntimeId"], response["agentRuntimeArn"]
     print("✓ Runtime created with persistent storage at /mnt/data")
+    # On V2 the snapshot is prepared during create, so this wait is measured in
+    # minutes rather than seconds. The loop has no timeout, so it simply waits;
+    # budget accordingly in any automation that wraps this script.
+    print(f"  Waiting for READY on platformVersion={PLATFORM_VERSION} (expect minutes)...")
     while True:
         s = control.get_agent_runtime(agentRuntimeId=runtime_id)
         print(f"  Status: {s['status']}")
@@ -178,6 +198,18 @@ def create_runtime(role_arn: str) -> dict:
             print(f"  ✗ Failed: {s.get('failureReason')}")
             sys.exit(1)
         time.sleep(15)
+    # create_agent_runtime does not echo platformVersion back, so read it from
+    # get_agent_runtime. The service returns the persisted value verbatim with no
+    # default, so an absent field means "unknown" rather than a specific version.
+    reported = control.get_agent_runtime(agentRuntimeId=runtime_id).get("platformVersion")
+    if reported == PLATFORM_VERSION:
+        print(f"  ✓ Confirmed platformVersion={reported}")
+    elif reported is None:
+        print("  ! Service did not report platformVersion; could not confirm from the API")
+    else:
+        print(f"  ✗ Requested platformVersion={PLATFORM_VERSION} but service reports {reported}")
+        sys.exit(1)
+
     return {"runtime_id": runtime_id, "runtime_arn": runtime_arn}
 
 

@@ -170,7 +170,7 @@ The gateway routes by the `model` field in the request body:
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Node.js >= 22.7.5
-- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore`
+- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md)
 - A **short-term** Amazon Bedrock API key for the `bedrock` target. Create one in the [Bedrock console](https://console.aws.amazon.com/bedrock) under **API keys** > **Short-term API keys**, or generate it programmatically with the [`aws-bedrock-token-generator`](https://pypi.org/project/aws-bedrock-token-generator/) package. The key inherits the permissions of the IAM principal that creates it, so ensure that principal has Bedrock model access.

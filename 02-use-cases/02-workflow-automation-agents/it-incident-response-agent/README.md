@@ -249,7 +249,11 @@ into the same CDK stack via `InfraConstruct` — deployed together with a single
    - The agent model (default `us.anthropic.claude-sonnet-4-6`).
    - If using KB: the embedding model (`amazon.titan-embed-text-v2:0`).
    See [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
-3. **Node.js 20+** and AgentCore CLI: `npm install -g @aws/agentcore`
+3. **Node.js 20+** and AgentCore CLI: `npm install -g @aws/agentcore@0.30.0`
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 4. **Python 3.11+** and **uv** ([install](https://docs.astral.sh/uv/getting-started/installation/))
 5. **Docker** (for building the agent container image)
 6. **CDK bootstrapped**: `cdk bootstrap aws://ACCOUNT/REGION`

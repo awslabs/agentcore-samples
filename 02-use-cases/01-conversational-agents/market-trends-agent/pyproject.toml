@@ -18,7 +18,10 @@ dependencies = [
     # create_ab_test, create_gateway).
     # The [simulation] extra pulls in strands-agents-evals, which drives
     # LLM-actor conversations in SimulatedScenario evaluations.
-    "bedrock-agentcore[simulation]>=1.7.0",
+    "bedrock-agentcore[simulation]==1.8.0",
+    # Exact runtime dependencies for the isolated native AgentSkills variant.
+    "strands-agents[otel]==1.38.0",
+    "aws-opentelemetry-distro==0.19.0",
     "jinja2",
     # AgentCore observability — framework-level auto-instrumentation for
     # LangChain / LangGraph. Emits gen_ai.*, traceloop.entity.* attributes

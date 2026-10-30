@@ -141,6 +141,140 @@ while True:
 
 ---
 
+## Agent Skills and Built-In Skill Evaluators
+
+The existing `market_trends_agent.py` runtime remains the primary LangGraph sample with live browser tools and AgentCore Memory. Agent Skills are demonstrated through a separate `market_trends_skill_agent.py` runtime built with native Strands `AgentSkills`. The isolated runtime uses deterministic reference data, has no broker-profile tools or profile state, and does not change the skills plugin or behavior of neighboring deployments.
+
+### Evaluation Flow
+
+```mermaid
+flowchart LR
+    U[Evaluation scenarios] --> R[AgentCore Runtime]
+    R --> S[Native Strands AgentSkills]
+    R --> CW[Unified runtime log group]
+    CW --> EC[EvaluationClient]
+    CW --> BR[BatchEvaluationRunner]
+    EC --> E[Managed skill evaluators]
+    BR --> E
+```
+
+### Included Skills
+
+Each skill is a reusable `SKILL.md` workflow under `skills/`. Its `allowed-tools` frontmatter is advisory workflow metadata in the current Strands integration, not an enforced runtime access-control allowlist:
+
+| Skill | Use it for | Advisory tools (`allowed-tools`) |
+|:------|:-----------|:---------------------------------|
+| `trend-analysis` | Price direction, momentum, support, and resistance | `get_stock_data`, `get_sector_data`, `search_news` |
+| `sector-rotation` | Sector allocation and overweight/underweight recommendations | `get_market_overview`, `get_sector_data`, `search_news` |
+| `earnings-snapshot` | Earnings news, valuation, dividends, and fundamentals | `get_stock_data`, `search_news` |
+| `portfolio-risk` | Concentration, volatility exposure, and portfolio risk tier | `get_stock_data`, `get_sector_data` |
+
+General market-overview requests continue to use ordinary market tools directly and should not load a skill. Broker-profile persistence remains a capability of the primary LangGraph sample through AgentCore Memory; it is intentionally absent from the isolated deterministic skill runtime.
+
+### What the Evaluators Measure
+
+| Managed evaluator | Question answered | AWS label/value contract | Sample acceptance floor |
+|:------------------|:------------------|:-------------------------|:------------------------|
+| `Builtin.SkillSelectionAccuracy` | Did the agent load the best available skill for the request? | `Yes` = `1.0`; `No` = `0.0` | `1.0` |
+| `Builtin.SkillInstructionFollowing` | After loading the skill, how completely did the agent follow its required workflow? | `Fully Followed` = `1.0`; `Mostly Followed` = `0.75`; `Partially Followed` = `0.5`; `Minimally Followed` = `0.25`; `Not Followed` = `0.0` | `0.75` |
+
+The exact labels and values above are the managed evaluator contracts. The acceptance floors are policy chosen by this sample, not AWS-mandated thresholds. The runner locally fails any result that is malformed, uses an unknown label, has a non-finite/non-numeric value (including a Boolean), has a label/value mismatch, or falls below the sample floor.
+
+Both evaluators operate at the **tool-call level**. Native Strands `AgentSkills` emits the `skills` tool trace that the managed evaluators inspect. The sample calls these AWS-managed evaluators by ID and does not create, update, or delete evaluator resources.
+
+The evaluation script demonstrates both documented SDK interfaces:
+
+- `EvaluationClient.run(...)` evaluates each existing runtime session on demand.
+- `BatchEvaluationRunner.run_dataset_evaluation(...)` invokes the four-scenario dataset and returns service-side aggregate results.
+
+### Prerequisites
+
+Complete the [Quick Start](#quick-start), and ensure:
+
+- Your AWS credentials can create AgentCore Runtime, IAM, and S3 resources and invoke Amazon Bedrock.
+- The Anthropic Claude Haiku 4.5 model is available in the deployment region.
+- CloudWatch Transaction Search is enabled as described in the [AgentCore skill evaluator documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/skill-evaluators.html).
+
+The deployment sets `UNIFIED_TRACES_DESTINATION_ENABLED=true`. Both evaluation interfaces read only the new runtime's default unified log group, `/aws/bedrock-agentcore/runtimes/<agent-id>-DEFAULT`.
+
+### Deploy the Isolated Skill Runtime
+
+From this directory, deploy the skill-enabled runtime:
+
+```bash
+uv sync
+uv run python deploy_skill_agent.py --region us-west-2
+```
+
+The deployment validates the four `SKILL.md` files, packages the native Strands runtime, creates isolated IAM/S3/Runtime resources, enables unified telemetry, waits for `READY`, and writes `skill_agent_config.json`. It does not modify the existing LangGraph runtime.
+
+The script intentionally creates one isolated deployment. If `skill_agent_config.json` already exists, clean up the recorded resources before deploying again.
+
+### Run the Skill Evaluators
+
+Run all four positive scenarios and the no-skill control:
+
+```bash
+uv run python evaluators/scripts/evaluate_skills.py
+```
+
+The baseline checks these routes:
+
+- NVDA trend request -> `trend-analysis`
+- Cross-sector allocation request -> `sector-rotation`
+- LLY earnings request -> `earnings-snapshot`
+- NVDA/TSLA/JPM portfolio request -> `portfolio-risk`
+- General market overview -> no skill
+
+Telemetry ingestion is asynchronous; use `--wait 240` if the default 180 seconds is not enough. The script:
+
+1. Invokes all four skill scenarios and a no-skill market-overview control.
+2. Uses `EvaluationClient.run(...)` for per-session scores.
+3. Uses `BatchEvaluationRunner` with `log_group_names=[config["cw_log_group"]]` for the four-scenario dataset.
+4. Saves results to `evaluators/results/skill_evaluation_results.json` and exits nonzero if validation fails.
+
+A successful on-demand run includes output similar to:
+
+```text
+trend-analysis-nvda              Builtin.SkillSelectionAccuracy       1.0   Yes
+trend-analysis-nvda              Builtin.SkillInstructionFollowing    1.0   Fully Followed
+no-skill-market-overview         Builtin.SkillSelectionAccuracy       SKIPPED (0 results)
+no-skill-market-overview         Builtin.SkillInstructionFollowing    SKIPPED (0 results)
+```
+
+### Clean Up the Skill Runtime
+
+The generated config contains the exact runtime, role, policy, bucket, key, region, and unified runtime log group used by this isolated deployment. Load those values before deleting resources:
+
+```bash
+CONFIG=skill_agent_config.json
+REGION=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["region"])' "$CONFIG")
+AGENT_ID=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["agent_id"])' "$CONFIG")
+ROLE_NAME=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["role_name"])' "$CONFIG")
+POLICY_NAME=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["policy_name"])' "$CONFIG")
+S3_BUCKET=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["s3_bucket"])' "$CONFIG")
+CW_LOG_GROUP=$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["cw_log_group"])' "$CONFIG")
+
+aws bedrock-agentcore-control delete-agent-runtime \
+  --agent-runtime-id "$AGENT_ID" \
+  --region "$REGION"
+```
+
+Wait until runtime deletion completes before removing its log group or IAM role. The bucket is dedicated to this sample, so remove all deployment objects before deleting it:
+
+```bash
+aws logs delete-log-group --log-group-name "$CW_LOG_GROUP" --region "$REGION"
+aws s3 rm "s3://$S3_BUCKET" --recursive --region "$REGION"
+aws s3api delete-bucket --bucket "$S3_BUCKET" --region "$REGION"
+aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$POLICY_NAME"
+aws iam delete-role --role-name "$ROLE_NAME"
+rm "$CONFIG"
+```
+
+These commands affect only resources recorded in the selected config; they do not delete the existing LangGraph runtime or the AWS-managed built-in evaluators.
+
+---
+
 ## Evaluating Your Agent with Custom Code-Based Evaluators
 
 Custom code-based evaluators let you replace the LLM-as-a-judge approach with deterministic Lambda functions — giving you full control over evaluation logic. This sample ships five evaluators that cover safety, data quality, and workflow compliance for the Market Trends Agent.
@@ -269,7 +403,11 @@ The [agentcore CLI](https://github.com/aws/agentcore-cli) provides a convenient 
 
 **Install the CLI:**
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 > See the [AgentCore CLI repository](https://github.com/aws/agentcore-cli) for alternative install methods and latest version info.
 

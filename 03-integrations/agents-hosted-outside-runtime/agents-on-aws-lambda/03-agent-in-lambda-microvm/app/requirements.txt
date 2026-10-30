@@ -1,0 +1,10 @@
+# ADOT SDK — the ONLY supported transport for agents outside AgentCore runtime.
+# >= 0.18.0 required to deliver spans to the agent's own log group instead of
+# the shared aws/spans group (via OTEL_EXPORTER_OTLP_TRACES_HEADERS).
+aws-opentelemetry-distro>=0.18.0
+
+# Strands: OTEL emission is baked in via the [otel] extra.
+strands-agents[otel]
+
+# Bedrock client (already a transitive dep of strands, pinned here for clarity)
+boto3

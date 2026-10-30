@@ -423,7 +423,7 @@ def get_or_create_memory(name: str) -> str:
             StrategyType.SEMANTIC.value: {
                 "name": "PersonalAssistantFacts",
                 "description": "Captures standalone facts about the user from conversations",
-                "namespaces": [SEMANTIC_NAMESPACE],
+                "namespaceTemplates": [SEMANTIC_NAMESPACE],
             }
         }
     ]

@@ -1,10 +1,11 @@
 """
 Run AgentCore Insights on the HR Assistant agent.
 
-Three insight types:
-  - Builtin.Insight.FailureAnalysis   -- clusters failure sessions by root cause category
-  - Builtin.Insight.UserIntent        -- groups sessions by what the user was trying to do
-  - Builtin.Insight.ExecutionSummary  -- summarizes agent execution patterns across sessions
+Insights are produced by the Builtin.FailureAnalysis insight evaluator, which runs in a
+standard batch evaluation alongside other evaluators:
+  - Builtin.FailureAnalysis  -- detects failures in each session and groups them into
+                                insights with root causes, suggested fixes, and span-level findings
+  - Builtin.GoalSuccessRate  -- scores whether each session achieved the user's goal
 
 With --generate-traces, the script first sends a set of failure-mode sessions to populate
 CloudWatch, so FailureAnalysis has real patterns to work with:
@@ -15,17 +16,11 @@ CloudWatch, so FailureAnalysis has real patterns to work with:
   - Ambiguous prompts that cause multi-step confusion
 
 Usage:
-    # Generate failure traces then run all three insights:
+    # Generate failure traces then run insights:
     python insights.py --name HRInsights849 --generate-traces [--region us-west-2]
 
     # Run insights on existing traces from the last N days:
     python insights.py --name HRInsights849 [--lookback-days 7]
-
-    # Also create an OnlineEvaluationConfig for recurring daily insights:
-    python insights.py --name HRInsights849 --generate-traces --online
-
-    # Run FailureAnalysis only (skips UserIntent and ExecutionSummary):
-    python insights.py --name HRInsights849 --insight Builtin.Insight.FailureAnalysis
 
 Prerequisites:
     1. Deploy the HR Assistant agent:
@@ -47,7 +42,7 @@ import boto3
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 
-parser = argparse.ArgumentParser(description="AgentCore Insights (FailureAnalysis, UserIntent, ExecutionSummary)")
+parser = argparse.ArgumentParser(description="AgentCore Insights (Builtin.FailureAnalysis)")
 parser.add_argument("--name", required=True, help="Runtime name (matches agent_state_{name}.json)")
 parser.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
 parser.add_argument(
@@ -56,27 +51,10 @@ parser.add_argument(
     help="Send failure-mode invocations to generate diverse traces before running insights",
 )
 parser.add_argument(
-    "--online",
-    action="store_true",
-    help="Also create an OnlineEvaluationConfig for recurring daily insights",
-)
-parser.add_argument(
     "--lookback-days",
     type=int,
     default=7,
     help="Number of days of traces to analyze (default: 7)",
-)
-parser.add_argument(
-    "--insight",
-    action="append",
-    default=None,
-    dest="insights",
-    metavar="INSIGHT_ID",
-    help=(
-        "Specific insight IDs to run. May be repeated. "
-        "Default: all three (FailureAnalysis, UserIntent, ExecutionSummary). "
-        "Example: --insight Builtin.Insight.FailureAnalysis"
-    ),
 )
 args = parser.parse_args()
 
@@ -95,12 +73,11 @@ state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
 AGENT_ARN = state["runtime_arn"]
 LOG_GROUP = state["log_group"]
 SERVICE_NAME = state["service_name"]
-ROLE_ARN = state["role_arn"]
 ACCOUNT_ID = state["account_id"]
 SPANS_LOG_GROUP = "aws/spans"
 
 # Both log groups are required for reliable session coverage.
-# aws/spans holds OTel span documents (used by all insight types).
+# aws/spans holds OTel span documents (used by all evaluators).
 # The runtime log group holds the log events that spans reference — without it,
 # the evaluator engine sees incomplete spans (LogEventMissingException) even
 # though the agent executed successfully.
@@ -109,7 +86,6 @@ LOG_GROUP_NAMES = [SPANS_LOG_GROUP, LOG_GROUP]
 # ── AWS clients ───────────────────────────────────────────────────────────
 
 dp = boto3.client("bedrock-agentcore", region_name=REGION)
-ctrl = boto3.client("bedrock-agentcore-control", region_name=REGION)
 
 print(f"Account     : {ACCOUNT_ID}")
 print(f"Region      : {REGION}")
@@ -118,21 +94,21 @@ print(f"Agent ARN   : {AGENT_ARN}")
 print(f"Service Name: {SERVICE_NAME}")
 print(f"Log Group   : {LOG_GROUP}")
 
-# ── Insight selection ─────────────────────────────────────────────────────
+# ── Evaluator selection ───────────────────────────────────────────────────
+#
+# Builtin.FailureAnalysis produces the insights. Builtin.GoalSuccessRate runs in
+# the same job so each session gets both a goal-success score and a failure verdict.
 
-ALL_INSIGHTS = [
-    "Builtin.Insight.FailureAnalysis",
-    "Builtin.Insight.UserIntent",
-    "Builtin.Insight.ExecutionSummary",
+EVALUATORS = [
+    {"evaluatorId": "Builtin.FailureAnalysis"},
+    {"evaluatorId": "Builtin.GoalSuccessRate"},
 ]
-
-SELECTED_INSIGHTS = args.insights if args.insights else ALL_INSIGHTS
-print(f"\nInsights to run: {SELECTED_INSIGHTS}")
+print(f"\nEvaluators: {[e['evaluatorId'] for e in EVALUATORS]}")
 
 # ── Step 1: Generate failure-mode traces (optional) ───────────────────────
 #
 # These prompts exercise different failure paths in the HR Assistant so that
-# FailureAnalysis has real patterns to cluster. Each category below maps to
+# FailureAnalysis has real patterns to group. Each category below maps to
 # one or more tool errors or agent reasoning failures.
 #
 #   Category: Tool Execution Failures
@@ -175,7 +151,7 @@ FAILURE_PROMPTS = [
     # --- Multi-step failures: agent finds no data, user pushes further ---
     ("EMP-999", "Check my PTO balance first, then submit a request for next week."),
     ("EMP-001", "Can you give me the 2018 annual pay summary? I need it for a loan."),
-    # --- Successful sessions for user intent diversity ---
+    # --- Successful sessions as a baseline for GoalSuccessRate vs. FailureAnalysis ---
     ("EMP-001", "What is my current PTO balance?"),
     ("EMP-042", "Tell me about the 401k plan — how much does the company match?"),
     ("EMP-001", "What are my health insurance options?"),
@@ -210,7 +186,7 @@ if args.generate_traces:
             resp["response"].read()
             success_count += 1
             status_tag = "OK "  # pylint: disable=invalid-name
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             error_count += 1
             status_tag = "ERR"  # pylint: disable=invalid-name
 
@@ -233,13 +209,12 @@ else:
 #   - "aws/spans" holds OTel span documents and is required for session coverage
 #   - The runtime log group (/aws/bedrock-agentcore/runtimes/...) must also be
 #     included; without it the engine cannot resolve log events referenced by spans
-#   - insights and evaluators are mutually exclusive -- do not mix them
 
 print("\n" + "=" * 60)
 print("STEP 2: Start Batch Insights")
 print("=" * 60)
 
-now = datetime.now(timezone.utc)
+now = datetime.now(timezone.utc)  # noqa: UP017 - datetime.UTC requires Python 3.11; this sample supports 3.10+
 start_time = now - timedelta(days=LOOKBACK_DAYS)
 
 EVAL_NAME = f"HRInsights{uuid.uuid4().hex[:8]}"
@@ -249,11 +224,9 @@ print(f"Time range      : {start_time.strftime('%Y-%m-%dT%H:%M:%SZ')} to {now.st
 print(f"Service name    : {SERVICE_NAME}")
 print(f"Log groups      : {LOG_GROUP_NAMES}")
 
-insights_list = [{"insightId": iid} for iid in SELECTED_INSIGHTS]
-
 eval_resp = dp.start_batch_evaluation(
     batchEvaluationName=EVAL_NAME,
-    insights=insights_list,
+    evaluators=EVALUATORS,
     dataSourceConfig={
         "cloudWatchLogs": {
             "serviceNames": [SERVICE_NAME],
@@ -288,9 +261,14 @@ while True:
     poll += 1
     result = dp.get_batch_evaluation(batchEvaluationId=EVAL_ID)
     status = result["status"]
-    processed = result.get("statistics", {}).get("processedSessionCount", "?")
-    failed = result.get("statistics", {}).get("failedSessionCount", "?")
-    print(f"  Poll {poll:3d}  [{time.strftime('%H:%M:%S')}]  status={status}  processed={processed}  failed={failed}")
+    er = result.get("evaluationResults", {})
+    completed = er.get("numberOfSessionsCompleted", "?")
+    total = er.get("totalNumberOfSessions", "?")
+    failed = er.get("numberOfSessionsFailed", "?")
+    print(
+        f"  Poll {poll:3d}  [{time.strftime('%H:%M:%S')}]  status={status}  "
+        f"completed={completed}/{total}  failed={failed}"
+    )
 
     if status in TERMINAL:
         break
@@ -299,158 +277,65 @@ while True:
 
 print(f"\nFinal status: {status}")
 
-if result.get("errorDetails"):
-    print(f"Error details: {result['errorDetails']}")
-
 # ── Step 4: Print Insights Results ────────────────────────────────────────
 
 print("\n" + "=" * 60)
 print("STEP 4: Insights Results")
 print("=" * 60)
 
-# ── 4a: FailureAnalysis ───────────────────────────────────────────────────
+# ── 4a: Evaluator scores ──────────────────────────────────────────────────
+#
+# FailureAnalysis scores each session 1.0 (failures found) or 0.0 (no failures),
+# so a higher average means more failing sessions.
 
-fa = result.get("failureAnalysisResult") or result.get("failureAnalysisOutput")
-if fa:
-    failures = fa.get("failures", [])
-    print(f"\n--- FailureAnalysis ({len(failures)} top-level categories) ---")
+er = result.get("evaluationResults", {})
+summaries = er.get("evaluatorSummaries", [])
+print(f"\n--- Evaluator scores ({len(summaries)} evaluators) ---")
+for s in summaries:
+    avg = s.get("statistics", {}).get("averageScore")
+    print(f"  {s['evaluatorId']:<26}: {avg}  (evaluated: {s.get('totalEvaluated', 0)})")
 
-    if not failures:
-        print("  No failure categories found.")
-    else:
-        for cat in failures:
-            cat_name = cat.get("name", "(unnamed)")
-            sub_cats = cat.get("subCategories", [])
-            total_affected = sum(
-                rc.get("affectedSessionCount", 0) for sc in sub_cats for rc in sc.get("rootCauses", [])
+# ── 4b: FailureAnalysis insights ──────────────────────────────────────────
+
+insights = result.get("insightResults", [])
+print(f"\n--- FailureAnalysis ({len(insights)} insights) ---")
+
+if not insights:
+    print("  No insights found.")
+else:
+    for insight in insights:
+        print(f"\n  Insight: {insight.get('name', '(unnamed)')}  ({insight.get('affectedSessionCount', 0)} sessions)")
+        if insight.get("description"):
+            print(f"  Description  : {insight['description']}")
+
+        for cause in insight.get("rootCauses", []):
+            print(
+                f"\n    Root cause   : {cause.get('name', '(unnamed)')}  "
+                f"({cause.get('affectedSessionCount', 0)} sessions)"
             )
-            print(f"\n  Category: {cat_name}  (sessions affected: {total_affected})")
+            if cause.get("explanation"):
+                print(f"    Explanation  : {cause['explanation']}")
+            if cause.get("suggestedFix"):
+                print(f"    Suggested fix: {cause['suggestedFix']}")
 
-            for sc in sub_cats:
-                sc_name = sc.get("name", "(unnamed)")
-                root_causes = sc.get("rootCauses", [])
-                print(f"    Subcategory: {sc_name}")
+            for sample in cause.get("sampleSessions", []):
+                for finding in sample.get("findings", []):
+                    print(
+                        f"      [{sample['sessionId'][:8]}] span {finding.get('targetId')}  "
+                        f"{finding.get('category')} ({finding.get('confidence')}): {finding.get('description')}"
+                    )
 
-                for rc in root_causes:
-                    rc_name = rc.get("name", "(unnamed)")
-                    rc_rec = rc.get("recommendation", "")
-                    rc_count = rc.get("affectedSessionCount", 0)
-                    rc_sessions = rc.get("affectedSessions", [])
-                    print(f"      Root cause   : {rc_name}  ({rc_count} sessions)")
-                    if rc_rec:
-                        print(f"      Recommendation: {rc_rec}")
-                    if rc_sessions:
-                        preview = rc_sessions[:3]
-                        more = len(rc_sessions) - 3
-                        suffix = f" (+{more} more)" if more > 0 else ""
-                        print(f"      Session IDs  : {preview}{suffix}")
-else:
-    print("\n(No failureAnalysisResult in response)")
-
-# ── 4b: UserIntent ────────────────────────────────────────────────────────
-
-ui = result.get("userIntentResult") or result.get("userIntentOutput")
-if ui:
-    intents = ui.get("userIntents", [])
-    print(f"\n--- UserIntent ({len(intents)} intent clusters) ---")
-
-    if not intents:
-        print("  No user intent clusters found.")
-    else:
-        for intent in intents:
-            cluster_id = intent.get("clusterId", "")
-            name = intent.get("name", "(unnamed)")
-            description = intent.get("description", "")
-            count = intent.get("affectedSessionCount", 0)
-            print(f"\n  Intent cluster: {name}  ({count} sessions)")
-            print(f"  Cluster ID    : {cluster_id}")
-            if description:
-                print(f"  Description   : {description}")
-else:
-    print("\n(No userIntentResult in response — may be a known beta issue)")
-
-# ── 4c: ExecutionSummary ──────────────────────────────────────────────────
-
-es = result.get("executionSummaryResult") or result.get("executionSummaryOutput")
-if es:
-    summaries = es.get("executionSummaries", [])
-    print(f"\n--- ExecutionSummary ({len(summaries)} clusters) ---")
-
-    if not summaries:
-        print("  No execution summary clusters found.")
-        print("  Note: ExecutionSummary requires at least 3 sessions for clustering.")
-    else:
-        for summary in summaries:
-            cluster_id = summary.get("clusterId", "")
-            description = summary.get("description", "")
-            count = summary.get("affectedSessionCount", 0)
-            print(f"\n  Cluster: {cluster_id}  ({count} sessions)")
-            if description:
-                print(f"  Description: {description}")
-else:
-    print("\n(No executionSummaryResult in response)")
-
-# ── 4d: Error details per insight ─────────────────────────────────────────
+# ── 4c: Error details ─────────────────────────────────────────────────────
+#
+# The job ends in COMPLETED_WITH_ERRORS when some sessions fail to evaluate or when
+# insight generation fails. In the second case insightResults is absent. Per-session
+# scores are still available in both cases.
 
 error_details = result.get("errorDetails", [])
 if error_details:
     print("\n--- Error details ---")
-    if isinstance(error_details, dict):
-        for key, val in error_details.items():
-            print(f"  {key}: {val}")
-    else:
-        for item in error_details:
-            print(f"  {item}")
-
-# ── Step 5: Online Insights Config (optional) ──────────────────────────────
-#
-# Creates a recurring insights job that runs daily over the last 24 hours of
-# traces. Results accumulate automatically with no manual intervention needed.
-
-if args.online:
-    print("\n" + "=" * 60)
-    print("STEP 5: Create Online Insights Config (Daily Recurring)")
-    print("=" * 60)
-
-    ONLINE_NAME = f"HROnlineInsights{uuid.uuid4().hex[:6]}"
-
-    online_resp = ctrl.create_online_evaluation_config(
-        onlineEvaluationConfigName=ONLINE_NAME,
-        description="HR Assistant daily insights: FailureAnalysis, UserIntent, ExecutionSummary",
-        rule={
-            "samplingConfig": {"samplingPercentage": 100},
-        },
-        dataSourceConfig={
-            "cloudWatchLogs": {
-                "logGroupNames": LOG_GROUP_NAMES,
-                "serviceNames": [SERVICE_NAME],
-            }
-        },
-        insights=[{"insightId": iid} for iid in SELECTED_INSIGHTS],
-        clusteringConfig={"frequencies": ["DAILY"]},
-        evaluationExecutionRoleArn=ROLE_ARN,
-        enableOnCreate=True,
-        clientToken=str(uuid.uuid4()),
-    )
-
-    ONLINE_ID = online_resp["onlineEvaluationConfigId"]
-    ONLINE_ARN = online_resp["onlineEvaluationConfigArn"]
-
-    print("Online insights config created:")
-    print(f"  ID    : {ONLINE_ID}")
-    print(f"  ARN   : {ONLINE_ARN}")
-    print(f"  Name  : {ONLINE_NAME}")
-    print(f"  Status: {online_resp.get('executionStatus', 'unknown')}")
-    print()
-    print("The config will run daily. To view results:")
-    print(
-        f"  python -c \"import boto3, json; ctrl=boto3.client('bedrock-agentcore-control', "
-        f"region_name='{REGION}'); r=ctrl.get_online_evaluation_config("
-        f"onlineEvaluationConfigId='{ONLINE_ID}'); print(json.dumps(r, indent=2, default=str))\""
-    )
-    print()
-    print("To archive (disable) this config:")
-    print(f"  ctrl.update_online_evaluation_config(onlineEvaluationConfigId='{ONLINE_ID}', executionStatus='DISABLED')")
+    for item in error_details:
+        print(f"  {item}")
 
 # ── Summary ────────────────────────────────────────────────────────────────
 
@@ -459,19 +344,14 @@ print("INSIGHTS SUMMARY")
 print("=" * 60)
 print(f"Batch evaluation ID : {EVAL_ID}")
 print(f"Status              : {status}")
+print(f"Sessions completed  : {er.get('numberOfSessionsCompleted', 'N/A')}/{er.get('totalNumberOfSessions', 'N/A')}")
+print(f"Sessions failed     : {er.get('numberOfSessionsFailed', 'N/A')}")
 
-stats = result.get("statistics", {})
-if stats:
-    print(f"Sessions processed  : {stats.get('processedSessionCount', 'N/A')}")
-    print(f"Sessions failed     : {stats.get('failedSessionCount', 'N/A')}")
+print(f"Insights found      : {len(insights)}")
 
-fa_clusters = len((result.get("failureAnalysisResult") or {}).get("failures", []))
-ui_clusters = len((result.get("userIntentResult") or {}).get("userIntents", []))
-es_clusters = len((result.get("executionSummaryResult") or {}).get("executionSummaries", []))
-
-print(f"\nFailureAnalysis  : {fa_clusters} top-level categories")
-print(f"UserIntent       : {ui_clusters} intent clusters")
-print(f"ExecutionSummary : {es_clusters} execution clusters")
+print("\nAverage scores (FailureAnalysis: higher = more failing sessions):")
+for s in summaries:
+    print(f"  {s['evaluatorId']:<26}: {s.get('statistics', {}).get('averageScore')}")
 
 print("\nFull response saved to insights_result.json")
 with open("insights_result.json", "w", encoding="utf-8") as f:

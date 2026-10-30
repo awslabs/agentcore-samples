@@ -9,6 +9,9 @@ Events are the atomic unit of short-term memory. Each event is **immutable**, **
 - `GetEvent` fetches one event in full
 - `ListSessions` discovers prior sessions for an actor
 
+> Optionally, you can use your framework's **session manager / checkpointer** to make these calls on your
+> behalf. See [06-usage-patterns.md](../../00-getting-started/06-usage-patterns.md).
+
 ## Run
 
 ```bash
@@ -29,12 +32,20 @@ The same flow expressed with the AWS CLI:
 
 ```bash
 # 1. Create memory + capture id
-aws bedrock-agentcore-control create-memory \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
   --region "$AWS_REGION" \
-  --name "EventsAndSessionsCli-$(date +%s)" \
+  --name "EventsAndSessionsCli_$(date +%s)" \
   --event-expiry-duration 30 \
-  --client-token "$(uuidgen)"
-export MEMORY_ID=<id-from-response>
+  --client-token "$(uuidgen)" \
+  --query 'memory.id' --output text)
+
+
+# Wait until ACTIVE. CreateEvent is rejected while the memory is still CREATING,
+# and creation takes a couple of minutes. This also exits on FAILED, so it cannot hang.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Append events to two distinct sessions for the same actor
 for sid in session-a session-b; do
@@ -50,10 +61,16 @@ aws bedrock-agentcore list-events \
   --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
   --actor-id user-42 --session-id session-a --include-payloads
 
-# 4. GetEvent for one event by id
+# 4. GetEvent for one event by id. Take the first id from the list above rather
+#    than pasting one by hand. --no-paginate keeps --query on one page, so the
+#    result is just the id (--max-items would append the null NextToken as "None").
+EVENT_ID=$(aws bedrock-agentcore list-events \
+  --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
+  --actor-id user-42 --session-id session-a --no-paginate \
+  --query 'events[0].eventId' --output text)
 aws bedrock-agentcore get-event \
   --region "$AWS_REGION" --memory-id "$MEMORY_ID" \
-  --actor-id user-42 --session-id session-a --event-id <event-id>
+  --actor-id user-42 --session-id session-a --event-id "$EVENT_ID"
 
 # 5. ListSessions discovers prior sessions for the actor
 aws bedrock-agentcore list-sessions \

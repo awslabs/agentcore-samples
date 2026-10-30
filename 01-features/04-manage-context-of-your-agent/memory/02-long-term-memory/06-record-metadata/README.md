@@ -30,14 +30,22 @@ The same flow expressed with the AWS CLI:
 
 ```bash
 # 1. Create memory and declare indexedKeys (cannot be removed later).
-aws bedrock-agentcore-control create-memory \
-  --region "$AWS_REGION" --name "RecordMetaCli-$(date +%s)" \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
+  --region "$AWS_REGION" --name "RecordMetaCli_$(date +%s)" \
   --event-expiry-duration 30 --client-token "$(uuidgen)" \
   --indexed-keys '[
     {"key":"region","type":"STRING"},
     {"key":"tier","type":"STRING"}
-  ]'
-export MEMORY_ID=<id>
+  ]' \
+  --query 'memory.id' --output text)
+
+
+# Wait until ACTIVE. CreateEvent is rejected while the memory is still CREATING,
+# and creation takes a couple of minutes. This also exits on FAILED, so it cannot hang.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Batch-create records with metadata
 aws bedrock-agentcore batch-create-memory-records \

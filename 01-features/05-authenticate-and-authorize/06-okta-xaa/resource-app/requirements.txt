@@ -1,0 +1,8 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+PyJWT[crypto]>=2.9.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+# For running on AWS Lambda (lambda_handler.py)
+mangum>=0.17.0

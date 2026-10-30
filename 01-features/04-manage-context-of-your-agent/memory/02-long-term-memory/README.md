@@ -19,10 +19,10 @@ It creates a memory with a semantic strategy, sends a few `CreateEvent` calls, w
 | [`01-built-in-strategies/`](./01-built-in-strategies/) | The four built-in extractors: semantic, summary, user preference, episodic |
 | [`02-strategy-overrides/`](./02-strategy-overrides/) | Customise built-in extraction and consolidation prompts |
 | [`03-self-managed-strategy/`](./03-self-managed-strategy/) | Plug your own extraction worker via SNS + S3 with message/token/time triggers |
-| [`04-namespaces/`](./04-namespaces/) | Template variables, exact vs. prefix matching, multi-tenancy |
+| [`04-namespaces/`](./04-namespaces/) | Template variables, flexible namespaces (`namespaceKeys`), exact vs. prefix matching, multi-tenancy |
 | [`05-retrieval/`](./05-retrieval/) | `RetrieveMemoryRecords`, `ListMemoryRecords`, `GetMemoryRecord` |
 | [`06-record-metadata/`](./06-record-metadata/) | `indexedKeys`, structured metadata, `metadataFilters` |
-| [`07-batch-apis/`](./07-batch-apis/) | Direct CRUD with `BatchCreate/Update/DeleteMemoryRecords` |
+| [`07-skip-STM/`](./07-skip-STM/) | Write LTM without a short-term event: using `IngestData` API and direct CRUD with `BatchCreate/Update/DeleteMemoryRecords` |
 | [`08-manage-extraction/`](./08-manage-extraction/) | Skip extraction (`extractionMode=SKIP`) and redrive failed jobs |
 | [`09-record-streaming/`](./09-record-streaming/) | Push lifecycle events to Kinesis for event-driven pipelines |
 
@@ -36,6 +36,8 @@ It creates a memory with a semantic strategy, sends a few `CreateEvent` calls, w
 | **Episodic** | Meaningful interaction sequences | `/episodes/{actorId}/` |
 
 Built-in strategies can be **overridden** to swap their extraction or consolidation prompts (`02-strategy-overrides/`), or replaced entirely with a **self-managed** worker (`03-self-managed-strategy/`).
+
+All four extract from `json` payload items as readily as from conversation turns, so behavioural signal the user never spoke aloud still becomes long-term memory — see [`../01-short-term-memory/02-payload-types/`](../01-short-term-memory/02-payload-types/). `blob` payloads are never extracted.
 
 ## Framework integrations
 
@@ -65,16 +67,24 @@ The same flow expressed with the AWS CLI:
 
 ```bash
 # 1. Create memory with a semantic strategy. Namespaces use {actorId}/{sessionId} templates.
-aws bedrock-agentcore-control create-memory \
-  --region "$AWS_REGION" --name "LtmStandardCli-$(date +%s)" \
+MEMORY_ID=$(aws bedrock-agentcore-control create-memory \
+  --region "$AWS_REGION" --name "LtmStandardCli_$(date +%s)" \
   --event-expiry-duration 30 --client-token "$(uuidgen)" \
   --memory-strategies '[{
     "semanticMemoryStrategy": {
       "name": "UserFacts",
       "namespaces": ["/users/{actorId}/facts/"]
     }
-  }]'
-export MEMORY_ID=<id>
+  }]' \
+  --query 'memory.id' --output text)
+
+
+# Wait until ACTIVE. CreateEvent is rejected while the memory is still CREATING,
+# and creation takes a couple of minutes. This also exits on FAILED, so it cannot hang.
+while [ "$(aws bedrock-agentcore-control get-memory --region "$AWS_REGION" \
+    --memory-id "$MEMORY_ID" --query 'memory.status' --output text)" = CREATING ]; do
+  sleep 10
+done
 
 # 2. Drive a few conversation turns; extraction happens asynchronously.
 for line in \

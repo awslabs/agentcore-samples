@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # # LangGraph with AgentCore Memory — Built-in Callback (Long-term Memory)
 #
 # ## Introduction
@@ -107,6 +105,11 @@ import time
 import uuid
 from dataclasses import dataclass
 
+# AgentCore Memory control-plane client (create the resource) + the StrategyType enum
+# (gives us the exact wire key for the Semantic strategy).
+from bedrock_agentcore.memory import MemoryClient
+from bedrock_agentcore.memory.constants import StrategyType
+
 # LangGraph v1.0 agent factory + middleware. NOTE: this replaces the deprecated
 # `from langgraph.prebuilt import create_react_agent` and its pre/post model hooks.
 from langchain.agents import create_agent
@@ -118,11 +121,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 # package). `AgentCoreMemorySaver` is the checkpointer; `AgentCoreMemoryStore` is the
 # long-term store. Both are thin adapters over the AgentCore Memory data-plane API.
 from langgraph_checkpoint_aws import AgentCoreMemorySaver, AgentCoreMemoryStore
-
-# AgentCore Memory control-plane client (create the resource) + the StrategyType enum
-# (gives us the exact wire key for the Semantic strategy).
-from bedrock_agentcore.memory import MemoryClient
-from bedrock_agentcore.memory.constants import StrategyType
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -220,8 +218,9 @@ def inject_recalled_facts(request) -> str:
     # keeps its trailing "/" so it matches the strategy's namespace prefix.
     namespace = ("users", ctx.actor_id, "facts/")
     try:
-        hits = store.search(namespace, query=last_human.text(), limit=5)
-    except Exception as e:  # never let recall failure break the turn
+        hits = store.search(namespace, query=last_human.text, limit=5)
+    # Recall is best-effort: never let a memory failure break the turn.
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"recall failed (continuing without memory): {e}")
         return base_prompt
 
@@ -250,7 +249,7 @@ def persist_turn(state, runtime):
     store = runtime.store
     ctx: MemoryContext = runtime.context
     if store is None or ctx is None:
-        return None
+        return
 
     # The store REQUIRES a 2-tuple namespace (actor_id, session_id) for writes — this is
     # the raw short-term event; the strategy later extracts it into /users/<actor>/facts/.
@@ -260,13 +259,13 @@ def persist_turn(state, runtime):
     # Persist the most recent human turn and the most recent AI turn (if any).
     for msg_type in (HumanMessage, AIMessage):
         msg = next((m for m in reversed(messages) if isinstance(m, msg_type)), None)
-        if msg is not None and msg.text().strip():
+        if msg is not None and msg.text.strip():
             try:
                 store.put(namespace, str(uuid.uuid4()), {"message": msg})
-            except Exception as e:  # don't crash the turn on a save failure
+            # Persistence is best-effort: don't crash the turn on a save failure.
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"failed to persist {msg_type.__name__}: {e}")
     logger.info("🧠 persisted turn to AgentCore Memory (queued for extraction)")
-    return None
 
 
 # ## Step 5: Create the memory resource (built-in Semantic strategy)
@@ -284,7 +283,7 @@ def get_or_create_memory(name: str) -> str:
             StrategyType.SEMANTIC.value: {
                 "name": "NutritionFacts",
                 "description": "Durable facts about the user: diet, goals, preferences",
-                "namespaces": [SEMANTIC_NAMESPACE],
+                "namespaceTemplates": [SEMANTIC_NAMESPACE],
             }
         }
     ]
@@ -323,7 +322,8 @@ def wait_for_extraction(memory_id: str) -> None:
             if records:
                 logger.info("✅ Long-term records are available")
                 return
-        except Exception as e:
+        # The probe is only a poll: any failure just means "retry until the deadline".
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Retrieval probe failed (will retry): {e}")
         time.sleep(EXTRACTION_POLL_INTERVAL_SECONDS)
     logger.warning(
@@ -358,7 +358,7 @@ def run_turn(graph, actor_id: str, session_id: str, user_text: str) -> str:
         config=config,
         context=context,
     )
-    return result["messages"][-1].text()
+    return result["messages"][-1].text
 
 
 def main() -> None:
@@ -422,7 +422,9 @@ def main() -> None:
             try:
                 memory_client.delete_memory_and_wait(memory_id=memory_id)
                 logger.info(f"✅ Deleted memory: {memory_id}")
-            except Exception as e:
+            # Cleanup runs in a finally block: report the failure, never mask the
+            # original exception (if any) by raising from here.
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to delete memory {memory_id}: {e}")
 
 

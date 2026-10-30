@@ -100,7 +100,7 @@ Backend                     End User UI (WalletHub / Privy frontend)
   pip install -r requirements.txt
   ```
 - **AgentCore CLI** (used only to inspect the shared stack from Tutorial 00's project dir) —
-  `npm install -g @aws/agentcore`.
+  `npm install -g @aws/agentcore@0.30.0`.
 
 ## Walkthrough
 
@@ -256,7 +256,7 @@ The script prints each new instrument id, wallet address, session id, and remain
 | `list_payment_instruments` returns empty | Wrong `payment_connector_id` | Instruments are scoped to a connector — pass `PAYMENT_CONNECTOR_ID` from `.env` |
 | `ProcessPayment` fails with a signing error (in a later tutorial) | Delegation not completed | Coinbase: CDP Portal → Wallets → Embedded Wallet → Policies. Privy: complete **Connect agent → Give access** |
 | `ImportError: PaymentManager` | Wrong import path | Import from `bedrock_agentcore.payments` (not `...payments.manager`) |
-| `agentcore: command not found` | CLI not installed (inspection step only) | `npm install -g @aws/agentcore` |
+| `agentcore: command not found` | CLI not installed (inspection step only) | `npm install -g @aws/agentcore@0.30.0` |
 
 ## Clean Up
 

@@ -22,6 +22,7 @@ Start here if you are new to AgentCore memory. This folder teaches the vocabular
 | 3a | [03-quickstart-cli.md](./03-quickstart-cli.md) | End-to-end flow with the AWS CLI |
 | 3b | [04-quickstart-boto3.py](./04-quickstart-boto3.py) | Same flow with raw `boto3` clients |
 | 3c | [05-quickstart-agentcore-sdk.py](./05-quickstart-agentcore-sdk.py) | Same flow with the `MemoryClient` from the AgentCore SDK |
+| 4 | [06-usage-patterns.md](./06-usage-patterns.md) | How agents actually wire memory: the framework adapter (session manager / checkpointer), hooks, and memory-as-tool — per framework |
 
 All three quickstarts build the same resource, write the same event, add the same built-in strategy, and retrieve the same record — so you can switch surfaces without relearning the model.
 
@@ -31,6 +32,7 @@ Once you have the concepts and a working quickstart:
 
 - **Short-term memory primitives** → [`../01-short-term-memory/`](../01-short-term-memory/)
 - **Long-term memory primitives** → [`../02-long-term-memory/`](../02-long-term-memory/)
+- **How to wire memory into an agent (adapter / hook / tool)** → [`06-usage-patterns.md`](./06-usage-patterns.md)
 - **Framework integrations (Strands, LangGraph, LlamaIndex)** → `examples/{single-agent,multi-agent}/` under each memory type
 - **Integrations (runtime, identity, Guardrails, Browser)** → [`../03-integrations/`](../03-integrations/)
 - **Observability (CloudWatch metrics + logs)** → [`../04-observability/`](../04-observability/)

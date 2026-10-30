@@ -29,13 +29,18 @@ self-contained — copy any folder and it runs independently.
 - **Auth patterns** → `07-oauth/` (JWT inbound + OAuth outbound)
 - **Persistent storage** → `14-s3-filesystem/` (mount S3 as the agent filesystem; includes an LLM wiki)
 - **Build an agent with AWS Skills** → `02-use-cases/03-aws-builder-agent/` (harness + AWS Skills = an AWS engineering agent)
+- **Lifecycle hooks** → `02-use-cases/05-refund-desk-hooks/` (AWS Lambda, Amazon SNS and Amazon EventBridge hooks at every point of the agent loop, in a guided web app)
 
 ## AgentCore CLI
 
 The harness is accessible via the AgentCore CLI. The fastest path to a running harness:
 
 ```bash
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 ```
 
 ```bash
@@ -130,6 +135,9 @@ python 02-use-cases/02-webapp-visual-testing/webapp_visual_testing.py
 
 # Weather agent (gateway + guardrails + evals + observability)
 python 02-use-cases/04-weather-agent/weather_agent.py
+
+# Refund desk (lifecycle hooks web app)
+./02-use-cases/05-refund-desk-hooks/start.sh
 ```
 
 Run all tests:

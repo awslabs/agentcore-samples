@@ -1,21 +1,42 @@
 # Short-term memory — LangGraph single-agent
 
 Three LangGraph examples that use Amazon Bedrock AgentCore Memory for **short-term**
-memory — running context within a conversation, persisted and resumed across turns. The
-common thread is the **`AgentCoreMemorySaver` checkpointer** from
-[`langgraph-checkpoint-aws`](https://pypi.org/project/langgraph-checkpoint-aws/): pass it
-to the agent and LangGraph automatically saves and restores graph state per
-`(thread_id, actor_id)`, where `thread_id` maps to the AgentCore **session_id** and
-`actor_id` to the AgentCore **actor_id**.
+memory — the running context of one conversation, saved and restored across turns.
 
-| Example | File | Pattern | Complexity |
+Two of them use the **`AgentCoreMemorySaver` checkpointer** from
+[`langgraph-checkpoint-aws`](https://pypi.org/project/langgraph-checkpoint-aws/). You hand
+it to the agent once and LangGraph does the rest:
+
+```python
+from langgraph_checkpoint_aws import AgentCoreMemorySaver
+
+checkpointer = AgentCoreMemorySaver(memory_id, region_name=region)
+agent = create_react_agent(model, tools, checkpointer=checkpointer)
+
+# Every invoke needs BOTH ids. thread_id becomes the AgentCore sessionId,
+# actor_id becomes the AgentCore actorId.
+config = {"configurable": {"thread_id": "session-1", "actor_id": "user-1"}}
+agent.invoke({"messages": [...]}, config)
+```
+
+The third example shows the alternative: no checkpointer, memory read back through a tool.
+
+| Example | File | Memory wiring | Complexity |
 |---|---|---|---|
-| **Math agent with checkpointing** | [`math-agent-with-checkpointing.py`](./math-agent-with-checkpointing.py) | `AgentCoreMemorySaver` as the checkpointer for automatic state persistence; multi-turn calculations that build on prior context; session isolation across `thread_id`s. | Beginner |
-| **Personal fitness coach** | [`personal-fitness-coach.py`](./personal-fitness-coach.py) | Memory exposed as a **tool** (`list_events`) the agent calls to retrieve recent conversation history; a hand-built `StateGraph` with a chatbot node + `ToolNode`. | Beginner |
-| **Support agent (human-in-the-loop)** | [`support-agent-human-in-the-loop.py`](./support-agent-human-in-the-loop.py) | LangGraph's `interrupt` / `Command` to pause for human input and resume; state preserved across the interruption by the checkpointer. | Beginner |
+| **Math agent with checkpointing** | [`math-agent-with-checkpointing.py`](./math-agent-with-checkpointing.py) | **`AgentCoreMemorySaver`** (checkpointer) for automatic state persistence; multi-turn calculations that build on prior context; session isolation across `thread_id`s. | Beginner |
+| **Personal fitness coach** | [`personal-fitness-coach.py`](./personal-fitness-coach.py) | **No checkpointer** — a hand-built `StateGraph` writes turns with `create_event` and reads them back through a `list_events` **tool** (memory-as-tool). | Beginner |
+| **Support agent (human-in-the-loop)** | [`support-agent-human-in-the-loop.py`](./support-agent-human-in-the-loop.py) | **`AgentCoreMemorySaver`** across a pause: `interrupt` stops the graph mid-run, the paused state is saved to AgentCore Memory, and `Command(resume=...)` picks up exactly where it stopped. | Beginner |
 
 All three use Claude Haiku 4.5 on Amazon Bedrock and require no IAM execution role
 (short-term memory uses no long-term extraction strategy).
+
+> **Not the same thing as `AgentCoreMemoryStore`.** The same package ships a second class for
+> **long-term** memory, and the names are close enough to confuse: the checkpointer resumes
+> *this conversation*, the store recalls facts about *this user*. They are separate arguments, not
+> alternatives, and both can point at one memory resource. This folder isolates the
+> checkpointer; for the comparison and for both wired together, see
+> [checkpointer vs. store](../../../../00-getting-started/06-usage-patterns.md#langgraph-specifically-checkpointer-vs-store)
+> and the [LTM LangGraph examples](../../../../02-long-term-memory/examples/single-agent/with-langgraph-agent/).
 
 ## Architecture
 
@@ -82,10 +103,11 @@ python personal-fitness-coach.py
 python support-agent-human-in-the-loop.py
 ```
 
-> **Note:** `support-agent-human-in-the-loop.py` uses an `InMemorySaver` checkpointer in
-> the script body (it handles the full interrupt/resume protocol cleanly for the demo); the
-> file documents swapping in `AgentCoreMemorySaver(memory_id, region_name=region)` for
-> production. The other two use `AgentCoreMemorySaver` directly.
+> **Note on human-in-the-loop:** `support-agent-human-in-the-loop.py` checkpoints with
+> `AgentCoreMemorySaver`, including across the `interrupt()`. The saver records the pending
+> `__interrupt__` write alongside the rest of the state, so the paused graph can be resumed
+> from a different process or Runtime invocation than the one that paused it — you do not
+> need `InMemorySaver` for interrupt/resume.
 
 ## Cleanup
 

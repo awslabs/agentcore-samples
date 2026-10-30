@@ -12,6 +12,7 @@ Usage:
     uv run python scripts/semantic-search/invoke.py
 """
 
+import json
 import os
 import sys
 import time
@@ -108,7 +109,8 @@ def main():
         {"query": "find me 3 credit research tools"},
     )
     elapsed = time.time() - start
-    tools_found = result.get("result", {}).get("structuredContent", {}).get("tools", [])
+    content = result.get("result", {}).get("content", [])
+    tools_found = json.loads(content[0]["text"]).get("tools", []) if content else []
     print(f"  Search completed in {elapsed:.2f}s")
     print(f"  Tools returned: {len(tools_found)}")
     for t in tools_found[:5]:
@@ -124,7 +126,8 @@ def main():
         {"query": "tools for booking a restaurant reservation"},
     )
     elapsed = time.time() - start
-    tools_found = result.get("result", {}).get("structuredContent", {}).get("tools", [])
+    content = result.get("result", {}).get("content", [])
+    tools_found = json.loads(content[0]["text"]).get("tools", []) if content else []
     print(f"  Search completed in {elapsed:.2f}s")
     print(f"  Tools returned: {len(tools_found)}")
     for t in tools_found[:5]:
@@ -140,7 +143,8 @@ def main():
         {"query": "tools for multiplying two numbers"},
     )
     elapsed = time.time() - start
-    tools_found = result.get("result", {}).get("structuredContent", {}).get("tools", [])
+    content = result.get("result", {}).get("content", [])
+    tools_found = json.loads(content[0]["text"]).get("tools", []) if content else []
     print(f"  Search completed in {elapsed:.2f}s")
     print(f"  Tools returned: {len(tools_found)}")
     for t in tools_found[:5]:

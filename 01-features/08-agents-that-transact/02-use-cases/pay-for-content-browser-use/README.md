@@ -157,7 +157,7 @@ CLEANUP
 - Node.js 20+ (for AgentCore CLI and content-provider CDK)
 - AWS CLI v2 configured with credentials
 - AWS CDK v2 installed
-- AgentCore CLI installed: `npm install -g @aws/agentcore`
+- AgentCore CLI installed: `npm install -g @aws/agentcore@0.30.0`
   > No local Docker required. Step 5 builds via CodeBuild in AWS.
 - Coinbase CDP account — `CDP_API_KEY_NAME`, `CDP_API_KEY_PRIVATE_KEY`, `CDP_WALLET_SECRET`
   from [portal.cdp.coinbase.com](https://portal.cdp.coinbase.com)
@@ -193,7 +193,11 @@ python pay_for_content_browser.py
 
 ```bash
 # Install AgentCore CLI
-npm install -g @aws/agentcore
+npm install -g @aws/agentcore@0.30.0
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 # Deploy the agent (handled by pay_for_content_browser.py Step 5 — or run manually)
 cd payforcontent

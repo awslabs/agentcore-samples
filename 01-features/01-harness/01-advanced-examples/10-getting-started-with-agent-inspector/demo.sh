@@ -27,7 +27,7 @@
 #   ./demo.sh --self-test     # offline checks only (no AWS calls), for CI
 #
 # Prerequisites:
-#   - AgentCore CLI (preview):  npm install -g @aws/agentcore@preview
+#   - AgentCore CLI:  npm install -g @aws/agentcore@0.30.0
 #   - AWS CLI v2 + credentials for a harness preview region
 #     (us-east-1, us-west-2, ap-southeast-2, eu-central-1)
 #   - CloudWatch Transaction Search enabled once per account (the script checks
@@ -97,7 +97,11 @@ preflight() {
   step "Step 0: Pre-flight checks"
 
   command -v agentcore >/dev/null 2>&1 || {
-    echo "${YELLOW}agentcore CLI not found. Install: npm install -g @aws/agentcore@preview${RESET}"; exit 1; }
+    echo "${YELLOW}agentcore CLI not found. Install: npm install -g @aws/agentcore@0.30.0${RESET}"; exit 1; }
+  node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+    || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+  agentcore --version | grep -q '^0\.' \
+    || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
   command -v aws >/dev/null 2>&1 || { echo "${YELLOW}aws CLI not found.${RESET}"; exit 1; }
 
   say "AgentCore CLI version:"; run agentcore --version

@@ -131,10 +131,10 @@ def run_with_boto3(cleanup: bool = False) -> None:
                 "episodicMemoryStrategy": {
                     "name": "Episodes",
                     "description": "Meaningful interaction sequences",
-                    "namespaces": [EPISODE_NAMESPACE_TEMPLATE],
+                    "namespaceTemplates": [EPISODE_NAMESPACE_TEMPLATE],
                     # REQUIRED for episodic — the Reflection step writes cross-episode
                     # insights here; namespace must be the same-as/prefix-of the episode ns.
-                    "reflectionConfiguration": {"namespaces": [REFLECTION_NAMESPACE_TEMPLATE]},
+                    "reflectionConfiguration": {"namespaceTemplates": [REFLECTION_NAMESPACE_TEMPLATE]},
                 }
             }
         ],

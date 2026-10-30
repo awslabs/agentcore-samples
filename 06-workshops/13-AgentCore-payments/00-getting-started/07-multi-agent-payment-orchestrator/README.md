@@ -67,7 +67,7 @@ This tutorial builds a multi-agent system with per-agent budgets, multi-wallet s
 
 * Tutorial 00b completed (multi-provider `.env` with both Coinbase and Privy)
 * Both wallets funded with testnet USDC from https://faucet.circle.com/
-* AgentCore CLI: `npm install -g @aws/agentcore` (requires Node.js 20+)
+* AgentCore CLI: `npm install -g @aws/agentcore@0.30.0` (requires Node.js 20+)
 * Docker installed (for container build during deploy)
 * `pip install -r requirements.txt`
 

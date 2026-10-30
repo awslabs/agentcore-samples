@@ -1,11 +1,15 @@
 # AgentCore payments — Getting Started Tutorials
 
 Step-by-step Python tutorials for building payment-enabled AI agents with **Amazon Bedrock
-AgentCore payments** — x402 protocol orchestration, configurable spend limits, and third-party
+AgentCore payments** —  protocol orchestration, configurable spend limits, and third-party
 wallet integration (Coinbase CDP, Stripe/Privy).
 
-> **Testnet only.** All tutorials use Base Sepolia (Ethereum) or Solana Devnet with free USDC from
-> [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no monetary value.
+> **Testnet by default.** Tutorials 00–07 use Base Sepolia (Ethereum) or Solana Devnet with free USDC
+> from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no monetary value.
+>
+> **Tutorial 09 is the exception.** It runs on Base mainnet and transfers **real USDC** from your
+> wallet. It refuses to run until you opt in explicitly — read
+> [its README](09-pay-per-use-with-upto/) first.
 
 ## How the pieces fit together  <a name="cli-vs-sdk"></a>
 
@@ -36,7 +40,11 @@ commands and Python snippets yourself and learn each piece as you go.
 1. **Install the tools once:**
    ```bash
    pip install -r 00-setup-agentcore-payments/requirements.txt
-   npm install -g @aws/agentcore          # AgentCore CLI (Node.js 20+)
+   npm install -g @aws/agentcore@0.30.0          # AgentCore CLI (Node.js 20+)
+   node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+     || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+   agentcore --version | grep -q '^0\.' \
+     || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
    ```
 2. **Open [Tutorial 00 — Set Up AgentCore payments](00-setup-agentcore-payments/)** and follow it end
    to end. You'll capture wallet-provider credentials, provision the shared payment stack with the
@@ -53,19 +61,22 @@ numbered walkthrough, an inspect step, troubleshooting, and clean-up — so once
 
 ## Tutorials
 
-Run Tutorial 00 first; then 01–07 in any order. Each folder's README opens with a **Reads / Does**
-strip so you can see its inputs and outputs at a glance.
+Run Tutorial 00 first; then 01–07 and 09 in any order. Each folder's README opens with a
+**Reads / Does** strip so you can see its inputs and outputs at a glance.
 
 | # | Folder | What you build | Provisioning |
 |---|--------|----------------|:------------:|
 | 00 | [`00-setup-agentcore-payments/`](00-setup-agentcore-payments/) | Payment manager, connector, IAM roles (CLI) + wallet & session (SDK) | CLI + SDK |
-| 01 | [`01-agents-payments-and-limits/`](01-agents-payments-and-limits/) | Strands & LangGraph agents that pay x402 endpoints with budget limits | SDK |
-| 02 | [`02-deploy-to-agentcore-runtime/`](02-deploy-to-agentcore-runtime/) | Deploy a payment agent to AgentCore Runtime | CLI |
+| 01 | [`01-agents-payments-and-limits/`](01-agents-payments-and-limits/) | Strands, LangGraph, and OpenAI agents that pay x402 endpoints with budget limits | SDK |
+| 02 | [`02-deploy-to-agentcore-runtime/`](02-deploy-to-agentcore-runtime/) | Deploy Strands or OpenAI payment agents to AgentCore Runtime | CLI |
 | 03 | [`03-user-onboarding-wallet-funding/`](03-user-onboarding-wallet-funding/) | Per-user wallet onboarding, funding, delegation, balances | SDK |
 | 04 | [`04-agent-with-coinbase-bazaar-via-gateway/`](04-agent-with-coinbase-bazaar-via-gateway/) | Discover 10,000+ paid MCP tools via AgentCore Gateway | CLI + SDK |
 | 05 | [`05-agent-with-browser-tool-pay-for-content/`](05-agent-with-browser-tool-pay-for-content/) | Pay 402 paywalls inside a browser session | SDK |
 | 06 | [`06-research-agent-with-payment-memory/`](06-research-agent-with-payment-memory/) | Add AgentCore Memory to skip redundant paid calls | SDK |
 | 07 | [`07-multi-agent-payment-orchestrator/`](07-multi-agent-payment-orchestrator/) | Multiple agents, separate wallets, per-agent budgets | CLI + SDK |
+| 09 | [`09-pay-per-use-with-upto/`](09-pay-per-use-with-upto/) | Pay a metered seller with the x402 `upto` scheme (real USDC on Base mainnet) | SDK |
+
+MPP Tutorial is coming soon !
 
 ## Which tutorial do I need?
 
@@ -75,6 +86,8 @@ strip so you can see its inputs and outputs at a glance.
 - **Paying for web/article content?** → 05 (Browser).
 - **Personalized agentic payments with memory?** → 06 (Memory).
 - **Several agents with independent budgets?** → 07 (needs multi-provider setup).
+- **Using the OpenAI Agents SDK?** → 01 locally, then 02 to deploy.
+- **Price not known until the work is done?** → 09 (`upto`, real funds on mainnet).
 
 ## Shared files
 
@@ -88,7 +101,7 @@ strip so you can see its inputs and outputs at a glance.
 - Python 3.10+ and AWS CLI configured (`aws sts get-caller-identity`)
 - AWS account with access to AgentCore payments, in a supported region: `us-east-1`, `us-west-2`,
   `eu-central-1`, `ap-southeast-2`
-- Node.js 20+ and the AgentCore CLI (`npm install -g @aws/agentcore`) for Tutorials 00, 02, 04, 07
+- Node.js 20+ and the AgentCore CLI (`npm install -g @aws/agentcore@0.30.0`) for Tutorials 00, 02, 04, 07
 - Wallet-provider credentials (Coinbase CDP or Stripe/Privy) — captured in Tutorial 00
 
 ## Cleanup

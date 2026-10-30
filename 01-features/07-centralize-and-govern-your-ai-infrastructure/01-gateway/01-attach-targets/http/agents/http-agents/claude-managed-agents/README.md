@@ -36,7 +36,7 @@ Path-based routing forwards `{GATEWAY_URL}/{targetName}/{path}` to `https://api.
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Node.js >= 22.7.5
-- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore`
+- [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md)
 - A [Claude API key](https://platform.claude.com/settings/keys) with Claude Managed Agents beta access

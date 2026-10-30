@@ -40,7 +40,8 @@ Extraction runs asynchronously after `CreateEvent`. When it fails — model thro
 ### Run
 
 ```bash
-export MEMORY_ID=<memory-id-with-failed-jobs>
+# Quote the placeholder — unquoted, bash reads < as a redirect and the paste fails.
+export MEMORY_ID="<a memoryId that has failed extraction jobs>"
 python redrive-failed-extractions.py boto3
 python redrive-failed-extractions.py sdk
 ```

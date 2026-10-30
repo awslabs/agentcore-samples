@@ -21,7 +21,7 @@ This tutorial leverages [**Amazon Bedrock AgentCore runtime**](https://docs.aws.
 | Tutorial type       | Conversational                                                        |
 | Agent type          | Multi-Agent (Orchestrator Agent with Code Generation Agent as a tool) |
 | Agentic Framework   | Strands Agents                                                        |
-| LLM models          | Anthropic Claude Sonnet 4 (primary agent) & Haiku 4.5 (coding agent)  |
+| LLM models          | Anthropic Claude Sonnet 4.5 (primary agent) & Haiku 4.5 (coding agent)  |
 | Tutorial components | AgentCore runtime, Async Tasks, Code Interpreter, S3 Integration      |
 | Tutorial vertical   | Data Analytics                                                        |
 | Example complexity  | Intermediate                                                          |

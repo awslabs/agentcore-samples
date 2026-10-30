@@ -72,7 +72,7 @@ PaymentConnector. Only the `.env` values differ.
   populated with `PAYMENT_MANAGER_ARN`, `USER_ID`, `INSTRUMENT_ID`, and region.
 - **Funded wallet with delegated signing** — the instrument must be `ACTIVE` (funded with testnet
   USDC and delegated-signing granted in Tutorial 00 or Tutorial 03). The script asserts this.
-- **AgentCore CLI** (this tutorial provisions the Gateway with it): `npm install -g @aws/agentcore`
+- **AgentCore CLI** (this tutorial provisions the Gateway with it): `npm install -g @aws/agentcore@0.30.0`
   (Node.js 20+).
 - **AWS CLI configured**: `aws sts get-caller-identity`.
 - **Region** — the SDK reads the region from the `AWS_REGION` env var (default `us-west-2`). Set
@@ -109,8 +109,27 @@ agentcore deploy -y
 agentcore fetch access --name BazaarGateway --type gateway
 ```
 
-The `fetch access` output includes the Gateway URL you'll use in Step 2. If your Gateway uses
-`CUSTOM_JWT` inbound auth, the same output also lists `CLIENT_ID`, `CLIENT_SECRET`, and `TOKEN_URL`.
+The `fetch access` output includes the Gateway URL you'll use in Step 2. For a `CUSTOM_JWT`
+gateway it also prints a ready-to-use bearer token (and its expiry); the `CLIENT_ID`,
+`CLIENT_SECRET`, and `TOKEN_URL` the scripts need in Step 2 come from your OIDC provider, not from
+`fetch access` — see the note below.
+
+> **Enabling `CUSTOM_JWT` inbound auth (optional; the more secure choice for anything beyond local
+> experimentation).** The Gateway defaults to `NONE` inbound auth. To require a JWT instead, supply
+> an **existing** OIDC issuer when you add the gateway — the CLI does **not** create an identity
+> provider for you:
+> ```bash
+> agentcore add gateway --name BazaarGateway \
+>   --protocol-type MCP \
+>   --authorizer-type CUSTOM_JWT \
+>   --discovery-url https://<issuer>/.well-known/openid-configuration \
+>   --allowed-clients <client-id> \
+>   --client-id <client-id> --client-secret <client-secret>
+> ```
+> Any OIDC provider works — for example an Amazon Cognito user pool with a machine-to-machine
+> (`client_credentials`) app client. Use that provider's values for `CLIENT_ID`, `CLIENT_SECRET`,
+> and `TOKEN_URL` in Step 2; the scripts auto-detect them and attach the bearer token. (The
+> `--client-id`/`--client-secret` passed here let the CLI mint tokens for `fetch access`.)
 
 > **Prefer the Console?** Gateway → Create Gateway → Add Target → target type **Integrations** →
 > **Coinbase x402 Bazaar** (no outbound auth needed) configures the same Bazaar MCP server — the
@@ -126,8 +145,8 @@ GATEWAY_URL=https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.co
 ```
 
 If your Gateway uses `CUSTOM_JWT` inbound auth, also add `CLIENT_ID`, `CLIENT_SECRET`, and
-`TOKEN_URL` from the `agentcore fetch access` output. If it uses `NONE` auth (the default), leave them
-unset — the script auto-detects which to use.
+`TOKEN_URL` from your OIDC provider (the identity provider you configured in Step 1). If it uses
+`NONE` auth (the default), leave them unset — the script auto-detects which to use.
 
 ### Step 3 — Run the discovery-driven agent
 
@@ -150,8 +169,9 @@ budget, and the `AgentCorePaymentsPlugin` handles each 402 automatically.
    with the SDK.
 3. **Connects to the Gateway** over MCP streamable HTTP (auto-detecting `NONE` vs `CUSTOM_JWT` auth)
    and builds a Strands agent with the Bazaar tools + `AgentCorePaymentsPlugin`.
-4. Runs four discovery scenarios: discover-and-call a paid tool, compare prices across categories,
-   make a budget-aware selection under $0.10, and chain multiple paid calls in one session.
+4. Runs five discovery scenarios: discover-and-call a paid tool, compare prices across categories,
+   make a budget-aware selection under $0.10, chain multiple paid calls in one session, and verify
+   the Bazaar's curation layer is active (`curatedOnly` search — no payment).
 5. **Prints session spend** (budget, remaining, spent) and a CloudWatch traces link.
 
 The discover → call → 402 → pay → retry sequence across the Gateway and Bazaar looks like this:
@@ -166,13 +186,42 @@ The discover → call → 402 → pay → retry sequence across the Gateway and 
 - Confirm `.env` has `GATEWAY_URL` set (and `CLIENT_ID`/`CLIENT_SECRET`/`TOKEN_URL` if `CUSTOM_JWT`).
 - The script itself prints per-session spend and remaining budget after the Bazaar calls.
 
+### Verify the Bazaar target through the Gateway (no payment)
+
+Confirm the three Bazaar tools are discoverable and that Coinbase's **curation** layer is active —
+neither requires a funded wallet.
+
+```bash
+# Confirm curation is enabled and the curatedOnly filter is honored (read-only, no payment).
+# Reports curated vs. uncurated coverage and a category breakdown.
+python validate_bazaar_curation.py
+```
+
+The three tools are exposed under the target-name prefix `CoinbaseBazaar___` —
+`CoinbaseBazaar___search_resources`, `CoinbaseBazaar___proxy_tool_call`, and
+`CoinbaseBazaar___validate_endpoint`. `validate_bazaar_curation.py` lists them at the top of its
+output as a quick health check.
+
+> **On "how many curated endpoints?"** `search_resources` returns at most 20 results per call, sets
+> `partialResults=true` when more match, and has **no offset/cursor** — so the full catalog can't be
+> enumerated through the API. The script reports the distinct curated endpoints it discovered across
+> a set of probe queries as a **lower bound**, and proves curation is working by showing the
+> `curatedOnly` filter excludes non-curated resources — it does not assert an exact count.
+
+Optionally, check whether an x402 URL is Bazaar-ready (read-only diagnostics, no payment):
+
+```bash
+python validate_endpoint_example.py https://api.example.com/your-endpoint GET
+```
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `GATEWAY_URL not set in .env` | Gateway URL missing | Complete Step 1, then add `GATEWAY_URL=<url>` to the shared `.env` (Step 2) |
-| `agentcore: command not found` | AgentCore CLI not installed | `npm install -g @aws/agentcore` |
-| MCP connection fails / 401 / 403 | Gateway not deployed, or wrong/missing auth | `agentcore status` to confirm deploy; for `CUSTOM_JWT`, set `CLIENT_ID`/`CLIENT_SECRET`/`TOKEN_URL` from `agentcore fetch access` |
+| `agentcore: command not found` | AgentCore CLI not installed | `npm install -g @aws/agentcore@0.30.0` |
+| MCP connection fails / 401 / 403 | Gateway not deployed, or wrong/missing auth | `agentcore status` to confirm deploy; for `CUSTOM_JWT`, set `CLIENT_ID`/`CLIENT_SECRET`/`TOKEN_URL` from your OIDC provider (README Step 1) |
+| `ModuleNotFoundError: No module named 'requests'` | Older install predating the `requests` dependency | `pip install -r requirements.txt` (needed for the `CUSTOM_JWT` OAuth token fetch) |
 | `AssertionError: Instrument is ... — fund and delegate` | Instrument not `ACTIVE` | Fund the wallet with testnet USDC and grant delegated signing (Tutorial 00 or Tutorial 03) |
 | `search_resources` returns no results | Bazaar index / narrow query | Try broader terms like "market" or "weather"; verify the target endpoint is reachable |
 | `duplicate key: Set-Cookie` (or repeated transport errors) on `search_resources` / `proxy_tool_call` | Transient Coinbase Bazaar infrastructure issue — not your code or wallet | Re-run in a few minutes. The agent is instructed to stop after one retry rather than loop; no funds are charged on a failed settlement |

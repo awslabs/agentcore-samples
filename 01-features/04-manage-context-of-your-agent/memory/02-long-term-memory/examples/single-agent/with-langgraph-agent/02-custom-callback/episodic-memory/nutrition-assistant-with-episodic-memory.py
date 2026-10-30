@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # # LangGraph with AgentCore Memory using Episodic Strategy
 #
 # ## Introduction
@@ -13,7 +11,7 @@
 # | Tutorial type       | Long-term Conversational                                                        |
 # | Agent usecase       | Nutrition Assistant with Episodic Memory Strategy                               |
 # | Agentic Framework   | LangGraph                                                                        |
-# | LLM model           | Anthropic Claude Sonnet 3.7                                                     |
+# | LLM model           | Anthropic Claude Haiku 4.5                                                      |
 # | Tutorial components | AgentCore Memory, Episodic Strategy, LangGraph Hooks, Session-based Episodes  |
 # | Example complexity  | Intermediate                                                                     |
 #
@@ -86,35 +84,38 @@
 # Install necessary libraries from https://github.com/langchain-ai/langchain-aws
 
 
-import os
 import logging
+import os
+import uuid
 
 # Import LangGraph and LangChain components
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
-import uuid
-
 
 region = os.getenv("AWS_REGION", "us-east-1")
 logging.getLogger("nutrition-agent").setLevel(logging.DEBUG)
 
 
-# Import the AgentCoreMemoryStore that we will use as a store
-from langgraph_checkpoint_aws import AgentCoreMemoryStore  # noqa: E402
+import json
+import time
 
-# For this example, we will just use an InMemorySaver to save context.
-# In production, we highly recommend the AgentCoreMemorySaver as a checkpointer which works seamlessly alongside the memory store
-# from langgraph_checkpoint_aws import AgentCoreMemorySaver
-from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
-from bedrock_agentcore.memory import MemoryClient  # noqa: E402
+import boto3
+from bedrock_agentcore.memory import MemoryClient
 
-
-import boto3  # noqa: E402
-import json  # noqa: E402
-import time  # noqa: E402
+# `langgraph-checkpoint-aws` gives you two classes, one per LangGraph argument. This script
+# wires BOTH, over a single AgentCore memory resource:
+#
+#   AgentCoreMemoryStore  -> store=         recalls episodes from THIS USER's past conversations
+#   AgentCoreMemorySaver  -> checkpointer=  resumes THIS CONVERSATION
+#
+# They coexist safely on one memory_id because they write different payload types. The store
+# writes `conversational` events, which the episodic strategy extracts. The saver writes
+# opaque `blob` events, which no strategy ever reads — so checkpoint data never pollutes your
+# extracted episodes.
+from langgraph_checkpoint_aws import AgentCoreMemorySaver, AgentCoreMemoryStore
 
 # Create IAM role for memory execution
 iam_client = boto3.client("iam")
@@ -203,7 +204,7 @@ override_strategy = {
     "customMemoryStrategy": {
         "name": "NutritionEpisodicExtractor",
         "description": "Nutrition assistant with episodic memory for meal planning insights",
-        "namespaces": ["nutrition/{actorId}/{sessionId}"],
+        "namespaces": ["/nutrition/{actorId}/{sessionId}/"],
         "configuration": {
             "semanticOverride": {
                 "extraction": {
@@ -316,11 +317,15 @@ def post_model_hook(state, config: RunnableConfig, *, store: BaseStore):
 # **Note**: for custom agent implementations the Store and tools can be configured to run as needed for any workflow following this pattern. Pre/post model hooks can be used, the whole conversation could be saved at the end, etc.
 
 
+# Unlike LangGraph's in-process InMemorySaver, this checkpoint outlives the process:
+# re-invoke with the same thread_id from anywhere and the graph picks up mid-conversation.
+checkpointer = AgentCoreMemorySaver(memory_id, region_name=region)
+
 graph = create_react_agent(
     llm,
-    store=store,
+    store=store,  # LONG-TERM: episodes about this user
     tools=[],  # No additional tools needed for this example
-    checkpointer=InMemorySaver(),  # For conversation state management
+    checkpointer=checkpointer,  # SHORT-TERM: this conversation's state
     pre_model_hook=pre_model_hook,  # Saves user message before LLM call
     post_model_hook=post_model_hook,  # Saves assistant response for episodic processing after LLM call
 )
@@ -394,7 +399,7 @@ print(f"Conversation messages result: {result}")
 
 
 # The correct way to search episodic long-term memories in LangGraph
-from bedrock_agentcore.memory import MemoryClient  # noqa: E402
+from bedrock_agentcore.memory import MemoryClient
 
 # Use the memory client directly (not the store)
 memory_client = MemoryClient(region_name=region)
@@ -417,7 +422,8 @@ try:
         content = mem.get("content", {})
         text = content.get("text", str(content))
         print(f"   - {text[:300]}...")
-except Exception as e:
+# Retrieval can fail while extraction is still in flight — report and keep going.
+except Exception as e:  # noqa: BLE001
     print(f"   Error: {e}")
 print()
 
@@ -432,7 +438,8 @@ try:
         content = mem.get("content", {})
         text = content.get("text", str(content))
         print(f"   - {text[:300]}...")
-except Exception as e:
+# Retrieval can fail while extraction is still in flight — report and keep going.
+except Exception as e:  # noqa: BLE001
     print(f"   Error: {e}")
 
 

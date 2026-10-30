@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Demo: Gemini harness on Amazon Bedrock AgentCore via the AgentCore CLI (preview).
+# Demo: Gemini harness on Amazon Bedrock AgentCore via the AgentCore CLI.
 # Prints each command, runs it, and shows the real output — built for terminal recording.
 # The AWS account ID is masked as <ACCOUNT> everywhere, in commands and output.
 #
 # Prereqs:
-#   - agentcore preview CLI on PATH         (npm install -g @aws/agentcore@preview)
+#   - agentcore CLI on PATH         (npm install -g @aws/agentcore@0.30.0)
 #   - AWS credentials for a preview region  (us-east-1 | us-west-2 | ap-southeast-2 | eu-central-1)
 #   - A Gemini API key. Resolved automatically (in order):
 #       1. $GEMINI_API_KEY if exported
@@ -69,6 +69,11 @@ PROJECT="gemdemo${TS}"            # project name: alphanumeric only
 HARNESS="gemini_${TS}"           # harness name: letter + alphanumeric/underscore
 CRED="gemini-key-${TS}"          # credential name: alphanumeric/hyphen/dot (no underscore)
 ARN="arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT}:token-vault/default/apikeycredentialprovider/${CRED}"
+
+node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
+  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
+agentcore --version | grep -q '^0\.' \
+  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
 
 note "AgentCore CLI version"
 run "agentcore --version"

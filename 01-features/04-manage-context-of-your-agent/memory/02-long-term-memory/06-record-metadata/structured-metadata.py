@@ -34,6 +34,30 @@ import uuid
 REGION = os.getenv("AWS_REGION", "us-east-1")
 ACTOR_ID = "tenant-acme"
 NAMESPACE = f"/tenants/{ACTOR_ID}/notes/"
+SEARCHABLE_WAIT_SECONDS = 100  # polling budget; records became searchable at 75-97s across runs
+EXPECTED_EU_RECORDS = 2  # of the 3 records written below, 2 carry region=EU
+
+
+def _search_until_visible(
+    op, expected: int = EXPECTED_EU_RECORDS, *, max_wait: int = SEARCHABLE_WAIT_SECONDS, poll: int = 10
+) -> list:
+    """Call `op()` until it returns `expected` records, or the deadline passes.
+
+    Directly-written records are eventually consistent. Measured against a live
+    account over three runs they became searchable at 75s, 86s and 97s after
+    BatchCreate, so any single fixed sleep is a guess that eventually loses.
+
+    This waits for the expected COUNT, not merely for a non-empty result: the index
+    populates record by record, so a run that stops at the first hit can report 1 of
+    the 2 EU records and look like the filter dropped one. The count is deterministic
+    here because the records are written directly rather than extracted.
+    """
+    deadline = time.time() + max_wait
+    while True:
+        hits = op()
+        if len(hits) >= expected or time.time() >= deadline:
+            return hits
+        time.sleep(poll)
 
 
 def _records() -> list[dict]:
@@ -97,28 +121,35 @@ def run_with_boto3(cleanup: bool = False) -> None:
     resp = data.batch_create_memory_records(memoryId=memory_id, records=_records())
     print(f"[boto3] Created {len(resp.get('successfulRecords', []))} records")
 
-    # Directly-written records are eventually consistent — they take ~30s to become
-    # searchable. Wait before filtering, or the query returns nothing.
-    time.sleep(35)
-
-    hits = data.retrieve_memory_records(
-        memoryId=memory_id,
-        namespace=NAMESPACE,
-        searchCriteria={
-            "searchQuery": "Acme",
-            "topK": 10,
-            "metadataFilters": [
-                {
-                    "left": {"metadataKey": "region"},
-                    "operator": "EQUALS_TO",
-                    "right": {"metadataValue": {"stringValue": "EU"}},
-                }
-            ],
-        },
-    )["memoryRecordSummaries"]
+    # Directly-written records are eventually consistent — poll until both EU records
+    # are searchable instead of sleeping a fixed amount.
+    print(f"[boto3] Polling up to {SEARCHABLE_WAIT_SECONDS}s for records to become searchable...")
+    hits = _search_until_visible(
+        lambda: data.retrieve_memory_records(
+            memoryId=memory_id,
+            namespace=NAMESPACE,
+            searchCriteria={
+                "searchQuery": "Acme",
+                "topK": 10,
+                "metadataFilters": [
+                    {
+                        "left": {"metadataKey": "region"},
+                        "operator": "EQUALS_TO",
+                        "right": {"metadataValue": {"stringValue": "EU"}},
+                    }
+                ],
+            },
+        )["memoryRecordSummaries"]
+    )
     print(f"\n[boto3] EU-only results ({len(hits)}):")
     for h in hits:
         print(f"  - {h['content']['text']} | meta={h.get('metadata')}")
+    if len(hits) < EXPECTED_EU_RECORDS:
+        print(
+            f"[boto3] Expected {EXPECTED_EU_RECORDS} EU records, got {len(hits)} after "
+            f"{SEARCHABLE_WAIT_SECONDS}s — still propagating, so the metadata filter cannot be "
+            "fully demonstrated from this run."
+        )
 
     if cleanup:
         control.delete_memory(memoryId=memory_id, clientToken=str(uuid.uuid4()))
@@ -174,26 +205,32 @@ def run_with_sdk(cleanup: bool = False) -> None:
         f"[sdk] Created {len(resp.get('successfulRecords', []))} records ({len(resp.get('failedRecords', []))} failed)"
     )
 
-    # Directly-written records are eventually consistent: they take ~30s to become
-    # searchable (with their indexed metadata). Wait before filtering, or it returns 0.
-    time.sleep(35)
-
-    # Same EU-only filter as boto3/sdk, but built via the typed expression helper.
+    # Same EU-only filter as boto3, but built via the typed expression helper.
     region_eu = MemoryMetadataFilter.build_expression(
         MemoryRecordLeftExpression.build("region"),
         MemoryRecordOperatorType.EQUALS_TO,
         MemoryRecordRightExpression.build_string("EU"),
     )
-    hits = session.search_long_term_memories(
-        query="Acme",
-        namespace=NAMESPACE,
-        top_k=10,
-        metadata_filters=[region_eu],
+    # Same eventual-consistency poll as the boto3 path above.
+    print(f"[sdk] Polling up to {SEARCHABLE_WAIT_SECONDS}s for records to become searchable...")
+    hits = _search_until_visible(
+        lambda: session.search_long_term_memories(
+            query="Acme",
+            namespace=NAMESPACE,
+            top_k=10,
+            metadata_filters=[region_eu],
+        )
     )
     print(f"\n[sdk] EU-only results ({len(hits)}):")
     for h in hits:
         # Each hit is a MemoryRecord (dict-like): content.text + metadata.
         print(f"  - {h['content']['text']} | meta={h.get('metadata')}")
+    if len(hits) < EXPECTED_EU_RECORDS:
+        print(
+            f"[sdk] Expected {EXPECTED_EU_RECORDS} EU records, got {len(hits)} after "
+            f"{SEARCHABLE_WAIT_SECONDS}s — still propagating, so the metadata filter cannot be "
+            "fully demonstrated from this run."
+        )
 
     if cleanup:
         client.delete_memory_and_wait(memory_id=memory_id)

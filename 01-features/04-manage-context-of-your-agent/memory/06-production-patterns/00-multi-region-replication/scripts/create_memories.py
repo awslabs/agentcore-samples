@@ -11,17 +11,35 @@ are associated by namespace.)
 Usage::
 
     python scripts/create_memories.py \
-        --name my-agent-memory \
+        --name my_agent_memory \
         --source-region us-east-1 \
         --target-region us-west-2
+
+``--name`` takes letters, digits and underscores only: CreateMemory constrains the
+name to ``[a-zA-Z][a-zA-Z0-9_]{0,47}``, so a hyphen is rejected by the service.
 """
 
 import argparse
 import json
+import re
 import time
 
 import boto3
 from botocore.exceptions import ClientError
+
+# From the CreateMemory service model. botocore does not enforce it client-side,
+# so an invalid name only fails once the request reaches the service.
+MEMORY_NAME_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,47}$")
+
+
+def memory_name(value):
+    """Reject a --name that CreateMemory will refuse, including our own suffix."""
+    if not MEMORY_NAME_RE.match(f"{value}_source"):
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not usable: '{value}_source' must match "
+            "[a-zA-Z][a-zA-Z0-9_]{0,47} (letters, digits and underscores, no hyphens)"
+        )
+    return value
 
 
 def _wait_active(client, memory_id, label, timeout=600):
@@ -56,7 +74,7 @@ def create_memory(region, name, strategies):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--name", required=True)
+    p.add_argument("--name", required=True, type=memory_name)
     p.add_argument("--source-region", required=True)
     p.add_argument("--target-region", required=True)
     p.add_argument(
@@ -72,13 +90,13 @@ def main():
         {
             "semanticMemoryStrategy": {
                 "name": "semantic",
-                "namespaces": ["/facts/{actorId}"],
+                "namespaceTemplates": ["/facts/{actorId}/"],
             }
         }
     ]
 
-    source_id = create_memory(args.source_region, f"{args.name}-source", strategies)
-    target_id = create_memory(args.target_region, f"{args.name}-target", strategies)
+    source_id = create_memory(args.source_region, f"{args.name}_source", strategies)
+    target_id = create_memory(args.target_region, f"{args.name}_target", strategies)
 
     out = {
         "source_memory_id": source_id,

@@ -283,9 +283,9 @@ def verify_episodic_strategy(memory_id: str) -> None:
     for s in strategies:
         stype = s.get("type") or s.get("memoryStrategyType") or s.get("strategyType")
         if stype and "EPISODIC" in str(stype).upper():
-            episode_ns = s.get("namespaces") or s.get("namespaceTemplates") or []
+            episode_ns = s.get("namespaceTemplates") or []
             reflection_ns = s.get("reflectionConfiguration") or {}
-            reflection_ns = reflection_ns.get("namespaces") or reflection_ns.get("namespaceTemplates") or []
+            reflection_ns = reflection_ns.get("namespaceTemplates") or []
             logger.info(f"   Episode namespaces (as stored):    {episode_ns}")
             logger.info(f"   Reflection namespaces (as stored): {reflection_ns}")
             logger.info(f"   Retrieval will query (resolved):   {EPISODIC_NAMESPACE.format(actorId=ACTOR_ID)}")
