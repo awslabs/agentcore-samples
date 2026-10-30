@@ -3,20 +3,52 @@
 Lake Formation Permissions Setup for S3 Tables
 
 This script grants Lake Formation permissions to tenant roles for accessing S3 Tables.
-It configures column-level and row-level security by granting appropriate permissions to:
+It configures column-level filtering and tenant-role table grants for:
 - lakehouse-policyholders-role
 - lakehouse-adjusters-role
 - lakehouse-administrators-role
+
+WHY PER-USER ROW SCOPE IS NOT DONE WITH LAKE FORMATION DATA-CELL FILTERS
+------------------------------------------------------------------------
+This is the canonical explanation for the whole sample. Other files state the
+conclusion in one line and point here; keep the reasoning in one place.
+
+A data filter's row expression is a subset of the PartiQL ``WHERE`` grammar. It
+compares columns with **constants** and permits **no PartiQL functions at all** --
+so there is nowhere a caller-derived value could go, and the expression is fixed
+when the filter is created. Per-user scope would therefore mean provisioning one
+filter per user, plus one grant per user.
+
+The AWS row-level access control tutorial shows the shape this takes in practice:
+it scopes a reviews table by ``marketplace`` with one data filter per value, each
+granted to a separate IAM principal. Two audiences is tidy; five personas is ten
+objects; per-user is unbounded.
+
+Rows are instead scoped at query time by a predicate bound to the caller's verified
+identity (``WHERE user_id = <caller sub>``) in the claims tools. ``_apply_row_filter``
+below remains as a hook for static, GROUP-level row policies; no caller passes
+``row_filter``, so no data-cell filter is invoked in this sample.
+
+Read this as a choice of mechanism, NOT as a gap in row isolation. Row isolation is
+enforced by the bound predicate and verified live -- see the isolation matrix in
+``07-optional-multi-user-isolation-test.ipynb``. Both approaches are commonly called
+"user-level permissions", which is why the mechanism is named explicitly here: the
+feature was not skipped, it does not express per-caller scope.
+
+Reference:
+- https://docs.aws.amazon.com/lake-formation/latest/dg/partiql-support.html
+- https://docs.aws.amazon.com/lake-formation/latest/dg/cbac-tutorial.html
 
 Usage:
     python setup_lakeformation_permissions.py
 """
 
-import boto3
-import sys
-import os
 import argparse
-from typing import List, Dict, Any
+import os
+import sys
+from typing import Any
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -26,7 +58,7 @@ from utils.aws_session_utils import get_aws_session
 class LakeFormationSetup:
     def __init__(self):
         """Initialize Lake Formation setup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
         self.glue = boto3.client("glue", region_name=self.region)
@@ -94,7 +126,7 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"⚠️  Error creating Glue database: {e}")
 
-    def create_glue_table(self, table_name: str, columns: List[Dict[str, str]]):
+    def create_glue_table(self, table_name: str, columns: list[dict[str, str]]):
         """Create Glue table pointing to S3 Tables."""
         print(f"   Creating Glue table: {table_name}...")
 
@@ -143,7 +175,7 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"   ⚠️  Error granting database permissions: {e}")
 
-    def grant_table_permissions(self, role_arn: str, role_name: str, table_name: str, permissions: List[str]):
+    def grant_table_permissions(self, role_arn: str, role_name: str, table_name: str, permissions: list[str]):
         """Grant table-level permissions to a role."""
         print(f"   Granting {', '.join(permissions)} on table {table_name}...")
 
@@ -172,11 +204,11 @@ class LakeFormationSetup:
         role_arn: str,
         role_name: str,
         table_name: str,
-        columns: List[str],
-        row_filter: Dict[str, Any] = None,
+        columns: list[str],
+        row_filter: dict[str, Any] | None = None,
     ):
-        """Grant column-level permissions with optional row filter."""
-        print(f"   Granting column permissions on {table_name} with row filter...")
+        """Grant column-level permissions, applying a row filter only if one is passed."""
+        print(f"   Granting column permissions on {table_name}...")
 
         resource = {
             "TableWithColumns": {
@@ -213,8 +245,8 @@ class LakeFormationSetup:
         role_arn: str,
         role_name: str,
         table_name: str,
-        excluded_columns: List[str],
-        row_filter: Dict[str, Any] = None,
+        excluded_columns: list[str],
+        row_filter: dict[str, Any] | None = None,
     ):
         """Grant SELECT on all columns except the excluded ones using ColumnWildcard.
 
@@ -253,7 +285,7 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"   ⚠️  Error granting wildcard column permissions: {e}")
 
-    def _apply_row_filter(self, role_arn: str, table_name: str, row_filter: Dict[str, Any]):
+    def _apply_row_filter(self, role_arn: str, table_name: str, row_filter: dict[str, Any]):
         """Apply row-level filter to a table."""
         try:
             self.lakeformation.create_data_cells_filter(

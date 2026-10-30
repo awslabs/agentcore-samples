@@ -67,7 +67,22 @@ def load_env_credentials(env_path: str = ".env", verbose: bool = True) -> bool:
     env_file = Path(env_path)
     if not env_file.exists():
         if verbose:
-            print(f"⚠️  .env file not found at {env_path}")
+            # A missing .env is a SUPPORTED configuration, not a problem, so this is
+            # informational rather than a warning. `.env` is one optional rung of the
+            # credential chain get_aws_session() walks (container IAM role -> env vars
+            # -> SSO profile -> default credentials), and init_aws() discards this
+            # function's return value precisely because the fallback covers it. A
+            # reader using `aws configure`, SSO, or an instance/container role never
+            # needs the file.
+            #
+            # It said "⚠️  .env file not found" on every path, which read as a
+            # deployment problem on step one of the tutorial and cost confidence it
+            # had no right to cost. Matches the wording utils/env_file.py already
+            # uses for the same non-event.
+            print(f"ℹ️  No .env at {env_path} (optional) — using existing environment credentials.")
+            print("   .env is one way to supply AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /")
+            print("   AWS_SESSION_TOKEN / AWS_DEFAULT_REGION. `aws configure`, AWS SSO and")
+            print("   container or instance roles all work instead — nothing to do here.")
         return False
 
     loaded_vars = []
@@ -123,16 +138,20 @@ def load_env_credentials(env_path: str = ".env", verbose: bool = True) -> bool:
             return True
         else:
             if verbose:
-                print("\n⚠️  AWS credentials not found in .env file")
-                print("   Make sure your .env file contains:")
-                print("   AWS_ACCESS_KEY_ID=your-access-key")
-                print("   AWS_SECRET_ACCESS_KEY=your-secret-key")
-                print("   AWS_SESSION_TOKEN=your-session-token (if using STS)")
-                print("   AWS_DEFAULT_REGION=your-region")
+                # Same correction as the file-missing branch above, and this one bit
+                # harder: a `.env` holding only OKTA_* — which is exactly what the
+                # Okta path asks the reader to create, and what the Cognito path
+                # inherits — landed here and was told to add four AWS keys it does
+                # not need. Prescribing an unnecessary fix is worse than a bare
+                # warning, because the reader may act on it.
+                print("\nℹ️  No AWS credentials in .env — using existing environment credentials.")
+                print("   Nothing to do if you use `aws configure`, AWS SSO, or a container role.")
+                print("   To supply them via .env instead, set AWS_ACCESS_KEY_ID and")
+                print("   AWS_SECRET_ACCESS_KEY (plus AWS_SESSION_TOKEN for STS, AWS_DEFAULT_REGION).")
             return False
     else:
         if verbose:
-            print("⚠️  No valid environment variables found in .env file")
+            print(f"ℹ️  {env_path} sets no variables — using existing environment credentials.")
         return False
 
 
