@@ -1,0 +1,175 @@
+{
+  "user": {
+    "userId": "eval-chat-user",
+    "displayName": "Alex Rivera",
+    "costCenter": "ENG-1234",
+    "defaultCategory": "Meals & Entertainment",
+    "currency": "USD",
+    "reimbursementPolicy": "Meals under $75/day reimbursable; alcohol not reimbursable."
+  },
+  "expenses": [
+    {
+      "merchant": "Blue Bottle Coffee",
+      "transactionDate": "2026-06-23",
+      "currency": "USD",
+      "total": 15.9,
+      "category": "Meals & Entertainment",
+      "status": "processed"
+    },
+    {
+      "merchant": "Starbucks",
+      "transactionDate": "2026-06-24",
+      "currency": "MYR",
+      "total": 18.5,
+      "category": "Meals & Entertainment",
+      "status": "processed"
+    },
+    {
+      "merchant": "Nasi Kandar Pelita",
+      "transactionDate": "2026-06-25",
+      "currency": "MYR",
+      "total": 42.6,
+      "category": "Meals & Entertainment",
+      "status": "processed"
+    },
+    {
+      "merchant": "Mr D.I.Y.",
+      "transactionDate": "2026-06-25",
+      "currency": "MYR",
+      "total": 30.91,
+      "category": "Office Supplies",
+      "status": "processed"
+    },
+    {
+      "merchant": "Din Tai Fung Pavilion",
+      "transactionDate": "2026-06-26",
+      "currency": "MYR",
+      "total": 96.8,
+      "category": "Meals & Entertainment",
+      "status": "processed"
+    },
+    {
+      "merchant": "Mr D.I.Y.",
+      "transactionDate": "2026-06-26",
+      "currency": "MYR",
+      "total": 37.1,
+      "category": "Office Supplies",
+      "status": "processed"
+    },
+    {
+      "merchant": "Harbor Grill",
+      "transactionDate": "2026-05-14",
+      "currency": "USD",
+      "total": 184.2,
+      "category": "Meals & Entertainment",
+      "status": "processed"
+    },
+    {
+      "merchant": "Harbor Grill",
+      "transactionDate": "2026-06-30",
+      "currency": "USD",
+      "total": 612.0,
+      "category": "Meals & Entertainment",
+      "status": "needs_review",
+      "reviewReason": "Client dinner at Harbor Grill for $612.00 on 2026-06-30. It stopped because there is no attendee list for a large meal. Check first whether the per-head amount is justified."
+    },
+    {
+      "merchant": "Uber",
+      "transactionDate": "2026-06-30",
+      "currency": "USD",
+      "total": 38.4,
+      "category": "Travel",
+      "status": "needs_review",
+      "reviewReason": "Uber ride for $38.40 on 2026-06-30. It stopped because the receipt shows no pickup or drop-off location. Check first that this was a business trip."
+    }
+  ],
+  "conversations": [
+    {
+      "id": "held_explained",
+      "turns": [
+        "Is anything of mine on hold?",
+        "Why is the Harbor Grill one held?",
+        "How much have I spent at Harbor Grill in total?"
+      ],
+      "intentions": [
+        "list held expenses",
+        "the reason the Harbor Grill expense is held",
+        "total spend at Harbor Grill"
+      ],
+      "answers": [
+        "Two expenses are on hold for review: Harbor Grill USD 612.00 on 2026-06-30 and Uber USD 38.40 on 2026-06-30.",
+        "The Harbor Grill expense is held because there is no attendee list for a large meal; the reviewer will check whether the per-head amount is justified.",
+        "USD 796.20 in total at Harbor Grill across two expenses: 184.20 on 2026-05-14 and 612.00 on 2026-06-30."
+      ],
+      "exercises": "ConversationCompleteness: three intentions, each answerable"
+    },
+    {
+      "id": "trip_context",
+      "turns": [
+        "I'm going through my Kuala Lumpur trip expenses, 24 to 27 June.",
+        "What did I spend on meals during that trip?",
+        "Which of those were over 30?"
+      ],
+      "intentions": [
+        "set the trip as context",
+        "meal spend on the trip",
+        "meals on the trip over 30"
+      ],
+      "answers": [
+        "",
+        "MYR 157.90 on meals during the Kuala Lumpur trip: Starbucks 18.50 on 2026-06-24, Nasi Kandar Pelita 42.60 on 2026-06-25, Din Tai Fung Pavilion 96.80 on 2026-06-26.",
+        "Two of those meals were over 30: Nasi Kandar Pelita MYR 42.60 and Din Tai Fung Pavilion MYR 96.80."
+      ],
+      "retained": "Turn 1 states the trip (Kuala Lumpur, 24 to 27 June); turns 2 and 3 depend on it",
+      "exercises": "KnowledgeRetention: a fact stated in turn 1 and relied on later"
+    },
+    {
+      "id": "merchant_followups",
+      "turns": [
+        "How much did I spend at Mr D.I.Y.?",
+        "And at Starbucks?",
+        "Which of these was the most recent?"
+      ],
+      "intentions": [
+        "spend at Mr D.I.Y.",
+        "spend at Starbucks",
+        "the most recent of those"
+      ],
+      "answers": [
+        "MYR 68.01 in total across two Mr D.I.Y. expenses: 30.91 on 2026-06-25 and 37.10 on 2026-06-26.",
+        "MYR 18.50 at Starbucks, one expense on 2026-06-24.",
+        "The most recent is the Mr D.I.Y. expense of MYR 37.10 on 2026-06-26."
+      ],
+      "exercises": "Follow-ups that only make sense with history"
+    },
+    {
+      "id": "cannot_write",
+      "turns": [
+        "Delete my Starbucks expense.",
+        "OK, when was it then?"
+      ],
+      "intentions": [
+        "delete an expense",
+        "the date of the Starbucks expense"
+      ],
+      "answers": [
+        "The assistant cannot delete expenses; it can only read them.",
+        "The Starbucks expense was on 2026-06-24, for MYR 18.50."
+      ],
+      "exercises": "Probe: does ConversationCompleteness count a correct refusal as an unmet intention?"
+    },
+    {
+      "id": "single_question",
+      "turns": [
+        "What is my most recent expense?"
+      ],
+      "intentions": [
+        "the most recent expense"
+      ],
+      "answers": [
+        "The most recent expenses are two on 2026-06-30: Harbor Grill USD 612.00 and Uber USD 38.40."
+      ],
+      "exercises": "Baseline: what each metric returns with one turn"
+    }
+  ]
+}

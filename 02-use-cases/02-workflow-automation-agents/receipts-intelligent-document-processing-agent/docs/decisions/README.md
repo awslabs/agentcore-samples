@@ -22,3 +22,6 @@ This sample mirrors the structure of the sibling [`event-driven-claims-agent`](h
 | [0014](0014-cognito-secret-via-cdk-injection.md) | Cognito Client Secret via CDK Injection | Keeps the sample focused on AgentCore; production reads the secret from Secrets Manager |
 | [0015](0015-processing-runs-ledger.md) | Per-Receipt ProcessingRuns Ledger (async) | One durable fate row per receipt + push error alerts; "what happened to X?" is one lookup (post-M3) |
 | [0016](0016-conversational-identity-no-idor.md) | Conversational Query Mode — Signed Identity, No IDOR | Chat about your expenses; user_id from a KMS-signed token + server-side tool pinning, not the request body (post-M3) |
+| [0017](0017-evaluators-from-business-outcomes.md) | Evaluators Chosen From Business Outcomes, and Contrast-Tested | Every evaluator judges a model decision against a right answer; three run live, five on labelled data |
+| [0018](0018-separate-chat-runtime.md) | A Separate Runtime for Chat, With Multi-Turn History | Follow-ups work, and each online evaluation config scores only its own workload |
+| [0019](0019-validator-acts-through-pinned-tools.md) | The Validator Acts on Its Decision Through Pinned Tools | The decision is a traced agent action; the model chooses but cannot change what is saved |

@@ -1,4 +1,4 @@
-"""Unit tests for the front-door trigger Lambda's pure logic (Phase 7).
+"""Unit tests for the front-door trigger Lambda's pure logic (ADR-0006).
 Tests build_payload + user_id_from_key only — no AWS, no mocks. The S3 -> EventBridge
 -> Runtime wiring is exercised live by tests/test_e2e_frontdoor_live.py."""
 

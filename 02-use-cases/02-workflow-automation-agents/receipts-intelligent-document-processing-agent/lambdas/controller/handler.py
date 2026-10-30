@@ -1,4 +1,4 @@
-"""Account-level ladder controller (spec §6.3 path 2 — the control loop).
+"""Account-level ladder controller (ADR-0010, path 2 — the control loop).
 
 A CloudWatch alarm on sustained `503`-driven model step-downs fires an EventBridge
 "CloudWatch Alarm State Change" event at this Lambda. On ALARM it steps `activeRung`
@@ -7,7 +7,7 @@ rung. On OK (recovery) it steps back UP one rung. One rung per event, with a coo
 to prevent flapping.
 
 Why a custom metric, not a Runtime System Error metric: a `503` the agent RECOVERS
-from via the in-agent step-down (sub-step 2) is a *successful* Runtime invocation, so
+from via the in-agent step-down (ADR-0010, path 1) is a *successful* Runtime invocation, so
 it never shows up as a Runtime `System Error`. The honest account-level signal is the
 custom `ModelStepDowns` metric the agent emits whenever it actually steps down
 (see app/receiptsagent — `ModelStepDowns` in namespace `ReceiptsAgent/Ladder`). The

@@ -6,7 +6,6 @@ round-trip + the cross-user rejection are covered live by test_e2e_chat_live.py.
 import time
 
 import pytest
-
 from identity import (
     assemble_token,
     claim_is_valid,

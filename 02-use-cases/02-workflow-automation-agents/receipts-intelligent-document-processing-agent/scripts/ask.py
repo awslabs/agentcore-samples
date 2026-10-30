@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ask the receipts agent one question about a user's expenses (conversational mode).
 
-  python3 scripts/ask.py --user user-001 "How much did I spend at Mr D.I.Y.?"
+  python3 scripts/ask.py --user user-001 "How much did I spend at Blue Bottle Coffee?"
 
 SECURITY: the user_id is bound into a KMS-HMAC-signed identity token minted here (the
 trusted invoker). The agent derives user_id ONLY from the verified token — editing the
@@ -46,15 +46,17 @@ def _stack_out(region: str, stack: str, key_substr: str) -> str:
     raise SystemExit(f"stack output *{key_substr}* not found")
 
 
-def ask(question: str, user_id: str, region: str, stack: str) -> str:
-    runtime_arn = _stack_out(region, stack, "RuntimeArn")
+def ask(question: str, user_id: str, region: str, stack: str, session_id: str | None = None) -> str:
+    """One question. Pass the same session_id across calls to keep a conversation going."""
+    # Chat has its own Runtime, so chat sessions are evaluated apart from receipt sessions.
+    runtime_arn = _stack_out(region, stack, "ChatRuntimeArn")
     key_id = _stack_out(region, stack, "IdentityKeyId")
     token = mint_identity(user_id, key_id, region)
 
     client = boto3.client("bedrock-agentcore", region_name=region)
     resp = client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
-        runtimeSessionId=f"chat-{uuid.uuid4().hex}",
+        runtimeSessionId=session_id or f"chat-{uuid.uuid4().hex}",
         # NOTE: user_id is NOT trusted from here — only the signed identity_token is.
         payload=json.dumps({"question": question, "identity_token": token}).encode(),
     )

@@ -1,4 +1,4 @@
-"""Deterministic line-item table parser (spec §7, C2).
+"""Deterministic line-item table parser.
 
 Receipts are a header plus a line-item table, and the table is where single-shot
 LLM extraction silently drops or duplicates rows. Textract AnalyzeExpense already

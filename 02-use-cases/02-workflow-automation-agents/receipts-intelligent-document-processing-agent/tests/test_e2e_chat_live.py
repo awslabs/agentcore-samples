@@ -28,7 +28,7 @@ def _out(substr):
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip("stack not deployed")
     for o in outs:
         if substr in o["OutputKey"]:  # CDK may prefix construct outputs (InfraIdentityKeyId)
@@ -70,7 +70,7 @@ def _seed_expense(user_id, merchant, total):
 def _ask(question, identity_token):
     client = boto3.client("bedrock-agentcore", region_name=REGION)
     resp = client.invoke_agent_runtime(
-        agentRuntimeArn=_out("RuntimeArn"),
+        agentRuntimeArn=_out("ChatRuntimeArn"),
         runtimeSessionId=f"chat-{uuid.uuid4().hex}",
         payload=json.dumps({"question": question, "identity_token": identity_token}).encode(),
     )
