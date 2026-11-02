@@ -390,6 +390,11 @@ class GatewaySetup:
             print(f"   Gateway ID: {gateway_id}")
             print(f"   Gateway URL: {gateway_url}")
             print(f"   Gateway ARN: {gateway_arn}")
+            print("   Interceptors attached:")
+            print(f"     REQUEST  {self.config.interceptor_lambda_arn} (runs before each tool call)")
+            print(
+                f"     RESPONSE {self.config.response_interceptor_lambda_arn} (runs on each response; filters tools/list)"
+            )
 
             return {
                 "gatewayId": gateway_id,
@@ -801,7 +806,8 @@ def main():
     print("\n📋 Configuration:")
     print(f"   Gateway Name: {gateway_name}")
     print(f"   MCP Server: {config.mcp_server_runtime_arn}")
-    print(f"   Interceptor: {config.interceptor_lambda_arn}")
+    print(f"   REQUEST interceptor: {config.interceptor_lambda_arn}")
+    print(f"   RESPONSE interceptor: {config.response_interceptor_lambda_arn}")
     if config.idp_provider == "cognito":
         print(f"   Cognito User Pool: {config.cognito_user_pool_arn}")
         print(f"   Client ID: {config.cognito_app_client_id}")

@@ -643,6 +643,8 @@ def create_notes_interceptor_gateway(client, config: SSMConfig, role_arn: str) -
         gateway_url = response["gatewayUrl"]
         gateway_arn = f"arn:aws:bedrock-agentcore:{config.region}:{config.account_id}:gateway/{gateway_id}"
         print(f"✅ Notes gateway created: {gateway_id}")
+        print(f"   REQUEST interceptor attached: {config.notes_interceptor_lambda_arn}")
+        print("   (runs before each call; validates the Cognito token and forwards the caller's sub)")
         return {
             "gatewayId": gateway_id,
             "gatewayUrl": gateway_url,

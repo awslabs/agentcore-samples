@@ -25,7 +25,7 @@ echo "   Python: $PYTHON_BIN"
 # Ensure common tool paths are available (e.g. when run from a notebook subprocess)
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-echo "🚀 Deploying Gateway Interceptor Lambda"
+echo "🚀 Deploying Claims Gateway REQUEST Interceptor Lambda (runs before each tool call)"
 
 # Get AWS region from default configuration
 AWS_REGION=$(aws configure get region)
