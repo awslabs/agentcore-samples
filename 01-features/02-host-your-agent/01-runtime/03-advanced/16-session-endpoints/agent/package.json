@@ -1,0 +1,18 @@
+{
+  "name": "remote-access-preview-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/app.js --log-level=error --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\""
+  },
+  "dependencies": {
+    "@strands-agents/sdk": "^1.21.0",
+    "diff": "^8.0.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.8.3"
+  }
+}

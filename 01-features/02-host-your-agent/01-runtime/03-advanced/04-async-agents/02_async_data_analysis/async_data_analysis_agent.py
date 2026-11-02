@@ -264,7 +264,7 @@ def validate_generated_code(code: str) -> tuple[bool, str]:
 
 
 # Initialize models
-sonnet = BedrockModel(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0")
+sonnet = BedrockModel(model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 haiku = BedrockModel(model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0")
 

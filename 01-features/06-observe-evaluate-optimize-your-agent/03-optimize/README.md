@@ -6,7 +6,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 
 | Stage | Concepts Covered |
 |-------|-----------------|
-| **Insights** | FailureAnalysis, UserIntent, ExecutionSummary: root cause clustering of agent failures |
+| **Insights** | `Builtin.FailureAnalysis` insight evaluator: failures grouped into insights with root causes, suggested fixes, and span-level findings |
 | **Baseline evaluation** | Batch evaluations on agent sessions |
 | **Recommendations** | System prompt optimization, tool description optimization from production traces |
 | **Configuration Bundles** | Versioned config containers, runtime config hooks, baggage-based injection |
@@ -22,8 +22,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 | AgentCore runtime | `bedrock-agentcore-control` | Hosts the HR Assistant container |
 | Configuration Bundle | `bedrock-agentcore-control` | Versioned system prompt and tool description storage |
 | Batch evaluation | `bedrock-agentcore` (DP) | Off-line scoring of historical sessions |
-| Batch insights | `bedrock-agentcore` (DP) | Root-cause failure clustering, user intent analysis, execution summaries |
-| Online insights config | `bedrock-agentcore-control` (CP) | Recurring daily insights over live agent traffic |
+| Batch insights | `bedrock-agentcore` (DP) | `Builtin.FailureAnalysis` in a batch evaluation: failure insights, root causes, suggested fixes |
 | Recommendation | `bedrock-agentcore` (DP) | AI-generated prompt/tool improvements |
 | gateway + Targets | `bedrock-agentcore-control` | Traffic routing for A/B tests |
 | Online Eval Config | `bedrock-agentcore-control` | Continuous automatic session scoring |
@@ -56,7 +55,7 @@ python deploy.py --name HRAssistV1
 # Invoke the deployed agent
 python invoke.py --name HRAssistV1
 
-# [Optional] Run insights: generate traces then analyze with all 3 insight types
+# [Optional] Run insights: generate traces then analyze with Builtin.FailureAnalysis
 python insights.py --name HRAssistV1 --generate-traces
 
 # Run the full optimization workflow
@@ -84,11 +83,12 @@ agentcore --version   # 0.20.1 or later
 ### Step 1: Deploy the HR Assistant
 
 ```bash
-# Scaffold a new AgentCore project
-agentcore create --name HRAssistant --framework Strands --model-provider Bedrock --defaults
+# Scaffold a new AgentCore project (run from this sample directory)
+agentcore create --name HRAssistant --framework Strands --model-provider Bedrock --memory none
 
-# Copy the HR assistant implementation
-cp utils/hr_assistant_agent.py app/HRAssistant/main.py
+# Copy the HR assistant implementation and switch to the project directory
+cp utils/hr_assistant_agent.py HRAssistant/app/HRAssistant/main.py
+cd HRAssistant
 
 # Test locally before deploying
 agentcore dev
@@ -115,42 +115,22 @@ agentcore run batch-evaluation \
 
 ### Step 3: Run Insights
 
-After generating traffic, run insights to understand which sessions are failing and why before optimizing. The CLI insights commands require an `agentcore` project with a deployed runtime (v0.20.1+).
+After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`.
 
 ```bash
-# Run a one-shot insights job over the last 7 days of traces:
-agentcore run insights \
+# Run FailureAnalysis together with GoalSuccessRate over the agent's sessions:
+agentcore run batch-evaluation \
   --runtime HRAssistant \
-  --insights Builtin.Insight.FailureAnalysis \
-  --insights Builtin.Insight.UserIntent \
-  --insights Builtin.Insight.ExecutionSummary \
-  --lookback-days 7 \
-  --wait \
-  --json
+  --evaluator Builtin.FailureAnalysis Builtin.GoalSuccessRate
+# Note the batch evaluation ID from the output.
 
-# List all insights jobs for this project:
-agentcore insights history --json
-
-# View results for a specific job:
-agentcore insights results --id <insights-job-id> --json
-
-# Add a recurring daily online-insights config:
-agentcore add online-insights \
-  --name HROnlineInsights \
-  --runtime HRAssistant \
-  --insights Builtin.Insight.FailureAnalysis \
-  --insights Builtin.Insight.UserIntent \
-  --insights Builtin.Insight.ExecutionSummary \
-  --sampling-rate 100 \
-  --clustering-frequency DAILY \
-  --enable-on-create
-agentcore deploy -y
+# View the FailureAnalysis insights for the job:
+python -c "import boto3, json; r = boto3.client('bedrock-agentcore').get_batch_evaluation(batchEvaluationId='<batch-evaluation-id>'); print(json.dumps(r.get('insightResults', []), indent=2, default=str))"
 ```
 
 Notes:
-- `insights` and `evaluators` are mutually exclusive in a single batch job. Do not pass `--evaluator` to `agentcore run insights`.
+- Insight evaluators are supported in batch evaluations only.
 - Resource names must match `^[a-zA-Z][a-zA-Z0-9_]{0,47}$` (letters, numbers, underscores; no hyphens).
-- `agentcore insights history` and `agentcore insights results` must be run from inside the project directory.
 
 ### Step 4: Get Recommendations
 
@@ -233,11 +213,11 @@ agentcore ab-test HRBundleABTest
 ### Step 6b: A/B Test -- Target-Based Routing (Phased Rollout)
 
 ```bash
-# Deploy v2 of the agent (with new code changes)
-agentcore create --name HRAssistantV2 --framework Strands --model-provider Bedrock --defaults
-cp utils/hr_assistant_agent.py app/HRAssistantV2/main.py
+# Add v2 of the agent to the same project (run from the HRAssistant project directory)
+agentcore add agent --name HRAssistantV2 --language Python --framework Strands --model-provider Bedrock --memory none
+cp ../utils/hr_assistant_agent.py app/HRAssistantV2/main.py
 # (Apply v2 code changes to main.py -- e.g. add escalate_to_hr_manager tool)
-cd HRAssistantV2 && agentcore deploy
+agentcore deploy
 
 # Add v2 gateway target
 agentcore add gateway-target \
@@ -302,71 +282,64 @@ The `--version v2` flag builds an enhanced version that adds an `escalate_to_hr_
 
 ### Step 2: Insights (`insights.py`)
 
-Sends a set of failure-mode and successful sessions to the agent, waits for traces to propagate to CloudWatch, then calls `start_batch_evaluation` with all three insight types. Polls until the job completes and prints the full failure hierarchy, user intent clusters, and execution summary clusters. The `--online` flag also creates a recurring daily `OnlineEvaluationConfig` so insights continue running automatically over live traffic.
+Sends a set of failure-mode and successful sessions to the agent, waits for traces to propagate to CloudWatch, then calls `start_batch_evaluation` with the `Builtin.FailureAnalysis` insight evaluator and `Builtin.GoalSuccessRate`. Polls until the job completes and prints the evaluator scores and the failure insights, each with its root causes, suggested fixes, and span-level findings.
 
-
-| Insight | What It Produces |
-|---------|-----------------|
-| **FailureAnalysis** | Identifies failures, categorizes them using a signal taxonomy (see below), traces root causes to specific spans, and provides fix recommendations. Results appear as a three-level hierarchy: failure categories, subcategories, and root cause clusters with affected session IDs. |
-| **UserIntent** | Extracts what users were trying to accomplish in each session, then clusters similar intents together. Shows the most common use cases your agent handles and reveals gaps between user requests and agent capabilities. |
-| **ExecutionSummary** | Summarizes the approach the agent took and the outcome for each session, then clusters similar execution patterns. Requires at least 3 sessions. |
-
-Each failure in the response includes one or more `signals`, the specific evidence found at a span level. Each signal has a `category` (a machine-readable taxonomy label), `evidence` (a quoted description of what went wrong in that span), and `confidence` (0–1 float).
-
-The signal categories returned by the API:
-
-| Category | What it means |
-|---|---|
-| `hallucination-category-hall-capabilities` | Agent invented constraints or limitations for a tool that do not exist in the tool spec (e.g., "this tool only supports years 2025-2026" when no such constraint is documented) |
-| `hallucination-category-hall-misunderstand` | Agent misread the tool result and reported a different value (e.g., tool returned "5% match", agent reported "6%") |
-| `hallucination-category-hall-usage` | Agent asserted knowledge of a tool's contents without calling it (e.g., "sabbatical leave is not in the available topics" without calling `lookup_hr_policy`) |
-| `task-instruction-category-non-compliance` | Agent violated an explicit instruction in the system prompt (e.g., system prompt says "always use available tools", agent answered without calling any tool) |
-| `orchestration-related-errors-category-premature-termination` | Agent terminated the task without attempting a relevant tool call, rather than calling the tool and handling any error it returns |
-| `llm-output-category-nonsensical` | Agent output was incoherent or exposed internal artifacts — unresolved template placeholders, raw `<thinking>` tags, or other content that should not appear in a user-facing response |
-| `repetitive-behavior-category-repetition-info` | Agent asked for information the user had already provided in the same session |
-
-Each `affectedSessions` entry under a root cause contains:
-- `sessionId` — the session where this failure occurred
-- `explanation` — a sentence citing the specific span ID and what went wrong
-- `fixType` — `SYSTEM_PROMPT_FIX` (addressable via prompt change) or `OTHERS` (backend or data issue)
-- `recommendation` — a concrete instruction to add to the system prompt
-- `failureSpans[]` — the span(s) where the failure was detected, each with `spanId`, `traceId`, and `signals[]`
-
-Example from a real run:
-
-```json
-{
-  "sessionId": "3b927bee-...",
-  "explanation": "At span 619f31562100b9b6, the agent concluded without ever invoking get_pay_stub, because it hallucinated a non-existent date-range constraint.",
-  "fixType": "SYSTEM_PROMPT_FIX",
-  "recommendation": "Add a guardrail requiring the agent to attempt tool calls before concluding a request cannot be fulfilled.",
-  "failureSpans": [{
-    "spanId": "619f31562100b9b6",
-    "traceId": "6a3080fa61c3929d7c75522421a71cec",
-    "signals": [{
-      "category": "hallucination-category-hall-capabilities",
-      "evidence": "Agent claims get_pay_stub only supports 2025-2026, but the tool definition has no such constraint documented.",
-      "confidence": 0.9
-    }]
-  }]
-}
+```python
+dp.start_batch_evaluation(
+    batchEvaluationName="HRInsights",
+    evaluators=[
+        {"evaluatorId": "Builtin.FailureAnalysis"},
+        {"evaluatorId": "Builtin.GoalSuccessRate"},
+    ],
+    dataSourceConfig={
+        "cloudWatchLogs": {
+            "serviceNames": ["<runtime-name>.DEFAULT"],
+            "logGroupNames": ["aws/spans", "/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT"],
+            "filterConfig": {"timeRange": {"startTime": "...", "endTime": "..."}},
+        }
+    },
+)
 ```
 
-### How Insights Are Triggered
+`Builtin.FailureAnalysis` works in three steps:
 
-Insights run in two modes:
+1. **Detect:** analyzes every span in each session and records a finding for each span where a failure occurred.
+2. **Find the cause:** analyzes the full session (system prompt, tool definitions, tool inputs and outputs) to determine why each failure occurred. The cause can be in an earlier span than the failure.
+3. **Group:** groups similar failures from all sessions into insights, and similar causes within each insight into root causes.
 
-**One-time (batch):** Call `start_batch_evaluation` with an `insights` list. Results come back through `get_batch_evaluation`. Use this for on-demand analysis over a specific time range.
+Results come back in the `insightResults` field of `get_batch_evaluation`:
 
-**Recurring (scheduled):** Create an `OnlineEvaluationConfig` with a `clusteringConfig` frequency (`DAILY`, `WEEKLY`, or `MONTHLY`). The service automatically triggers batch evaluation jobs on that cadence. Per-session analysis runs continuously; clustered results are generated during each scheduled batch job.
+| Field | What it contains |
+|---|---|
+| `insightResults[]` | One entry per failure insight: `type` (`FAILURE`), `name`, `description`, `affectedSessionCount`, `rootCauses[]` |
+| `rootCauses[]` | `name`, `explanation` (what fails, why, and the impact), `suggestedFix` (what to change, usually the system prompt or tool descriptions), `affectedSessionCount`, `sampleSessions[]` |
+| `sampleSessions[]` | `sessionId` and `findings[]` that show the root cause |
+| `findings[]` | `targetId` (span ID), `targetType` (`SPAN_ID`), `category`, `description`, `confidence` (0–1) |
+
+Each finding is assigned to one of the following failure category groups (or `other`):
+
+| Category group | What it means |
+|---|---|
+| Execution errors | Authentication errors, resource not found, service errors, rate limiting, timeouts, resource exhaustion, tool schema or formatting errors |
+| Task and instruction errors | The agent does not follow its instructions or does not identify the problem correctly |
+| Incorrect actions | The agent chooses the wrong tool, retrieves poor information, or asks for information it does not need |
+| Context handling errors | The agent loses or misuses the context of the conversation |
+| Hallucination | The agent invents capabilities, parameters, history, or tool outputs, or misunderstands how to use a tool |
+| Repetitive behavior | The agent repeats tool calls, requests, or steps without making progress |
+| Orchestration and reasoning errors | The agent's reasoning and actions do not match, it deviates from the goal, or it ends the task too early |
+| Nonsensical model output | The model returns malformed or meaningless output |
+| Configuration mismatch | A tool definition does not match the behavior of the tool |
+| Coding-specific failures | Unhandled edge cases and dependency issues in coding tasks |
+
+Each session also receives a score: `1.0` (`Failures Found`) or `0.0` (`No Failures Found`). A higher average FailureAnalysis score is worse: `0.2` means 20% of the sessions had failures. Compare it with `Builtin.GoalSuccessRate` (higher is better) to separate sessions that missed the goal because of a failure from sessions that reached the goal despite one.
+
+A job ends with status `COMPLETED_WITH_ERRORS` when some sessions fail to evaluate (`errorDetails` reports, for example, `1 of 27 sessions failed during batch evaluation.`) or when the service cannot generate the insights. In the second case `insightResults` is not present and `errorDetails` contains `Insight generation failed for the Builtin.FailureAnalysis evaluator.` In both cases the session scores and the other evaluators' results are still returned.
 
 ### Data Source
 
 Insights pull from the `aws/spans` CloudWatch log group, which receives OTel span documents from AgentCore Runtime via the `opentelemetry-instrument` entry point. Each session's tool calls, model calls, and errors are captured as spans and correlated by session ID.
 
-The runtime log group (`/aws/bedrock-agentcore/runtimes/...`) must also be included. Without it, the insights engine cannot resolve the log events that spans reference, which produces incomplete results.
-
-`insights` and `evaluators` are mutually exclusive in the batch evaluation API. Use a separate batch job for each.
+The runtime log group (`/aws/bedrock-agentcore/runtimes/...`) must also be included. Without it, the evaluator cannot resolve the log events that spans reference, which produces incomplete results.
 
 
 The `--generate-traces` flag sends sessions across several failure categories:
@@ -375,74 +348,51 @@ The `--generate-traces` flag sends sessions across several failure categories:
 - **Unknown benefit types** (`gym`, `commuter`, `wellness`) -> tool returns error
 - **Unavailable pay periods** (`2019-12`, `2020-03`) -> tool returns "not found" error
 - **Invalid date formats** in PTO requests -> agent confusion / multi-turn failure
-- **Normal successful sessions** -> required for UserIntent and ExecutionSummary clustering
+- **Normal successful sessions** -> a baseline for comparing GoalSuccessRate with FailureAnalysis
 
 ### Reading the FailureAnalysis Output
 
+Example output from `python insights.py --generate-traces` (trimmed). The service generates insight names and grouping, so they can vary between runs over the same sessions.
+
 ```
-FailureAnalysis (2 top-level categories)
+--- Evaluator scores (2 evaluators) ---
+  Builtin.GoalSuccessRate   : 0.65  (evaluated: 26)
+  Builtin.FailureAnalysis   : 0.7  (evaluated: 27)
 
-  Category: Tool Execution Failures  (sessions affected: 8)
-    Subcategory: Employee Lookup Failures
-      Root cause: Unknown Employee ID Errors (4 sessions)
-      Recommendation: Add input validation and a list of valid employee ID formats
-                       to the system prompt. Return a helpful error message with
-                       instructions to verify the employee ID.
-      Session IDs: ['3fa85f64-...', 'c3d4e5f6-...', ...]
+--- FailureAnalysis (11 insights) ---
 
-    Subcategory: Data Not Found
-      Root cause: Pay Stub Period Unavailable (2 sessions)
-      Recommendation: Document available pay periods in the tool description
-                       and add graceful handling when a period is not found.
+  Insight: Employee Not Found Errors  (3 sessions)
+  Description  : Tool errors indicating that a requested employee resource (identified by employee ID)
+                 does not exist in the system...
 
-  Category: Out-of-Scope Requests  (sessions affected: 7)
-    Subcategory: Unsupported Policy Topics
-      Root cause: Missing Policy Coverage (4 sessions)
-      Recommendation: Expand the policy knowledge base or add a clear out-of-scope
-                       message when a policy topic is not available.
-```
+    Root cause   : Invalid Employee ID Backend Lookup Failure  (2 sessions)
+    Explanation  : The agent fails when attempting to retrieve employee data using an employee identifier
+                   that does not exist in the backend system...
+    Suggested fix: Implement upstream validation of employee identifiers before tool invocation to verify
+                   the ID exists in the system, and provide users with clear feedback to correct invalid inputs...
+      [47f54af1] span 81923a2d5fe1689d  execution-error-resource-not-found (0.9): Tool returned error payload: 'Employee EMP-999 not found.'...
 
-### Online Insights Config
+  Insight: Unfounded Tool Constraint Claims  (2 sessions)
+  Description  : Agent makes specific claims about tool limitations (e.g., restricted date ranges,
+                 unsupported parameters) without any factual basis...
 
-The `--online` flag creates an `OnlineEvaluationConfig` that runs on a daily schedule. It uses `clusteringConfig` with `frequencies: ["DAILY"]` to re-cluster sessions automatically. View results with `get_online_evaluation_config` or the CLI:
-
-```bash
-# Run from inside your agentcore project directory:
-agentcore insights history --json
-agentcore insights results --id <id> --json
-```
-
-The Python SDK call (used by `insights.py --online`):
-
-```python
-ctrl.create_online_evaluation_config(
-    onlineEvaluationConfigName="HROnlineInsights",
-    rule={"samplingConfig": {"samplingPercentage": 100}},
-    dataSourceConfig={
-        "cloudWatchLogs": {
-            "logGroupNames": ["aws/spans", "/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT"],
-            "serviceNames": ["<runtime-name>.DEFAULT"],
-        }
-    },
-    insights=[
-        {"insightId": "Builtin.Insight.FailureAnalysis"},
-        {"insightId": "Builtin.Insight.UserIntent"},
-        {"insightId": "Builtin.Insight.ExecutionSummary"},
-    ],
-    clusteringConfig={"frequencies": ["DAILY"]},
-    evaluationExecutionRoleArn=ROLE_ARN,
-    enableOnCreate=True,
-)
+    Root cause   : Hallucinated Tool Constraints Without Invocation  (2 sessions)
+    Explanation  : The agent systematically fabricates tool capability boundaries and parameter restrictions
+                   without ever invoking the tool to verify actual constraints...
+    Suggested fix: Enhance the system prompt with explicit guardrails that prohibit the agent from inferring,
+                   assuming, or asserting tool constraints without first invoking the tool...
+      [223d8292] span 85f5f89ab3735a65  hallucination-hall-capabilities (0.9): Agent fabricated a specific limitation about the get_pay_stub tool ('only supports pay periods for 2025-12 and 2026-01') without invoking it...
+  ...
 ```
 
 ### Chaining Insights into Recommendations
 
-Pass the insights job ID to a recommendation to generate a system prompt that targets the identified failures:
+Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures:
 
 ```bash
 # CLI:
 agentcore run recommendation \
-  --from-insights <insights-id> \
+  --batch-evaluation-arn <batch-evaluation-arn> \
   --type system-prompt \
   --inline "You are a helpful HR Assistant for Acme Corp..." \
   --json
@@ -550,11 +500,11 @@ User --> [gateway] --90%--> [Target HRAgentV1 -> HR runtime v1 (stable)]  --> Cl
 
 After insights identifies failure patterns, you can feed those findings into the Recommendations API to generate an improved system prompt:
 
-1. Run insights to identify recurring failure categories and root causes.
+1. Run `Builtin.FailureAnalysis` to identify recurring failure insights and their root causes.
 2. Call `start_recommendation` with your current system prompt, pointing it at the same agent traces (or pass the insights batch evaluation ARN directly).
 3. Use A/B testing to compare the original and recommended configurations with live traffic.
 
-The `insights.py --online` flag and the `agentcore run recommendation --from-insights <id>` CLI command both implement this flow.
+The `agentcore run recommendation --batch-evaluation-arn <arn>` CLI command implements this flow.
 
 ### Config-Bundle vs. Target-Based A/B Testing
 
