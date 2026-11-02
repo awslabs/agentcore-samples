@@ -666,7 +666,7 @@ Deployment, verification, and cleanup steps are in
 - **Gateway**: Request routing with JWT validation and request/response interceptors
 - **Agent**: Conversational AI on AgentCore Runtime (Strands framework, Claude Sonnet 4.5)
 - **DynamoDB Tables**: `lakehouse_tenant_role_map` (tenant-to-role mapping for interceptor authorization), `lakehouse_user_login_audit` (optional, login audit logs)
-- **Test Users**: policyholder001@example.com, adjuster001@example.com, admin@example.com (password: `TempPass123!`)
+- **Test Users**: policyholder001@example.com, adjuster001@example.com, admin@example.com (password: `TempPass123!`). On Cognito these are demo users with a documented, shared password, made permanent during setup so the first sign-in does not ask for a new one; `09-optional-cleanup.ipynb` deletes them with the user pool.
 
 ### Quick Test
 

@@ -19,7 +19,9 @@ What it creates in Cognito (setup()):
   - Hosted domain "lakehouse-<pool id suffix>", which provides the /oauth2/token endpoint.
   - Groups policyholders / adjusters / administrators and five test users
     (policyholder001/002, adjuster001/002, admin @example.com) with the temporary
-    password "TempPass123!", each added to its group.
+    password "TempPass123!", each added to its group. After the SSM write, the
+    password is made permanent with set_test_user_passwords.py, so no first sign-in
+    hits a forced password change.
   - If the Lambda "lakehouse-cognito-post-auth" exists (deploy_post_auth_lambda.sh), it is
     attached as the pool's PostAuthentication trigger (add_post_auth_trigger).
 
@@ -44,6 +46,7 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+from set_test_user_passwords import set_test_user_passwords
 
 
 class CognitoSetup:
@@ -533,6 +536,12 @@ class CognitoSetup:
         # Store configuration in SSM Parameter Store
         self.store_parameters_in_ssm(result)
 
+        # Make the documented demo password permanent now, so a reader's first
+        # sign-in is not stopped by a forced password change. The helper reads the
+        # pool id from SSM (written just above) and holds the one copy of the
+        # password and its LAKEHOUSE_TEST_PASSWORD override.
+        set_test_user_passwords(self.ssm, self.cognito)
+
         # Write to .env file (deprecated, for backward compatibility)
         self.write_to_env(result)
 
@@ -722,7 +731,7 @@ if __name__ == "__main__":
     print("   • adjuster002@example.com → adjusters group")
     print("   • admin@example.com → administrators group")
     print("   Default password: TempPass123!")
-    print("   Note: Users will be prompted to change password on first login")
+    print("   Set as permanent during setup, so the first sign-in does not ask for a new password")
 
     print("\n👥 Cognito Groups:")
     print("   • policyholders - Policy holders group")

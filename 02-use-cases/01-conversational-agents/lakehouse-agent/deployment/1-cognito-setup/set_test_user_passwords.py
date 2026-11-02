@@ -26,9 +26,9 @@ Set PERMANENT passwords for the Cognito test personas (test/demo convenience).
     prerequisite and adds no exposure: the value is already in setup_cognito.py
     and in the notebooks.
 
-    It is kept OUT of setup_cognito.py's happy path so the primary tutorial still
-    models the production first-login flow; only the optional isolation-test prep
-    (notebook 07) invokes it.
+    setup_cognito.py calls it at the end of setup(), so a reader's first Streamlit
+    sign-in is not stopped by a forced password change; notebook 07's isolation-test
+    prep calls it again, which leaves the same value in place.
 
     Reads /app/lakehouse-agent/cognito-user-pool-id from SSM to find the pool.
 
