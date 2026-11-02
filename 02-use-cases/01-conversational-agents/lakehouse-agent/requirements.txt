@@ -18,7 +18,7 @@ okta>=2.9.0,<3
 # opensearch-py + aws-requests-auth: notebook 07 queries AOSS with SigV4-signed requests
 # PyJWT: offline JWT decode (07 isolation checks; Streamlit id_token display)
 # nest_asyncio: nested event loops for notebooks (asyncio.run inside Jupyter's running loop)
-opensearch-py>=3.2.0
+opensearch-py>=3.2.0,<4
 aws-requests-auth>=0.4.3
 PyJWT>=2.8.0
 nest_asyncio>=1.6.0
