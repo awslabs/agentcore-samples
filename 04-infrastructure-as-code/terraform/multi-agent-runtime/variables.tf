@@ -35,6 +35,11 @@ variable "image_tag" {
   description = "Docker image tag"
   type        = string
   default     = "latest"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9._-]+$", var.image_tag))
+    error_message = "Image tag must contain only alphanumeric characters, dots, underscores, and hyphens."
+  }
 }
 
 variable "aws_region" {
