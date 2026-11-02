@@ -830,6 +830,12 @@ with st.sidebar:
                                         st.session_state.access_token = result["access_token"]
                                         st.session_state.id_token = result["id_token"]
                                         st.session_state.user_email = username
+                                        # Same gated dev convenience as the Okta branch
+                                        # (LAKEHOUSE_SAVE_TOKENS=1); no-op by default.
+                                        _lakehouse_save_token_if_enabled(
+                                            st.session_state.access_token,
+                                            st.session_state.user_email,
+                                        )
                                         st.success(f"✅ Logged in as {username}")
                                         st.rerun()
                     else:
@@ -861,6 +867,12 @@ with st.sidebar:
                                     st.session_state.access_token = result["access_token"]
                                     st.session_state.id_token = result["id_token"]
                                     st.session_state.user_email = challenge["username"]
+                                    # Gated dev convenience (LAKEHOUSE_SAVE_TOKENS=1); no-op
+                                    # by default.
+                                    _lakehouse_save_token_if_enabled(
+                                        st.session_state.access_token,
+                                        st.session_state.user_email,
+                                    )
                                     del st.session_state.password_challenge
                                     st.success(f"✅ Password set! Logged in as {challenge['username']}")
                                     st.rerun()
