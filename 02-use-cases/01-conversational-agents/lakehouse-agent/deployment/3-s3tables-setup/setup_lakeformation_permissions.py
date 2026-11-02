@@ -151,6 +151,12 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"   ⚠️  Error creating Glue table: {e}")
 
+    def _grant_failed(self, role_arn: str, resource: str, error: Exception):
+        """Name a failed grant and record it; setup_permissions() then exits non-zero."""
+        principal = role_arn.rsplit("/", 1)[-1]
+        print(f"   ❌ Grant FAILED: {resource} for {principal}: {error}")
+        self.failed_grants.append(f"{resource} for {principal}")
+
     def grant_database_permissions(self, role_arn: str, role_name: str):
         """Grant database-level permissions to a role."""
         print(f"\n🔐 Granting database permissions to {role_name}...")
@@ -172,7 +178,7 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print("   ✅ Database permissions already exist")
         except Exception as e:
-            print(f"   ⚠️  Error granting database permissions: {e}")
+            self._grant_failed(role_arn, f"DESCRIBE on database {self.namespace}", e)
 
     def grant_table_permissions(self, role_arn: str, role_name: str, table_name: str, permissions: list[str]):
         """Grant table-level permissions to a role."""
@@ -196,7 +202,7 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting table permissions: {e}")
+            self._grant_failed(role_arn, f"{', '.join(permissions)} on table {table_name}", e)
 
     def grant_column_permissions_with_filter(
         self,
@@ -237,7 +243,7 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Column permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting column permissions: {e}")
+            self._grant_failed(role_arn, f"SELECT on columns of table {table_name}", e)
 
     def grant_column_wildcard_permissions(
         self,
@@ -282,7 +288,7 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Wildcard column permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting wildcard column permissions: {e}")
+            self._grant_failed(role_arn, f"SELECT on column wildcard of table {table_name}", e)
 
     def _apply_row_filter(self, role_arn: str, table_name: str, row_filter: dict[str, Any]):
         """Apply row-level filter to a table."""
@@ -307,6 +313,7 @@ class LakeFormationSetup:
         print(f"   Region: {self.region}")
         print(f"   Database: {self.namespace}")
         print(f"   Table Bucket: {self.table_bucket_arn}")
+        self.failed_grants = []
 
         # Register S3 Tables resource
         self.register_s3tables_resource()
@@ -380,6 +387,16 @@ class LakeFormationSetup:
                 )
                 self.grant_column_permissions_with_filter(role_arn, role_type, "users", users_columns)
 
+        # A grant that failed is not swallowed: the reader would otherwise see
+        # "setup complete" with a role missing a permission. AlreadyExistsException
+        # stays non-fatal (handled in each grant method).
+        if self.failed_grants:
+            print(f"\n❌ Lake Formation permissions setup FAILED: {len(self.failed_grants)} grant(s) not made:")
+            for item in self.failed_grants:
+                print(f"   • {item}")
+            print("   The other grants were made. Re-run this step to retry the failed ones.")
+            return False
+
         print("\n✨ Lake Formation permissions setup complete!")
         print("\n📋 Permissions granted:")
         print("   Policyholders: SELECT on claims (15 columns - excludes internal data), SELECT on users")
@@ -392,6 +409,7 @@ class LakeFormationSetup:
         print("\n⚠️  Note: Row-level security filters need to be configured manually")
         print("   in Lake Formation console for policyholders and adjusters roles.")
         print("   Filter expression example: user_id = '{{SESSION_CONTEXT:user_id}}'")
+        return True
 
 
 def main():
@@ -401,7 +419,8 @@ def main():
 
     # Run setup
     setup = LakeFormationSetup()
-    setup.setup_permissions()
+    if not setup.setup_permissions():
+        sys.exit(1)
 
 
 if __name__ == "__main__":
