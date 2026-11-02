@@ -21,9 +21,9 @@ extracted knowledge intact.
 │   │  dual-write at write time  │  dual-write│     ="SKIP")  history only,  │
 │   ▼                            │            │     NO re-extraction         │
 │ LTM extraction                 │            │                              │
-│   │                            │            │ BatchCreateMemoryRecords     │
-│   ▼                            │            │   (requestIdentifier =       │
-│ Kinesis record stream ─────────┼── LTM ─────┼─▶  source memoryRecordId) ◀── │
+│   │                            │            │ Batch Create/Update/Delete   │
+│   ▼                            │            │   MemoryRecords, matched by  │
+│ Kinesis record stream ─────────┼── LTM ─────┼─▶  source record ID ◀──       │
 │ (MEMORY_RECORDS/FULL_CONTENT)  │  streaming │     consumer Lambda          │
 └────────────────────────────────┘            └──────────────────────────────┘
 ```
@@ -36,9 +36,10 @@ Two AgentCore building blocks make this work:
   records already arrive over the stream, so the target must *not* re-extract the
   replicated events into duplicate records.
 * **Record streaming (`streamDeliveryResources`)** — the source memory publishes
-  every extracted record to a Kinesis Data Stream, which the consumer replays into
-  the target. Using the source `memoryRecordId` as the target `requestIdentifier`
-  makes replays idempotent (re-delivery is a conditional no-op, not a duplicate).
+  every record change to a Kinesis Data Stream, which the consumer applies to the
+  target: creates, updates, and deletes. Creates send a `clientToken` derived from
+  the stream event, so re-delivery can't duplicate a record, and a DynamoDB record
+  map tracks which target record each source record became.
 
 ## Repository layout
 
@@ -46,6 +47,7 @@ Two AgentCore building blocks make this work:
 .
 ├── agentcore_replication/      # reusable Python package
 │   ├── stream_consumer.py      # LTM: consume Kinesis record stream -> target
+│   ├── record_map.py           # LTM: source -> target record ID map (DynamoDB)
 │   └── dual_writer.py          # STM: dual-write CreateEvent (SKIP on target)
 ├── lambda/
 │   └── stream_handler.py       # Kinesis-triggered LTM consumer (production)
@@ -56,6 +58,7 @@ Two AgentCore building blocks make this work:
 │   ├── enable_streaming.py     # turn record streaming on/off (UpdateMemory)
 │   ├── full_demo.py            # end-to-end STM+LTM demo (the headline sample)
 │   └── deploy_streaming.sh     # deploy the LTM streaming path
+├── tests/                      # unit tests: python -m pytest tests
 └── requirements.txt
 ```
 
@@ -136,12 +139,12 @@ This creates the Kinesis stream + consumer Lambda (`infra/streaming-stack.yaml`)
 in the **source** region, wires the Event Source Mapping with a DLQ and CloudWatch
 alarms, attaches a streaming execution role to the source memory, and enables
 record streaming. From then on, extracted LTM records flow source → Kinesis →
-Lambda → `BatchCreateMemoryRecords` in the target.
+Lambda → the target (create, update, or delete).
 
 > **Note:** record streaming only carries records created *after* you enable it.
 > Enable streaming before your agents start writing, or backfill pre-existing data
-> with `ListMemoryRecords` → `BatchCreateMemoryRecords` (the same idempotent
-> `requestIdentifier` path the consumer uses).
+> with `ListMemoryRecords` → `BatchCreateMemoryRecords`, and write each copy to the
+> record map so that later updates and deletes find it.
 
 ## Failover
 
@@ -149,8 +152,6 @@ This is active-passive. On primary-region failure, point your agents at the repl
 memory in the target region. To replicate the other direction afterward, swap
 source/target: enable streaming on the new primary (`enable_streaming.py`), point
 your dual-writer the other way, and deploy a consumer in the new source region.
-Because LTM writes are idempotent, the first reverse pass safely lands only what's
-missing.
 
 > **Pause replication** during failover with
 > `scripts/enable_streaming.py --memory-id <SRC> --region <SRC_REGION> --disable`.
@@ -164,9 +165,9 @@ missing.
 
 ## Limitations
 
-* **Deletes** are not replicated (`MemoryRecordDeleted` events are skipped).
-  AgentCore consolidation handles stale records in the target; call
-  `DeleteMemoryRecord` explicitly if you need exact parity.
+* **Record map coverage**: updates and deletes rely on the record map. A record
+  that reached the target without a map entry (for example, an unrecorded backfill)
+  is re-created on its next update, and its delete is skipped.
 * **STM latency**: STM is replicated synchronously at write time, so a target
   outage surfaces on the write path — wrap `record_turn` to tolerate target
   failures (the source write is what your agent depends on).

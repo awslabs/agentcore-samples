@@ -5,9 +5,9 @@ Amazon Bedrock AgentCore payments is a fully managed service that enables microt
 ![AgentCore payments](00-getting-started/00-setup-agentcore-payments/images/ga-main-image.png)
 
 
-**AgentCore payments is generally available** 
+**AgentCore payments is generally available**
 
-Learn more about the latest features in this [blog post](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/). 
+Learn more about the latest features in this [blog post](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/).
 
 > **Testnet only.** All samples use Base Sepolia (Ethereum) or Solana Devnet with free USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no real-world value.
 
@@ -47,6 +47,7 @@ Tutorials in `00-getting-started/` build on each other — start with Tutorial 0
 - **Pay for a metered HTTP API** → `02-use-cases/pay-for-api-agent/`
 - **Pay for data with a pre-payment trust gate (x402-secure)** → `02-use-cases/pay-for-x402-secure-data/`
 - **Pay for data (simple x402 flow)** → `02-use-cases/pay-for-data/`
+- **Pay for premium research with an OpenAI agent** → `02-use-cases/pay-for-research-with-openai-agent/`
 
 ## Resources
 

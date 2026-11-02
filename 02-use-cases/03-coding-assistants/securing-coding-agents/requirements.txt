@@ -1,0 +1,5 @@
+boto3>=1.35.0
+requests>=2.31.0
+pyyaml>=6.0
+bedrock-agentcore-starter-toolkit
+strands-agents[bedrock]

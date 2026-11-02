@@ -1,0 +1,16 @@
+# local Python env and build artifacts created by deploy.sh
+.venv/
+.build/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# load_test.py --out results
+results.json
+
+# OS
+.DS_Store
+
+# demo / load test output
+results/

@@ -1,0 +1,30 @@
+[project]
+name = "securing-coding-agents"
+version = "1.0.0"
+description = "Securing coding agents with Cedar policies on Amazon Bedrock AgentCore"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.35.0",
+    "requests>=2.31.0",
+    "pyyaml>=6.0",
+    "bedrock-agentcore-starter-toolkit",
+    "strands-agents[bedrock]",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+agent = ["mcp"]
+
+[project.scripts]
+deploy = "src.deploy:main"
+cleanup = "src.cleanup:main"
+
+[tool.uv]
+dev-dependencies = ["pytest>=7.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]

@@ -3,8 +3,9 @@ Description: >
   Cross-region replication for Amazon Bedrock AgentCore Memory — LTM via record
   streaming. Deployed in the SOURCE region: a Kinesis Data Stream receives the
   source memory's record-stream events; a consumer Lambda (Event Source Mapping)
-  replicates each record into the TARGET region's memory via
-  BatchCreateMemoryRecords, preserving the original memoryRecordId.
+  applies each create, update, and delete to the TARGET region's memory. A
+  DynamoDB table maps each source record ID to the record ID that the target
+  assigned, so updates and deletes reach the right record.
 
   STM is replicated separately by the application at write time (dual-write
   CreateEvent with extractionMode=SKIP on the target) — see
@@ -76,7 +77,26 @@ Resources:
       MessageRetentionPeriod: 1209600   # 14 days
       VisibilityTimeout: 300
 
-  # 4) Consumer Lambda execution role: read the stream, write the target memory.
+  # 4) Map of source record ID -> target record ID and last applied event time,
+  #    so the consumer can apply updates and deletes and skip redelivered events.
+  RecordMapTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "agentcore-ltm-record-map-${TargetRegion}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sourceRecordId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sourceRecordId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # 5) Consumer Lambda execution role: read the stream, write the target memory
+  #    and the record map.
   ConsumerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -109,10 +129,19 @@ Resources:
                 Resource: !GetAtt ReplicationDLQ.Arn
               - Sid: TargetMemoryWrite
                 Effect: Allow
-                Action: bedrock-agentcore:BatchCreateMemoryRecords
+                Action:
+                  - bedrock-agentcore:BatchCreateMemoryRecords
+                  - bedrock-agentcore:BatchUpdateMemoryRecords
+                  - bedrock-agentcore:BatchDeleteMemoryRecords
                 Resource:
                   - !Sub "arn:aws:bedrock-agentcore:${TargetRegion}:${AWS::AccountId}:memory/${TargetMemoryId}"
                   - !Sub "arn:aws:bedrock-agentcore:${TargetRegion}:${AWS::AccountId}:memory/${TargetMemoryId}/*"
+              - Sid: RecordMapReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt RecordMapTable.Arn
 
   ConsumerFunction:
     Type: AWS::Lambda::Function
@@ -130,8 +159,9 @@ Resources:
         Variables:
           TARGET_MEMORY_ID: !Ref TargetMemoryId
           TARGET_REGION: !Ref TargetRegion
+          RECORD_MAP_TABLE: !Ref RecordMapTable
 
-  # 5) Wire the stream to the consumer.
+  # 6) Wire the stream to the consumer.
   StreamMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -191,3 +221,6 @@ Outputs:
     Value: !Ref ConsumerFunction
   DlqUrl:
     Value: !Ref ReplicationDLQ
+  RecordMapTableName:
+    Description: Source-to-target record ID map used by the consumer
+    Value: !Ref RecordMapTable

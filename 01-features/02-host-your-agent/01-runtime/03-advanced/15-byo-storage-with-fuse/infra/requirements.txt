@@ -1,0 +1,11 @@
+# boto3>=1.40 is required for CreateAgentRuntime's lifecycleConfiguration /
+# platformVersion fields (see agentcore_boto3.py's own docstring for why
+# that matters -- older botocore rejects them as unknown parameters).
+# Upper-bounded so a future major release can't silently change behavior.
+boto3>=1.40,<2
+
+# bedrock-agentcore>=1.14 for shell_session.py's InvokeAgentRuntimeCommandShell
+# support (bedrock_agentcore.runtime.shell) -- not modeled in boto3, not yet
+# in the public API reference docs, but shipped for real on PyPI (confirmed by
+# installing it directly). Pulls in `websockets` as a dependency.
+bedrock-agentcore>=1.14,<2

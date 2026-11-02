@@ -24,11 +24,14 @@ AgentCore derives an event's sort key from ``(eventTimestamp, clientToken)``. To
 get a stable, idempotent event identity in both regions, pass an explicit
 ``clientToken`` and the same ``eventTimestamp`` to both writes — don't rely on
 the SDK auto-generating either. :class:`DualRegionEventWriter` does this for you.
+
+To retry a turn, pass the same ``client_token`` and ``event_timestamp`` again (for
+example, values derived from your own turn ID). If you let ``record_turn``
+generate them, a retry after a timeout writes the turn a second time.
 """
 
 import logging
 import uuid
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -57,7 +60,7 @@ class DualRegionEventWriter:
         target_memory_id: str,
         source_region: str,
         target_region: str,
-        session: Optional[boto3.Session] = None,
+        session: boto3.Session | None = None,
     ):
         self.source_memory_id = source_memory_id
         self.target_memory_id = target_memory_id
@@ -71,8 +74,8 @@ class DualRegionEventWriter:
         session_id: str,
         role: str,
         text: str,
-        event_timestamp: Optional[float] = None,
-        client_token: Optional[str] = None,
+        event_timestamp: float | None = None,
+        client_token: str | None = None,
     ) -> dict:
         """Record one conversation turn in BOTH regions.
 
@@ -135,14 +138,14 @@ class DualRegionEventWriter:
         extraction_mode=None,
     ):
         """CreateEvent that treats an idempotent "already exists" collision as OK."""
-        kwargs = dict(
-            memoryId=memory_id,
-            actorId=actor_id,
-            sessionId=session_id,
-            eventTimestamp=event_timestamp,
-            payload=payload,
-            clientToken=client_token,
-        )
+        kwargs = {
+            "memoryId": memory_id,
+            "actorId": actor_id,
+            "sessionId": session_id,
+            "eventTimestamp": event_timestamp,
+            "payload": payload,
+            "clientToken": client_token,
+        }
         if extraction_mode:
             kwargs["extractionMode"] = extraction_mode
         try:
