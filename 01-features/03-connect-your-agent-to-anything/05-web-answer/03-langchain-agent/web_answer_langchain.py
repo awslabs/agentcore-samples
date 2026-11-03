@@ -26,10 +26,7 @@ cannot produce a well-supported answer, say so rather than guessing.
 
 async def run_agent(question: str) -> None:
     if not GATEWAY_URL:
-        raise ValueError(
-            "AGENTCORE_GATEWAY_URL is not set. Run setup_gateway.py and source "
-            ".env.web-answer first."
-        )
+        raise ValueError("AGENTCORE_GATEWAY_URL is not set. Run setup_gateway.py and source .env.web-answer first.")
 
     token = get_oauth_token()
     model = ChatBedrockConverse(
@@ -51,9 +48,7 @@ async def run_agent(question: str) -> None:
     print(f"  Discovered {len(tools)} tool(s)")
 
     agent = create_agent(model, tools=tools, system_prompt=SYSTEM_PROMPT)
-    result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": question}]}
-    )
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": question}]})
 
     print("\n[Agent Response]")
     print("-" * 60)
@@ -62,9 +57,7 @@ async def run_agent(question: str) -> None:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="LangChain agent with Web Answer Tool via AgentCore Gateway"
-    )
+    parser = argparse.ArgumentParser(description="LangChain agent with Web Answer Tool via AgentCore Gateway")
     parser.add_argument(
         "--question",
         default=DEFAULT_QUESTION,

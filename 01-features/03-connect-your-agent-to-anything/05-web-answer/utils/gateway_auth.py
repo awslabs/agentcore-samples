@@ -54,21 +54,20 @@ def create_streamable_http_transport(gateway_url: str = "", **token_kwargs):
     """Create an authenticated MCP Streamable HTTP transport factory."""
     gateway_url = gateway_url or GATEWAY_URL
     if not gateway_url:
-        raise ValueError(
-            "Gateway URL not configured. Set AGENTCORE_GATEWAY_URL environment variable."
-        )
+        raise ValueError("Gateway URL not configured. Set AGENTCORE_GATEWAY_URL environment variable.")
 
     token = get_oauth_token(**token_kwargs)
 
     @asynccontextmanager
     async def _transport():
-        http_client = create_mcp_http_client(
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        async with http_client, streamable_http_client(
-            gateway_url,
-            http_client=http_client,
-        ) as streams:
+        http_client = create_mcp_http_client(headers={"Authorization": f"Bearer {token}"})
+        async with (
+            http_client,
+            streamable_http_client(
+                gateway_url,
+                http_client=http_client,
+            ) as streams,
+        ):
             yield streams
 
     return _transport

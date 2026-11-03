@@ -53,12 +53,15 @@ class GatewayAuthTests(unittest.TestCase):
         response.raise_for_status.assert_called_once_with()
 
     def test_get_oauth_token_rejects_missing_credentials(self):
-        with patch.multiple(
-            gateway_auth,
-            COGNITO_DOMAIN="",
-            COGNITO_CLIENT_ID="",
-            COGNITO_CLIENT_SECRET="",
-        ), self.assertRaisesRegex(ValueError, "Cognito credentials"):
+        with (
+            patch.multiple(
+                gateway_auth,
+                COGNITO_DOMAIN="",
+                COGNITO_CLIENT_ID="",
+                COGNITO_CLIENT_SECRET="",
+            ),
+            self.assertRaisesRegex(ValueError, "Cognito credentials"),
+        ):
             gateway_auth.get_oauth_token()
 
     def test_transport_rejects_missing_gateway_url(self):
@@ -115,24 +118,18 @@ class GatewaySetupTests(unittest.TestCase):
                 "mcp": {
                     "connector": {
                         "source": {"connectorId": "web-answer"},
-                        "configurations": [
-                            {"name": "WebAnswer", "parameterValues": {}}
-                        ],
+                        "configurations": [{"name": "WebAnswer", "parameterValues": {}}],
                     }
                 }
             },
-            credentialProviderConfigurations=[
-                {"credentialProviderType": "GATEWAY_IAM_ROLE"}
-            ],
+            credentialProviderConfigurations=[{"credentialProviderType": "GATEWAY_IAM_ROLE"}],
         )
         wait_for_target.assert_called_once_with(client, "gateway-123", "target-123")
 
     @patch.object(gateway_setup.time, "sleep")
     def test_gateway_role_has_web_answer_permission(self, _sleep):
         iam = Mock()
-        iam.create_role.return_value = {
-            "Role": {"Arn": "arn:aws:iam::123456789012:role/test-role"}
-        }
+        iam.create_role.return_value = {"Role": {"Arn": "arn:aws:iam::123456789012:role/test-role"}}
 
         gateway_setup.create_gateway_role(
             iam,
@@ -142,11 +139,7 @@ class GatewaySetupTests(unittest.TestCase):
         )
 
         policy = json.loads(iam.put_role_policy.call_args.kwargs["PolicyDocument"])
-        web_answer = next(
-            statement
-            for statement in policy["Statement"]
-            if statement["Sid"] == "InvokeWebAnswer"
-        )
+        web_answer = next(statement for statement in policy["Statement"] if statement["Sid"] == "InvokeWebAnswer")
         self.assertEqual(
             web_answer["Action"],
             "bedrock-agentcore:InvokeWebAnswer",

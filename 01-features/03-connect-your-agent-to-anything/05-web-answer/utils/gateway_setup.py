@@ -67,9 +67,7 @@ def wait_for_target(client, gateway_id, target_id, max_wait=150):
         if target and target["status"] == "READY":
             return True
         if target and target["status"] in {"FAILED", "DELETE_FAILED"}:
-            raise RuntimeError(
-                f"Gateway target {target_id} entered {target['status']} status"
-            )
+            raise RuntimeError(f"Gateway target {target_id} entered {target['status']} status")
         time.sleep(5)
     return False
 

@@ -30,9 +30,7 @@ def run_question(agent, question: str) -> None:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Strands agent with Web Answer Tool via AgentCore Gateway"
-    )
+    parser = argparse.ArgumentParser(description="Strands agent with Web Answer Tool via AgentCore Gateway")
     parser.add_argument(
         "--question",
         help="Question to answer (runs built-in examples if omitted)",

@@ -13,9 +13,7 @@ DEFAULT_QUESTION = "What is the latest stable release of Python, and when was it
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Invoke the Web Answer Tool through an AgentCore Gateway"
-    )
+    parser = argparse.ArgumentParser(description="Invoke the Web Answer Tool through an AgentCore Gateway")
     parser.add_argument(
         "--question",
         default=DEFAULT_QUESTION,
@@ -34,8 +32,7 @@ def input_arguments(tool, question: str) -> dict:
         if field_name in properties:
             return {field_name: question}
     raise ValueError(
-        "WebAnswer exposes neither a 'question' nor a 'query' input. "
-        f"Discovered schema: {json.dumps(schema)}"
+        f"WebAnswer exposes neither a 'question' nor a 'query' input. Discovered schema: {json.dumps(schema)}"
     )
 
 
