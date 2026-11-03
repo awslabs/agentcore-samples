@@ -161,4 +161,4 @@ This project is licensed under the terms specified in the repository license fil
 - [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
 - [Bedrock AgentCore Samples](https://github.com/awslabs/amazon-bedrock-agentcore-samples/)
 - [Streamlit Documentation](https://docs.streamlit.io/)
-- [Strands Agents Framework](https://github.com/awslabs/strands-agents)
+- [Strands Agents Framework](https://github.com/strands-agents/harness-sdk)
