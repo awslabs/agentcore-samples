@@ -1,0 +1,4 @@
+boto3>=1.35.0
+requests>=2.32.0
+PyJWT>=2.9.0
+matplotlib>=3.8.0
