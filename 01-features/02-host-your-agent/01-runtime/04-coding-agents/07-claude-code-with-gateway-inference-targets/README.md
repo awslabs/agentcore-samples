@@ -150,7 +150,9 @@ python cleanup.py
 
 Deletes every recorded resource from both state files, runtime stack first and in
 reverse creation order, including the runtime's CloudWatch log group, which AgentCore
-creates implicitly and which holds prompt text. Anything that fails to delete stays in
+creates implicitly and which holds prompt text. The script waits for the runtime to
+finish deleting before it removes the log group, because a runtime that is still
+shutting down can write to the group again, so this step takes a few minutes. Anything that fails to delete stays in
 its state file so the run can be retried. If the gateway state file was lost,
 `python cleanup.py --discover` finds gateway resources by name prefix.
 

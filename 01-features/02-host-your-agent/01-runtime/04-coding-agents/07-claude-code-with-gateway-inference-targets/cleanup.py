@@ -46,6 +46,21 @@ def load(path: Path) -> dict[str, Any]:
 # ── Runtime stack ─────────────────────────────────────────────────────────────
 
 
+def _wait_runtime_gone(agc: Any, runtime_id: str) -> None:
+    # DeleteAgentRuntime returns while the runtime is still shutting down, and a late
+    # log line from it would recreate the log group deleted next, so wait until the
+    # runtime is fully gone first.
+    for _ in range(90):
+        try:
+            agc.get_agent_runtime(agentRuntimeId=runtime_id)
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ResourceNotFoundException":
+                return
+            raise
+        time.sleep(10)
+    print("  runtime still deleting after 15 minutes; its log group may be recreated")
+
+
 def cleanup_runtime(region: str) -> bool:
     # Returns True when everything recorded in .runtime-state.json is gone.
     state = load(RUNTIME_STATE)
@@ -66,6 +81,8 @@ def cleanup_runtime(region: str) -> bool:
         try:
             if kind == "agent_runtime":
                 agc.delete_agent_runtime(agentRuntimeId=r["agent_runtime_id"])
+                print("  waiting for the runtime to finish deleting")
+                _wait_runtime_gone(agc, r["agent_runtime_id"])
                 # AgentCore creates this log group itself and it holds prompt text,
                 # so it must not outlive the runtime.
                 group = f"/aws/bedrock-agentcore/runtimes/{r['agent_runtime_id']}-DEFAULT"
