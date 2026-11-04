@@ -74,6 +74,52 @@ Its curated connector options are currently `web-search` and
 `bedrock-knowledge-bases`. This sample therefore provisions the Web Answer
 connector with the supported Boto3 `create_gateway_target` API shown below.
 
+The CLI can invoke an existing Gateway regardless of its target type. After
+running the setup and loading `.env.web-answer`, get a token and discover the
+Gateway's exact tool names:
+
+```bash
+TOKEN=$(python -c \
+  'from utils.gateway_auth import get_oauth_token; print(get_oauth_token())')
+
+agentcore gateway invoke \
+  --id "$GATEWAY_ID" \
+  --method POST \
+  --content-type application/json \
+  --accept 'application/json, text/event-stream' \
+  --bearer-token "$TOKEN" \
+  --mcp-protocol-version 2025-03-26 \
+  --payload '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+For the default target name created by this sample, invoke Web Answer with:
+
+```bash
+agentcore gateway invoke \
+  --id "$GATEWAY_ID" \
+  --method POST \
+  --content-type application/json \
+  --accept 'application/json, text/event-stream' \
+  --bearer-token "$TOKEN" \
+  --mcp-protocol-version 2025-03-26 \
+  --payload '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "web-answer-tool___WebAnswer",
+      "arguments": {
+        "query": "What is the current long-term support release of Node.js?"
+      }
+    }
+  }'
+
+unset TOKEN
+```
+
+See [Call a tool in an AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-using-mcp-call.html)
+for the MCP request format.
+
 ## Quick start
 
 Run these commands from this folder:
