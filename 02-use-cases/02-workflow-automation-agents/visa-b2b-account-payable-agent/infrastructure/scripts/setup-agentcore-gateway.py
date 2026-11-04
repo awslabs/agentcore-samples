@@ -8,8 +8,6 @@ This script:
 3. Creates AgentCore Gateway with IAM authorizer
 4. Creates OpenAPI target pointing to stub API
 5. Verifies tool generation
-
-Based on: amazon-bedrock-agentcore-samples/06-workshops/02-AgentCore-gateway/04-integration/01-runtime-gateway
 """
 
 import boto3

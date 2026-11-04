@@ -1,1 +1,3 @@
-Please refer to - https://github.com/awslabs/amazon-bedrock-agentcore-samples/tree/main/06-workshops/01-AgentCore-runtime/01-hosting-agent/04-crewai-with-bedrock-model
+# CrewAI
+
+- [observability/](./observability/) - Instrument a CrewAI agent running outside AgentCore Runtime so its traces appear in the CloudWatch GenAI observability dashboard.

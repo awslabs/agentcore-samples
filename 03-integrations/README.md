@@ -74,6 +74,6 @@ These integrations are perfect for:
 
 ## 🔗 Related Resources
 
-- [Workshops](../06-workshops/) - Learn AgentCore fundamentals in Jupyter Notebooks
+- [Features](../01-features/) - Learn AgentCore fundamentals feature by feature
 - [Use Cases](../02-use-cases/) - End-to-end application examples
 - [AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)

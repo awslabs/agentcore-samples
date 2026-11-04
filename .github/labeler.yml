@@ -1,24 +1,8 @@
 # .github/labeler.yml
-06-workshops:
-  - "06-workshops/**"
 02-use-cases:
   - "02-use-cases/**"
 03-integrations:
   - "03-integrations/**"
-01-AgentCore-runtime:
-  - "06-workshops/01-AgentCore-runtime/**"
-02-AgentCore-gateway:
-  - "06-workshops/02-AgentCore-gateway/**"
-03-AgentCore-identity:
-  - "06-workshops/03-AgentCore-identity/**"
-04-AgentCore-memory:
-  - "06-workshops/04-AgentCore-memory/**"
-05-AgentCore-tools:
-  - "06-workshops/05-AgentCore-tools/**"
-06-AgentCore-observability:
-  - "06-workshops/06-AgentCore-observability/**"
-07-AgentCore-E2E:
-  - "06-workshops/07-AgentCore-E2E/**"
 asynchronous-shopping-assistant:
   - "02-use-cases/asynchronous-shopping-assistant/**"
 AWS-operations-agent:

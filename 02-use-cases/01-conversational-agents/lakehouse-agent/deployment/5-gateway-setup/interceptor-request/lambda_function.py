@@ -10,7 +10,7 @@ This Lambda function acts as a Gateway Interceptor following the AgentCore MCP p
 6. Adds user identity and credentials to request for downstream MCP server
 7. Returns responses in proper MCP interceptor format
 
-Reference: https://github.com/awslabs/amazon-bedrock-agentcore-samples/blob/main/06-workshops/02-AgentCore-gateway/14-token-exchange-at-request-interceptor/
+Reference: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-types.html
 
 OAuth Flow:
   Streamlit → lakehouse-agent → Gateway (this interceptor) → MCP server

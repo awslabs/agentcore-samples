@@ -31,10 +31,6 @@ Prerequisites:
     cp env-sample.txt .env                    # then fill in wallet provider secrets
     bash test/integration/setup-env.sh        # generates USER_ID
 
-Notebook companion: see the matching pay-for-api.ipynb under
-06-workshops/13-AgentCore-payments/02-use-cases/pay-for-api-agent/ for a
-step-by-step walkthrough with markdown commentary and screenshots.
-
 The agent is designed so that it never holds private keys.
 AgentCore Identity stores wallet provider secrets in AWS Secrets Manager
 under KMS encryption after CreatePaymentCredentialProvider runs in §4.

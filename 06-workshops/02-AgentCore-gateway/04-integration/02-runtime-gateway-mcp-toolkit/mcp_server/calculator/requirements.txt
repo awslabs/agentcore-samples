@@ -1,3 +1,0 @@
-# Core MCP server dependencies
-fastmcp>=0.1.0
-mcp>=1.10.0
