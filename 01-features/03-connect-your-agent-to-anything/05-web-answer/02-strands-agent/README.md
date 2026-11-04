@@ -1,6 +1,8 @@
 # Web Answer with a Strands agent
 
-This example gives a Strands agent access to the managed `WebAnswer` MCP tool.
+This example gives a Strands agent access to the managed `WebAnswer` MCP tool
+through an
+[Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html).
 For a direct question that requires current information, the agent asks Web
 Answer for a server-side synthesized answer and preserves its citations.
 

@@ -1,5 +1,8 @@
 """
-Shared Cognito and Gateway authentication utilities for Web Answer examples.
+Shared authentication utilities for Amazon Bedrock AgentCore Web Answer examples.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 The helpers in this module:
   - Request OAuth access tokens from a Cognito machine-to-machine app client

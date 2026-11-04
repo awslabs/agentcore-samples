@@ -1,5 +1,8 @@
 """
-Set up AgentCore gateway with Web Answer Tool Target.
+Set up an Amazon Bedrock AgentCore Gateway with a Web Answer Tool target.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 Creates all required infrastructure for the Web Answer Tool:
   1. IAM service role for the Gateway (with InvokeWebAnswer permission)

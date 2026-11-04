@@ -1,10 +1,28 @@
 # Web Answer with a LangChain agent
 
-This example connects LangChain to an AgentCore Gateway with
-`langchain-mcp-adapters`. The agent discovers the managed `WebAnswer` tool and
-uses it for direct factual questions requiring current web information.
+This example connects LangChain to an
+[Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
+with `langchain-mcp-adapters`. The agent discovers the managed `WebAnswer` tool
+and uses it for direct factual questions requiring current web information.
 
 ![LangChain agent Web Answer architecture](images/langchain-web-search-architecture.png)
+
+## Why include a LangChain example?
+
+The Web Answer connector and Gateway MCP endpoint are framework-agnostic. The
+Strands and LangChain samples differ only in how each framework consumes that
+same MCP interface:
+
+| Concern | Strands sample | LangChain sample |
+|:--|:--|:--|
+| MCP integration | Uses Strands `MCPClient` directly as a context manager. | Uses `MultiServerMCPClient` from `langchain-mcp-adapters`. |
+| Tool conversion | Passes discovered MCP tools directly to `strands.Agent`. | Converts discovered MCP tools into LangChain tool objects. |
+| Agent construction | Uses `strands.Agent` with `BedrockModel`. | Uses LangChain `create_agent` with `ChatBedrockConverse`. |
+| Execution model | Runs the agent synchronously. | Uses asynchronous `get_tools` and `ainvoke` calls. |
+
+Use the Strands sample for applications built with the Strands Agents SDK. Use
+this sample when an existing LangChain application needs the same managed
+`WebAnswer` tool without changing frameworks.
 
 ## Prerequisites
 

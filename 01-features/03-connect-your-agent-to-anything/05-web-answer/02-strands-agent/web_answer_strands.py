@@ -1,5 +1,8 @@
 """
-Use the AgentCore Web Answer Tool with a Strands agent.
+Use the Amazon Bedrock AgentCore Web Answer Tool with a Strands agent.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 This example demonstrates a Strands agent that uses Web Answer through an
 AgentCore Gateway to answer questions requiring current public-web information:

@@ -2,6 +2,9 @@
 Provision an Amazon Bedrock AgentCore Gateway exposing the managed Web Answer
 tool as an MCP tool, so an MCP client (e.g. Claude Cowork) can search the web.
 
+Documentation:
+  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
+
 What it creates (least privilege):
   1. An IAM service role the Gateway assumes to call the managed web-answer
      connector. It grants ONLY:

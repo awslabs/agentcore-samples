@@ -1,5 +1,8 @@
 """
-Discover and invoke the AgentCore Web Answer Tool with raw MCP calls.
+Discover and invoke the Amazon Bedrock AgentCore Web Answer Tool with raw MCP calls.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 This example exercises the MCP protocol directly without an agent framework:
   1. Connect to AgentCore Gateway using MCP Streamable HTTP

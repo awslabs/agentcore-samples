@@ -1,5 +1,8 @@
 """
-Clean up all resources created by the Web Answer Tool setup.
+Clean up resources created by the Amazon Bedrock AgentCore Web Answer setup.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 Deletes in order:
   1. Gateway targets and Gateway

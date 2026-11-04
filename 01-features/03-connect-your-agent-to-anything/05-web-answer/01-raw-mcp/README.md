@@ -1,9 +1,10 @@
 # Raw MCP Web Answer invocation
 
-This example connects directly to AgentCore Gateway, discovers the `WebAnswer`
-tool with `tools/list`, and invokes it with `tools/call`. No agent framework is
-involved, so this is the simplest way to verify the target and inspect the live
-tool schema and response.
+This example connects directly to an
+[Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html),
+discovers the `WebAnswer` tool with `tools/list`, and invokes it with
+`tools/call`. No agent framework is involved, so this is the simplest way to
+verify the target and inspect the live tool schema and response.
 
 ![Raw MCP client Web Answer architecture](images/raw-mcp-call-architecture.png)
 

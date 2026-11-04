@@ -1,8 +1,9 @@
-# Connect AgentCore Web Answer to Claude Cowork
+# Connect [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html) Web Answer to Claude Cowork
 
-This guide provisions an **Amazon Bedrock AgentCore Gateway** that exposes the
-**managed Web Answer tool** as a standard MCP tool, and shows how to connect it
-to **Claude Cowork** (and any other MCP client).
+This guide provisions an
+**[Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)**
+that exposes the **managed Web Answer tool** as a standard MCP tool and shows
+how to connect it to **Claude Cowork** (and any other MCP client).
 
 Web Answer on AgentCore is a fully managed, MCP-compatible connector backed by
 an Amazon-operated web index. There are no third-party search API keys to

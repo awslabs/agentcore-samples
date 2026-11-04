@@ -1,5 +1,8 @@
 """
-Shared Strands agent integration for the AgentCore Web Answer Tool.
+Shared Strands integration for the Amazon Bedrock AgentCore Web Answer Tool.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
 
 The helpers create an authenticated MCP client and a Strands agent whose tools
 are discovered dynamically from AgentCore Gateway. The Gateway exposes the

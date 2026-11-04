@@ -1,4 +1,9 @@
-"""Set up AgentCore gateway with Web Answer Tool — delegates to shared utility.
+"""Set up an Amazon Bedrock AgentCore Gateway with the Web Answer Tool.
+
+Documentation:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html
+
+This script delegates to the shared setup utility.
 
 Usage:
 python setup_gateway.py

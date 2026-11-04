@@ -1,10 +1,10 @@
-# AgentCore Web Answer Tool
+# [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html) Web Answer Tool
 
 ![Web Answer Tool architecture](images/tutorial-architecture.png)
 
-Amazon Bedrock AgentCore Web Answer Tool turns a natural-language question into
+The Amazon Bedrock AgentCore Web Answer Tool turns a natural-language question into
 a concise answer grounded in current public-web sources. It is exposed as a
-managed MCP connector through AgentCore Gateway. The service performs retrieval,
+managed MCP connector through an AgentCore Gateway. The service performs retrieval,
 page-content lookup, answer synthesis, and citation generation server-side.
 
 Use Web Answer for direct factual questions where the agent needs a finished,
@@ -47,21 +47,6 @@ pip install -r requirements.txt
 
 ![Web Answer with Amazon Bedrock AgentCore Gateway](images/agentcore-web-search-architecture.png)
 
-```text
-Application or agent
-        |
-        | MCP over HTTPS, authenticated with JWT
-        v
-AgentCore Gateway
-        |
-        | Gateway IAM service role
-        v
-Web Answer connector (connectorId: "web-answer")
-        |
-        v
-Grounded answer with citations
-```
-
 The Gateway service role grants:
 
 ```text
@@ -74,6 +59,20 @@ The managed tool resource is:
 ```text
 arn:aws:bedrock-agentcore:<region>:aws:tool/web-answer.v1
 ```
+
+## Documentation
+
+- [Amazon Bedrock AgentCore overview](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)
+- [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
+- [Built-in Gateway connectors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connectors.html)
+
+## AgentCore CLI support
+
+The current [AgentCore CLI](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-get-started-cli.html)
+(v1.0.1) does not accept `web-answer` in `agentcore add gateway-connector`.
+Its curated connector options are currently `web-search` and
+`bedrock-knowledge-bases`. This sample therefore provisions the Web Answer
+connector with the supported Boto3 `create_gateway_target` API shown below.
 
 ## Quick start
 
@@ -111,15 +110,11 @@ gateway_client.create_gateway_target(
         "mcp": {
             "connector": {
                 "source": {"connectorId": "web-answer"},
-                "configurations": [
-                    {"name": "WebAnswer", "parameterValues": {}}
-                ],
+                "configurations": [{"name": "WebAnswer", "parameterValues": {}}],
             }
         }
     },
-    credentialProviderConfigurations=[
-        {"credentialProviderType": "GATEWAY_IAM_ROLE"}
-    ],
+    credentialProviderConfigurations=[{"credentialProviderType": "GATEWAY_IAM_ROLE"}],
 )
 ```
 
