@@ -4,6 +4,8 @@ This example gives a Strands agent access to the managed `WebAnswer` MCP tool.
 For a direct question that requires current information, the agent asks Web
 Answer for a server-side synthesized answer and preserves its citations.
 
+![Strands agent Web Answer architecture](images/strands-web-search-architecture.png)
+
 ## Prerequisites
 
 - Complete the Gateway setup below.

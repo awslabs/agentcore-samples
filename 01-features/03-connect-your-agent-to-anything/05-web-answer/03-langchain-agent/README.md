@@ -4,6 +4,8 @@ This example connects LangChain to an AgentCore Gateway with
 `langchain-mcp-adapters`. The agent discovers the managed `WebAnswer` tool and
 uses it for direct factual questions requiring current web information.
 
+![LangChain agent Web Answer architecture](images/langchain-web-search-architecture.png)
+
 ## Prerequisites
 
 - Complete the Gateway setup below.

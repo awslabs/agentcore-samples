@@ -1,4 +1,30 @@
-"""Discover and invoke the AgentCore Web Answer Tool with raw MCP calls."""
+"""
+Discover and invoke the AgentCore Web Answer Tool with raw MCP calls.
+
+This example exercises the MCP protocol directly without an agent framework:
+  1. Connect to AgentCore Gateway using MCP Streamable HTTP
+  2. Call tools/list to discover WebAnswer and its live input schema
+  3. Map the user question to the input field advertised by that schema
+  4. Call tools/call and display the grounded answer and citations
+
+Use this script to verify the Gateway target and inspect the managed tool's
+response before integrating it with an agent framework.
+
+Prerequisites:
+    pip install -r ../requirements.txt
+    Run setup_gateway.py and load the generated .env.web-answer file
+
+Environment variables required:
+    AGENTCORE_GATEWAY_URL  — Gateway MCP endpoint
+    COGNITO_DOMAIN         — Cognito domain prefix
+    COGNITO_CLIENT_ID      — Cognito machine-to-machine app client ID
+    COGNITO_CLIENT_SECRET  — Cognito app client secret
+    COGNITO_SCOPE          — OAuth scope string
+
+Usage:
+    python raw_mcp_call.py
+    python raw_mcp_call.py --question "What is the current Node.js LTS release?"
+"""
 
 import argparse
 import json
@@ -23,7 +49,22 @@ def parse_args():
 
 
 def input_arguments(tool, question: str) -> dict:
-    """Build arguments from the discovered schema instead of assuming its field name."""
+    """Build a WebAnswer invocation payload from its discovered input schema.
+
+    The managed tool schema may expose the natural-language input as either
+    ``question`` or ``query``. Inspecting the live schema keeps this example
+    compatible with both representations instead of hard-coding one field.
+
+    Args:
+        tool: Discovered MCP tool whose ``tool_spec`` contains ``inputSchema``.
+        question: Natural-language question to send to Web Answer.
+
+    Returns:
+        A one-field argument dictionary accepted by the discovered tool.
+
+    Raises:
+        ValueError: If the schema exposes neither ``question`` nor ``query``.
+    """
     schema = tool.tool_spec.get("inputSchema", {})
     # Strands represents a Bedrock tool schema as {"json": <JSON Schema>}.
     schema = schema.get("json", schema)
@@ -37,7 +78,17 @@ def input_arguments(tool, question: str) -> dict:
 
 
 def display_result(result) -> None:
-    """Print structured content when available, otherwise print MCP text blocks."""
+    """Print a WebAnswer result in its most structured available form.
+
+    ``structuredContent`` is preferred because it preserves the managed tool's
+    response fields. If it is absent, the function reads standard MCP content
+    blocks, pretty-prints JSON text, and otherwise prints text or unknown blocks
+    without discarding them.
+
+    Args:
+        result: Value returned by ``MCPClient.call_tool_sync``. It may be a
+            mapping, a list of content blocks, or an MCP result object.
+    """
     if isinstance(result, dict) and result.get("structuredContent"):
         print(json.dumps(result["structuredContent"], indent=2))
         return

@@ -1,4 +1,32 @@
-"""Use the AgentCore Web Answer Tool with a LangChain agent."""
+"""
+Use the AgentCore Web Answer Tool with a LangChain agent.
+
+This example demonstrates a LangChain agent that uses Web Answer through an
+AgentCore Gateway to answer questions requiring current public-web information:
+  1. Obtain a Cognito OAuth token for Gateway authentication
+  2. Connect with langchain-mcp-adapters and discover WebAnswer
+  3. Create an agent backed by ChatBedrockConverse
+  4. Let the model invoke WebAnswer when it needs a current fact
+  5. Present the synthesized answer while preserving its citations
+
+Prerequisites:
+    pip install -r ../requirements.txt
+    Run setup_gateway.py and load the generated .env.web-answer file
+    Enable access to the configured Bedrock model
+
+Environment variables required:
+    AGENTCORE_GATEWAY_URL  — Gateway MCP endpoint
+    COGNITO_DOMAIN         — Cognito domain prefix
+    COGNITO_CLIENT_ID      — Cognito machine-to-machine app client ID
+    COGNITO_CLIENT_SECRET  — Cognito app client secret
+    COGNITO_SCOPE          — OAuth scope string
+    BEDROCK_MODEL_ID       — Optional Bedrock inference profile ID or ARN
+    AWS_DEFAULT_REGION     — AWS region, defaulting to us-east-1
+
+Usage:
+    python web_answer_langchain.py
+    python web_answer_langchain.py --question "What is the current Node.js LTS release?"
+"""
 
 import argparse
 import asyncio
@@ -25,6 +53,20 @@ cannot produce a well-supported answer, say so rather than guessing.
 
 
 async def run_agent(question: str) -> None:
+    """Create a LangChain agent, submit one question, and print its answer.
+
+    The function authenticates to AgentCore Gateway, discovers its MCP tools,
+    and gives those tools to a Bedrock-backed LangChain agent. Web Answer
+    performs retrieval and synthesis; the agent presents the returned answer
+    and citations.
+
+    Args:
+        question: Natural-language question that may require current web facts.
+
+    Raises:
+        ValueError: If ``AGENTCORE_GATEWAY_URL`` is not configured.
+        requests.HTTPError: If Cognito rejects the OAuth token request.
+    """
     if not GATEWAY_URL:
         raise ValueError("AGENTCORE_GATEWAY_URL is not set. Run setup_gateway.py and source .env.web-answer first.")
 

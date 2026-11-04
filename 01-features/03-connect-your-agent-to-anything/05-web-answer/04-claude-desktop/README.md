@@ -47,6 +47,8 @@ code, so the agent can't reason around it:
 
 ## Architecture
 
+![Amazon Bedrock AgentCore Web Answer reference architecture](images/web_answer.png)
+
 ```
 Claude Cowork (MCP client)
       │  MCP over HTTPS + Bearer JWT (inbound: CUSTOM_JWT)

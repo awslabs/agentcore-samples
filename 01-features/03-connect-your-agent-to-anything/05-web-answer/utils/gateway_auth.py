@@ -1,4 +1,21 @@
-"""Shared Cognito and Gateway authentication utilities."""
+"""
+Shared Cognito and Gateway authentication utilities for Web Answer examples.
+
+The helpers in this module:
+  - Request OAuth access tokens from a Cognito machine-to-machine app client
+  - Create MCP Streamable HTTP transports authenticated to AgentCore Gateway
+
+Credentials default to environment variables written by setup_gateway.py. Callers
+may provide explicit values when they need to override that shared configuration.
+
+Environment variables:
+    AGENTCORE_GATEWAY_URL  — Gateway MCP endpoint
+    COGNITO_DOMAIN         — Cognito domain prefix
+    COGNITO_CLIENT_ID      — Cognito machine-to-machine app client ID
+    COGNITO_CLIENT_SECRET  — Cognito app client secret
+    COGNITO_SCOPE          — OAuth scope requested for Gateway invocation
+    AWS_DEFAULT_REGION     — AWS region, defaulting to us-east-1
+"""
 
 import os
 from contextlib import asynccontextmanager
@@ -22,7 +39,26 @@ def get_oauth_token(
     scope: str = "",
     region: str = "",
 ) -> str:
-    """Retrieve a Cognito access token with the client-credentials flow."""
+    """Retrieve an OAuth access token using Cognito client credentials.
+
+    Empty arguments fall back to the corresponding module-level environment
+    configuration. A fresh token is requested on every call.
+
+    Args:
+        domain: Cognito hosted-UI domain prefix, without the AWS domain suffix.
+        client_id: Cognito machine-to-machine app client ID.
+        client_secret: Cognito app client secret.
+        scope: OAuth scope to include in the token request.
+        region: AWS region containing the Cognito user pool.
+
+    Returns:
+        The access token from Cognito's token endpoint.
+
+    Raises:
+        ValueError: If the domain, client ID, or client secret is missing.
+        requests.HTTPError: If Cognito returns an unsuccessful HTTP response.
+        KeyError: If a successful response does not contain ``access_token``.
+    """
     domain = domain or COGNITO_DOMAIN
     client_id = client_id or COGNITO_CLIENT_ID
     client_secret = client_secret or COGNITO_CLIENT_SECRET
@@ -51,7 +87,24 @@ def get_oauth_token(
 
 
 def create_streamable_http_transport(gateway_url: str = "", **token_kwargs):
-    """Create an authenticated MCP Streamable HTTP transport factory."""
+    """Create a bearer-authenticated MCP Streamable HTTP transport factory.
+
+    The OAuth token is obtained when this function is called. The returned
+    asynchronous context manager creates the MCP HTTP client and closes its
+    resources when the caller exits the context.
+
+    Args:
+        gateway_url: AgentCore Gateway MCP endpoint. An empty value falls back
+            to ``AGENTCORE_GATEWAY_URL``.
+        **token_kwargs: Credential overrides forwarded to ``get_oauth_token``.
+
+    Returns:
+        An async context-manager factory suitable for ``MCPClient``.
+
+    Raises:
+        ValueError: If no Gateway URL is configured.
+        requests.HTTPError: If Cognito rejects the OAuth token request.
+    """
     gateway_url = gateway_url or GATEWAY_URL
     if not gateway_url:
         raise ValueError("Gateway URL not configured. Set AGENTCORE_GATEWAY_URL environment variable.")

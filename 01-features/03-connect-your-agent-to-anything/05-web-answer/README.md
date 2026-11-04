@@ -1,5 +1,7 @@
 # AgentCore Web Answer Tool
 
+![Web Answer Tool architecture](images/tutorial-architecture.png)
+
 Amazon Bedrock AgentCore Web Answer Tool turns a natural-language question into
 a concise answer grounded in current public-web sources. It is exposed as a
 managed MCP connector through AgentCore Gateway. The service performs retrieval,
@@ -42,6 +44,8 @@ pip install -r requirements.txt
 ```
 
 ## Architecture
+
+![Web Answer with Amazon Bedrock AgentCore Gateway](images/agentcore-web-search-architecture.png)
 
 ```text
 Application or agent

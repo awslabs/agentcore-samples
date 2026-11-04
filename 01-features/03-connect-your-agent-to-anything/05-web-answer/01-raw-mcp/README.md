@@ -5,6 +5,8 @@ tool with `tools/list`, and invokes it with `tools/call`. No agent framework is
 involved, so this is the simplest way to verify the target and inspect the live
 tool schema and response.
 
+![Raw MCP client Web Answer architecture](images/raw-mcp-call-architecture.png)
+
 ## Prerequisites
 
 - Python 3.10 or later.

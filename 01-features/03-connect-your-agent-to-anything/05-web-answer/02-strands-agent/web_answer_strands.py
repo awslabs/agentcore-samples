@@ -1,4 +1,31 @@
-"""Use the AgentCore Web Answer Tool with a Strands agent."""
+"""
+Use the AgentCore Web Answer Tool with a Strands agent.
+
+This example demonstrates a Strands agent that uses Web Answer through an
+AgentCore Gateway to answer questions requiring current public-web information:
+  1. Connect to the Gateway using MCP Streamable HTTP
+  2. Discover WebAnswer through tools/list
+  3. Create a Strands agent with the discovered MCP tools
+  4. Let the model invoke WebAnswer when a question requires current facts
+  5. Present the synthesized answer while preserving its source URLs
+
+Prerequisites:
+    pip install -r ../requirements.txt
+    Run setup_gateway.py and load the generated .env.web-answer file
+    Enable access to the configured Bedrock model
+
+Environment variables required:
+    AGENTCORE_GATEWAY_URL  — Gateway MCP endpoint
+    COGNITO_DOMAIN         — Cognito domain prefix
+    COGNITO_CLIENT_ID      — Cognito machine-to-machine app client ID
+    COGNITO_CLIENT_SECRET  — Cognito app client secret
+    COGNITO_SCOPE          — OAuth scope string
+    BEDROCK_MODEL_ID       — Optional Bedrock inference profile ID or ARN
+
+Usage:
+    python web_answer_strands.py
+    python web_answer_strands.py --question "What is the current Node.js LTS release?"
+"""
 
 import argparse
 import os
@@ -14,6 +41,12 @@ DEFAULT_QUESTIONS = [
 
 
 def run_question(agent, question: str) -> None:
+    """Run one question through the Strands agent and print its final response.
+
+    Args:
+        agent: Configured Strands agent with the WebAnswer MCP tool available.
+        question: Natural-language question that may require current web facts.
+    """
     print(f"\n{'=' * 60}")
     print(f"Question: {question}")
     print("=" * 60)
