@@ -6,8 +6,8 @@ Clean up all resources created by setup.py and deploy.py.
                                    # lost .provision-state.json
 
 Deletes, in order:
-- AgentCore Runtime, its CloudWatch log group, execution role, Secrets Manager
-  secret, and ECR repository (from .runtime-state.json)
+- AgentCore Runtime, its CloudWatch log group, execution role, AgentCore Identity
+  credential provider, and ECR repository (from .runtime-state.json)
 - Gateway target, gateway, gateway IAM role, Cognito domain, app client, and user
   pool (from .provision-state.json)
 
@@ -58,7 +58,6 @@ def cleanup_runtime(region: str) -> bool:
     agc = session.client("bedrock-agentcore-control")
     iam = session.client("iam")
     ecr = session.client("ecr")
-    sm = session.client("secretsmanager")
     cwl = session.client("logs")
     failed = []
     print(f"runtime stack: deleting {len(resources)} resources")
@@ -82,10 +81,11 @@ def cleanup_runtime(region: str) -> bool:
                 iam.delete_role(RoleName=r["role_name"])
             elif kind == "ecr_repo":
                 ecr.delete_repository(repositoryName=r["repository_name"], force=True)
-            elif kind == "secret":
-                # No recovery window: the credential should not linger, and the next
-                # deploy recreates it from gateway state anyway.
-                sm.delete_secret(SecretId=r["secret_name"], ForceDeleteWithoutRecovery=True)
+            elif kind == "credential_provider":
+                # Deleting the provider also removes the client secret AgentCore
+                # Identity stored for it, and the next deploy recreates both from
+                # gateway state anyway.
+                agc.delete_oauth2_credential_provider(name=r["name"])
             else:
                 print("  skip unknown kind:", kind)
                 continue
@@ -231,8 +231,8 @@ def main() -> int:
 
     region = args.region or load(RUNTIME_STATE).get("region") or load(GATEWAY_STATE).get("region") or "us-east-1"
 
-    # Runtime first: it reads gateway state, and its secret is recreated from gateway
-    # state on the next deploy.
+    # Runtime first: it reads gateway state, and its credential provider is recreated
+    # from gateway state on the next deploy.
     runtime_ok = cleanup_runtime(region)
     gateway_ok = cleanup_gateway(region, args.discover)
 

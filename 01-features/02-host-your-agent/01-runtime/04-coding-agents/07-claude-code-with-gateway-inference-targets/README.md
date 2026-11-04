@@ -6,9 +6,9 @@ directly from the container.
 
 The container holds no Bedrock credentials. It authenticates to the gateway as a
 workload, using an OAuth 2.0 client-credentials grant against Amazon Cognito, and the
-gateway's IAM role is the only identity that reaches Bedrock. The agent's execution
-role can read exactly one Secrets Manager secret (the OAuth client credentials) and
-nothing else.
+gateway's IAM role is the only identity that reaches Bedrock. The client credentials
+live in an AgentCore Identity OAuth2 credential provider, which runs the token exchange
+for the agent, and the agent's execution role is scoped to that one provider.
 
 ## Architecture
 
@@ -20,9 +20,9 @@ InvokeAgentRuntime
 │  AgentCore Runtime           │
 │  (Claude Code, headless)     │
 │                              │
-│  1. read OAuth secret ───────┼──▶ Secrets Manager (execution role, one secret)
-│  2. mint token ──────────────┼──▶ Cognito /oauth2/token
-│  3. claude -p "<prompt>"     │
+│  1. get token ───────────────┼──▶ AgentCore Identity (credential provider, M2M)
+│                              │        └──▶ Cognito /oauth2/token
+│  2. claude -p "<prompt>"     │
 │     ANTHROPIC_AUTH_TOKEN     │
 └──────────────┬───────────────┘
                │ Anthropic Messages API + Bearer JWT
@@ -98,15 +98,26 @@ python deploy.py --region us-east-1
 ```
 
 Builds the ARM64 image, pushes it to a new ECR repository, stores the OAuth client
-credentials in a Secrets Manager secret, creates an execution role scoped to that one
-secret plus ECR pull and CloudWatch Logs, and creates the AgentCore Runtime. The
-container environment carries only the secret's id, never the credential values.
+credentials in an AgentCore Identity OAuth2 credential provider, creates an execution
+role scoped to that one provider plus ECR pull and CloudWatch Logs, and creates the
+AgentCore Runtime. The container environment carries only the provider's name, never
+the credential values. On each invocation the agent passes the workload access token
+that AgentCore Runtime supplies to `GetResourceOauth2Token`, and AgentCore Identity
+runs the client-credentials exchange against Cognito. AgentCore Identity reads the
+provider's client secret with the execution role's permissions, and an `aws:CalledVia`
+condition limits that grant to reads made through AgentCore, so code running in the
+container cannot read the secret directly.
 
 ### Step 4 — Invoke the agent
 
 ```bash
 python invoke.py 'Reply with exactly the word: ok'
 ```
+
+AgentCore Runtime gives the agent a workload access token only when the call names a
+runtime user, so `invoke.py` passes the caller's IAM ARN as `runtimeUserId`. The caller
+therefore needs `bedrock-agentcore:InvokeAgentRuntimeForUser` as well as
+`bedrock-agentcore:InvokeAgentRuntime`.
 
 For a turn that proves the agent actually works end to end (tool use through the
 gateway, not just connectivity):
@@ -150,8 +161,8 @@ this sample:
 
 - **`ANTHROPIC_AUTH_TOKEN`** carries the gateway token. The gateway returns a 401 for a
   request carrying both `Authorization` and `x-api-key`, which is what Claude Code's
-  `apiKeyHelper` sends, so the server mints a token per invocation and sets this
-  variable instead.
+  `apiKeyHelper` sends, so the server fetches a token from AgentCore Identity per
+  invocation and sets this variable instead.
 - **`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`** is required. Claude Code sends
   experimental `anthropic-beta` flags that Bedrock rejects, and the gateway passes the
   rejection through as `400 invalid beta flag`. Core capabilities (tool use, prompt
@@ -179,7 +190,7 @@ carry no infrastructure identifiers.
 
 ## Notes for production
 
-- A token is minted per invocation, which is sufficient because each turn is a
+- A token is fetched per invocation, which is sufficient because each turn is a
   short-lived `claude -p` process. A long-running session that outlives the token
   would need in-container token refresh.
 - The inference target here uses the `bedrock-mantle` connector, which is the

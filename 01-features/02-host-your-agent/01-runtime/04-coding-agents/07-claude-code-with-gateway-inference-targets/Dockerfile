@@ -5,8 +5,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip ca-certificates git curl \
     && rm -rf /var/lib/apt/lists/*
 
-# boto3 is only used to read the OAuth client secret from Secrets Manager at
-# startup, with the runtime's execution role. No credential is baked in.
+# boto3 is only used to fetch the gateway token from AgentCore Identity, with the
+# runtime's workload identity. The image itself contains no credentials.
 RUN pip3 install --no-cache-dir --break-system-packages boto3==1.42.5
 
 RUN npm install -g @anthropic-ai/claude-code@2.1.140

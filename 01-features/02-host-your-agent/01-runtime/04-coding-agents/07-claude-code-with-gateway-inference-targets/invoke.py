@@ -6,6 +6,10 @@ Invoke the Claude Code agent deployed on AgentCore Runtime.
 
 --session-id resumes the AgentCore Runtime session (the container), so a follow-up
 prompt sees the workspace state the previous turn left behind.
+
+The caller needs bedrock-agentcore:InvokeAgentRuntimeForUser as well as
+bedrock-agentcore:InvokeAgentRuntime, because each call names the caller as the
+runtime user (see below).
 """
 
 import argparse
@@ -45,6 +49,10 @@ def main() -> int:
         "agentRuntimeArn": arn,
         "payload": json.dumps({"prompt": args.prompt}).encode(),
         "contentType": "application/json",
+        # AgentCore Runtime gives the agent a workload access token, which the agent needs
+        # to get its gateway token from AgentCore Identity, only when the call names a
+        # user. The caller's own IAM ARN is used, as the AgentCore documentation advises.
+        "runtimeUserId": boto3.client("sts", region_name=args.region).get_caller_identity()["Arn"],
     }
     if args.session_id:
         kwargs["runtimeSessionId"] = args.session_id

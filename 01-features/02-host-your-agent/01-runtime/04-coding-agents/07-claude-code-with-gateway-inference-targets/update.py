@@ -7,7 +7,8 @@ Creating a runtime pins the image it resolved at create time, so pushing a new
 :latest is not enough -- UpdateAgentRuntime is needed to roll it forward without
 destroying and recreating the runtime (which would change its ARN).
 
-Reuses the build, secret and role logic from deploy.py so the two cannot drift.
+Reuses the build, credential provider and role logic from deploy.py so the two cannot
+drift.
 """
 
 import argparse
@@ -17,8 +18,8 @@ import time
 import boto3
 from deploy import (
     build_and_push,
+    ensure_credential_provider,
     ensure_role,
-    ensure_secret,
     gateway_outputs,
     load_state,
     runtime_env,
@@ -42,10 +43,10 @@ def main() -> int:
 
     uri = build_and_push(region, state)
     gw = gateway_outputs()
-    secret_arn = ensure_secret(region, state, gw)
-    # Re-applies the inline policy, so an existing role picks up the scoped
-    # secretsmanager:GetSecretValue grant instead of silently lacking it.
-    ensure_role(region, state, secret_arn)
+    provider = ensure_credential_provider(region, state, gw)
+    # Re-applies the inline policy, so an existing role picks up the scoped AgentCore
+    # Identity grants instead of silently lacking them.
+    ensure_role(region, state, provider)
     agc = boto3.client("bedrock-agentcore-control", region_name=region)
     current = agc.get_agent_runtime(agentRuntimeId=rid)
     print("  updating runtime to the new image")
@@ -55,7 +56,7 @@ def main() -> int:
         roleArn=current["roleArn"],
         networkConfiguration={"networkMode": "PUBLIC"},
         protocolConfiguration={"serverProtocol": "HTTP"},
-        environmentVariables=runtime_env(gw, secret_arn),
+        environmentVariables=runtime_env(gw, provider),
     )
     for _ in range(60):
         status = agc.get_agent_runtime(agentRuntimeId=rid).get("status")
