@@ -22,36 +22,36 @@ Requirements:
     - S3 bucket with appropriate permissions
 """
 
-import os
-import sys
-import time
-import json
-import uuid
 import base64
-import secrets
-import tempfile
-import threading
-import webbrowser
-import signal
-import shutil
 import gzip
 import io
-from pathlib import Path
+import json
+import os
+import secrets
+import shutil
+import signal
+import sys
+import tempfile
+import threading
+import time
+import uuid
+import webbrowser
 from datetime import datetime
-from typing import Dict
 from http.server import HTTPServer
+from pathlib import Path
 
 import boto3
+from bedrock_agentcore._utils.endpoints import get_control_plane_endpoint
+
+# Import tools
+from bedrock_agentcore.tools.browser_client import BrowserClient
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from rich.console import Console
 from rich.panel import Panel
 
-# Import tools
-from bedrock_agentcore.tools.browser_client import BrowserClient
-from bedrock_agentcore._utils.endpoints import get_control_plane_endpoint
 from .browser_viewer_replay import BrowserViewerServer
-from .session_replay_viewer import SessionReplayViewer, SessionReplayHandler
+from .session_replay_viewer import SessionReplayHandler, SessionReplayViewer
 
 # Initialize console
 console = Console()
@@ -170,7 +170,7 @@ def create_browser_with_recording():
         }
 
     except Exception as e:
-        console.print(f"❌ Error creating or starting browser: {str(e)}")
+        console.print(f"❌ Error creating or starting browser: {e!s}")
         console.print("📋 Details:")
         import traceback
 
@@ -178,7 +178,7 @@ def create_browser_with_recording():
         raise
 
 
-def get_sigv4_headers(region: str, session_id: str) -> Dict[str, str]:
+def get_sigv4_headers(region: str, session_id: str) -> dict[str, str]:
     """Generate SigV4 authentication headers for WebSocket connection"""
     # Host for WebSocket connection
     host = f"https://bedrock-agentcore-control.{REGION}.amazonaws.com"
@@ -293,7 +293,7 @@ def view_recordings(s3_location):
 
         # Sort the session directories to find the latest one
         # Assuming the session IDs are time-ordered (which they appear to be)
-        session_dirs = sorted(list(session_dirs))
+        session_dirs = sorted(session_dirs)
         latest_session = session_dirs[-1]
         print(f"Using latest session: {latest_session}")
 
@@ -347,7 +347,7 @@ def view_recordings(s3_location):
                     try:
                         # Handle ISO format
                         if isinstance(metadata["startTime"], str):
-                            dt = datetime.fromisoformat(metadata["startTime"].replace("Z", "+00:00"))
+                            dt = datetime.fromisoformat(metadata["startTime"])
                             timestamp = int(dt.timestamp() * 1000)
                         else:
                             timestamp = metadata["startTime"]
@@ -710,7 +710,7 @@ def main():
             try:
                 browser_client.stop()
                 console.print("\n✅ Browser session stopped")
-            except:  # noqa: E722
+            except:
                 pass
 
 

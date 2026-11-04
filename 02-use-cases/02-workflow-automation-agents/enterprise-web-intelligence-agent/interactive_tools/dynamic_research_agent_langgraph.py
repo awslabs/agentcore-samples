@@ -5,15 +5,15 @@ With simplified architecture and robust error handling
 
 import asyncio
 import json
-from typing import Dict, List, TypedDict, Optional, Any, Annotated
+from typing import Annotated, Any, TypedDict
 
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_aws import ChatBedrockConverse
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+from langchain_aws import ChatBedrockConverse
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, StateGraph
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.syntax import Syntax
 
 console = Console()
@@ -23,12 +23,12 @@ console = Console()
 class AgentState(TypedDict):
     """State for the research agent with proper annotations"""
 
-    messages: Annotated[List, "append"]  # Annotated to handle append operations
+    messages: Annotated[list, "append"]  # Annotated to handle append operations
     research_query: str
-    code_session_id: Optional[str]
-    research_data: Dict[str, any]
-    completed_tasks: List[str]
-    errors: List[str]
+    code_session_id: str | None
+    research_data: dict[str, any]
+    completed_tasks: list[str]
+    errors: list[str]
 
 
 class ResearchAgent:
@@ -116,7 +116,7 @@ for root, dirs, files in os.walk('.'):
         result = self.code_client.invoke("listFiles", {"path": ""})
         return self._extract_output(result).strip().split("\n") if self._extract_output(result).strip() else []
 
-    def _extract_output(self, result: Dict) -> str:
+    def _extract_output(self, result: dict) -> str:
         """Extract output from code execution result"""
         if "structuredContent" in result:
             stdout = result["structuredContent"].get("stdout", "")
@@ -148,7 +148,7 @@ for root, dirs, files in os.walk('.'):
         # If no code block is found, return the whole text
         return text.strip()
 
-    def execute_llm_generated_code(self, task_description: str, context: Dict = None) -> Dict[str, Any]:
+    def execute_llm_generated_code(self, task_description: str, context: dict | None = None) -> dict[str, Any]:
         """Have LLM generate and execute code for the task"""
         console.print(f"\n[bold blue]🤖 LLM generating code for:[/bold blue] {task_description}")
 
@@ -470,7 +470,7 @@ print(df.describe())
             available_files = self._refresh_file_list()
 
         # Filter for specific file types
-        data_files = [f for f in available_files if f.endswith(".csv") or f.endswith(".json")]
+        data_files = [f for f in available_files if f.endswith((".csv", ".json"))]
         viz_files = [f for f in available_files if f.endswith((".png", ".jpg", ".jpeg", ".svg"))]
 
         # Load analysis results if available
@@ -570,7 +570,7 @@ async def run_research(query: str):
         console.print("\n[bold]Files created during research:[/bold]")
         files = agent._refresh_file_list()
         for file in files:
-            if file.endswith(("/")):
+            if file.endswith("/"):
                 console.print(f"[blue]📁 {file}[/blue]")
             elif file.endswith((".png", ".jpg", ".jpeg", ".svg")):
                 console.print(f"[magenta]🖼️ {file}[/magenta]")

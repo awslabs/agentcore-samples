@@ -21,10 +21,11 @@ Reference:
 import json
 import logging
 import os
-import boto3
 import urllib.request
-from typing import Dict, Any, List, Optional, Tuple
-from jose import jwt, JWTError
+from typing import Any
+
+import boto3
+from jose import JWTError, jwt
 
 # Configure logging
 logger = logging.getLogger()
@@ -40,7 +41,7 @@ _config = None
 _jwks = None
 
 
-def get_config() -> Dict[str, str]:
+def get_config() -> dict[str, str]:
     """
     Get Cognito configuration from environment variables or SSM.
 
@@ -88,7 +89,7 @@ def get_config() -> Dict[str, str]:
     return _config
 
 
-def get_cognito_public_keys() -> Dict[str, Any]:
+def get_cognito_public_keys() -> dict[str, Any]:
     """
     Fetch Cognito public keys for JWT validation.
 
@@ -110,11 +111,11 @@ def get_cognito_public_keys() -> Dict[str, Any]:
             logger.info("Successfully fetched Cognito public keys")
             return _jwks
     except Exception as e:
-        logger.error(f"Error fetching Cognito public keys: {str(e)}")
+        logger.error(f"Error fetching Cognito public keys: {e!s}")
         raise
 
 
-def validate_and_decode_jwt(token: str) -> Optional[Dict[str, Any]]:
+def validate_and_decode_jwt(token: str) -> dict[str, Any] | None:
     """
     Validate JWT token and decode claims.
 
@@ -176,14 +177,14 @@ def validate_and_decode_jwt(token: str) -> Optional[Dict[str, Any]]:
         return claims
 
     except JWTError as e:
-        logger.error(f"JWT validation error: {str(e)}")
+        logger.error(f"JWT validation error: {e!s}")
         return None
     except Exception as e:
-        logger.error(f"Error validating JWT: {str(e)}")
+        logger.error(f"Error validating JWT: {e!s}")
         return None
 
 
-def get_claim_for_authorization(claims: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+def get_claim_for_authorization(claims: dict[str, Any]) -> tuple[str, str] | None:
     """
     Extract the appropriate claim for authorization check from JWT claims.
 
@@ -222,7 +223,7 @@ def get_claim_for_authorization(claims: Dict[str, Any]) -> Optional[Tuple[str, s
     return None
 
 
-def get_allowed_tools_from_dynamodb(claim_name: str, claim_value: str) -> List[str]:
+def get_allowed_tools_from_dynamodb(claim_name: str, claim_value: str) -> list[str]:
     """
     Get allowed tools for a user from DynamoDB.
 
@@ -276,14 +277,14 @@ def get_allowed_tools_from_dynamodb(claim_name: str, claim_value: str) -> List[s
         return allowed_tools
 
     except Exception as e:
-        logger.error(f"❌ Error getting allowed tools from DynamoDB: {str(e)}")
+        logger.error(f"❌ Error getting allowed tools from DynamoDB: {e!s}")
         import traceback
 
         logger.error(f"Stack trace: {traceback.format_exc()}")
         return []
 
 
-def filter_tools(tools: List[Dict[str, Any]], allowed_tools: List[str]) -> List[Dict[str, Any]]:
+def filter_tools(tools: list[dict[str, Any]], allowed_tools: list[str]) -> list[dict[str, Any]]:
     """
     Filter tools based on allowed tools list and system tool filters.
 
@@ -322,7 +323,7 @@ def filter_tools(tools: List[Dict[str, Any]], allowed_tools: List[str]) -> List[
     return filtered
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Main Lambda handler for AgentCore Gateway response interceptor.
 
@@ -493,7 +494,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return response
 
     except Exception as e:
-        logger.error(f"❌ Error in response interceptor: {str(e)}")
+        logger.error(f"❌ Error in response interceptor: {e!s}")
         import traceback
 
         logger.error(f"Stack trace: {traceback.format_exc()}")

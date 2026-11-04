@@ -6,21 +6,21 @@ Views session recordings stored in standard rrweb-{timestamp}-{sessionid} format
 Supports both local sample recordings and S3 streaming.
 """
 
-import os
-import sys
+import gzip
 import json
-import time
+import mimetypes
+import os
+import shutil
+import signal
+import socket
+import sys
 import tempfile
 import threading
+import time
 import webbrowser
-import socket
-import signal
-import shutil
-import gzip
-from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import mimetypes
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import boto3
 from rich.console import Console
@@ -40,7 +40,6 @@ class SessionReplayHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Override to reduce server logging noise"""
-        pass
 
     def do_GET(self):
         """Handle GET requests"""
@@ -746,7 +745,7 @@ class S3DataSource(DataSource):
                     console.print(f"[dim]Found metadata at: {key}[/dim]")
                     return data
                 except Exception as e:
-                    console.print(f"[dim]No metadata at: {key} ({str(e)})[/dim]")
+                    console.print(f"[dim]No metadata at: {key} ({e!s})[/dim]")
                     continue
 
             return {}
@@ -800,9 +799,7 @@ class S3DataSource(DataSource):
                     if filename == "metadata.json":
                         with open(local_path, "r") as f:
                             metadata = json.load(f)
-                    elif filename.startswith("batch-") and (
-                        filename.endswith(".ndjson.gz") or filename.endswith(".jsonl.gz")
-                    ):
+                    elif filename.startswith("batch-") and (filename.endswith((".ndjson.gz", ".jsonl.gz"))):
                         try:
                             with gzip.open(local_path, "rt") as f:
                                 for line in f:

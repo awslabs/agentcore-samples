@@ -56,7 +56,6 @@ import botocore.exceptions
 import requests
 from boto3.session import Session
 from dotenv import load_dotenv
-
 from utils import (
     assume_role,
     wait_for_status,
@@ -246,6 +245,7 @@ def deploy_seller_if_needed() -> None:
     proc = subprocess.run(
         ["bash", "test/integration/deploy-seller.sh"],
         cwd=here,
+        check=False,
     )
     if proc.returncode != 0:
         sys.exit(f"deploy-seller.sh exited {proc.returncode}")
@@ -677,7 +677,7 @@ def grant_cdp_delegation(redirect_url: str) -> None:
 
     try:
         webbrowser.open(redirect_url, new=2)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         # Headless or no display — user can copy the URL manually.
         pass
 
@@ -732,6 +732,7 @@ def grant_privy_delegation() -> None:
         proc = subprocess.run(
             ["git", "clone", "--depth", "1", PRIVY_FRONTEND_REPO, str(frontend_path)],
             cwd=str(here),
+            check=False,
         )
         if proc.returncode != 0:
             print(f"  ⚠️  git clone exited {proc.returncode}, skipping Privy delegation handoff")
@@ -741,7 +742,7 @@ def grant_privy_delegation() -> None:
 
     if not (frontend_path / "node_modules").exists():
         print("  Running npm install (one-time, takes ~1 min)...")
-        proc = subprocess.run(["npm", "install"], cwd=str(frontend_path))
+        proc = subprocess.run(["npm", "install"], cwd=str(frontend_path), check=False)
         if proc.returncode != 0:
             print(f"  ⚠️  npm install exited {proc.returncode}, skipping Privy delegation handoff")
             return
@@ -784,7 +785,7 @@ def grant_privy_delegation() -> None:
             assert proc.stdout is not None
             for line in proc.stdout:
                 print(f"    [privy] {line.rstrip()}")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             pass
 
     threading.Thread(target=_tail, daemon=True).start()
@@ -796,7 +797,7 @@ def grant_privy_delegation() -> None:
             print("  ✅ Privy frontend is listening on http://localhost:3000")
             try:
                 webbrowser.open("http://localhost:3000", new=2)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
 
         print("\n  In the Privy hub at http://localhost:3000:")
@@ -906,15 +907,15 @@ def build_agent(
     ["base-sepolia", "solana-devnet"]) telling the plugin which entry
     in the seller's 402 accepts[] to match against the instrument.
     """
-    from strands import Agent
-    from strands.models.bedrock import BedrockModel
-    from strands_tools import http_request
     from bedrock_agentcore.payments.integrations.config import (
         AgentCorePaymentsPluginConfig,
     )
     from bedrock_agentcore.payments.integrations.strands.plugin import (
         AgentCorePaymentsPlugin,
     )
+    from strands import Agent
+    from strands.models.bedrock import BedrockModel
+    from strands_tools import http_request
 
     model = BedrockModel(
         model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
@@ -1030,6 +1031,7 @@ def deploy_agent_runtime() -> str:
     proc = subprocess.run(
         ["bash", "test/integration/deploy-agent.sh"],
         cwd=here,
+        check=False,
     )
     if proc.returncode != 0:
         sys.exit(f"deploy-agent.sh exited {proc.returncode}")
@@ -1400,7 +1402,7 @@ def _run_destroy_script(here: pathlib.Path, script_name: str, label: str) -> Non
         print(f"\n  ↷ {label}: {script_name} not found, skipping")
         return
     print(f"\n=== Tearing down {label} via test/integration/{script_name} ===")
-    proc = subprocess.run(["bash", str(script)], cwd=str(here))
+    proc = subprocess.run(["bash", str(script)], cwd=str(here), check=False)
     if proc.returncode != 0:
         # Don't sys.exit — keep teardown going. The user can re-run if needed.
         print(f"  ⚠️  {script_name} exited {proc.returncode}; continuing with remaining cleanup")

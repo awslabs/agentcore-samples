@@ -4,18 +4,17 @@ Bedrock-AgentCore Browser Live Viewer with proper display sizing support and DCV
 """
 
 import os
-import time
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
+import uvicorn
+from bedrock_agentcore.tools.browser_client import BrowserClient
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-import uvicorn
 from rich.console import Console
-
-from bedrock_agentcore.tools.browser_client import BrowserClient
 
 console = Console()
 
@@ -439,7 +438,7 @@ button.active {
                 html = self._generate_html(presigned_url)
                 return HTMLResponse(content=html)
             except Exception as e:
-                console.print(f"[red]Error generating viewer: {str(e)}[/red]")
+                console.print(f"[red]Error generating viewer: {e!s}[/red]")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # ADD TAKE CONTROL ROUTE

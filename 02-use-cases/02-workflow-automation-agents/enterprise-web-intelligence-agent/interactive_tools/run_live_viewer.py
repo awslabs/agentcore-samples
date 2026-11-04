@@ -6,10 +6,10 @@ This shows how to use the interactive_tools modules.
 
 import time
 
-
+from bedrock_agentcore.tools.browser_client import BrowserClient
 from rich.console import Console
 from rich.panel import Panel
-from bedrock_agentcore.tools.browser_client import BrowserClient
+
 from .browser_viewer import BrowserViewerServer
 
 console = Console()

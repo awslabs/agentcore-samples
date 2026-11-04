@@ -16,20 +16,20 @@ Environment Variables:
     AWS_PROFILE         - AWS profile to use for credentials (optional)
 """
 
-import sys
-import time
-import json
-import tempfile
-import threading
-import webbrowser
-import signal
-import shutil
+import argparse
 import gzip
 import io
-import argparse
-from pathlib import Path
+import json
+import shutil
+import signal
+import sys
+import tempfile
+import threading
+import time
+import webbrowser
 from datetime import datetime
 from http.server import HTTPServer
+from pathlib import Path
 
 import boto3
 from rich.console import Console
@@ -39,7 +39,7 @@ from rich.panel import Panel
 console = Console()
 
 # Direct import from session_replay_viewer in the same folder
-from session_replay_viewer import SessionReplayViewer, SessionReplayHandler  # noqa: E402
+from session_replay_viewer import SessionReplayHandler, SessionReplayViewer
 
 
 # Define CustomS3DataSource directly in this script to avoid import issues
@@ -92,7 +92,7 @@ class CustomS3DataSource:
             try:
                 # Handle ISO format
                 if isinstance(metadata["startTime"], str):
-                    dt = datetime.fromisoformat(metadata["startTime"].replace("Z", "+00:00"))
+                    dt = datetime.fromisoformat(metadata["startTime"])
                     timestamp = int(dt.timestamp() * 1000)
                 else:
                     timestamp = metadata["startTime"]
@@ -452,7 +452,7 @@ def main():
                 sys.exit(1)
 
             # Sort the session directories to find the latest one
-            session_dirs = sorted(list(session_dirs))
+            session_dirs = sorted(session_dirs)
             args.session = session_dirs[-1]
             print(f"Using latest session: {args.session}")
 
