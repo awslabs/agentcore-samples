@@ -45,15 +45,25 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    `oauth2ProviderConfigInput`, so pass the provider's complete configuration with the setting added,
    not the new field alone. That includes `privateEndpoint` when the provider reaches the workspace
    through a VPC: an update that leaves it out fails with
-   `ValidationException: Cannot remove PrivateEndpoint configuration from CredentialProvider`. The API
-   still requires a `clientId` and `clientSecret`, and creating the provider fails without them, but with
+   `ValidationException: Cannot remove PrivateEndpoint configuration from CredentialProvider`. Creating
+   or updating a provider with a managed `privateEndpoint` also needs `iam:CreateServiceLinkedRole` and
+   `ec2:CreateNetworkInterface` on the principal that makes the call, not on the Gateway execution role;
+   a self-managed endpoint needs VPC Lattice permissions instead (see
+   [Connect to private identity providers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-private-idp.html)).
+   The API still requires a `clientId` and `clientSecret`, and creating the provider fails without them, but with
    `NO_CLIENT` they are not sent on the on-behalf-of exchange, so placeholder values are fine when the
    target's `listingMode` is `DYNAMIC` (see item 5). Without `NO_CLIENT` the Gateway authenticates with
    them, and the exchange is refused unless the account was enabled under the earlier per-account
    arrangement. Set `NO_CLIENT` everywhere, including in accounts that were enabled that way. This is the
    single most common reason a correct configuration still fails.
-2. **Gateway execution role.** Secrets Manager read on the token vault secret, KMS decrypt through
-   Secrets Manager, and the AgentCore Identity token operations. Do **not** pin these to one Region —
+2. **Gateway execution role.** In the Gateway flow this role is the caller of AgentCore Identity, so it
+   needs `gatewayExecutionRolePolicy` from [`working-config.json`](working-config.json): Secrets Manager
+   read on the token vault secret, KMS decrypt through Secrets Manager, and the AgentCore Identity token
+   operations (`GetResourceOauth2Token` and the `GetWorkloadAccessToken*` actions). That covers the policy
+   in [Set up outbound authorization for your gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-outbound-auth.html),
+   and `NO_CLIENT` needs nothing beyond it. Keep `secretsmanager:GetSecretValue` even with `NO_CLIENT`:
+   the secret is not sent, but Identity still reads it during the exchange. Do **not** pin these to one
+   Region —
    a Region-pinned policy produces `AccessDenied`, which Gateway reports as
    `insufficient permissions for token exchange`, and that reads like an access problem with the
    feature when it is your own role. A bare `Token exchange failed.`, with no reason after it, has also
