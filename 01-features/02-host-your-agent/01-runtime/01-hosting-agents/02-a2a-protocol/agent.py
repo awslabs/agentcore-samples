@@ -96,7 +96,7 @@ async def ping():
     return JSONResponse({"status": "ok"})
 
 
-@app.get("/.well-known/agent.json")
+@app.get("/.well-known/agent-card.json")
 async def agent_card():
     """A2A agent card for discovery."""
     return JSONResponse(AGENT_CARD)
