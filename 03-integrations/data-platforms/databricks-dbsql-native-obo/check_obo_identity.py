@@ -132,14 +132,16 @@ REMEDY_EXCHANGE_REFUSED = (
     "The exchange was refused. Databricks issues a per-user token only when no client authentication is "
     "presented, so check that the credential provider sets onBehalfOfAuthenticationConfig."
     "clientAuthenticationMethod to NO_CLIENT (AWS CLI 2.39.0 or later); without it the gateway authenticates "
-    "with the provider's client id and secret. Then verify the Databricks prerequisites: an account-level "
-    "federation policy whose issuer and audience match your identity provider, with subject_claim set to the "
-    "claim carrying the user identity."
+    "with the provider's client id and secret. Check too that the provider's discoveryUrl is the Databricks "
+    "workspace's rather than your identity provider's. Then verify the Databricks prerequisites: an "
+    "account-level federation policy whose issuer and audience match your identity provider, with "
+    "subject_claim set to the claim carrying the user identity."
 )
 REMEDY_EXCHANGE_FAILED_GENERIC = (
     "The exchange failed without a specific reason. Check that the credential provider sets "
-    "onBehalfOfAuthenticationConfig.clientAuthenticationMethod to NO_CLIENT, then work through the "
-    "prerequisites in the README."
+    "onBehalfOfAuthenticationConfig.clientAuthenticationMethod to NO_CLIENT, that its discoveryUrl is the "
+    "Databricks workspace's rather than your identity provider's, and that the Gateway execution role has "
+    "the permissions in the README's AWS prerequisites, then work through the remaining prerequisites."
 )
 REMEDY_SERVICE_PRINCIPAL = (
     "The call ran as the shared service principal. The target is using CLIENT_CREDENTIALS, or the "
@@ -155,8 +157,14 @@ REMEDY_NO_ERROR_TEXT = "No error text was returned. Enable APPLICATION_LOGS deli
 REMEDY_UNRECOGNISED = "Unrecognised error. Include the verbatim text when asking AWS to trace it."
 REMEDY_UNPARSEABLE = (
     "Could not classify the principal in the response. A principal that is neither an email address nor "
-    "an application UUID lands here — a workspace whose usernames are not email-shaped will do it — so "
+    "an application UUID lands here (a workspace whose usernames are not email-shaped will do it), so "
     "read the detail field before concluding delegation is broken."
+)
+REMEDY_NO_PRINCIPAL = (
+    "The tool call returned no error, but no principal could be read from its result, so nothing was "
+    "classified. If the detail field shows the end user's name, delegation is working and the result arrived "
+    "in a shape this script does not read yet. If it shows a statement that did not succeed, or detail is "
+    "empty, rerun once the warehouse is running and read the tool's raw response."
 )
 REMEDY_IDENTITY_MISMATCH = (
     "Unity Catalog saw a human, but not the human in the token you presented, so an email-shaped principal "
@@ -333,7 +341,8 @@ def resolve_identity(shape: str, identity: str | None, subject: str | None) -> t
             # Two different humans: this is the false positive the comparison exists to catch.
             return IDENTITY_MISMATCH, REMEDY_IDENTITY_MISMATCH
         return PER_USER_UNVERIFIED, REMEDY_SUBJECT_NOT_COMPARABLE
-    return UNKNOWN, REMEDY_UNPARSEABLE
+    # No principal at all means the result was not read, which says nothing about the principal's shape
+    return UNKNOWN, REMEDY_UNPARSEABLE if arrived else REMEDY_NO_PRINCIPAL
 
 
 def qualified_tool_name(target_name: str, tool_name: str) -> str:
@@ -385,19 +394,27 @@ def extract_identity(text: str | None) -> str | None:
         return None
     if not isinstance(payload, dict):
         return None
-    rows = (payload.get("result") or {}).get("data_array") or []
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    # Rows arrive under data_array, or under data_typed_array when the manifest format is PROTOBUF_ARRAY.
+    # Read both, and only when each is a list, so a malformed payload reads as no principal, not a crash.
+    rows = [
+        row for key in ("data_array", "data_typed_array") if isinstance(result.get(key), list) for row in result[key]
+    ]
     for row in rows:
-        # Two shapes are returned depending on the disposition: a bare list, or {"values":[{"string_value":...}]}
+        # Three row shapes are returned: a bare list, {"values":[{"string_value":...}]}, or {"values":[{"str":...}]}
         if isinstance(row, list) and row:
             first = row[0]
             if isinstance(first, str):
                 return first
         if isinstance(row, dict):
-            values = row.get("values") or []
-            if values and isinstance(values[0], dict):
-                value = values[0].get("string_value")
-                if isinstance(value, str):
-                    return value
+            values = row.get("values")
+            if isinstance(values, list) and values and isinstance(values[0], dict):
+                for key in ("string_value", "str"):
+                    value = values[0].get(key)
+                    if isinstance(value, str):
+                        return value
     return None
 
 

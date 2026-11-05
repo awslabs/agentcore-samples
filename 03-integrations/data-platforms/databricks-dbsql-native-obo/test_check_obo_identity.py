@@ -28,9 +28,11 @@ from check_obo_identity import (
     PROVIDER_NOT_FOUND,
     REMEDY_INBOUND_AUDIENCE,
     REMEDY_INBOUND_TOKEN,
+    REMEDY_NO_PRINCIPAL,
     REMEDY_PER_USER,
     REMEDY_PER_USER_UNCHECKED,
     REMEDY_SUBJECT_NOT_COMPARABLE,
+    REMEDY_UNPARSEABLE,
     SERVICE_PRINCIPAL,
     TARGET_NOT_FOUND,
     TARGET_REJECTED_TOKEN,
@@ -269,6 +271,40 @@ class ExtractIdentity(unittest.TestCase):
     def test_bare_list_row_shape(self):
         text = '{"result":{"data_array":[["someone@example.com"]]}}'
         self.assertEqual(extract_identity(text), "someone@example.com")
+
+    def test_protobuf_array_typed_row_shape(self):
+        # Shape returned by a customer workspace: manifest format PROTOBUF_ARRAY, rows under data_typed_array
+        text = (
+            '{"statement_id":"01f1","status":{"state":"SUCCEEDED"},'
+            '"manifest":{"format":"PROTOBUF_ARRAY","schema":{"column_count":1,"columns":[{"name":"who",'
+            '"type_text":"STRING","type_name":"STRING","position":0}]},"total_row_count":1,"truncated":false},'
+            '"result":{"chunk_index":0,"row_offset":0,"row_count":1,'
+            '"data_typed_array":[{"values":[{"str":"someone@example.com"}]}]}}'
+        )
+        self.assertEqual(extract_identity(text), "someone@example.com")
+
+    def test_typed_row_without_a_string_returns_none(self):
+        self.assertIsNone(extract_identity('{"result":{"data_typed_array":[{"values":[{"i64":"1"}]}]}}'))
+
+    def test_typed_rows_are_read_when_data_array_holds_no_string(self):
+        text = '{"result":{"data_array":[[null]],"data_typed_array":[{"values":[{"str":"someone@example.com"}]}]}}'
+        self.assertEqual(extract_identity(text), "someone@example.com")
+
+    def test_a_result_that_is_not_an_object_returns_none_rather_than_raising(self):
+        for text in ('{"result":["someone@example.com"]}', '{"result":"someone@example.com"}'):
+            with self.subTest(text=text):
+                self.assertIsNone(extract_identity(text))
+
+    def test_rows_that_are_not_a_list_are_ignored_rather_than_raising(self):
+        for rows in ("someone@example.com", 5, {"someone@example.com": 1}):
+            with self.subTest(rows=rows):
+                self.assertIsNone(extract_identity(json.dumps({"result": {"data_array": rows}})))
+
+    def test_row_values_that_are_not_a_list_are_ignored_rather_than_raising(self):
+        for values in ({"str": "someone@example.com"}, 5):
+            with self.subTest(values=values):
+                payload = {"result": {"data_typed_array": [{"values": values}]}}
+                self.assertIsNone(extract_identity(json.dumps(payload)))
 
     def test_non_json_text_returns_none(self):
         self.assertIsNone(extract_identity("Token exchange failed."))
@@ -591,6 +627,18 @@ class ResolveIdentity(unittest.TestCase):
     def test_unclassifiable_without_a_match_stays_unknown(self):
         self.assertEqual(resolve_identity(UNKNOWN, "alice", "bob")[0], UNKNOWN)
 
+    def test_an_unclassifiable_principal_blames_its_shape(self):
+        self.assertEqual(resolve_identity(UNKNOWN, "alice", "bob"), (UNKNOWN, REMEDY_UNPARSEABLE))
+
+    def test_no_principal_at_all_does_not_blame_its_shape(self):
+        # Nothing was read from the result, so a remedy about the principal's format would mislead
+        self.assertEqual(resolve_identity(UNKNOWN, None, "user@example.com"), (UNKNOWN, REMEDY_NO_PRINCIPAL))
+
+    def test_an_empty_principal_counts_as_no_principal(self):
+        for identity in ("", "   "):
+            with self.subTest(identity=identity):
+                self.assertEqual(resolve_identity(UNKNOWN, identity, "user@example.com")[1], REMEDY_NO_PRINCIPAL)
+
 
 def _identity_responses(principal: str) -> list:
     """An initialize reply followed by a tools/call reply carrying current_user()."""
@@ -613,6 +661,61 @@ class SubjectComparison(unittest.TestCase):
         self.assertEqual(result["verdict"], PER_USER)
         self.assertEqual(result["remedy"], REMEDY_PER_USER)
         self.assertEqual(result["subject"], "user@example.com")
+
+    def test_typed_array_result_is_per_user_not_unknown(self):
+        payload = json.dumps({"result": {"data_typed_array": [{"values": [{"str": "user@example.com"}]}]}})
+        responses = [
+            {"result": {"protocolVersion": "2025-06-18"}},
+            {"result": {"content": [{"type": "text", "text": payload}]}},
+        ]
+        token = _jwt({"preferred_username": "user@example.com"})
+        with mock.patch("check_obo_identity.mcp_post", side_effect=responses):
+            result = run_check(
+                "https://gw.invalid/mcp",
+                token,
+                "tgt",
+                "execute_sql",
+                "SELECT 1",
+                "2025-06-18",
+                subject_claim="preferred_username",
+            )
+        self.assertEqual(result["verdict"], PER_USER)
+        self.assertEqual(result["identity"], "user@example.com")
+
+    def test_an_unread_result_is_unknown_with_the_raw_response_as_detail(self):
+        payload = json.dumps({"result": {"data_typed_array": [{"values": [{"i64": "1"}]}]}})
+        responses = [
+            {"result": {"protocolVersion": "2025-06-18"}},
+            {"result": {"content": [{"type": "text", "text": payload}]}},
+        ]
+        with mock.patch("check_obo_identity.mcp_post", side_effect=responses):
+            result = run_check(
+                "https://gw.invalid/mcp",
+                _jwt({"email": "user@example.com"}),
+                "tgt",
+                "execute_sql",
+                "SELECT 1",
+                "2025-06-18",
+            )
+        self.assertEqual((result["verdict"], result["remedy"]), (UNKNOWN, REMEDY_NO_PRINCIPAL))
+        self.assertEqual(result["detail"], payload)
+
+    def test_a_result_with_no_text_block_is_unknown_with_no_detail(self):
+        responses = [
+            {"result": {"protocolVersion": "2025-06-18"}},
+            {"result": {"content": [{"type": "image", "data": "", "mimeType": "image/png"}]}},
+        ]
+        with mock.patch("check_obo_identity.mcp_post", side_effect=responses):
+            result = run_check(
+                "https://gw.invalid/mcp",
+                _jwt({"email": "user@example.com"}),
+                "tgt",
+                "execute_sql",
+                "SELECT 1",
+                "2025-06-18",
+            )
+        self.assertEqual((result["verdict"], result["remedy"]), (UNKNOWN, REMEDY_NO_PRINCIPAL))
+        self.assertIsNone(result["detail"])
 
     def test_comparison_ignores_case(self):
         result = self._run("user@example.com", _jwt({"email": "User@Example.COM"}))
@@ -1026,6 +1129,27 @@ class NoClientReplacesAllowlisting(unittest.TestCase):
     def test_the_bare_catch_all_names_no_client(self):
         _, remedy = classify_failure("Token exchange failed.")
         self.assertIn("NO_CLIENT", remedy)
+
+    def test_the_bare_catch_all_names_the_provider_discovery_url_and_the_execution_role(self):
+        # A deployment of this sample cleared a bare "Token exchange failed." by fixing the execution role, and
+        # a provider that discovers the identity provider instead of the workspace sends the exchange elsewhere
+        _, remedy = classify_failure("Token exchange failed.")
+        self.assertIn("discoveryUrl", remedy)
+        self.assertIn("Gateway execution role", remedy)
+
+    def test_the_specific_refusal_also_names_the_provider_discovery_url(self):
+        verdict, remedy = classify_failure(
+            "Token exchange failed: check credential provider scopes, audience, or IdP configuration."
+        )
+        self.assertEqual(verdict, EXCHANGE_REFUSED)
+        self.assertIn("discoveryUrl", remedy)
+
+    def test_every_remedy_is_ascii_so_json_output_stays_readable(self):
+        # json.dumps escapes non-ASCII, so an em dash prints as a backslash-u escape in --json output
+        for name in dir(check_obo_identity):
+            if name.startswith("REMEDY_"):
+                with self.subTest(remedy=name):
+                    self.assertTrue(getattr(check_obo_identity, name).isascii())
 
     def test_no_remedy_mentions_allowlisting_or_account_enablement(self):
         for name in dir(check_obo_identity):

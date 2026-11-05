@@ -43,17 +43,22 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    an AWS SDK that includes the setting, and needs no account allowlisting. An
    existing provider can be updated with `update-oauth2-credential-provider`; that call takes the whole
    `oauth2ProviderConfigInput`, so pass the provider's complete configuration with the setting added,
-   not the new field alone. The API still requires a `clientId` and `clientSecret`, and creating the
-   provider fails without them, but with `NO_CLIENT` they are not sent on the on-behalf-of exchange, so
-   placeholder values are fine when the target's `listingMode` is `DYNAMIC` (see item 5). Without
-   `NO_CLIENT` the Gateway authenticates with them, and the exchange is refused unless the account was
-   enabled under the earlier per-account arrangement. Set `NO_CLIENT` everywhere, including in accounts
-   that were enabled that way. This is the single most common reason a correct configuration still fails.
+   not the new field alone. That includes `privateEndpoint` when the provider reaches the workspace
+   through a VPC: an update that leaves it out fails with
+   `ValidationException: Cannot remove PrivateEndpoint configuration from CredentialProvider`. The API
+   still requires a `clientId` and `clientSecret`, and creating the provider fails without them, but with
+   `NO_CLIENT` they are not sent on the on-behalf-of exchange, so placeholder values are fine when the
+   target's `listingMode` is `DYNAMIC` (see item 5). Without `NO_CLIENT` the Gateway authenticates with
+   them, and the exchange is refused unless the account was enabled under the earlier per-account
+   arrangement. Set `NO_CLIENT` everywhere, including in accounts that were enabled that way. This is the
+   single most common reason a correct configuration still fails.
 2. **Gateway execution role.** Secrets Manager read on the token vault secret, KMS decrypt through
    Secrets Manager, and the AgentCore Identity token operations. Do **not** pin these to one Region —
    a Region-pinned policy produces `AccessDenied`, which Gateway reports as
    `insufficient permissions for token exchange`, and that reads like an access problem with the
-   feature when it is your own role.
+   feature when it is your own role. A bare `Token exchange failed.`, with no reason after it, has also
+   cleared once this role's permissions were fixed, so check the role even when the message does not
+   mention permissions.
 
 ### Databricks
 
@@ -97,7 +102,22 @@ python check_obo_identity.py \
   --subject-claim email
 ```
 
-It creates and changes nothing. The identity query runs on a SQL warehouse that may be cold, so it
+`--token` is the end user's identity provider token, the one the agent presents to the Gateway, not a
+Databricks token. With Microsoft Entra ID and the Azure CLI, for an app registration that exposes an
+`access_as_user` scope:
+
+```bash
+END_USER_JWT=$(az account get-access-token --scope api://<idp-app-client-id>/access_as_user --query accessToken -o tsv)
+```
+
+In PowerShell, assign it with `$END_USER_JWT = az account get-access-token ...` and continue the
+`python` command's lines with a backtick instead of a backslash. This needs the Azure CLI to be an
+authorized client application of the API (Expose an API in the app registration), which is how our test
+minted it. The token is v2.0 only when the app's manifest sets `requestedAccessTokenVersion` to 2;
+otherwise it is v1.0, whose issuer, audience and claims differ (see the `allowedAudience` note under
+Notes that save time, and the subject claim below).
+
+The check creates and changes nothing. The identity query runs on a SQL warehouse that may be cold, so it
 gets a 180s budget rather than the handshake's 60s — a cold start that timed out would otherwise be
 reported as `UNKNOWN` for a target that is configured correctly. Override with `OBO_QUERY_TIMEOUT`.
 
@@ -112,7 +132,10 @@ A comparison that could not be made is `PER_USER_UNVERIFIED`, which exits non-ze
 an unverified check is the same green as a verified one, and that is the hole this exists to close. Two
 common cases: a Cognito access token carries no `email` claim at all, and `sub` is an opaque GUID on both
 Entra and Cognito, so it cannot be a Databricks username and its disagreement proves nothing. Point
-`--subject-claim` at the claim your federation policy actually maps.
+`--subject-claim` at the claim your federation policy actually maps. An Entra v2.0 access token may not
+carry `email` either: in our test it carried `preferred_username` and neither `email` nor `upn`, so map
+`preferred_username` in the federation policy and pass `--subject-claim preferred_username`. A v1.0
+token in our test carried `upn` and no `email`.
 
 Verdicts and exit codes:
 
@@ -120,11 +143,11 @@ Verdicts and exit codes:
 |---|---|---|
 | `PER_USER` | 0 | Unity Catalog saw the end user. Working. |
 | `SERVICE_PRINCIPAL` | 1 | Ran as the shared identity. Check `grantType` is `TOKEN_EXCHANGE` on both the provider and the target. |
-| `EXCHANGE_REFUSED` | 2 | The exchange was refused. Check the credential provider sets `onBehalfOfAuthenticationConfig.clientAuthenticationMethod` to `NO_CLIENT`, then work through the other prerequisites. |
+| `EXCHANGE_REFUSED` | 2 | The exchange was refused. Check the credential provider sets `onBehalfOfAuthenticationConfig.clientAuthenticationMethod` to `NO_CLIENT` and that its `discoveryUrl` is the workspace's, then check the Gateway execution role (prerequisite 2) and the other prerequisites. |
 | `CALLER_PERMISSIONS` | 3 | Your own execution role. Check CloudTrail for `AccessDenied`. |
 | `WORKSPACE_MEMBERSHIP` | 4 | Identity resolved; the user is not a workspace member. |
 | `GATEWAY_UNREACHABLE` | 4 | The gateway URL itself was not reachable, so nothing was tested. Transport, not identity: check the URL, the Region in the hostname, and egress. |
-| `UNKNOWN` | 4 | Could not determine; the report prints what was seen. |
+| `UNKNOWN` | 4 | Could not determine; the report prints what was seen. That includes a tool call that succeeded but whose result held no principal the script could read, so check `detail` for the end user's name before concluding delegation is broken. |
 | `INBOUND_TOKEN` | 5 | The token you presented was rejected before the exchange: expired, or an issuer or audience the authorizer does not accept. A wrong audience answers `403 insufficient_scope` at `initialize`; see the note below. |
 | `PROVIDER_NOT_FOUND` | 6 | The credential provider named on the target does not exist where the gateway looked. Check `providerArn`, and that the provider is in the gateway's Region. |
 | `TRANSIENT` | 7 | Rate limited, or a service error, including an HTTP 429 or 5xx whose text matches nothing more specific. Nothing is misconfigured on this evidence; retry. |
@@ -153,6 +176,11 @@ message list supplied in review of this sample, and are not from a run of our ow
   also appears when the identity whose token reaches the endpoint lacks the entitlements in
   prerequisite 5, so confirm a direct call to the MCP endpoint works
   before concluding the gateway is at fault.
+- **There are two discovery URLs, on two different hosts.** The authorizer's `discoveryUrl` is your
+  identity provider's, because it validates the inbound token. The credential provider's is the Databricks
+  workspace's, `https://<workspace-host>/oidc/.well-known/openid-configuration`, because it is where the
+  token exchange is sent. Copying the identity provider's URL into the credential provider is an easy
+  mistake, and it sends the exchange to the identity provider's token endpoint instead of Databricks.
 - **Send the MCP protocol version the gateway returns from `initialize`.** It pins the session to that
   version and rejects a different one with `-32600`. The preflight script does this for you.
 - **With a Cognito ID token, use `allowedAudience` rather than `allowedClients`** on the authorizer. ID
