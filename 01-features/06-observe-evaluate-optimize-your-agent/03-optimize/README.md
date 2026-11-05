@@ -42,7 +42,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 - Python 3.10+
 - Access to Amazon Bedrock models (Nova Lite) in your region
 
-> **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. The scripted Quick Start below (`invoke.py` → `insights.py` → `optimize.py`) can run well over 90 minutes end-to-end with no resumability, since `optimize.py` deploys two runtime versions and runs two A/B test polling loops (each up to 20 minutes). Budget accordingly, or run the individual steps separately across a longer session.
+> **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. Budget ~45 minutes for the full workflow.
 
 ### Running This in Workshop Studio
 
