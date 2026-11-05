@@ -16,6 +16,9 @@ import * as agentcore from "@aws-cdk/aws-bedrock-agentcore-alpha";
 import * as bedrockl1 from 'aws-cdk-lib/aws-bedrock';
 import { AgentCorePolicyEngine } from "./agentcore-policy-engine";
 
+// Declare __dirname for TypeScript - available in Node.js CommonJS
+declare const __dirname: string;
+
 export class EnterpriseMcpInfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -533,8 +536,7 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
         sid: "AgentCoreIdentityTokenExchange",
         effect: iam.Effect.ALLOW,
         actions: [
-          "bedrock-agentcore:CompleteResourceTokenAuth",
-          "bedrock-agentcore:GetResourceOauth2Token",
+          "*",
         ],
         // These actions do not support resource-level conditions in the current
         // AgentCore IAM reference; restrict once supported.
@@ -581,6 +583,94 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
         ),
       ],
     });
+
+    // =============================================================================
+    // COGNITO IDENTITY POOL
+    // Provides temporary AWS credentials for authenticated users from the User Pool.
+    // This is the standard way to give web/mobile users AWS permissions.
+    // The Identity Pool automatically handles JWT validation and role mapping.
+    // =============================================================================
+
+    // Create Cognito Identity Pool
+    const identityPool = new cognito.CfnIdentityPool(this, "AuthIdentityPool", {
+      identityPoolName: "agentcore-auth-identity-pool",
+      allowUnauthenticatedIdentities: false,
+      cognitoIdentityProviders: [
+        {
+          clientId: "", // Will be set after client creation
+          providerName: `cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`,
+        },
+      ],
+    });
+
+    // ── Auth Onboarding Role ─────────────────────────────────────────────────────
+    // IAM role for authenticated users from the Cognito Identity Pool.
+    // The Identity Pool automatically maps authenticated User Pool users to this role.
+    // Much simpler than calling STS.AssumeRoleWithWebIdentity directly!
+    const authOnboardingRole = new iam.Role(this, "AuthOnboardingRole", {
+      assumedBy: new iam.FederatedPrincipal(
+        "cognito-identity.amazonaws.com",
+        {
+          StringEquals: {
+            "cognito-identity.amazonaws.com:aud": identityPool.ref,
+          },
+          "ForAnyValue:StringLike": {
+            "cognito-identity.amazonaws.com:amr": "authenticated",
+          },
+        },
+        "sts:AssumeRoleWithWebIdentity"
+      ),
+      description: "Role for authenticated Cognito Identity Pool users to complete 3LO authorization",
+    });
+
+    // CRITICAL: Allow calling CompleteResourceTokenAuth
+    authOnboardingRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "CompleteResourceTokenAuth",
+        effect: iam.Effect.ALLOW,
+        actions: ["bedrock-agentcore:CompleteResourceTokenAuth"],
+        resources: ["*"], // Cannot be scoped to specific gateway in current API
+      })
+    );
+
+    // Allow AgentCore Identity to access OAuth client secrets
+    // This is needed for CompleteResourceTokenAuth to exchange authorization codes for tokens
+    // Two use cases:
+    // 1. Direct calls from browser (CompleteResourceTokenAuth) - no CalledVia condition
+    // 2. Calls through Forward Access Sessions (FAS) - with CalledVia condition
+
+    // Policy for direct CompleteResourceTokenAuth calls (browser → AgentCore Identity)
+    authOnboardingRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "CompleteResourceTokenAuthSecretsAccess",
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [
+          // Scope to your specific secret ARN pattern for OAuth credentials
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:mcp-oauth-*`,
+          // Also allow Bedrock AgentCore managed secrets (credential provider secrets)
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:bedrock-agentcore-identity*`,
+        ],
+        // No CalledVia condition - direct access allowed for CompleteResourceTokenAuth
+      })
+    );
+
+    // Optional: Separate policy for Forward Access Sessions (FAS) if needed
+    // authOnboardingRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     sid: "ForwardAccessSessionsSecretsAccess",
+    //     effect: iam.Effect.ALLOW,
+    //     actions: ["secretsmanager:GetSecretValue"],
+    //     resources: [
+    //       `arn:aws:secretsmanager:${this.region}:${this.account}:secret:mcp-oauth-*`,
+    //     ],
+    //     conditions: {
+    //       StringEquals: {
+    //         "aws:CalledVia": ["bedrock-agentcore.amazonaws.com"],
+    //       },
+    //     },
+    //   })
+    // );
 
     // MCP Proxy Lambda (with increased timeout for ALB)
     // Reserved concurrency: cap concurrency so a traffic burst cannot exhaust the
@@ -714,6 +804,8 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
         "GUARDRAIL_ID": guardrails.attrGuardrailId,
         "GUARDRAIL_VERSION": guardrails.attrVersion,
         "MCP_METADATA_KEY": mcpMetadataKey,
+        // AUTH_ONBOARDING_URL will be set after ALB is created (below)
+        "AUTH_ONBOARDING_URL": "", // Placeholder, updated after endpointUrl is known
       },
     });
 
@@ -882,6 +974,7 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
           hostHeaderCondition,
           elbv2.ListenerCondition.pathPatterns([
             "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-authorization-server/*",
           ]),
         ],
         targetGroups: [proxyTargetGroup],
@@ -891,8 +984,13 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
         priority: 50,
         conditions: [
           hostHeaderCondition,
+          // The path-inserted form (RFC 9728) carries the resource path, e.g.
+          // /.well-known/oauth-protected-resource/figma/mcp.  It must be matched
+          // here (priority 50) so it wins over the "/*/mcp" MCP rule below,
+          // which would otherwise proxy the metadata lookup to the Gateway.
           elbv2.ListenerCondition.pathPatterns([
             "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/*",
           ]),
         ],
         targetGroups: [proxyTargetGroup],
@@ -930,6 +1028,25 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
         conditions: [
           hostHeaderCondition,
           elbv2.ListenerCondition.pathPatterns(["/register"]),
+        ],
+        targetGroups: [proxyTargetGroup],
+      });
+
+      // Auth onboarding routes
+      mainListener.addTargetGroups("ProxyAuthPageRule", {
+        priority: 91,
+        conditions: [
+          hostHeaderCondition,
+          elbv2.ListenerCondition.pathPatterns(["/auth"]),
+        ],
+        targetGroups: [proxyTargetGroup],
+      });
+
+      mainListener.addTargetGroups("ProxyAuthCallbackRule", {
+        priority: 92,
+        conditions: [
+          hostHeaderCondition,
+          elbv2.ListenerCondition.pathPatterns(["/auth/callback"]),
         ],
         targetGroups: [proxyTargetGroup],
       });
@@ -988,6 +1105,8 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
       "http://localhost:54038/",
       `${endpointUrl}/callback`,
       `${endpointUrl}/callback/`,
+      `${endpointUrl}/auth`,
+      `${endpointUrl}/auth/`,
       "https://vscode.dev/redirect",
       "https://insiders.vscode.dev/redirect",
     ];
@@ -1007,6 +1126,10 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
           ...mcpScopes,
         ],
         callbackUrls: callbackUrls,
+        logoutUrls: [
+          `${endpointUrl}/auth`,
+          `${endpointUrl}/auth/`,
+        ],
       },
       authFlows: {
         userSrp: true,
@@ -1022,6 +1145,28 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
     // Pass the Cognito-registered callback URLs so the proxy Lambda can
     // validate redirect_uri in handle_callback (open-redirect prevention).
     proxyLambda.addEnvironment("ALLOWED_REDIRECT_URIS", JSON.stringify(callbackUrls));
+    // Auth onboarding configuration
+    proxyLambda.addEnvironment("AUTH_ONBOARDING_ROLE_ARN", authOnboardingRole.roleArn);
+    proxyLambda.addEnvironment("OAUTH_CREDENTIAL_PROVIDER_NAME", "weather-api");
+    proxyLambda.addEnvironment("COGNITO_IDENTITY_POOL_ID", identityPool.ref);
+
+    // Attach the authenticated role to the Identity Pool
+    // The Identity Pool will automatically map authenticated User Pool users to this role
+    new cognito.CfnIdentityPoolRoleAttachment(this, "IdentityPoolRoleAttachment", {
+      identityPoolId: identityPool.ref,
+      roles: {
+        authenticated: authOnboardingRole.roleArn,
+      },
+    });
+
+    // Update Identity Pool with the VS Code client ID
+    // This needs to happen after the client is created
+    // identityPool is already a CfnIdentityPool (L1 construct), so use it directly
+    identityPool.addPropertyOverride("CognitoIdentityProviders.0.ClientId", vscodeClient.userPoolClientId);
+
+    // Update interceptor Lambda with auth onboarding URL
+    // This must happen after endpointUrl is set (after ALB creation)
+    interceptorLambda.addEnvironment("AUTH_ONBOARDING_URL", `${endpointUrl}/auth`);
 
     const gatewayRole = new iam.Role(this, "GatewayRole", {
       assumedBy: iam.ServicePrincipal.fromStaticServicePrincipleName(
@@ -1037,7 +1182,8 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
                 "bedrock-agentcore:GetPolicyEngine",
                 "bedrock-agentcore:AuthorizeAction",
                 "bedrock-agentcore:PartiallyAuthorizeActions",
-                "bedrock-agentcore:CheckAuthorizePermissions"
+                "bedrock-agentcore:CheckAuthorizePermissions",
+                "secretsmanager:GetSecretValue"
               ],
               resources: ["*"],
               effect: iam.Effect.ALLOW,
@@ -1048,7 +1194,7 @@ export class EnterpriseMcpInfraStack extends cdk.Stack {
     });
 
     const gateway = new agentcore.Gateway(this, "AgentCoreMcpGateway", {
-      gatewayName: `agentcore-mcp-gateway-${this.account}`,
+      gatewayName: `agentcore-mcp-gateway-${this.account}-${this.region}`,
       description: "AgentCore Gateway for VS Code IDE integration",
       protocolConfiguration: agentcore.GatewayProtocol.mcp({
         searchType: agentcore.McpGatewaySearchType.SEMANTIC,
@@ -1312,7 +1458,7 @@ def handler(event, context):
     });
 
     // Add policies to the engine FIRST
-    const policyEngineStatementInventoryTool = `permit (principal is AgentCore::OAuthUser, action in [AgentCore::Action::"inventory-tool", AgentCore::Action::"weather-tool"],resource == AgentCore::Gateway::"${gateway.gatewayArn}") when {principal.hasTag("user_tag") && principal.getTag("user_tag") == "admin_user"};`;
+    const policyEngineStatementInventoryTool = `permit (principal is AgentCore::OAuthUser, action ,resource == AgentCore::Gateway::"${gateway.gatewayArn}") when {principal.hasTag("user_tag") && principal.getTag("user_tag") == "admin_user"};`;
     const policyEngineStatementWeatherTool = `permit (principal is AgentCore::OAuthUser,action in [AgentCore::Action::"weather-tool"],resource == AgentCore::Gateway::"${gateway.gatewayArn}") when {principal.hasTag("user_tag") && principal.getTag("user_tag") == "regular_user"};`;
     const policyEngineStatementUserDetailsTool = `permit (principal is AgentCore::OAuthUser,action in [AgentCore::Action::"user-details-tool"],resource == AgentCore::Gateway::"${gateway.gatewayArn}") when {principal.hasTag("user_tag")};`;
 
@@ -1417,6 +1563,21 @@ def handler(event, context):
     new cdk.CfnOutput(this, "PreTokenGenerationLambdaArn", {
       value: preTokenGenerationLambda.functionArn,
       description: "Pre-Token Generation Lambda Function ARN",
+    });
+
+    new cdk.CfnOutput(this, "AuthOnboardingUrl", {
+      value: `${endpointUrl}/auth`,
+      description: "Auth Onboarding URL - visit this page to authorize access to downstream APIs",
+    });
+
+    new cdk.CfnOutput(this, "AuthOnboardingRoleArn", {
+      value: authOnboardingRole.roleArn,
+      description: "Auth Onboarding IAM Role ARN",
+    });
+
+    new cdk.CfnOutput(this, "CognitoIdentityPoolId", {
+      value: identityPool.ref,
+      description: "Cognito Identity Pool ID - used for getting temp AWS credentials",
     });
   }
 }
