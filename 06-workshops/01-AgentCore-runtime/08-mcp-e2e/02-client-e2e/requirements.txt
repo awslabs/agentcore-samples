@@ -1,4 +1,0 @@
-#mcp
-fastmcp>=2.10.0
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit

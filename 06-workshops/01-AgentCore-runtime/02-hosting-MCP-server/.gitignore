@@ -1,7 +1,0 @@
-.bedrock_agentcore.yaml
-.dockerignore
-Dockerfile
-invoke_mcp_tools.py
-mcp_server.py
-my_mcp_client.py
-my_mcp_client_remote.py

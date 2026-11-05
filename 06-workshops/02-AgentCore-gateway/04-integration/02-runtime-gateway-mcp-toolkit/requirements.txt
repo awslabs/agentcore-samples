@@ -1,4 +1,0 @@
-boto3>=1.34.0
-PyYAML>=6.0
-bedrock-agentcore-starter-toolkit
-requests>=2.31.0

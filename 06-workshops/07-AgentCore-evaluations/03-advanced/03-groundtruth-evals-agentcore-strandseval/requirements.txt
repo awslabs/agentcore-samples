@@ -1,2 +1,0 @@
-boto3>=1.28.0
-strands-agents-evals>=0.1.0
