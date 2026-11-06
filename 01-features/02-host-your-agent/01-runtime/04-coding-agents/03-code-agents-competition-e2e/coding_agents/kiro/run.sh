@@ -139,9 +139,9 @@ case "$ACTION" in
     exec kiro-cli
     ;;
   chat)
-    exec kiro-cli chat --no-interactive --trust-all-tools "$PROMPT"
+    exec kiro-cli chat --no-interactive --trust-all-tools -- "$PROMPT"
     ;;
   *)
-    exec kiro-cli "$ACTION" "$PROMPT"
+    exec kiro-cli "$ACTION" -- "$PROMPT"
     ;;
 esac
