@@ -1,4 +1,4 @@
-# Web Answer with a LangChain agent
+# [Amazon Bedrock AgentCore Web Answer](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-answer-tool.html) with a LangChain agent
 
 This example connects LangChain to an
 [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
