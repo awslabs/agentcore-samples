@@ -1,4 +1,4 @@
-# Web Answer with a Strands agent
+# [Amazon Bedrock AgentCore Web Answer](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-answer-tool.html) with a Strands agent
 
 This example gives a Strands agent access to the managed `WebAnswer` MCP tool
 through an

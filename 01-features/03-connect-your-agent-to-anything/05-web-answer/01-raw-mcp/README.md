@@ -1,4 +1,4 @@
-# Raw MCP Web Answer invocation
+# Raw MCP invocation with [Amazon Bedrock AgentCore Web Answer](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-answer-tool.html)
 
 This example connects directly to an
 [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html),
