@@ -17,14 +17,14 @@ CloudWatch, so FailureAnalysis has real patterns to work with:
 
 Usage:
     # Generate failure traces then run insights:
-    python insights.py --name HRInsights849 --generate-traces [--region us-west-2]
+    python insights.py --name HRInsights849 --generate-traces
 
     # Run insights on existing traces from the last N days:
     python insights.py --name HRInsights849 [--lookback-days 7]
 
 Prerequisites:
     1. Deploy the HR Assistant agent:
-         python deploy.py --name HRInsights849 --region us-west-2
+         python deploy.py --name HRInsights849
 
     2. Install dependencies:
          pip install -r requirements.txt
@@ -44,7 +44,7 @@ import boto3
 
 parser = argparse.ArgumentParser(description="AgentCore Insights (Builtin.FailureAnalysis)")
 parser.add_argument("--name", required=True, help="Runtime name (matches agent_state_{name}.json)")
-parser.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
+parser.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 parser.add_argument(
     "--generate-traces",
     action="store_true",
@@ -58,7 +58,6 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-REGION = args.region
 LOOKBACK_DAYS = args.lookback_days
 
 # ── Load agent state ───────────────────────────────────────────────────────
@@ -66,10 +65,14 @@ LOOKBACK_DAYS = args.lookback_days
 STATE_FILE = Path(f"agent_state_{args.name}.json")
 if not STATE_FILE.exists():
     raise FileNotFoundError(
-        f"{STATE_FILE} not found. Run 'python deploy.py --name {args.name} --region {REGION}' first."
+        f"{STATE_FILE} not found. Run 'python deploy.py --name {args.name} --region {args.region}' first."
     )
 
 state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+# The runtime's own region, recorded by deploy.py, is authoritative -- don't let a
+# stale/default --region silently build clients against the wrong region. Same
+# pattern as invoke.py.
+REGION = state.get("region", args.region)
 AGENT_ARN = state["runtime_arn"]
 LOG_GROUP = state["log_group"]
 SERVICE_NAME = state["service_name"]
@@ -186,6 +189,8 @@ if args.generate_traces:
             resp["response"].read()
             success_count += 1
             status_tag = "OK "  # pylint: disable=invalid-name
+        # tally any invoke failure (network, throttling, or agent-side) without aborting the
+        # batch; these are informational counts, not crashes.
         except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             error_count += 1
             status_tag = "ERR"  # pylint: disable=invalid-name
