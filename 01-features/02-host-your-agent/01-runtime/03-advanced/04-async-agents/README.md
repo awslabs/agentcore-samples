@@ -19,27 +19,39 @@ app = BedrockAgentCoreApp()
 task_id = app.add_async_task("my_analysis")
 
 # Run the work in a background thread...
-# When done, mark it complete:
+# When done, deregister it:
 app.complete_async_task(task_id)
-
-# Or if it fails:
-app.fail_async_task(task_id)
 ```
 
-The client can query task status through the runtime's task management API. This lets you build agents that:
+These two calls drive the runtime's **health signal only**: while a task is
+registered, `GET /ping` answers `HealthyBusy` instead of `Healthy`, which is how
+the runtime knows the microVM is still working and should not be reclaimed.
+
+The SDK stores no task result and offers no lookup by task ID, so an agent that
+lets the caller retrieve a result later has to keep its own registry. See
+`01_weekly_report_generator_async` for that pattern. Two consequences to design
+around:
+
+1. The registry lives in the memory of the microVM serving the session, so the
+   caller must send the **same `runtimeSessionId`** on the status call that it
+   used to submit the work. A new session ID lands on a different microVM.
+2. That state is lost when the session is recycled. Persist it (DynamoDB, S3)
+   for anything beyond a demo.
+
+This lets you build agents that:
 
 1. Accept a request and immediately return a task ID
 2. Run expensive computation in a background thread
 3. Report completion or failure when the work finishes
-4. Let the user retrieve results at any time
+4. Let the caller retrieve results later, on the same session
 
 ### Key API Methods
 
 | Method | Description |
 |:-------|:------------|
-| `app.add_async_task(name)` | Register a new background task, returns task ID |
-| `app.complete_async_task(task_id)` | Mark a task as successfully completed |
-| `app.fail_async_task(task_id)` | Mark a task as failed |
+| `app.add_async_task(name, metadata=None)` | Register a background task, returns an `int` task ID |
+| `app.complete_async_task(task_id)` | Deregister the task, returning `True` if it was known |
+| `app.get_async_task_info()` | Active task count plus the name and duration of each running task |
 
 ## Examples
 
