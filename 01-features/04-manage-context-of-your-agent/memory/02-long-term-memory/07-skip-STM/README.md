@@ -25,7 +25,7 @@ data.ingest_data(
         {"json": {"content": {"event": "car_viewed", "car_id": "VH-1044", "view_duration_sec": 112}}},
     ]}},
     extractionConfig={"namespaceVariables": {"dealership": "westside"}},
-    metadata={"channel": "web"},
+    metadata={"channel": {"stringValue": "web"}},
 )
 ```
 
