@@ -35,7 +35,7 @@ COMPANY_ID = os.environ.get("COMPANY_ID", "1234567890")
 RTP_API_URL = os.environ.get("RTP_API_URL", "https://api.rtp-overlay.com")
 API_KEY_SECRET_NAME = os.environ.get("API_KEY_SECRET_NAME", "rtp-overlay/api-key")
 # Bedrock Model Configuration - Sonnet 4 supports PDF natively
-BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 # --- ACH-specific configuration (REQUIRED for US domestic) ---
 COMPANY_BANK_NAME = os.environ.get("COMPANY_BANK_NAME", "Bank of America, N.A.")

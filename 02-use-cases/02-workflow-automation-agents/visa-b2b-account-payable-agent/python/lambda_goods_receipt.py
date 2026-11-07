@@ -12,7 +12,7 @@ http = urllib3.PoolManager()
 
 # Configuration from environment variables
 RTP_API_URL = os.environ.get("RTP_API_URL", "https://api.rtp-overlay.com")
-BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 
 def extract_gr_data_with_vision(file_content, file_type):
