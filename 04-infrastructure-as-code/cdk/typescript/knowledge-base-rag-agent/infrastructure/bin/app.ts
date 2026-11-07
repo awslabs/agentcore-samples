@@ -46,7 +46,7 @@ const env = { account, region };
 // Application configuration from environment variables
 const config = {
   // AgentCore settings
-  agentCoreModelId: process.env.AGENTCORE_MODEL_ID || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  agentCoreModelId: process.env.AGENTCORE_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
   
   // Lambda settings
   lambdaTimeoutSeconds: parseInt(process.env.LAMBDA_TIMEOUT_SECONDS || '300'),
