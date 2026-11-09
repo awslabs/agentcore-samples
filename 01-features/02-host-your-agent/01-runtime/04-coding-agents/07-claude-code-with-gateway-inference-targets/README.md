@@ -39,9 +39,11 @@ InvokeAgentRuntime
         Amazon Bedrock
 ```
 
-The container never sees an AWS credential that can reach Bedrock. If the container is
-compromised, the blast radius is one OAuth client credential, which can be revoked at
-the user pool without touching IAM.
+The container never sees an AWS credential that can reach Bedrock, and it cannot read
+the OAuth client secret, because the execution role may read it only through AgentCore.
+If the container is compromised, the exposure is the gateway token of the current turn.
+Rotating or deleting the client at the user pool stops new tokens. Tokens already issued
+stay valid until they expire.
 
 ## Prerequisites
 
@@ -152,9 +154,10 @@ Deletes every recorded resource from both state files, runtime stack first and i
 reverse creation order, including the runtime's CloudWatch log group, which AgentCore
 creates implicitly and which holds prompt text. The script waits for the runtime to
 finish deleting before it removes the log group, because a runtime that is still
-shutting down can write to the group again, so this step takes a few minutes. Anything that fails to delete stays in
-its state file so the run can be retried. If the gateway state file was lost,
-`python cleanup.py --discover` finds gateway resources by name prefix.
+shutting down can write to the group again, so this step takes a few minutes. Anything
+that fails to delete stays in its state file so the run can be retried. If the gateway
+state file was lost, `python cleanup.py --discover` finds gateway resources by name
+prefix.
 
 ## How Claude Code is configured for the gateway
 
