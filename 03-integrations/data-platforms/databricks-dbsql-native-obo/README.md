@@ -53,20 +53,25 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    An update that leaves out `onBehalfOfTokenExchangeConfig` also removes `NO_CLIENT`, with no error,
    and the exchange is then refused, so after any update confirm with `get-oauth2-credential-provider`
    that `onBehalfOfAuthenticationConfig` is still in the output.
-   The API still requires a `clientId` and `clientSecret`, and creating the provider fails without them, but with
-   `NO_CLIENT` they are not sent on the on-behalf-of exchange, so placeholder values are fine when the
-   target's `listingMode` is `DYNAMIC` or the target carries a static `mcpToolSchema` (see item 5). No
-   Databricks service principal has to exist. Without `NO_CLIENT` the Gateway authenticates with
-   them, and the exchange is refused unless the account was enabled under the earlier per-account
-   arrangement. Set `NO_CLIENT` everywhere, including in accounts that were enabled that way. This is the
-   single most common reason a correct configuration still fails.
+   With the client secret authentication methods, which are the default, creating the provider fails without a
+   `clientId` and `clientSecret`, but with `NO_CLIENT` they are not sent on the on-behalf-of exchange, so
+   placeholder values are fine when the target's `listingMode` is `DYNAMIC` or the target carries a static
+   `mcpToolSchema` (see item 5). No Databricks service principal has to exist. `AWS_IAM_ID_TOKEN_JWT` creates a
+   provider with neither field, but in our testing the Gateway still generated an IAM JWT assertion for the
+   exchange (its execution role then needs `sts:GetWebIdentityToken`), and Databricks refused the exchange with
+   `401 invalid_client`: it read the IAM JWT as client authentication for a principal that is not a member of
+   the workspace. Keep a client secret method with placeholder values. Without `NO_CLIENT` the Gateway
+   authenticates with the `clientId` and `clientSecret`, and the exchange is refused unless the account was
+   enabled under the earlier per-account arrangement. Set `NO_CLIENT` everywhere, including in accounts that
+   were enabled that way. This is the single most common reason a correct configuration still fails.
 2. **Gateway execution role.** In the Gateway flow this role is the caller of AgentCore Identity, so it
    needs `gatewayExecutionRolePolicy` from [`working-config.json`](working-config.json): Secrets Manager
    read on the token vault secret, KMS decrypt through Secrets Manager, and the AgentCore Identity token
    operations (`GetResourceOauth2Token` and the `GetWorkloadAccessToken*` actions). That covers the policy
    in [Set up outbound authorization for your gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-outbound-auth.html),
-   and `NO_CLIENT` needs nothing beyond it. Keep `secretsmanager:GetSecretValue` even with `NO_CLIENT`:
-   the secret is not sent, but Identity still reads it during the exchange. Do **not** pin these to one
+   and `NO_CLIENT` with a client secret method needs nothing beyond it. Keep `secretsmanager:GetSecretValue`
+   even with `NO_CLIENT`: the secret is not sent, but Identity still reads it during the exchange. Do **not**
+   pin these to one
    Region —
    a Region-pinned policy produces `AccessDenied`, which Gateway reports as
    `insufficient permissions for token exchange`, and that reads like an access problem with the
@@ -151,7 +156,8 @@ common cases: a Cognito access token carries no `email` claim at all, and `sub` 
 Entra and Cognito, so it cannot be a Databricks username and its disagreement proves nothing. Point
 `--subject-claim` at the claim your federation policy actually maps. An Entra v2.0 access token may not
 carry `email` either: in our test it carried `preferred_username` and neither `email` nor `upn`, so map
-`preferred_username` in the federation policy and pass `--subject-claim preferred_username`. A v1.0
+`preferred_username` in the federation policy and pass `--subject-claim preferred_username`, provided it matches
+the user's Databricks username (an Entra UPN can differ from the email address, for guest users in particular). A v1.0
 token in our test carried `upn` and no `email`.
 
 Verdicts and exit codes:
