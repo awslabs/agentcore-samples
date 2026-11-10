@@ -21,8 +21,8 @@
         "oauthDiscovery": {
           "discoveryUrl": "https://<workspace-host>/oidc/.well-known/openid-configuration"
         },
-        "clientId": "<databricks-service-principal-application-id>",
-        "clientSecret": "<REDACTED - databricks SP OAuth secret>",
+        "clientId": "placeholder-not-a-databricks-sp",
+        "clientSecret": "placeholder-not-a-secret",
         "onBehalfOfTokenExchangeConfig": {
           "grantType": "TOKEN_EXCHANGE",
           "tokenExchangeGrantTypeConfig": {

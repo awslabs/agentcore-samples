@@ -50,9 +50,13 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    `ec2:CreateNetworkInterface` on the principal that makes the call, not on the Gateway execution role;
    a self-managed endpoint needs VPC Lattice permissions instead (see
    [Connect to private identity providers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-private-idp.html)).
+   An update that leaves out `onBehalfOfTokenExchangeConfig` also removes `NO_CLIENT`, with no error,
+   and the exchange is then refused, so after any update confirm with `get-oauth2-credential-provider`
+   that `onBehalfOfAuthenticationConfig` is still in the output.
    The API still requires a `clientId` and `clientSecret`, and creating the provider fails without them, but with
    `NO_CLIENT` they are not sent on the on-behalf-of exchange, so placeholder values are fine when the
-   target's `listingMode` is `DYNAMIC` (see item 5). Without `NO_CLIENT` the Gateway authenticates with
+   target's `listingMode` is `DYNAMIC` or the target carries a static `mcpToolSchema` (see item 5). No
+   Databricks service principal has to exist. Without `NO_CLIENT` the Gateway authenticates with
    them, and the exchange is refused unless the account was enabled under the earlier per-account
    arrangement. Set `NO_CLIENT` everywhere, including in accounts that were enabled that way. This is the
    single most common reason a correct configuration still fails.
@@ -82,8 +86,11 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
 5. **The end user's entitlements, not the service principal's.** With `NO_CLIENT` the credential
    provider's `clientId` and `clientSecret` are not sent on the exchange, so the token Managed MCP checks
    for the `workspace-access` and `databricks-sql-access` entitlements is the end user's. In our testing,
-   with `listingMode` set to `DYNAMIC`, a provider with placeholder client credentials synced its target
-   and completed the exchange.
+   a provider with placeholder client credentials, against a workspace with no service principals,
+   delivered the end user's identity both with `listingMode` set to `DYNAMIC` and with a static
+   `mcpToolSchema`. In the default listing mode the same configuration failed to sync with `Error parsing
+   ClientCredentials response`, because that sync authenticates with the client credentials. That is the
+   one configuration here that needs a real service principal.
 
 ## Why no client authentication is required
 
@@ -162,7 +169,7 @@ Verdicts and exit codes:
 | `PROVIDER_NOT_FOUND` | 6 | The credential provider named on the target does not exist where the gateway looked. Check `providerArn`, and that the provider is in the gateway's Region. |
 | `TRANSIENT` | 7 | Rate limited, or a service error, including an HTTP 429 or 5xx whose text matches nothing more specific. Nothing is misconfigured on this evidence; retry. |
 | `TARGET_REJECTED_TOKEN` | 8 | The exchange succeeded and Databricks rejected the delivered token. Check `all-apis` in the target's scopes, that the provider's discovery host matches the workspace host the target points at, and the caller's own permission on the warehouse, Genie space or function. |
-| `TARGET_NOT_FOUND` | 9 | No tool matched `--target-name`, or the target contributed no tools — see the `listingMode` note below. |
+| `TARGET_NOT_FOUND` | 9 | No tool matched `--target-name`, or the target contributed no tools — see the `listingMode` note below. A target whose status is `FAILED` lands here too, answering `Unknown tool:`. |
 | `IDENTITY_MISMATCH` | 10 | Unity Catalog saw a human, but not the human in the token presented. Commonly a shared account with an email-shaped username. |
 | `PER_USER_UNVERIFIED` | 11 | A human-shaped principal, but the claim could not be compared: absent from the token, or opaque. Not a pass. |
 
@@ -174,9 +181,10 @@ them only on the `initialize` response, keyed on the JSON-RPC code together with
 it with (`-32001` with 401, `-32002` with 403), since MCP also uses both numbers, then on their wording.
 `insufficient_scope` is the standard RFC 6750 description, so a target's `403` behind `tools/call` can carry it
 too: `tools/call` errors stay on the shared table, where that 403 wrapped as `Authorization error when sending
-message` is `TARGET_REJECTED_TOKEN`. `PROVIDER_NOT_FOUND`,
-`TRANSIENT`, `TARGET_NOT_FOUND` and the `inbound token is invalid` wording come from the service-side
-message list supplied in review of this sample, and are not from a run of our own.
+message` is `TARGET_REJECTED_TOKEN`. `TARGET_NOT_FOUND`
+was observed as `Unknown tool:` against a `FAILED` target. `PROVIDER_NOT_FOUND`, `TRANSIENT`, the
+`no target found for capability` form of `TARGET_NOT_FOUND` and the `inbound token is invalid` wording come
+from the service-side message list supplied in review of this sample, and are not from a run of our own.
 
 ## Notes that save time
 
@@ -186,6 +194,13 @@ message list supplied in review of this sample, and are not from a run of our ow
   also appears when the identity whose token reaches the endpoint lacks the entitlements in
   prerequisite 5, so confirm a direct call to the MCP endpoint works
   before concluding the gateway is at fault.
+- **A static `mcpToolSchema` is the alternative to `DYNAMIC`.** It turns tool sync off, so it also works
+  with placeholder client credentials. Its `inlinePayload` is a JSON object with a `tools` array, in the
+  shape `tools/list` returns; a bare array is rejected with `mcpToolSchema must be an object with 'tools'
+  array`. Nothing keeps it in step with the server's tools, so refresh it when they change.
+- **A target whose status is `FAILED` contributes no tools**, and calling one of its tools answers
+  `Unknown tool: <target>___<tool>`. The preflight reports that as `TARGET_NOT_FOUND`; check the target's
+  status and `statusReasons` with `get-gateway-target`.
 - **There are two discovery URLs, on two different hosts.** The authorizer's `discoveryUrl` is your
   identity provider's, because it validates the inbound token. The credential provider's is the Databricks
   workspace's, `https://<workspace-host>/oidc/.well-known/openid-configuration`, because it is where the

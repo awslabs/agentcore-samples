@@ -24,7 +24,8 @@ Exit codes:
      6  PROVIDER_NOT_FOUND    The credential provider on the target does not exist where the gateway looked.
      7  TRANSIENT             Rate limited, or a service error. Retry.
      8  TARGET_REJECTED_TOKEN The exchange succeeded and Databricks rejected the token it delivered.
-     9  TARGET_NOT_FOUND      No tool matched --target-name, or the target contributed no tools.
+     9  TARGET_NOT_FOUND      No tool matched --target-name or --tool-name, or the target contributed
+                               no tools (a FAILED target answers "Unknown tool:").
     10  IDENTITY_MISMATCH     current_user() is not the subject claim in the token you presented.
     11  PER_USER_UNVERIFIED   A human-shaped principal, but the claim could not be compared. Not a pass.
 """
@@ -101,9 +102,11 @@ REMEDY_TARGET_REJECTED_TOKEN = (
     "README."
 )
 REMEDY_TARGET_NOT_FOUND = (
-    "No tool matched the target name. Either --target-name is wrong, or the target contributed no tools: an "
-    "exchange that fails at listing time on a DYNAMIC target drops it out of tools/list with no error. Call "
-    "tools/list yourself to see which targets are present, and see the listingMode note in the README."
+    "No tool matched the target name. Either --target-name or --tool-name is wrong, or the target contributed "
+    "no tools: an exchange that fails at listing time on a DYNAMIC target drops it out of tools/list with no "
+    "error, and a target whose status is FAILED contributes none, answering 'Unknown tool'. Call tools/list "
+    "yourself to see which targets are present, check the target's status and statusReasons with "
+    "get-gateway-target, and see the listingMode note in the README."
 )
 REMEDY_INBOUND_TOKEN = (
     "The token you presented was rejected before the exchange: expired, or carrying an issuer or audience "
@@ -206,6 +209,10 @@ FAILURE_SIGNATURES = (
 # The catch-all for every "Token exchange failed" message, kept out of the table because it is the weakest
 # evidence there is: a retryable HTTP status outranks it, though nothing more specific does.
 GENERIC_EXCHANGE_FAILURE = (("token exchange failed", EXCHANGE_REFUSED, REMEDY_EXCHANGE_FAILED_GENERIC),)
+# A symptom rather than a cause, so it is checked after everything else, the catch-all and a retryable status
+# included. Observed live: calling a tool on a target whose sync FAILED (the default listing mode with
+# placeholder client credentials) answers "Unknown tool: <target>___<tool>".
+SYMPTOM_SIGNATURES = (("unknown tool:", TARGET_NOT_FOUND, REMEDY_TARGET_NOT_FOUND),)
 
 # The gateway authorizer's own refusals, which arrive at initialize: 401 / -32001 for a missing or
 # unverifiable token, and 403 / -32002 insufficient_scope for a signed token whose claims it rejects. They
@@ -282,14 +289,15 @@ def is_transient_status(status: object) -> bool:
 def classify_failure(text: str | None, http_status: int | None = None) -> tuple[str, str]:
     """Map an error string from the gateway to a cause and a remedy.
 
-    A retryable HTTP status outranks only the generic "Token exchange failed" catch-all.
+    A retryable HTTP status outranks only the generic "Token exchange failed" catch-all and the
+    "Unknown tool" symptom, which comes last.
     """
     matched = _match(text, FAILURE_SIGNATURES)
     if matched:
         return matched
     if is_transient_status(http_status):
         return TRANSIENT, REMEDY_TRANSIENT
-    matched = _match(text, GENERIC_EXCHANGE_FAILURE)
+    matched = _match(text, GENERIC_EXCHANGE_FAILURE) or _match(text, SYMPTOM_SIGNATURES)
     if matched:
         return matched
     if not text:

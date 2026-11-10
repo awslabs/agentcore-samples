@@ -158,6 +158,34 @@ class ClassifyFailure(unittest.TestCase):
         self.assertEqual(verdict, TARGET_NOT_FOUND)
         self.assertIn("--target-name", remedy)
 
+    def test_unknown_tool_from_a_failed_target_is_target_not_found(self):
+        # Verbatim from a live gateway: a target whose sync FAILED has no tools, so the call is unknown.
+        verdict, remedy = classify_failure("Unknown tool: dbx-sql-te___execute_sql")
+        self.assertEqual(verdict, TARGET_NOT_FOUND)
+        self.assertIn("statusReasons", remedy)
+
+    def test_unknown_tool_does_not_mask_any_other_cause(self):
+        # "Unknown tool:" is a symptom, so every other signature in the same message still wins, the
+        # catch-all and the wrapper included.
+        cases = {
+            "Token exchange failed: inbound token is invalid or expired.": INBOUND_TOKEN,
+            "Token exchange failed: credential provider not found.": PROVIDER_NOT_FOUND,
+            "Token exchange failed: rate limited.": TRANSIENT,
+            "Token exchange failed: check credential provider scopes, audience, or IdP configuration.": (
+                EXCHANGE_REFUSED
+            ),
+            "Token exchange failed.": EXCHANGE_REFUSED,
+            "MCP listTools failed: Authorization error when sending message.": TARGET_REJECTED_TOKEN,
+        }
+        for cause, expected in cases.items():
+            with self.subTest(cause=cause):
+                verdict, _ = classify_failure(cause + " Unknown tool: x___y")
+                self.assertEqual(verdict, expected)
+
+    def test_a_retryable_status_outranks_unknown_tool(self):
+        verdict, _ = classify_failure("Unknown tool: x___y", http_status=503)
+        self.assertEqual(verdict, TRANSIENT)
+
     def test_inbound_token_beats_the_catch_all(self):
         verdict, remedy = classify_failure(
             "Token exchange failed: inbound token is invalid or expired. Please re-authenticate."
@@ -885,6 +913,12 @@ class HandshakeClassification(unittest.TestCase):
                 error = TransportError({"code": code, "message": "reworded"}, status, [])
                 verdict, remedy = classify_handshake_refusal(error, "reworded")
                 self.assertEqual((verdict, remedy), (INBOUND_TOKEN, expected))
+
+    def test_a_bare_401_outranks_unknown_tool_in_its_text(self):
+        # The symptom is checked last, so on initialize a bare 401 still means the inbound token.
+        error = TransportError({"code": -32600, "message": "Unknown tool: x___y"}, 401, [])
+        verdict, _ = classify_handshake_refusal(error, "Unknown tool: x___y")
+        self.assertEqual(verdict, INBOUND_TOKEN)
 
     def test_a_code_without_its_status_is_not_the_authorizer(self):
         # MCP uses both numbers too: -32001 is the TypeScript SDK's request timeout.
