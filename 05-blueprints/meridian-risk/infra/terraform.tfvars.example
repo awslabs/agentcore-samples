@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars before the first apply:
+#
+#   cp infra/terraform.tfvars.example infra/terraform.tfvars
+#
+# Real tfvars files are gitignored. Every value below has a default in
+# variables.tf, with one exception that matters: console_user_email defaults to
+# null, and with no value there NO console login is created — the stack deploys
+# fine but you cannot sign in.
+
+# Required for a usable console. Becomes the Cognito username.
+console_user_email = "admin@example.com"
+
+# Optional. Leave commented to have one generated, then read it with:
+#   terraform -chdir=infra output -raw console_password
+# Must satisfy the pool policy: 12+ chars with upper, lower, number, and symbol.
+# console_user_password = "ChangeMe!2026"
+
+# Optional overrides — defaults shown.
+# stack_name             = "kyc-agentcore"
+# aws_region             = "us-east-1"   # must be an AgentCore Registry preview Region
+# inference_route        = "gateway"     # or "direct" to bypass the LLM gateway
+# policy_engine_mode     = "ENFORCE"     # or "LOG_ONLY" when widening a policy
+# registry_auto_approval = false         # true skips the DRAFT -> APPROVED workflow
+# log_retention_days     = 7
+# enable_registry_oauth_demo = false     # true adds the optional OAuth flows (discover / invoke / auto-populate); gated, off by default

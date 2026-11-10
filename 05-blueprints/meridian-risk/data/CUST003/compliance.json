@@ -1,0 +1,56 @@
+{
+  "customer_id": "CUST003",
+  "kyc_verification": {
+    "status": "pending_review",
+    "date": "2023-05-20",
+    "documents_verified": [
+      "Certificate of Incorporation",
+      "Articles of Association"
+    ],
+    "documents_pending": [
+      "Updated Beneficial Ownership Declaration",
+      "Source of Funds Documentation"
+    ]
+  },
+  "sanctions_screening": {
+    "status": "potential_match",
+    "last_check": "2024-01-18",
+    "databases_checked": ["OFAC", "UN", "EU", "UK HMT"],
+    "matches": [
+      {
+        "database": "OFAC",
+        "match_type": "partial_name",
+        "entity": "Rodriguez Trading Co",
+        "match_score": 65,
+        "status": "under_review"
+      }
+    ]
+  },
+  "pep_screening": {
+    "status": "flagged",
+    "directors_screened": 2,
+    "beneficial_owners_screened": 2,
+    "matches": [
+      {
+        "name": "Elena Martinez",
+        "pep_type": "family_member",
+        "related_to": "Former government official",
+        "country": "Colombia"
+      }
+    ]
+  },
+  "adverse_media": {
+    "status": "flagged",
+    "last_check": "2024-01-10",
+    "findings": [
+      {
+        "source": "Financial Times",
+        "date": "2023-09-15",
+        "summary": "Company mentioned in article about trade finance irregularities"
+      }
+    ]
+  },
+  "aml_risk_rating": "high",
+  "enhanced_due_diligence_required": true,
+  "next_review_date": "2024-02-20"
+}
