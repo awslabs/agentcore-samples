@@ -15,8 +15,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aws-sdk/client-bedrock-agentcore": "^3.930.0",
-    "@aws-sdk/client-ssm": "^3.930.0",
+    "@aws-sdk/client-bedrock-agentcore": "^3.1166.0",
+    "@aws-sdk/client-ssm": "^3.1166.0",
     "@mastra/core": "^0.24.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
