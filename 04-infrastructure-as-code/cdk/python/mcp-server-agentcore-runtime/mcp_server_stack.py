@@ -343,7 +343,7 @@ def handler(event, context):
                                 "echo Building the Docker image for MCP server ARM64...",
                                 # Create requirements.txt
                                 """cat > requirements.txt << 'EOF'
-mcp>=1.10.0
+mcp>=1.10.0,<2.0.0
 boto3
 bedrock-agentcore
 EOF""",

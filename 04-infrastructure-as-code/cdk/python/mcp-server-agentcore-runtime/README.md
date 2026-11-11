@@ -310,7 +310,7 @@ pip install -r requirements.txt
 
 For testing, you may need additional packages:
 ```bash
-pip install boto3 mcp
+pip install boto3 "mcp<2.0.0"
 ```
 
 ### Authentication Issues
