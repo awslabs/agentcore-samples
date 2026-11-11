@@ -25,18 +25,33 @@ Data distinctness:
   under user B's owner_user_sub filter, so the notebook 07 isolation
   invariant is testable by simple set-difference.
 
+Loading is retried: up to 3 attempts with a 60 s read timeout each, re-sending
+only the notes not yet indexed (uploads use fixed document ids, so a re-send
+overwrites in place). After a load, the script polls until every note is
+searchable with the right owner, or stops after 60 s.
+
 Usage:
-    python load_sample_opensearch_data.py
+    python load_sample_opensearch_data.py            # load, then confirm
+    python load_sample_opensearch_data.py --check    # read-only check, no load
+
+Exit codes:
+    default mode: 0 = every note loaded and confirmed searchable;
+                  1 = error, or the load or the confirmation did not complete.
+    --check:      0 = every expected note is in the index with the right owner;
+                  2 = some notes are missing or have the wrong owner;
+                  1 = error (the check itself could not be completed).
 """
 
+import argparse
 import json
 import os
 import sys
+import time
 from datetime import UTC, datetime, timezone
 
 import boto3
 from aws_requests_auth.aws_auth import AWSRequestsAuth
-from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
+from opensearchpy import NotFoundError, OpenSearch, RequestsHttpConnection, helpers
 
 # Make the repo's utils/ importable (idp_config lives there).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -44,6 +59,18 @@ from utils.idp_config import get_idp_provider
 
 CLAIM_NOTES_INDEX = "claim-notes"
 SSM_PREFIX = "/app/lakehouse-agent/"
+
+# Loading and confirmation timings.
+READ_TIMEOUT_S = 60  # per request
+LOAD_ATTEMPTS = 3
+RETRY_PAUSES_S = (5, 15)  # pause before attempt 2, then before attempt 3
+CONFIRM_POLL_S = 5
+CONFIRM_WAIT_S = 60
+
+# --check exit codes (see the module docstring).
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_INCOMPLETE = 2
 
 
 # Index mapping. Field types chosen to support the
@@ -248,7 +275,7 @@ def get_aoss_client(region: str, collection_endpoint: str) -> OpenSearch:
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
-        timeout=30,
+        timeout=READ_TIMEOUT_S,
     )
 
 
@@ -410,15 +437,148 @@ def bulk_load(client: OpenSearch, docs: list[dict]) -> tuple[int, int, list]:
     marker = "✅" if success == total else "❌"
     print(f"   {marker} Indexed {success}/{total} document(s)")
     if errors:
-        print(f"   ⚠️  {len(errors)} error(s) reported by bulk helper:")
+        print(f"   ⚠️  {len(errors)} error(s) reported by bulk helper (first 5; ids and reasons only):")
         for err in errors[:5]:
-            print(f"      {err}")
+            err_id, reason = _error_id_and_reason(err)
+            print(f"      _id={err_id}: {reason}")
     return success, total, errors
 
 
+def _error_id_and_reason(err) -> tuple[str | None, str]:
+    """Return (document _id, short reason) from one bulk-helper error item.
+
+    The helper reports each failed document as {op_type: info}; info carries the
+    action's _id and an "error" value or the raised "exception". Only the id and
+    the reason are returned, so no note text is printed.
+    """
+    info = next(iter(err.values()), {}) if isinstance(err, dict) and err else {}
+    if not isinstance(info, dict):
+        return None, str(info)[:160]
+    reason = info.get("error") or info.get("exception") or info.get("status") or "unknown error"
+    if isinstance(reason, BaseException):
+        reason = f"{type(reason).__name__}: {reason}"
+    return info.get("_id"), str(reason)[:160]
+
+
+def load_with_retries(client: OpenSearch, docs: list[dict]) -> tuple[int, int, list]:
+    """Load the notes with up to LOAD_ATTEMPTS attempts.
+
+    A retry re-sends only the notes the previous attempt did not index (all of
+    them when the failed ids cannot be told apart). Fixed _ids make a re-send an
+    overwrite, never a duplicate. Returns (indexed, total, errors of the last
+    attempt).
+    """
+    total = len(docs)
+    pending = list(docs)
+    errors: list = []
+    for attempt in range(1, LOAD_ATTEMPTS + 1):
+        print(f"\n⏳ Loading notes: attempt {attempt}/{LOAD_ATTEMPTS} (timeout {READ_TIMEOUT_S} s)…")
+        success, sent, errors = bulk_load(client, pending)
+        if not errors and success == sent:
+            print(f"   ✅ Attempt {attempt}/{LOAD_ATTEMPTS}: {total}/{total} note(s) indexed")
+            return total, total, []
+        failed_ids = {_error_id_and_reason(e)[0] for e in errors}
+        if errors and None not in failed_ids:
+            pending = [d for d in pending if d["claim_id"] in failed_ids]
+        indexed = total - len(pending)
+        print(f"   ⚠️  Attempt {attempt}/{LOAD_ATTEMPTS}: {indexed}/{total} note(s) indexed; {len(pending)} to retry")
+        if attempt < LOAD_ATTEMPTS:
+            pause = RETRY_PAUSES_S[attempt - 1]
+            print(f"   ⏸️  Pausing {pause} s before attempt {attempt + 1}/{LOAD_ATTEMPTS}…")
+            time.sleep(pause)
+    return total - len(pending), total, errors
+
+
+def check_notes(client: OpenSearch, docs: list[dict]) -> tuple[list[str], list[str]]:
+    """Read-only: search for the expected notes by _id and compare each owner.
+
+    One search with an `ids` query (the search API that the MCP server and
+    notebook 07 already use). Returns (missing ids, wrong-owner ids), both
+    sorted. A missing index counts as every note missing; other errors propagate.
+    """
+    expected = {d["claim_id"]: d["owner_user_sub"] for d in docs}
+    body = {
+        "size": len(expected),
+        "_source": ["owner_user_sub"],
+        "query": {"ids": {"values": sorted(expected)}},
+    }
+    try:
+        resp = client.search(index=CLAIM_NOTES_INDEX, body=body)
+    except NotFoundError:
+        return sorted(expected), []
+    found = {h["_id"]: (h.get("_source") or {}).get("owner_user_sub") for h in resp["hits"]["hits"]}
+    missing = sorted(i for i in expected if i not in found)
+    wrong_owner = sorted(i for i in expected if i in found and found[i] != expected[i])
+    return missing, wrong_owner
+
+
+def report_check(missing: list[str], wrong_owner: list[str], total: int) -> None:
+    """Print the check result: counts, then the ids only (never note text or owners)."""
+    found = total - len(missing) - len(wrong_owner)
+    print(f"   🔎 Sample notes in the index: found {found}/{total} with the right owner")
+    if missing:
+        print(f"      Missing ({len(missing)}): {', '.join(missing)}")
+    if wrong_owner:
+        print(f"      Wrong owner ({len(wrong_owner)}): {', '.join(wrong_owner)}")
+
+
+def confirm_searchable(client: OpenSearch, docs: list[dict]) -> bool:
+    """Poll until every note is searchable with the right owner, or CONFIRM_WAIT_S passes.
+
+    AOSS makes newly indexed documents searchable after a delay, so a single
+    check straight after the load can undercount. Prints a line per poll.
+    """
+    total = len(docs)
+    print(f"\n🔎 Confirming the notes are searchable (every {CONFIRM_POLL_S} s, up to {CONFIRM_WAIT_S} s)…")
+    waited = 0
+    while True:
+        try:
+            missing, wrong_owner = check_notes(client, docs)
+            last_error = None
+        except Exception as e:
+            missing, wrong_owner, last_error = [], [], e
+        if last_error is None and not missing and not wrong_owner:
+            print(f"   ✅ {total}/{total} confirmed")
+            return True
+        if waited >= CONFIRM_WAIT_S:
+            break
+        found = "?" if last_error is not None else total - len(missing) - len(wrong_owner)
+        print(f"   ⏳ Waiting for notes to become searchable: {found}/{total}, {waited} s elapsed…")
+        time.sleep(CONFIRM_POLL_S)
+        waited += CONFIRM_POLL_S
+    print(f"   ❌ Not all notes are searchable with the right owner after {CONFIRM_WAIT_S} s")
+    if last_error is not None:
+        print(f"      Last check failed: {type(last_error).__name__}: {last_error}")
+    else:
+        report_check(missing, wrong_owner, total)
+    return False
+
+
+def parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Load the sample claim notes into OpenSearch Serverless, then confirm them.",
+        epilog=(
+            "Exit codes: default mode 0 = loaded and confirmed, 1 = error or incomplete. "
+            "--check: 0 = all notes present with the right owner, 2 = some missing or wrong owner, "
+            "1 = the check could not be completed."
+        ),
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="read-only: report whether every expected note is in the index with the right owner; load nothing",
+    )
+    return parser.parse_args(argv)
+
+
 def main():
+    args = parse_args()
+
     print("=" * 70)
-    print("Load Sample Claim-Note Documents into OpenSearch Serverless")
+    if args.check:
+        print("Check Sample Claim-Note Documents in OpenSearch Serverless (read-only)")
+    else:
+        print("Load Sample Claim-Note Documents into OpenSearch Serverless")
     print("=" * 70)
 
     session = boto3.Session()
@@ -445,8 +605,9 @@ def main():
     # Build AOSS client
     client = get_aoss_client(region, endpoint)
 
-    # Idempotent index create
-    ensure_index(client)
+    # Idempotent index create (skipped by --check, which changes nothing)
+    if not args.check:
+        ensure_index(client)
 
     # Discover test-user subs
     users = discover_user_subs(ssm)
@@ -470,15 +631,45 @@ def main():
             print(f"   - claim_id={d['claim_id']}, note_type={d['note_type']}")
         all_docs.extend(docs)
 
-    # Bulk load. The exit code follows what OpenSearch actually indexed, not
-    # how many documents were built: a partial load exits non-zero so callers
-    # (notebooks 05b and 07) stop instead of reporting a seeded index.
-    indexed, total, errors = bulk_load(client, all_docs)
+    # --check: read-only. Exit 0 = all present with the right owner, 2 = some
+    # missing or wrong owner, 1 = the check itself failed.
+    if args.check:
+        print(f"\n🔎 Checking {len(all_docs)} expected note(s) by _id (read-only)...")
+        try:
+            missing, wrong_owner = check_notes(client, all_docs)
+        except Exception as e:
+            print(f"   ❌ Could not check the sample notes: {type(e).__name__}: {e}")
+            sys.exit(EXIT_ERROR)
+        report_check(missing, wrong_owner, len(all_docs))
+        if missing or wrong_owner:
+            print("   ➡️  Run this script without --check to load the missing notes.")
+            sys.exit(EXIT_INCOMPLETE)
+        print(f"   ✅ All {len(all_docs)} notes already in the index.")
+        sys.exit(EXIT_OK)
+
+    # Load with retries, then confirm. The exit code follows what OpenSearch
+    # actually holds, not how many documents were built: a partial or
+    # unconfirmed load exits non-zero so callers (notebooks 05b and 07) stop
+    # instead of reporting a seeded index.
+    indexed, total, errors = load_with_retries(client, all_docs)
     if total == 0 or indexed < total:
         print("\n" + "=" * 70)
         print("Sample-data load INCOMPLETE")
         print("=" * 70)
-        print(f"\n❌ Indexed {indexed}/{total} document(s) across {len(users)} user(s); {len(errors)} error(s)")
+        print(
+            f"\n❌ Indexed {indexed}/{total} document(s) across {len(users)} user(s) after "
+            f"{LOAD_ATTEMPTS} attempt(s); {len(errors)} error(s) on the last attempt"
+        )
+        print(f"   Index: {CLAIM_NOTES_INDEX}")
+        print("   Re-run this script. Uploads use fixed document ids, so a re-run")
+        print("   overwrites in place and does not create duplicates.")
+        sys.exit(1)
+
+    if not confirm_searchable(client, all_docs):
+        print("\n" + "=" * 70)
+        print("Sample-data load NOT CONFIRMED")
+        print("=" * 70)
+        print(f"\n❌ Indexed {indexed}/{total} document(s), but not all are searchable with the right owner")
         print(f"   Index: {CLAIM_NOTES_INDEX}")
         print("   Re-run this script. Uploads use fixed document ids, so a re-run")
         print("   overwrites in place and does not create duplicates.")
@@ -487,7 +678,7 @@ def main():
     print("\n" + "=" * 70)
     print("Sample-data load complete!")
     print("=" * 70)
-    print(f"\n✅ Indexed {indexed}/{total} document(s) across {len(users)} user(s)")
+    print(f"\n✅ Indexed and confirmed {indexed}/{total} document(s) across {len(users)} user(s)")
     print(f"   Index: {CLAIM_NOTES_INDEX}")
     print("\n📋 Next Steps:")
     print("   1. Verify per-user RLS via search_claim_notes (notebook 07)")
