@@ -17,7 +17,7 @@ X-Tenant-Role and X-Tenant-Role-Arn when the exchange returned credentials; and,
 for requests with params.arguments, a ``context`` object holding user_id, scopes
 and the tenant role's temporary credentials.
 
-Reference: https://github.com/awslabs/amazon-bedrock-agentcore-samples/blob/main/06-workshops/02-AgentCore-gateway/14-token-exchange-at-request-interceptor/
+Reference: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-types.html
 
 OAuth Flow:
   Streamlit → lakehouse-agent → Gateway (this interceptor) → MCP server

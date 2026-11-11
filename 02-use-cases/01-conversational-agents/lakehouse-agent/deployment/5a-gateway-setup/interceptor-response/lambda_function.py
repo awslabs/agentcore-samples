@@ -15,7 +15,7 @@ The interceptor:
 
 Reference:
 - https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-types.html
-- https://github.com/awslabs/amazon-bedrock-agentcore-samples/tree/main/06-workshops/02-AgentCore-gateway/09-fine-grained-access-control
+- https://github.com/awslabs/agentcore-samples/tree/main/01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/04-advanced-concepts/fine-grain-access-control
 """
 
 import json
