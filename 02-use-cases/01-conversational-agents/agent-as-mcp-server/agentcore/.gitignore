@@ -1,0 +1,10 @@
+# Secrets (local environment files are never committed)
+.env.local
+# CDK Build Artifacts
+cdk/cdk.out/
+cdk/node_modules/
+cdk/dist/
+# CLI internals and deployed state (contains account-specific ARNs)
+.cli/
+# Ephemeral Staging
+.cache/

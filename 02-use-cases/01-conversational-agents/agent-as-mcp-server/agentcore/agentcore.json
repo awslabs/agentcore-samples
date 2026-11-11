@@ -1,0 +1,112 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "agentAsMcpServer",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "agentAsMcpServer"
+  },
+  "runtimes": [
+    {
+      "name": "expense_agent",
+      "description": "Strands expense-approval agent exposed as a single MCP tool (agent-as-MCP-server pattern)",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/expense_agent/",
+      "runtimeVersion": "PYTHON_3_12",
+      "networkMode": "PUBLIC",
+      "instrumentation": {
+        "enableOtel": true
+      },
+      "protocol": "MCP",
+      "envVars": [
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+          "value": "true"
+        },
+        {
+          "name": "AGENT_MODEL_ID",
+          "value": "global.anthropic.claude-sonnet-4-6"
+        },
+        {
+          "name": "AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER",
+          "value": "expense-gateway-m2m"
+        },
+        {
+          "name": "AGENTCORE_GATEWAY_OAUTH_SCOPES",
+          "value": "agentcore/invoke"
+        }
+      ]
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [
+    {
+      "authorizerType": "OAuthCredentialProvider",
+      "name": "expense-gateway-m2m",
+      "discoveryUrl": "https://cognito-idp.PLACEHOLDER_REGION.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+      "scopes": [
+        "agentcore/invoke"
+      ],
+      "vendor": "CustomOauth2"
+    }
+  ],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [
+    {
+      "name": "ExpenseToolsGateway",
+      "description": "Business tools for the expense agent (Lambda target). The agent is an MCP client of this gateway.",
+      "targets": [
+        {
+          "name": "expense-tools",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "PLACEHOLDER_EXPENSE_TOOLS",
+            "toolSchemaFile": "lambdas/schemas/expense_tools.json"
+          }
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.PLACEHOLDER_REGION.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+          "allowedClients": [
+            "PLACEHOLDER_M2M_CLIENT_ID"
+          ]
+        }
+      },
+      "enableSemanticSearch": false,
+      "exceptionLevel": "DEBUG"
+    },
+    {
+      "name": "FrontDoorGateway",
+      "description": "Public entry point for MCP clients (Claude, Kiro). Exposes the agent runtime as an MCP tool behind OAuth. Runtime target is added in cdk-stack.ts.",
+      "targets": [],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.PLACEHOLDER_REGION.amazonaws.com/PLACEHOLDER_USER_POOL_ID/.well-known/openid-configuration",
+          "allowedClients": [
+            "PLACEHOLDER_USER_CLIENT_ID"
+          ]
+        }
+      },
+      "enableSemanticSearch": false,
+      "exceptionLevel": "DEBUG"
+    }
+  ],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "capacityProviders": [],
+  "payments": []
+}
