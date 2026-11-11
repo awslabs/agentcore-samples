@@ -67,6 +67,52 @@ This enables agents to acquire new capabilities on demand without being pre-conf
 5. **Execute a Task** — Send a natural-language request to the agent and watch it discover, load, and use the skill to complete the task
 6. **Cleanup** — Delete the skill record and registry
 
+## Security Considerations
+
+### Shared Responsibility for Registry Record Metadata
+
+AWS Agent Registry stores and retrieves record metadata provided by publishers. Per the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS is responsible for security **of** the cloud (the registry infrastructure), while customers are responsible for security **in** the cloud (validating and securing the data they store and consume).
+
+The following fields in skill definitions are **publisher-provided metadata** that the registry stores without interpretation or validation:
+
+| Field | Description | Consumer Responsibility |
+|-------|-------------|------------------------|
+| `packages[].identifier` | Package names to install | Validate against allowlist before installation |
+| `packages[].version` | Package versions | Allow only exact, pinned versions |
+| `repository.url` | URLs to download files from | Validate against approved sources |
+| `remotes[].url` | Remote endpoint URLs | Validate URL scheme and domain |
+
+Consumers must treat this metadata as external input requiring validation before execution.
+
+### This Sample's Security Controls
+
+This sample demonstrates safe consumption patterns in `utils/security_config.py`:
+
+1. **Package Allowlist**: Only pre-approved packages at exact, pinned versions can be installed. Wheels only (`--only-binary`), so no package setup code runs at install time
+2. **URL Allowlist**: Only approved repository hosts and paths are accessed
+3. **HTTPS Enforcement**: All downloads require HTTPS
+4. **Path Sanitization**: File paths are sanitized to prevent path traversal attacks
+
+> **Note:** The allowlist covers the packages named in the skill definition. Their own dependencies are resolved by pip and are not part of the allowlist.
+
+### Production Recommendations
+
+For production deployments, consider these additional controls:
+
+- **AWS CodeArtifact**: Use a private repository with [upstream filtering](https://docs.aws.amazon.com/codeartifact/latest/ug/repos-upstream.html) to control package sources
+- **Hash-pinned requirements**: Use `pip install --require-hashes` with a lock file to verify the contents of every package, including dependencies
+- **Amazon Bedrock Guardrails**: Validate LLM inputs/outputs for content safety. See [Guardrails documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)
+- **EventBridge + Lambda**: Automated scanning of new registry records before approval
+- **Restricted Publisher Permissions**: Limit who can register skills in your registry via IAM policies
+
+### Auto-Approval Warning
+
+If enabling auto-approval (`autoApprovalRules`), records bypass human review. Implement compensating controls:
+
+- Automated scanning via EventBridge-triggered validation
+- Restricted publisher IAM permissions  
+- Consumer-side validation (as demonstrated in this sample)
+
 ## Tutorial
 
 - [Agent Skills in AWS Agent registry](registry-skills-dynamic-discovery.ipynb)

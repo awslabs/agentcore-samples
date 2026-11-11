@@ -1,8 +1,0 @@
-# Strands Agent SDK and instrumentation
-strands-agents[otel]
-strands-agents-tools
-boto3
-botocore
-ddgs
-aws-opentelemetry-distro~=0.12.1
-python-dotenv

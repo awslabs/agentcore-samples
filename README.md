@@ -97,24 +97,6 @@ Production-ready templates for provisioning AgentCore resources with CloudFormat
 
 Complete, deployment-ready agentic applications with integrated services, authentication, and business logic you can customize for your use case.
 
-### 📦 [`workshops/`](./06-workshops/) - Deprecated legacy code
-
-⚠️ Recommendation: The Starter Toolkit CLI is no longer supported. Please use the AgentCore CLI.
-
-The AgentCore CLI (@aws/agentcore) is now the recommended way to create, develop, and deploy AI agents on Amazon Bedrock AgentCore. It supports a broader set of frameworks (Strands, LangGraph, LangChain, Google ADK, OpenAI Agents, and BYO), provides local development with hot reload, built-in evaluations, gateway management, and more.
-
-For new projects, install the AgentCore CLI:
-
-npm install -g @aws/agentcore
-Already installed this toolkit? Once you've migrated, uninstall it:
-
-pip uninstall bedrock-agentcore-starter-toolkit
-
-
-**Starter Toolkit Samples (Migration complete)**
-
-Please refer to this folder for [`Diving Deep  with AgentCore Workshop/`](./01-features/)
-
 ## Quick Start with the AgentCore CLI
 
 The [AgentCore CLI](https://github.com/aws/agentcore-cli) is the recommended way to create, develop, and deploy agents on Amazon Bedrock AgentCore. It replaces the previous Starter Toolkit with a streamlined project-based workflow.

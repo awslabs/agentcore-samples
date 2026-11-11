@@ -3,14 +3,6 @@
 Welcome to the Amazon Bedrock AgentCore examples repository! To help you submit your contributions to the right place, here's what you need to know:
 Where Should I Submit My PR?
 
-## 📚 Tutorials (06-workshops/)
-
-This folder is primarily maintained by AWS teams to provide fundamental learning materials. Only submit PRs here if:
-
-- You're adding new core functionality tutorials
-- You're an AWS maintainer updating existing tutorials
-- You've been specifically asked to contribute educational content
-
 ## 💡 Use Cases (02-use-cases/)
 
 This is where most community PRs should go! Submit here if:
@@ -34,4 +26,4 @@ Submit to this folder if:
 - Ensure your PR includes proper documentation and follows our code standards
 - If you're unsure, feel free to open an issue first to discuss placement
 
-Remember: The tutorials folder is reserved for foundational content, while the use-cases folder is our primary destination for community contributions showing practical applications of Amazon Bedrock AgentCore.
+Remember: The use-cases folder is our primary destination for community contributions showing practical applications of Amazon Bedrock AgentCore.

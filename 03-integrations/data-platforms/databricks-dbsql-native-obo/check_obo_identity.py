@@ -17,7 +17,7 @@ Usage:
 Exit codes:
      0  PER_USER              Unity Catalog saw the end user. Per-user delegation is working.
      1  SERVICE_PRINCIPAL     The call ran as the shared service principal, not the end user.
-     2  EXCHANGE_REFUSED      The service refused the token exchange (commonly a non-allowlisted account).
+     2  EXCHANGE_REFUSED      The service refused the token exchange (commonly a provider without NO_CLIENT).
      3  CALLER_PERMISSIONS    Your own gateway execution role is missing permissions.
      4  UNKNOWN               Could not determine. The report explains what was seen.
      5  INBOUND_TOKEN         The token you presented was rejected: expired, or wrong issuer or audience.
@@ -82,7 +82,7 @@ _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 REMEDY_CALLER_PERMISSIONS = (
-    "Your gateway execution role is missing permissions, not the account allowlist. Check CloudTrail for "
+    "Your gateway execution role is missing permissions; this is not a service-side restriction. Check CloudTrail for "
     "AccessDenied. A role policy pinned to one Region is the usual cause: scope Secrets Manager to "
     "arn:aws:secretsmanager:*:<account>:secret:bedrock-agentcore-identity* and kms:ViaService to "
     "secretsmanager.*.amazonaws.com."
@@ -130,13 +130,16 @@ REMEDY_TRANSIENT = (
 )
 REMEDY_EXCHANGE_REFUSED = (
     "The exchange was refused. Databricks issues a per-user token only when no client authentication is "
-    "presented, which requires your AWS account and Region to be enabled for the public-client exchange. "
-    "Verify the prerequisites first: an account-level Databricks federation policy whose issuer and "
-    "audience match your identity provider, with subject_claim set to the claim carrying the user identity."
+    "presented, so check that the credential provider sets onBehalfOfAuthenticationConfig."
+    "clientAuthenticationMethod to NO_CLIENT (AWS CLI 2.39.0 or later); without it the gateway authenticates "
+    "with the provider's client id and secret. Then verify the Databricks prerequisites: an account-level "
+    "federation policy whose issuer and audience match your identity provider, with subject_claim set to the "
+    "claim carrying the user identity."
 )
 REMEDY_EXCHANGE_FAILED_GENERIC = (
-    "The exchange failed without a specific reason. Work through the prerequisites in the README, then ask "
-    "AWS whether this account and Region are enabled for the public-client exchange."
+    "The exchange failed without a specific reason. Check that the credential provider sets "
+    "onBehalfOfAuthenticationConfig.clientAuthenticationMethod to NO_CLIENT, then work through the "
+    "prerequisites in the README."
 )
 REMEDY_SERVICE_PRINCIPAL = (
     "The call ran as the shared service principal. The target is using CLIENT_CREDENTIALS, or the "
@@ -176,7 +179,7 @@ REMEDY_SUBJECT_NOT_COMPARABLE = (
 
 # Ordered most specific first: several of these messages share substrings. In particular the service
 # prefixes distinct failures with "Token exchange failed:", so every specific variant has to sit above
-# that catch-all or it inherits the enablement remedy, which is wrong for an expired token, a missing
+# that catch-all or it inherits the NO_CLIENT remedy, which is wrong for an expired token, a missing
 # provider or a rate limit.
 FAILURE_SIGNATURES = (
     ("insufficient permissions for token exchange", CALLER_PERMISSIONS, REMEDY_CALLER_PERMISSIONS),

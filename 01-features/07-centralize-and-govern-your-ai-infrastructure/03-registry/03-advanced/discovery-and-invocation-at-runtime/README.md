@@ -249,7 +249,7 @@ The tutorial is organized into five main steps:
 
 - [AgentCore samples repository](https://github.com/awslabs/agentcore-samples)
 - [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/userguide/)
-- [Amazon Bedrock AgentCore gateway tutorials](https://github.com/awslabs/agentcore-samples/tree/main/06-workshops/02-AgentCore-gateway)
+- [Amazon Bedrock AgentCore gateway tutorials](https://github.com/awslabs/agentcore-samples/tree/main/01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway)
 - [Strands Agents SDK](https://github.com/strands-agents/sdk-python)
 
 ## Running the Python Scripts

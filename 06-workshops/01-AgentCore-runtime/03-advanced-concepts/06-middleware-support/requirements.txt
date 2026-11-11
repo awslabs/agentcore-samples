@@ -1,8 +1,0 @@
-strands-agents[otel]
-strands-agents-tools
-uv
-boto3
-ddgs
-aws-opentelemetry-distro~=0.14.1
-bedrock-agentcore==1.1.2
-bedrock-agentcore-starter-toolkit==0.2.5

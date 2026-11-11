@@ -118,7 +118,7 @@ class ClassifyFailure(unittest.TestCase):
             "Token exchange failed: check credential provider scopes, audience, or IdP configuration."
         )
         self.assertEqual(verdict, EXCHANGE_REFUSED)
-        self.assertIn("public-client", remedy)
+        self.assertIn("NO_CLIENT", remedy)
 
     def test_bare_token_exchange_failed_falls_back_to_exchange_refused(self):
         verdict, _ = classify_failure("Token exchange failed.")
@@ -161,7 +161,7 @@ class ClassifyFailure(unittest.TestCase):
             "Token exchange failed: inbound token is invalid or expired. Please re-authenticate."
         )
         self.assertEqual(verdict, INBOUND_TOKEN)
-        self.assertNotIn("public-client", remedy)
+        self.assertNotIn("NO_CLIENT", remedy)
 
     def test_the_authorizers_wording_is_not_in_the_shared_table(self):
         # The shared table also classifies tools/call errors, where RFC 6750 wording can come from the target.
@@ -174,12 +174,12 @@ class ClassifyFailure(unittest.TestCase):
         verdict, remedy = classify_failure("Token exchange failed: credential provider not found.")
         self.assertEqual(verdict, PROVIDER_NOT_FOUND)
         self.assertIn("providerArn", remedy)
-        self.assertNotIn("public-client", remedy)
+        self.assertNotIn("NO_CLIENT", remedy)
 
     def test_rate_limited_beats_the_catch_all(self):
         verdict, remedy = classify_failure("Token exchange failed: rate limited. Please try again later.")
         self.assertEqual(verdict, TRANSIENT)
-        self.assertNotIn("public-client", remedy)
+        self.assertNotIn("NO_CLIENT", remedy)
 
     def test_service_error_is_transient_rather_than_unknown(self):
         verdict, _ = classify_failure("Token exchange encountered a service error. Please retry.")
@@ -192,9 +192,9 @@ class ClassifyFailure(unittest.TestCase):
         self.assertIn("detail", remedy)
         self.assertNotIn("the exchange did not complete", remedy.lower())
 
-    def test_specific_variants_never_inherit_the_enablement_remedy(self):
-        # The complaint this guards: every "Token exchange failed:" message used to send the reader off to
-        # request account enablement, including the three that have nothing to do with the allowlist.
+    def test_specific_variants_never_inherit_the_no_client_remedy(self):
+        # The complaint this guards: every "Token exchange failed:" message used to get the refused-exchange
+        # remedy, including the three that have nothing to do with how the provider authenticates.
         for text in (
             "Token exchange failed: inbound token is invalid or expired. Please re-authenticate.",
             "Token exchange failed: credential provider not found.",
@@ -1018,6 +1018,33 @@ class RefusalBodies(unittest.TestCase):
         with mock.patch("check_obo_identity.mcp_post", post):
             result = run_check("https://gw.invalid/mcp", "tok", "tgt", "execute_sql", "SELECT 1", "2025-06-18")
         self.assertEqual(result["verdict"], TRANSIENT)
+
+
+class NoClientReplacesAllowlisting(unittest.TestCase):
+    """Since AgentCore added NO_CLIENT, no remedy should send a reader to request account enablement."""
+
+    def test_the_bare_catch_all_names_no_client(self):
+        _, remedy = classify_failure("Token exchange failed.")
+        self.assertIn("NO_CLIENT", remedy)
+
+    def test_no_remedy_mentions_allowlisting_or_account_enablement(self):
+        for name in dir(check_obo_identity):
+            if not name.startswith("REMEDY_"):
+                continue
+            text = getattr(check_obo_identity, name).lower()
+            with self.subTest(remedy=name):
+                self.assertNotIn("allowlist", text)
+                self.assertNotIn("account and region are enabled", text)
+                self.assertNotIn("public-client exchange", text)
+
+    def test_the_shipped_config_sets_no_client(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "working-config.json")
+        with open(path, encoding="utf-8") as handle:
+            config = json.load(handle)
+        provider = config["credentialProvider"]["oauth2ProviderConfigInput"]["customOauth2ProviderConfig"]
+        obo = provider["onBehalfOfTokenExchangeConfig"]
+        self.assertEqual(obo["onBehalfOfAuthenticationConfig"], {"clientAuthenticationMethod": "NO_CLIENT"})
+        self.assertEqual(obo["grantType"], "TOKEN_EXCHANGE")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 # Databricks Per-User Delegation with AgentCore Gateway Interceptor
 
 > **AgentCore Gateway now supports the `TOKEN_EXCHANGE` grant type natively**, which reaches the same
-> outcome without an interceptor Lambda. Where the native path is available to your AWS account and
-> Region, prefer [`databricks-dbsql-native-obo`](../databricks-dbsql-native-obo). This sample remains
-> the working approach where it is not.
+> outcome without an interceptor Lambda and needs no account allowlisting once the credential provider
+> sets `onBehalfOfAuthenticationConfig.clientAuthenticationMethod` to `NO_CLIENT`. Prefer
+> [`databricks-dbsql-native-obo`](../databricks-dbsql-native-obo); this sample remains an alternative.
 
 Per-user identity propagation from Entra ID to Databricks via AgentCore Gateway REQUEST interceptor and RFC 8693 OAuth Token Exchange.
 

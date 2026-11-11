@@ -1,6 +1,0 @@
-{
-  "app": "python3 app.py",
-  "context": {
-    "@aws-cdk/core:bootstrapQualifier": "sample3lo"
-  }
-}
