@@ -98,3 +98,31 @@ def run_coro(coro):
     if "error" in outcome:
         raise outcome["error"]
     return outcome.get("value")
+
+
+class MissingPrerequisite(RuntimeError):
+    """A notebook cell needs names that an earlier cell has not defined."""
+
+
+def require(namespace, *names, rerun_from):
+    """Stop a notebook cell early when an earlier cell it depends on has not run.
+
+    Put it on the first line of the cell's code, after any imports, and pass the
+    exact markdown heading of the section to re-run from:
+
+        >>> require(globals(), "a_ids", "b_ids", rerun_from="Fixture 2 verification")
+
+    Returns silently when every name is defined. Otherwise it prints which names are
+    missing and where to re-run from, then raises MissingPrerequisite carrying the
+    same two lines, so the cell stops before it reaches a NameError.
+    """
+    __tracebackhide__ = True  # IPython and pytest leave this frame out of the traceback
+    missing = [name for name in names if name not in namespace]
+    if not missing:
+        return
+    message = (
+        f"❌ This cell needs {', '.join(missing)}, which an earlier cell did not define.\n"
+        f'Re-run from: "{rerun_from}" (then every cell below it).'
+    )
+    print(message)
+    raise MissingPrerequisite(message)
