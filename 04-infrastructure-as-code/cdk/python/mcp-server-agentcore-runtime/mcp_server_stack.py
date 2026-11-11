@@ -1,20 +1,14 @@
-from aws_cdk import (
-    Stack,
-    aws_ecr as ecr,
-    aws_codebuild as codebuild,
-    aws_iam as iam,
-    aws_lambda as lambda_,
-    aws_cognito as cognito,
-    aws_bedrockagentcore as bedrockagentcore,
-    CustomResource,
-    CfnParameter,
-    CfnOutput,
-    Duration,
-    RemovalPolicy,
-)
-from constructs import Construct
-import sys
 import os
+import sys
+
+from aws_cdk import CfnOutput, CfnParameter, CustomResource, Duration, RemovalPolicy, Stack
+from aws_cdk import aws_bedrockagentcore as bedrockagentcore
+from aws_cdk import aws_codebuild as codebuild
+from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ecr as ecr
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda as lambda_
+from constructs import Construct
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "infra_utils"))
 
