@@ -14,21 +14,23 @@ Usage:
     python cleanup_s3tables.py [--keep-ssm]
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
+import sys
 import time
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.notebook_init import pause
 
 
 class S3TablesCleanup:
     def __init__(self, keep_ssm=False):
         """Initialize the cleanup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.s3tables = boto3.client("s3tables", region_name=self.region)
         self.glue = boto3.client("glue", region_name=self.region)
@@ -72,7 +74,7 @@ class S3TablesCleanup:
                 print(f"   ❌ Error deleting table {table_name}: {e}")
 
         # Wait a bit for tables to be deleted
-        time.sleep(2)
+        pause("S3 table deletes settling", 2)
 
     def delete_namespace(self):
         """Delete S3 Tables namespace."""
@@ -97,7 +99,7 @@ class S3TablesCleanup:
             print(f"   ❌ Error deleting namespace: {e}")
 
         # Wait a bit for namespace to be deleted
-        time.sleep(2)
+        pause("S3 Tables namespace delete settling", 2)
 
     def delete_table_bucket(self):
         """Delete S3 Tables bucket."""

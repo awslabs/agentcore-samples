@@ -14,19 +14,21 @@ Usage:
     python cleanup_cognito.py [--keep-ssm]
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
+import sys
 import time
+
+import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.notebook_init import pause
 
 
 class CognitoCleanup:
     def __init__(self, keep_ssm=False):
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
         self.cognito = boto3.client("cognito-idp", region_name=self.region)
         self.lambda_client = boto3.client("lambda", region_name=self.region)
         self.iam = boto3.client("iam")
@@ -54,7 +56,7 @@ class CognitoCleanup:
             if domain:
                 self.cognito.delete_user_pool_domain(Domain=domain, UserPoolId=pool_id)
                 print(f"   ✅ Deleted domain: {domain}")
-                time.sleep(3)
+                pause("Cognito domain delete settling", 3)
 
             self.cognito.delete_user_pool(UserPoolId=pool_id)
             print(f"   ✅ Deleted User Pool: {pool_id}")

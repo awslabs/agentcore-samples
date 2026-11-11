@@ -17,6 +17,7 @@ Usage in notebooks:
 
 import asyncio
 import threading
+import time
 
 import boto3
 
@@ -126,3 +127,53 @@ def require(namespace, *names, rerun_from):
     )
     print(message)
     raise MissingPrerequisite(message)
+
+
+# A long wait prints a progress line at most this often (and whenever its status changes).
+PROGRESS_EVERY_S = 15
+
+
+def _secs(value):
+    return int(value) if float(value).is_integer() else value
+
+
+def wait_for(label, check, interval, timeout, *, raise_on_timeout=True, clock=time.monotonic, sleep=time.sleep):
+    """Poll check() every `interval` seconds until it reports done, for at most `timeout` seconds.
+
+    check() returns (done, status). While waiting, a progress line is printed when the
+    status changes and at most every 15 s otherwise; a done line when check() reports done;
+    and a timeout line if it never does. On timeout it raises TimeoutError, or returns False
+    when raise_on_timeout is False (the caller then decides what to do). Returns True when done.
+    Exceptions raised by check() propagate unchanged.
+
+        >>> wait_for("Gateway targets delete", lambda: (not list_targets(), "deleting"), interval=5, timeout=60)
+    """
+    start = clock()
+    last_status = None
+    last_print = None
+    while True:
+        done, status = check()
+        elapsed = clock() - start
+        if done:
+            print(f"✅ {label} done in {int(elapsed)} s")
+            return True
+        if elapsed >= timeout:
+            message = f"❌ {label} did not finish within {_secs(timeout)} s"
+            print(message)
+            if raise_on_timeout:
+                raise TimeoutError(message)
+            return False
+        if last_print is None or status != last_status or clock() - last_print >= PROGRESS_EVERY_S:
+            print(f"⏳ {label}: {status}, {int(elapsed)} s elapsed (timeout {_secs(timeout)} s)…")
+            last_status, last_print = status, clock()
+        sleep(interval)
+
+
+def pause(label, seconds, *, sleep=time.sleep):
+    """Wait a fixed number of seconds, saying so before and after.
+
+    >>> pause("IAM role propagation", 10)
+    """
+    print(f"⏳ {label}: waiting {_secs(seconds)} s…")
+    sleep(seconds)
+    print(f"✅ {label}: done ({_secs(seconds)} s)")

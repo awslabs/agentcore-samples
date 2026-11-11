@@ -25,6 +25,7 @@ import boto3
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
 from utils.idp_config import get_idp_provider
+from utils.notebook_init import pause, wait_for
 
 # Name of the step-5a interceptor gateway (GW1 in this script's output; the 5b
 # OBO gateway is GW2), matching create_gateway.py's `gateway_name` default. Used
@@ -116,19 +117,20 @@ class GatewayCleanup:
                     print(f"   ✅ Deleted target: {target.get('name', tid)}")
 
                 if targets:
-                    print("   ⏳ Waiting for targets to delete...")
-                    for _ in range(12):
+
+                    def _targets_gone():
                         remaining = self.bedrock.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", [])
-                        if not remaining:
-                            break
-                        time.sleep(5)
+                        return not remaining, f"{len(remaining)} target(s) still listed"
+
+                    # Same budget as before (12 x 5 s); on timeout it carries on to the gateway delete, as before.
+                    wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
             except Exception as e:
                 print(f"   ⚠️  Error deleting targets: {e}")
 
             # Delete gateway
             self.bedrock.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   ✅ Deleted gateway: {gateway_id}")
-            time.sleep(5)
+            pause("Gateway delete settling", 5)
         except self.bedrock.exceptions.ResourceNotFoundException:
             print(f"   ⏭️  Gateway not found: {gateway_id}")
         except Exception as e:

@@ -67,6 +67,7 @@ import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.notebook_init import pause, wait_for
 
 # Names match the create-side scripts in this directory (01, 03, 04)
 COLLECTION_NAME = "lakehouse-claim-notes"
@@ -176,12 +177,13 @@ class OBOCleanup:
             # Target deletion completes asynchronously; poll (12 x 5 s) until the
             # list is empty so the gateway delete below does not race it.
             if targets:
-                print("   ⏳ Waiting for targets to delete...")
-                for _ in range(12):
+
+                def _targets_gone():
                     remaining = self.bedrock.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", [])
-                    if not remaining:
-                        break
-                    time.sleep(5)
+                    return not remaining, f"{len(remaining)} target(s) still listed"
+
+                # Same budget as before (12 x 5 s); on timeout it carries on to the gateway delete, as before.
+                wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
         except Exception as e:
             print(f"   ⚠️  Error listing/deleting targets: {e}")
 
@@ -189,7 +191,7 @@ class OBOCleanup:
         try:
             self.bedrock.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   ✅ Deleted gateway: {gateway_id}")
-            time.sleep(5)
+            pause("Gateway delete settling", 5)
         except self.bedrock.exceptions.ResourceNotFoundException:
             print(f"   ⏭️  Gateway not found: {gateway_id}")
         except Exception as e:
@@ -272,21 +274,33 @@ class OBOCleanup:
                 try:
                     self.aoss.delete_collection(id=collection_id)
                     print(f"   ✅ Delete initiated: {COLLECTION_NAME} (id={collection_id})")
+
                     # delete_collection only starts the delete; poll until the
                     # collection disappears so the network and encryption
                     # policies below are removed after it, not alongside it.
-                    print("   ⏳ Waiting for collection to delete...")
-                    for _ in range(40):  # up to ~10 min
-                        details = self.aoss.batch_get_collection(ids=[collection_id])
-                        items = details.get("collectionDetails", [])
+                    class _UnexpectedStatus(Exception):
+                        pass
+
+                    def _collection_gone():
+                        items = self.aoss.batch_get_collection(ids=[collection_id]).get("collectionDetails", [])
                         if not items:
-                            print("   ✅ Collection deleted")
-                            break
+                            return True, "deleted"
                         status = items[0].get("status")
                         if status not in ("DELETING", "ACTIVE", "CREATING"):
-                            print(f"   ⚠️  Unexpected status during delete: {status}")
-                            break
-                        time.sleep(15)
+                            raise _UnexpectedStatus(status)  # stop waiting, as before
+                        return False, status
+
+                    # Same budget as before (40 x 15 s, ~10 min). A timeout warns and teardown continues (D-090).
+                    try:
+                        gone = wait_for(
+                            "AOSS collection delete", _collection_gone, interval=15, timeout=600, raise_on_timeout=False
+                        )
+                    except _UnexpectedStatus as e:
+                        print(f"   ⚠️  Unexpected status during delete: {e}")
+                        gone = False
+                    if not gone:
+                        print("   ⚠️  Collection delete not confirmed; teardown continues")
+                        self.not_confirmed.append(f"AOSS collection {COLLECTION_NAME} (id={collection_id})")
                 except self.aoss.exceptions.ResourceNotFoundException:
                     print("   ⏭️  Collection already gone")
                 except Exception as e:
@@ -345,6 +359,7 @@ class OBOCleanup:
                 print(f"   ❌ Error: {e}")
 
     def run(self):
+        self.not_confirmed = []  # deletes that were started but not confirmed; listed at the end
         print("\n🧹 OBO_Gateway Cleanup")
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
@@ -356,6 +371,12 @@ class OBOCleanup:
         self.delete_oauth_provider(COGNITO_M2M_PROVIDER_NAME)  # Cognito M2M provider (no-op on Okta)
         self.delete_aoss_collection()
         self.delete_ssm_parameters()
+        if self.not_confirmed:
+            print("\n⚠️  Not confirmed deleted:")
+            for item in self.not_confirmed:
+                print(f"   - {item}")
+        else:
+            print("\nNot confirmed deleted: none")
         print("\n✨ OBO_Gateway cleanup complete!")
 
 
