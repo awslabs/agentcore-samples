@@ -339,54 +339,7 @@ dp.start_batch_evaluation(
 )
 ```
 
-| Insight | What It Produces |
-|---------|-----------------|
-| **FailureAnalysis** | Identifies failures, categorizes them using a signal taxonomy (see below), traces root causes to specific spans, and provides fix recommendations. Results appear as a three-level hierarchy: failure categories, subcategories, and root cause clusters with affected session IDs. |
-| **UserIntent** | Extracts what users were trying to accomplish in each session, then clusters similar intents together. Shows the most common use cases your agent handles and reveals gaps between user requests and agent capabilities. |
-| **ExecutionSummary** | Summarizes the approach the agent took and the outcome for each session, then clusters similar execution patterns. Requires at least 3 sessions. |
-
-Each failure in the response includes one or more `signals`, the specific evidence found at a span level. Each signal has a `category` (a machine-readable taxonomy label), `evidence` (a quoted description of what went wrong in that span), and `confidence` (0–1 float).
-
-The signal categories returned by the API:
-
-| Category | What it means |
-|---|---|
-| `hallucination-category-hall-capabilities` | Agent invented constraints or limitations for a tool that do not exist in the tool spec (e.g., "this tool only supports years 2025-2026" when no such constraint is documented) |
-| `hallucination-category-hall-misunderstand` | Agent misread the tool result and reported a different value (e.g., tool returned "5% match", agent reported "6%") |
-| `hallucination-category-hall-usage` | Agent asserted knowledge of a tool's contents without calling it (e.g., "sabbatical leave is not in the available topics" without calling `lookup_hr_policy`) |
-| `task-instruction-category-non-compliance` | Agent violated an explicit instruction in the system prompt (e.g., system prompt says "always use available tools", agent answered without calling any tool) |
-| `orchestration-related-errors-category-premature-termination` | Agent terminated the task without attempting a relevant tool call, rather than calling the tool and handling any error it returns |
-| `llm-output-category-nonsensical` | Agent output was incoherent or exposed internal artifacts — unresolved template placeholders, raw `<thinking>` tags, or other content that should not appear in a user-facing response |
-| `repetitive-behavior-category-repetition-info` | Agent asked for information the user had already provided in the same session |
-
-> **Note:** These span-level `signal` categories are a different granularity from the 11 top-level behavioral failure categories (hallucination, incorrect actions, task-instruction violations, orchestration errors, context-handling issues, and others) described in [Detecting silent agent failures with Amazon Bedrock AgentCore optimization](https://aws.amazon.com/blogs/machine-learning/detecting-silent-agent-failures-with-amazon-bedrock-agentcore-optimization/). The table above lists the specific signal labels this sample surfaces, not the full taxonomy.
-
-Each `affectedSessions` entry under a root cause contains:
-- `sessionId` — the session where this failure occurred
-- `explanation` — a sentence citing the specific span ID and what went wrong
-- `fixType` — `SYSTEM_PROMPT_FIX` (addressable via prompt change) or `OTHERS` (backend or data issue)
-- `recommendation` — a concrete instruction to add to the system prompt
-- `failureSpans[]` — the span(s) where the failure was detected, each with `spanId`, `traceId`, and `signals[]`
-
-Example from a real run:
-
-```json
-{
-  "sessionId": "3b927bee-...",
-  "explanation": "At span 619f31562100b9b6, the agent concluded without ever invoking get_pay_stub, because it hallucinated a non-existent date-range constraint.",
-  "fixType": "SYSTEM_PROMPT_FIX",
-  "recommendation": "Add a guardrail requiring the agent to attempt tool calls before concluding a request cannot be fulfilled.",
-  "failureSpans": [{
-    "spanId": "619f31562100b9b6",
-    "traceId": "6a3080fa61c3929d7c75522421a71cec",
-    "signals": [{
-      "category": "hallucination-category-hall-capabilities",
-      "evidence": "Agent claims get_pay_stub only supports 2025-2026, but the tool definition has no such constraint documented.",
-      "confidence": 0.9
-    }]
-  }]
-}
-```
+`Builtin.FailureAnalysis` is an insight evaluator: like any session-level evaluator it scores each session, and it also groups the failures it finds across sessions into insights, each with root causes, suggested fixes, and the spans where the failures occurred. It is currently the only insight evaluator.
 
 `Builtin.FailureAnalysis` works in three steps:
 
