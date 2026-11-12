@@ -22,6 +22,9 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 echo "   Python: $PYTHON_BIN"
 
+# Prints progress while the long AWS waits below run.
+source "$SAMPLE_ROOT/deployment/lib/wait.sh"
+
 # Ensure common tool paths are available (e.g. when run from a notebook subprocess)
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -128,7 +131,7 @@ if aws lambda get-function --function-name lakehouse-gateway-response-intercepto
     # (LastUpdateStatus=InProgress). Wait for it to settle before issuing
     # update-function-configuration, which otherwise races and fails with
     # ResourceConflictException.
-    aws lambda wait function-updated \
+    wait_with_progress "Lambda code update" "5 min" aws lambda wait function-updated \
         --function-name lakehouse-gateway-response-interceptor \
         --region $AWS_REGION
 
@@ -139,7 +142,7 @@ if aws lambda get-function --function-name lakehouse-gateway-response-intercepto
         --kms-key-arn "" \
         --region $AWS_REGION
 
-    aws lambda wait function-updated \
+    wait_with_progress "Lambda configuration update" "5 min" aws lambda wait function-updated \
         --function-name lakehouse-gateway-response-interceptor \
         --region $AWS_REGION
 
@@ -165,7 +168,7 @@ else
             --environment "Variables={$LAMBDA_ENV_VARS}" \
             --tags Application=lakehouse-agent,Purpose=claims-response-interceptor \
             --region $AWS_REGION 2>/dev/null; then
-            aws lambda wait function-active \
+            wait_with_progress "Lambda becoming active" "5 min" aws lambda wait function-active \
                 --function-name lakehouse-gateway-response-interceptor \
                 --region $AWS_REGION
             echo "✅ Lambda function created!"

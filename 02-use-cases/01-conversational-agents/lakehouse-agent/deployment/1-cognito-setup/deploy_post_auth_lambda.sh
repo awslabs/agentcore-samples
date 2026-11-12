@@ -9,6 +9,10 @@
 
 set -e
 
+# Prints progress while the long AWS waits below run. Resolved before the `cd` further down.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/wait.sh"
+
 # Get AWS account and region info
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION=$(aws configure get region)
@@ -46,8 +50,7 @@ aws dynamodb update-time-to-live \
     --region $REGION 2>/dev/null || echo "ℹ️  TTL already enabled"
 
 # Wait for table to be active
-echo "⏳ Waiting for table to be active..."
-aws dynamodb wait table-exists --table-name $TABLE_NAME --region $REGION
+wait_with_progress "DynamoDB table $TABLE_NAME active" "about 8 min" aws dynamodb wait table-exists --table-name $TABLE_NAME --region $REGION
 
 # Step 2: Create IAM role for Lambda
 echo ""
@@ -109,6 +112,7 @@ aws iam put-role-policy \
     --policy-name "${ROLE_NAME}-policy" \
     --policy-document file:///tmp/lambda-policy.json
 
+# IAM is eventually consistent: a new role or policy can take a few seconds before Lambda can use it.
 echo "⏳ Waiting for IAM role to propagate..."
 sleep 10
 
