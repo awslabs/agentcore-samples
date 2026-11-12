@@ -138,6 +138,9 @@ class OktaSetup:
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.env_file = Path(__file__).parent.parent / ".env"
 
+        # Failures that setup continues past; main() exits 1 if any are recorded.
+        self.errors = []
+
         print("Initialized Okta setup")
         print(f"   Org URL: {self.org_url}")
         print(f"   AWS region (for SSM): {self.region}")
@@ -625,6 +628,7 @@ class OktaSetup:
             _, _, err = await self.okta.create_o_auth_2_scope(server.id, scope)
             if err:
                 print(f"⚠️  Error creating scope {name}: {err}")
+                self.errors.append(f"create scope {name}: {err}")
             else:
                 print(f"✅ Scope created: {name}")
 
@@ -648,6 +652,7 @@ class OktaSetup:
             _, _, err = await self.okta.create_o_auth_2_claim(server.id, groups_claim)
             if err:
                 print(f"⚠️  Error creating groups claim: {err}")
+                self.errors.append(f"create groups claim: {err}")
             else:
                 print("✅ Created `groups` claim on auth server")
         else:
@@ -728,6 +733,7 @@ class OktaSetup:
                 _, _, err = await self.okta.update_authorization_server_policy(server_id, policy.id, updated_policy)
                 if err:
                     print(f"⚠️  Could not reconcile policy client-list: {err}")
+                    self.errors.append(f"reconcile policy client-list: {err}")
                 else:
                     print(f"   ✅ Added to policy client-list: {missing}")
             else:
@@ -909,6 +915,7 @@ class OktaSetup:
                 results.append({"login": u["login"], "sub": created.id, "group": u["group"], "status": "created"})
             except Exception as e:
                 print(f"⚠️  Error creating user {u['login']}: {e}")
+                self.errors.append(f"create user {u['login']}: {e}")
 
         # Seed the per-user subject key for the OpenSearch notes RLS
         # (load_sample_opensearch_data.py in notebook 05b consumes
@@ -946,6 +953,7 @@ class OktaSetup:
             _, err = await self.okta.add_user_to_group(group_id, user_id)
             if err and "already" not in str(err).lower():
                 print(f"   ⚠️  Error adding to group {group_name}: {err}")
+                self.errors.append(f"add user {user_id} to group {group_name}: {err}")
             else:
                 print(f"   ✅ Added to group: {group_name}")
         except Exception as e:
@@ -953,6 +961,7 @@ class OktaSetup:
                 print(f"   ℹ️  Already in group: {group_name}")
             else:
                 print(f"   ⚠️  Error adding to group {group_name}: {e}")
+                self.errors.append(f"add user {user_id} to group {group_name}: {e}")
 
     async def assign_app_to_groups(self, app_id: str, group_ids: dict[str, str]):
         """Assign all three groups to the OIDC application so users in those
@@ -965,6 +974,7 @@ class OktaSetup:
                 _, _, err = await self.okta.create_application_group_assignment(app_id, group_id, assignment)
                 if err and "already" not in str(err).lower():
                     print(f"   ⚠️  Error assigning group {group_name} to app: {err}")
+                    self.errors.append(f"assign group {group_name} to app: {err}")
                 else:
                     print(f"   ✅ Group {group_name} assigned to app")
             except Exception as e:
@@ -972,6 +982,7 @@ class OktaSetup:
                     print(f"   ℹ️  Group {group_name} already assigned to app")
                 else:
                     print(f"   ⚠️  Error assigning group {group_name}: {e}")
+                    self.errors.append(f"assign group {group_name} to app: {e}")
 
     # ─────────────────────────────────────────────────────────────────
     # Top-level flow (mirrors setup_cognito.setup)
@@ -1104,6 +1115,12 @@ def main():
     print(f"   • Discovery URL: {config['discovery_url']}")
     print("   • Scopes: claims.query, claims.submit, claims.update, claims.approve, opensearch.search")
     print("   • Group claim emission: groups (with .* regex filter, always_include_in_token=True)")
+
+    if setup.errors:
+        print(f"\n❌ setup_okta.py finished with {len(setup.errors)} error(s):")
+        for e in setup.errors:
+            print(f"   • {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

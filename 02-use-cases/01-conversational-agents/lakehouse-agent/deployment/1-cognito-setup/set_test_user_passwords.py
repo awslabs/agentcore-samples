@@ -72,8 +72,8 @@ def set_test_user_passwords(ssm_client, cognito_client, password: str | None = N
 
     password: if None, read LAKEHOUSE_TEST_PASSWORD from the environment, else use
     the documented DEFAULT_TEST_PASSWORD. Never a generated value (see the module
-    docstring). A failure on one persona is reported and the loop continues, so
-    the final count shows how many of the five were set.
+    docstring). A failure on one persona is reported and the loop continues; if
+    any persona was not set, RuntimeError is raised after the loop.
     Returns the password IN MEMORY (never printed) so the caller can mint tokens.
     """
     if password is None:
@@ -90,6 +90,7 @@ def set_test_user_passwords(ssm_client, cognito_client, password: str | None = N
     pool_id = ssm_client.get_parameter(Name="/app/lakehouse-agent/cognito-user-pool-id")["Parameter"]["Value"]
 
     set_count = 0
+    errors = []
     for username in TEST_PERSONAS:
         try:
             cognito_client.admin_set_user_password(
@@ -101,6 +102,15 @@ def set_test_user_passwords(ssm_client, cognito_client, password: str | None = N
             set_count += 1
         except Exception as e:  # keep going; report per-user without leaking the password
             print(f"   ⚠️  Could not set password for {username}: {type(e).__name__}")
+            errors.append(f"{username}: {type(e).__name__}")
+    if errors:
+        print(f"❌ set_test_user_passwords finished with {len(errors)} error(s):")
+        for err in errors:
+            print(f"   • {err}")
+        raise RuntimeError(
+            f"Permanent password set for only {set_count}/{len(TEST_PERSONAS)} test personas; "
+            f"failed: {', '.join(errors)}"
+        )
     # Status only — NEVER print the password value.
     print(f"✅ Set permanent password for {set_count}/{len(TEST_PERSONAS)} test personas (value not shown).")
     return password

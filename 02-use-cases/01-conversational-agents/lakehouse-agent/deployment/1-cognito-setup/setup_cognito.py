@@ -253,6 +253,12 @@ class CognitoSetup:
             raise
 
     def setup(self, pool_name: str = "lakehouse-pool") -> dict:
+        # Failures that do not stop the run are collected here, so __main__ can
+        # end with a non-zero exit. "Already exists" outcomes are not failures.
+        self.errors = []
+        self.failed_users = set()
+        self.passwords_set = False
+
         # Check for existing User Pool
         user_pool_id = self.find_existing_user_pool(pool_name)
 
@@ -449,6 +455,7 @@ class CognitoSetup:
                     print(f"ℹ️  Group already exists: {group['name']}")
                 else:
                     print(f"⚠️  Error creating group {group['name']}: {e}")
+                    self.errors.append(f"group {group['name']}: {e}")
 
         # Create test users with email as username (skip if already exist)
         test_users = [
@@ -499,6 +506,8 @@ class CognitoSetup:
                     print(f"   ✅ Added to group: {user['group']}")
                 except Exception as e:
                     print(f"   ⚠️  Error adding to group: {e}")
+                    self.errors.append(f"user {email}: not added to group {user['group']}: {e}")
+                    self.failed_users.add(email)
 
             except self.cognito.exceptions.UsernameExistsException:
                 print(f"ℹ️  Test user already exists: {email}")
@@ -513,11 +522,16 @@ class CognitoSetup:
                         print(f"   ℹ️  Already in group: {user['group']}")
                     else:
                         print(f"   ⚠️  Error adding to group: {e}")
+                        self.errors.append(f"user {email}: not added to group {user['group']}: {e}")
+                        self.failed_users.add(email)
             except Exception as e:
                 if "already exists" in str(e).lower():
                     print(f"ℹ️  Test user already exists: {email}")
                 else:
                     print(f"⚠️  Error creating user {email}: {e}")
+                    self.errors.append(f"user {email}: not created: {e}")
+                    self.failed_users.add(email)
+        self.test_users = test_users
 
         result = {
             "user_pool_id": user_pool_id,
@@ -532,6 +546,8 @@ class CognitoSetup:
         m2m_client = self.create_m2m_client(user_pool_id)
         result["m2m_client_id"] = m2m_client["client_id"]
         result["m2m_client_secret"] = m2m_client["client_secret"]
+        if not m2m_client["client_secret"]:
+            self.errors.append("M2M app client lakehouse-m2m-client has no client secret (the gateway setup needs it)")
 
         # Store configuration in SSM Parameter Store
         self.store_parameters_in_ssm(result)
@@ -540,7 +556,13 @@ class CognitoSetup:
         # sign-in is not stopped by a forced password change. The helper reads the
         # pool id from SSM (written just above) and holds the one copy of the
         # password and its LAKEHOUSE_TEST_PASSWORD override.
-        set_test_user_passwords(self.ssm, self.cognito)
+        # It raises RuntimeError if any persona was not set; record that and finish
+        # the remaining steps, so the run ends with the full error list.
+        try:
+            set_test_user_passwords(self.ssm, self.cognito)
+            self.passwords_set = True
+        except RuntimeError as e:
+            self.errors.append(str(e))
 
         # Write to .env file (deprecated, for backward compatibility)
         self.write_to_env(result)
@@ -710,28 +732,32 @@ if __name__ == "__main__":
     # a secret.
     if "client_secret" in result:
         print("\n🔐 User App Client Secret: ****** (stored in SSM Parameter Store)")
-    if "m2m_client_secret" in result:
+    if result.get("m2m_client_secret"):
         print("\n🤖 M2M App Client Secret: ****** (stored in SSM Parameter Store)")
 
+    # store_parameters_in_ssm skips a secret it does not have, so list only the ones written.
     print("\n💾 SSM Parameters Stored:")
     print("   • /app/lakehouse-agent/cognito-user-pool-id")
     print("   • /app/lakehouse-agent/cognito-user-pool-arn")
     print("   • /app/lakehouse-agent/cognito-app-client-id (user auth + M2M)")
-    print("   • /app/lakehouse-agent/cognito-app-client-secret (SecureString)")
+    if result.get("client_secret"):
+        print("   • /app/lakehouse-agent/cognito-app-client-secret (SecureString)")
     print("   • /app/lakehouse-agent/cognito-m2m-client-id (M2M only)")
-    print("   • /app/lakehouse-agent/cognito-m2m-client-secret (SecureString)")
+    if result.get("m2m_client_secret"):
+        print("   • /app/lakehouse-agent/cognito-m2m-client-secret (SecureString)")
     print("   • /app/lakehouse-agent/cognito-domain")
     print("   • /app/lakehouse-agent/cognito-resource-server-id")
     print("   • /app/lakehouse-agent/cognito-region")
 
     print("\n👥 Test Users Created:")
-    print("   • policyholder001@example.com → policyholders group")
-    print("   • policyholder002@example.com → policyholders group")
-    print("   • adjuster001@example.com → adjusters group")
-    print("   • adjuster002@example.com → adjusters group")
-    print("   • admin@example.com → administrators group")
+    for user in setup.test_users:
+        failed = "  ❌ not set up (see the errors below)" if user["email"] in setup.failed_users else ""
+        print(f"   • {user['email']} → {user['group']} group{failed}")
     print("   Default password: TempPass123!")
-    print("   Set as permanent during setup, so the first sign-in does not ask for a new password")
+    if setup.passwords_set:
+        print("   Set as permanent during setup, so the first sign-in does not ask for a new password")
+    else:
+        print("   ❌ Not made permanent for every user (see the errors below)")
 
     print("\n👥 Cognito Groups:")
     print("   • policyholders - Policy holders group")
@@ -750,3 +776,9 @@ if __name__ == "__main__":
     print("   1. Run: python cleanup_test_users.py")
     print("   2. Delete the User Pool from AWS Console")
     print("   3. Run this script again to recreate with correct settings")
+
+    if setup.errors:
+        print(f"\n❌ setup_cognito.py finished with {len(setup.errors)} error(s):")
+        for err in setup.errors:
+            print(f"   • {err}")
+        sys.exit(1)
