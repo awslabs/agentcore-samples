@@ -27,8 +27,12 @@ Usage:
 
 Exit codes:
     0  revoke completed, or a CONFIRMED-empty enumeration (queries ran and found nothing)
-    1  identifiers unresolved, or no query succeeded -- state is UNKNOWN, nothing was revoked
+    1  identifiers unresolved, or no query succeeded -- state is UNKNOWN, nothing was revoked;
+       or, after revoking, a read failed or the re-read still lists grants (or did not complete)
     2  at least one revoke call failed
+    3  setup records gone: both SSM identifier keys (namespace, table-bucket-name) are
+       ParameterNotFound, so nothing can be looked up and nothing was revoked. Expected on
+       a re-run after a finished teardown. A key that could not be READ is 1, not 3.
 """
 
 import argparse
@@ -88,10 +92,17 @@ class LakeFormationRevoke:
         self.read_errors: list[str] = []
 
     def _get_ssm_param(self, name: str):
-        """Return the parameter value, or None if it is absent/unreadable."""
+        """Return the parameter value, or None if it is absent.
+
+        Any other read error is recorded in self.ssm_read_errors and also returns None,
+        so the caller can tell "the setup records are gone" from "they could not be read".
+        """
         try:
             return self.ssm.get_parameter(Name=f"/app/lakehouse-agent/{name}")["Parameter"]["Value"]
-        except Exception:
+        except self.ssm.exceptions.ParameterNotFound:
+            return None
+        except Exception as e:
+            self.ssm_read_errors.append(f"/app/lakehouse-agent/{name}: {e}")
             return None
 
     def resolve_identifiers(self) -> bool:
@@ -100,8 +111,26 @@ class LakeFormationRevoke:
         Returns False if they cannot be resolved -- which means cleanup_s3tables.py has
         already run and this script is too late to locate the grants by resource.
         """
+        self.ssm_read_errors = []
         self.namespace = self._get_ssm_param("namespace")
         self.table_bucket_name = self._get_ssm_param("table-bucket-name")
+        # Both keys absent (ParameterNotFound), and nothing else went wrong: the setup
+        # records are already gone, so there is nothing this script can look up.
+        self.records_gone = not self.namespace and not self.table_bucket_name and not self.ssm_read_errors
+
+        if self.ssm_read_errors:
+            print("\n❌ Could not read the Lake Formation resource identifiers from SSM:")
+            for err in self.ssm_read_errors:
+                print(f"     - {err}")
+            print("   State is UNKNOWN; nothing was revoked.")
+            return False
+
+        if self.records_gone:
+            print("\n⚠️  Setup records already gone: /app/lakehouse-agent/namespace and table-bucket-name")
+            print("   are not in SSM, so the Lake Formation grants cannot be looked up by resource.")
+            print("   Nothing was revoked. If cleanup_s3tables.py ran before this script, check the")
+            print("   tenant roles' grants in the Lake Formation console.")
+            return False
 
         if not self.namespace or not self.table_bucket_name:
             print("\n❌ Cannot resolve the Lake Formation resource identifiers.")
@@ -272,9 +301,14 @@ class LakeFormationRevoke:
                     )
                     verified = True
                 except ClientError as exc:
-                    if exc.response["Error"].get("Code") == "EntityNotFoundException":
+                    code = exc.response["Error"].get("Code", "Unknown")
+                    if code == "EntityNotFoundException":
                         verified = True
                         continue
+                    # A failed re-read can hide a surviving grant, so it counts like a failed enumeration.
+                    detail = f"re-read {arn.split('/')[-1]}/{next(iter(resource))}: {code}"
+                    self.read_errors.append(detail)
+                    print(f"   ⚠️  UNRESOLVED — list_permissions failed for {detail}")
                     continue
                 remaining += len(
                     [
@@ -290,7 +324,8 @@ class LakeFormationRevoke:
 
         Order of checks: unresolved identifiers -> 1; no list_permissions call answered -> 1;
         zero grants found -> 0 (or 1 if any read failed); after revoking, any revoke failure
-        -> 2, any read failure -> 1, otherwise 0. The re-read is skipped in dry-run mode.
+        -> 2, any read failure (enumeration or re-read) -> 1, re-read incomplete or still
+        listing grants -> 1, otherwise 0. The re-read is skipped in dry-run mode.
         """
         print("\n🔐 Lake Formation Permissions Revoke")
         print(f"   Region: {self.region}")
@@ -298,7 +333,7 @@ class LakeFormationRevoke:
         print(f"   Mode: {'DRY RUN' if self.dry_run else 'APPLY'}")
 
         if not self.resolve_identifiers():
-            return 1
+            return 3 if self.records_gone else 1
 
         principals = self.collect_principals()
         grants = self.enumerate_grants(principals)
@@ -325,6 +360,13 @@ class LakeFormationRevoke:
             return 2
         if self.read_errors:
             # Some grants may exist behind the failed reads, so success cannot be claimed.
+            return 1
+        if not self.dry_run and remaining is None:
+            print("\n❌ The verification re-read did not complete — grant state after the revoke is UNKNOWN.")
+            return 1
+        if not self.dry_run and remaining > 0:
+            # Includes grants skipped above as "Already gone": if one is still listed, it was not gone.
+            print(f"\n❌ {remaining} grant(s) still listed after the revoke (re-read). Not reporting success.")
             return 1
         return 0
 

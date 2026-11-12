@@ -98,6 +98,9 @@ class OBOCleanup:
         self.aoss = boto3.client("opensearchserverless", region_name=self.region)
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.keep_ssm = keep_ssm
+        # Failed deletes are collected here; run() prints ✨ only when this and
+        # not_confirmed stay empty. "Not found" outcomes are not failures.
+        self.errors = []
 
     def _get_ssm_param(self, name, default=None):
         try:
@@ -147,6 +150,7 @@ class OBOCleanup:
             # "absent", and treating it as absent is how a live gateway survives
             # a teardown that claims success.
             print(f"   ⚠️  list_gateways failed: {e}")
+            self.errors.append(f"gateway lookup by name ({gateway_name}): {e}")
         return None
 
     # ─── 1+2: OBO gateway target + gateway ────────────────────────────
@@ -173,6 +177,7 @@ class OBOCleanup:
                     print(f"   ✅ Deleted target: {target.get('name', tid)}")
                 except Exception as e:
                     print(f"   ⚠️  Error deleting target {tid}: {e}")
+                    self.errors.append(f"target {tid} on gateway {gateway_id}: {e}")
 
             # Target deletion completes asynchronously; poll (12 x 5 s) until the
             # list is empty so the gateway delete below does not race it.
@@ -184,19 +189,39 @@ class OBOCleanup:
 
                 # No raise on timeout: the gateway delete below still runs and prints its own error
                 # if it fails, and the rest of the teardown continues.
-                wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
+                if not wait_for(
+                    "Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False
+                ):
+                    self.not_confirmed.append(f"targets of OBO gateway {gateway_id}")
         except Exception as e:
             print(f"   ⚠️  Error listing/deleting targets: {e}")
+            self.errors.append(f"targets of gateway {gateway_id}: {e}")
 
         # Gateway
         try:
             self.bedrock.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   ✅ Deleted gateway: {gateway_id}")
             pause("Gateway delete settling", 5)
+
+            # DeleteGateway is asynchronous (its response carries a status, which can be
+            # DELETING), so confirm the gateway is gone before its role is deleted below.
+            def _gateway_gone():
+                try:
+                    status = self.bedrock.get_gateway(gatewayIdentifier=gateway_id).get("status")
+                except self.bedrock.exceptions.ResourceNotFoundException:
+                    return True, "deleted"
+                return False, status
+
+            # quiet_s equals the timeout, so this prints nothing unless it times out.
+            if not wait_for(
+                "Gateway delete", _gateway_gone, interval=5, timeout=60, raise_on_timeout=False, quiet_s=60
+            ):
+                self.not_confirmed.append(f"OBO gateway {gateway_id}")
         except self.bedrock.exceptions.ResourceNotFoundException:
             print(f"   ⏭️  Gateway not found: {gateway_id}")
         except Exception as e:
             print(f"   ❌ Error deleting gateway: {e}")
+            self.errors.append(f"gateway {gateway_id}: {e}")
 
     # ─── 3: OBO gateway IAM role ──────────────────────────────────────
     def delete_gateway_role(self):
@@ -205,6 +230,10 @@ class OBOCleanup:
             self.iam.get_role(RoleName=GATEWAY_ROLE_NAME)
         except self.iam.exceptions.NoSuchEntityException:
             print(f"   ⏭️  Role not found: {GATEWAY_ROLE_NAME}")
+            return
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            self.errors.append(f"role {GATEWAY_ROLE_NAME}: {e}")
             return
         try:
             for p in self.iam.list_role_policies(RoleName=GATEWAY_ROLE_NAME)["PolicyNames"]:
@@ -215,6 +244,7 @@ class OBOCleanup:
             print(f"   ✅ Deleted role: {GATEWAY_ROLE_NAME}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"role {GATEWAY_ROLE_NAME}: {e}")
 
     # ─── 4: OAuth2 credential providers (Okta OBO + Cognito M2M) ───────
     def _oauth_provider_names(self):
@@ -235,6 +265,7 @@ class OBOCleanup:
             present = provider_name in self._oauth_provider_names()
         except Exception as e:
             print(f"   ❌ Error listing OAuth2 credential providers, nothing deleted: {e}")
+            self.errors.append(f"OAuth2 credential providers not listed (looking for {provider_name}): {e}")
             return
         if not present:
             print(f"   ⏭️  Not present, skipped: {provider_name}")
@@ -250,6 +281,7 @@ class OBOCleanup:
                 print(f"   ⏭️  Provider not found: {provider_name}")
             else:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"OAuth2 credential provider {provider_name}: {e}")
 
     # ─── 5+6+7+8: AOSS data-access policy / network / encryption / collection ─
     def delete_aoss_collection(self):
@@ -263,6 +295,7 @@ class OBOCleanup:
             print(f"   ⏭️  Policy not found: {DATA_ACCESS_POLICY_NAME}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"AOSS data-access policy {DATA_ACCESS_POLICY_NAME}: {e}")
 
         print(f"\n🗑️  Deleting AOSS collection: {COLLECTION_NAME}")
         try:
@@ -307,8 +340,10 @@ class OBOCleanup:
                     print("   ⏭️  Collection already gone")
                 except Exception as e:
                     print(f"   ❌ Error deleting collection: {e}")
+                    self.errors.append(f"AOSS collection {COLLECTION_NAME}: {e}")
         except Exception as e:
             print(f"   ❌ Error listing collections: {e}")
+            self.errors.append(f"AOSS collections not listed: {e}")
 
         print(f"\n🗑️  Deleting AOSS network policy: {NETWORK_POLICY_NAME}")
         try:
@@ -318,6 +353,7 @@ class OBOCleanup:
             print(f"   ⏭️  Policy not found: {NETWORK_POLICY_NAME}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"AOSS network policy {NETWORK_POLICY_NAME}: {e}")
 
         print(f"\n🗑️  Deleting AOSS encryption policy: {ENCRYPTION_POLICY_NAME}")
         try:
@@ -327,6 +363,7 @@ class OBOCleanup:
             print(f"   ⏭️  Policy not found: {ENCRYPTION_POLICY_NAME}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"AOSS encryption policy {ENCRYPTION_POLICY_NAME}: {e}")
 
     # ─── 9: SSM keys ──────────────────────────────────────────────────
     def delete_ssm_parameters(self):
@@ -359,6 +396,7 @@ class OBOCleanup:
                 pass
             except Exception as e:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"SSM {SSM_PREFIX}{p}: {e}")
 
     def run(self):
         self.not_confirmed = []  # deletes that were started but not confirmed; listed at the end
@@ -379,6 +417,14 @@ class OBOCleanup:
                 print(f"   - {item}")
         else:
             print("\nNot confirmed deleted: none")
+        if self.errors or self.not_confirmed:
+            count = len(self.errors) + len(self.not_confirmed)
+            print(f"\n❌ 06_cleanup_obo_gateway.py finished with {count} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            for item in self.not_confirmed:
+                print(f"   • not confirmed deleted: {item} (a slow delete may still finish; re-run to check)")
+            sys.exit(1)
         print("\n✨ OBO_Gateway cleanup complete!")
 
 

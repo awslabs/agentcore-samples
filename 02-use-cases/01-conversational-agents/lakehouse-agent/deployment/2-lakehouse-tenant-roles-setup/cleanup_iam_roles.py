@@ -41,12 +41,19 @@ class IAMRolesCleanup:
         self.iam = boto3.client("iam")
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.keep_ssm = keep_ssm
+        # Failed deletes are collected here; run() prints ✨ only when this stays empty.
+        # "Not found" outcomes are not failures.
+        self.errors = []
 
     def _delete_role(self, role_name):
         try:
             self.iam.get_role(RoleName=role_name)
         except self.iam.exceptions.NoSuchEntityException:
             print(f"   ⏭️  Role not found: {role_name}")
+            return
+        except Exception as e:
+            print(f"   ❌ Error checking {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
             return
 
         try:
@@ -68,6 +75,7 @@ class IAMRolesCleanup:
             print(f"   ✅ Deleted role: {role_name}")
         except Exception as e:
             print(f"   ❌ Error deleting {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
 
     def delete_tenant_roles(self):
         print("\n🗑️  Deleting tenant IAM roles...")
@@ -102,6 +110,7 @@ class IAMRolesCleanup:
                 pass
             except Exception as e:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{p}: {e}")
 
     def run(self):
         print("\n🧹 IAM Roles Cleanup")
@@ -114,6 +123,11 @@ class IAMRolesCleanup:
         self.delete_tenant_roles()
         self.delete_lakeformation_role()
         self.delete_ssm_parameters()
+        if self.errors:
+            print(f"\n❌ cleanup_iam_roles.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            sys.exit(1)
         print("\n✨ IAM roles cleanup complete!")
 
 

@@ -35,16 +35,25 @@ class CognitoCleanup:
         self.dynamodb = boto3.client("dynamodb", region_name=self.region)
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.keep_ssm = keep_ssm
+        # Failed deletes are collected here; run() prints ✨ only when this stays empty.
+        # "Not found" outcomes are not failures.
+        self.errors = []
 
     def _get_ssm_param(self, name, default=None):
+        # Only an absent parameter means "nothing to delete"; any other read error is raised.
         try:
             return self.ssm.get_parameter(Name=f"/app/lakehouse-agent/{name}")["Parameter"]["Value"]
-        except Exception:
+        except self.ssm.exceptions.ParameterNotFound:
             return default
 
     def delete_user_pool(self):
         print("\n🗑️  Deleting Cognito User Pool...")
-        pool_id = self._get_ssm_param("cognito-user-pool-id")
+        try:
+            pool_id = self._get_ssm_param("cognito-user-pool-id")
+        except Exception as e:
+            print(f"   ❌ Error reading the User Pool id from SSM: {e}")
+            self.errors.append(f"User Pool id not read from SSM: {e}")
+            return
         if not pool_id:
             print("   ⏭️  No User Pool found in SSM")
             return
@@ -64,6 +73,7 @@ class CognitoCleanup:
             print(f"   ⏭️  User Pool not found: {pool_id}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"User Pool {pool_id}: {e}")
 
     def delete_post_auth_lambda(self):
         print("\n🗑️  Deleting post-auth Lambda...")
@@ -75,6 +85,7 @@ class CognitoCleanup:
             print(f"   ⏭️  Lambda not found: {func_name}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"Lambda {func_name}: {e}")
 
     def delete_post_auth_role(self):
         print("\n🗑️  Deleting post-auth Lambda role...")
@@ -87,6 +98,10 @@ class CognitoCleanup:
         except self.iam.exceptions.NoSuchEntityException:
             print(f"   ⏭️  Role not found: {role_name}")
             return
+        except Exception as e:
+            print(f"   ❌ Error checking role {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
+            return
 
         try:
             for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
@@ -97,6 +112,7 @@ class CognitoCleanup:
             print(f"   ✅ Deleted role: {role_name}")
         except Exception as e:
             print(f"   ❌ Error deleting role {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
 
     def delete_audit_table(self):
         print("\n🗑️  Deleting login audit DynamoDB table...")
@@ -107,6 +123,7 @@ class CognitoCleanup:
             print("   ⏭️  Table not found")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"table lakehouse_user_login_audit: {e}")
 
     def delete_ssm_parameters(self):
         if self.keep_ssm:
@@ -132,6 +149,7 @@ class CognitoCleanup:
                 pass
             except Exception as e:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{p}: {e}")
 
     def run(self):
         print("\n🧹 Cognito Cleanup")
@@ -142,6 +160,11 @@ class CognitoCleanup:
         self.delete_post_auth_role()
         self.delete_audit_table()
         self.delete_ssm_parameters()
+        if self.errors:
+            print(f"\n❌ cleanup_cognito.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            sys.exit(1)
         print("\n✨ Cognito cleanup complete!")
 
 

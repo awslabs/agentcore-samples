@@ -46,6 +46,9 @@ class GatewayCleanup:
         # Active IdP — selects the exact GW1 provider name(s) to delete.
         self.idp_provider = get_idp_provider(self.ssm)
         self.keep_ssm = keep_ssm
+        # Failed or unconfirmed deletes are collected here; run() prints ✨ only when this
+        # stays empty. "Not found" outcomes are not failures.
+        self.errors = []
 
     def _get_ssm_param(self, name, default=None):
         try:
@@ -96,6 +99,7 @@ class GatewayCleanup:
             # "absent", and treating it as absent is how a live gateway survives
             # a teardown that claims success.
             print(f"   ⚠️  list_gateways failed: {e}")
+            self.errors.append(f"gateway lookup by name ({gateway_name}): {e}")
         return None
 
     def delete_gateway(self):
@@ -124,18 +128,38 @@ class GatewayCleanup:
 
                     # No raise on timeout: the gateway delete below still runs and prints its own error
                     # if it fails, and the rest of the teardown continues.
-                    wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
+                    if not wait_for(
+                        "Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False
+                    ):
+                        self.errors.append(f"targets of gateway {gateway_id}: still listed after 60 s")
             except Exception as e:
                 print(f"   ⚠️  Error deleting targets: {e}")
+                self.errors.append(f"targets of gateway {gateway_id}: {e}")
 
             # Delete gateway
             self.bedrock.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   ✅ Deleted gateway: {gateway_id}")
             pause("Gateway delete settling", 5)
+
+            # DeleteGateway is asynchronous (its response carries a status, which can be
+            # DELETING), so confirm the gateway is gone before its role is deleted below.
+            def _gateway_gone():
+                try:
+                    status = self.bedrock.get_gateway(gatewayIdentifier=gateway_id).get("status")
+                except self.bedrock.exceptions.ResourceNotFoundException:
+                    return True, "deleted"
+                return False, status
+
+            # quiet_s equals the timeout, so this prints nothing unless it times out.
+            if not wait_for(
+                "Gateway delete", _gateway_gone, interval=5, timeout=60, raise_on_timeout=False, quiet_s=60
+            ):
+                self.errors.append(f"gateway {gateway_id}: delete not confirmed within 60 s")
         except self.bedrock.exceptions.ResourceNotFoundException:
             print(f"   ⏭️  Gateway not found: {gateway_id}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"gateway {gateway_id}: {e}")
 
     def delete_oauth_providers(self):
         print("\n🗑️  Deleting GW1 OAuth2 credential providers...")
@@ -160,6 +184,7 @@ class GatewayCleanup:
                 existing.update(p.get("name", "") for p in page.get("credentialProviders", []))
         except Exception as e:
             print(f"   ❌ Error listing OAuth2 credential providers, nothing deleted: {e}")
+            self.errors.append(f"OAuth2 credential providers not listed: {e}")
             return
 
         deleted = 0
@@ -179,6 +204,7 @@ class GatewayCleanup:
                     print(f"   ⏭️  Not found: {name}")
                 else:
                     print(f"   ⚠️  Error deleting {name}: {e}")  # codeql[py/clear-text-logging-sensitive-data]
+                    self.errors.append(f"OAuth2 credential provider {name}: {e}")
         if deleted == 0:
             print(f"   ⏭️  No GW1 OAuth providers found for IdP={self.idp_provider}")
 
@@ -196,6 +222,7 @@ class GatewayCleanup:
                 print(f"   ⏭️  Not found: {func_name}")
             except Exception as e:
                 print(f"   ❌ Error deleting {func_name}: {e}")
+                self.errors.append(f"Lambda {func_name}: {e}")
 
     def delete_lambda_role(self):
         print("\n🗑️  Deleting Lambda execution role...")
@@ -205,23 +232,9 @@ class GatewayCleanup:
         except self.iam.exceptions.NoSuchEntityException:
             print(f"   ⏭️  Role not found: {role_name}")
             return
-        try:
-            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
-            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
-            self.iam.delete_role(RoleName=role_name)
-            print(f"   ✅ Deleted role: {role_name}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
-
-    def delete_gateway_role(self):
-        print("\n🗑️  Deleting Gateway IAM role...")
-        role_name = "agentcore-lakehouse-gateway-role"
-        try:
-            self.iam.get_role(RoleName=role_name)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {role_name}")
+            self.errors.append(f"role {role_name}: {e}")
             return
         try:
             for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
@@ -232,6 +245,30 @@ class GatewayCleanup:
             print(f"   ✅ Deleted role: {role_name}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"role {role_name}: {e}")
+
+    def delete_gateway_role(self):
+        print("\n🗑️  Deleting Gateway IAM role...")
+        role_name = "agentcore-lakehouse-gateway-role"
+        try:
+            self.iam.get_role(RoleName=role_name)
+        except self.iam.exceptions.NoSuchEntityException:
+            print(f"   ⏭️  Role not found: {role_name}")
+            return
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            self.errors.append(f"role {role_name}: {e}")
+            return
+        try:
+            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
+                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
+            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
+                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
+            self.iam.delete_role(RoleName=role_name)
+            print(f"   ✅ Deleted role: {role_name}")
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            self.errors.append(f"role {role_name}: {e}")
 
     def delete_dynamodb_table(self):
         print("\n🗑️  Deleting DynamoDB tenant role mapping table...")
@@ -242,6 +279,7 @@ class GatewayCleanup:
             print("   ⏭️  Table not found")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            self.errors.append(f"table lakehouse_tenant_role_map: {e}")
 
     def delete_ssm_parameters(self):
         if self.keep_ssm:
@@ -266,6 +304,7 @@ class GatewayCleanup:
                 pass
             except Exception as e:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{p}: {e}")
 
     def run(self):
         print("\n🧹 Gateway Cleanup")
@@ -278,6 +317,11 @@ class GatewayCleanup:
         self.delete_gateway_role()
         self.delete_dynamodb_table()
         self.delete_ssm_parameters()
+        if self.errors:
+            print(f"\n❌ cleanup_gateway.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            sys.exit(1)
         print("\n✨ Gateway cleanup complete!")
 
 
