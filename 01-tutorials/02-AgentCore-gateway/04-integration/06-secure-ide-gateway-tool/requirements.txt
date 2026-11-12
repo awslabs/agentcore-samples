@@ -1,0 +1,8 @@
+mcp>=1.10.0
+awscli
+boto3
+botocore
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit>=0.1.21
+httpx
+mangum  # For Lambda deployment of mcp_oauth_proxy.py
