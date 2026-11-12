@@ -663,6 +663,15 @@ class SecureAthenaClaimsTools:
                     }
                 )
 
+            # text_to_sql caches a successful schema for the life of the process,
+            # so an empty one must not be reported as a success.
+            if not schema["tables"]:
+                return {
+                    "success": False,
+                    "error": f"No tables found in {catalog_id}/{self.database_name}",
+                    "message": "Error retrieving schema: the catalog returned no tables",
+                }
+
             return {
                 "success": True,
                 "schema": schema,

@@ -150,6 +150,17 @@ class OpenSearchClaimNotesTools:
 
             response = self.client.search(index=CLAIM_NOTES_INDEX, body=search_body)
 
+            # OpenSearch answers HTTP 200 with partial hits when a shard fails or the
+            # search times out, so a 200 alone does not mean every note was searched.
+            timed_out = bool(response.get("timed_out", False))
+            failed_shards = response.get("_shards", {}).get("failed", 0)
+            if timed_out or failed_shards:
+                return {
+                    "success": False,
+                    "error": f"Incomplete search: timed_out={timed_out}, failed shards={failed_shards}",
+                    "message": "Error searching claim notes: the search did not complete on every shard",
+                }
+
             hits = response.get("hits", {}).get("hits", [])
             total = response.get("hits", {}).get("total", {})
             if isinstance(total, dict):

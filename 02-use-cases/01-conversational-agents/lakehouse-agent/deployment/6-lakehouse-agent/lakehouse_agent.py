@@ -321,7 +321,12 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
         open_clients.append(claims_client)
         claims_tools = claims_client.list_tools_sync()
         tools += claims_tools
-        logger.info(f"✅ Loaded {len(claims_tools)} tools from GW1")
+        # An empty list is not an error: the claims response interceptor returns
+        # no tools (deny-all) for a caller it cannot authorize or map to a role.
+        if claims_tools:
+            logger.info(f"✅ Loaded {len(claims_tools)} tools from GW1")
+        else:
+            logger.warning("⚠️  Loaded 0 tools from GW1 (the gateway returned an empty tool list)")
 
         # ── GW2 notes gateway → notes/* tools (required) ────────────────────
         # The system prompt promises notes/* alongside claims/*, so a missing URL
@@ -341,9 +346,15 @@ def handle_request(payload: dict[str, Any], context: Any = None) -> dict[str, An
         open_clients.append(notes_client)
         notes_tools = notes_client.list_tools_sync()
         tools += notes_tools
-        logger.info(f"✅ Loaded {len(notes_tools)} tools from GW2")
+        if notes_tools:
+            logger.info(f"✅ Loaded {len(notes_tools)} tools from GW2")
+        else:
+            logger.warning("⚠️  Loaded 0 tools from GW2 (the gateway returned an empty tool list)")
 
-        logger.info(f"✅ Total tools available to the agent: {len(tools)}")
+        if tools:
+            logger.info(f"✅ Total tools available to the agent: {len(tools)}")
+        else:
+            logger.warning("⚠️  Total tools available to the agent: 0 (the agent has no tools to call)")
 
         # Create Bedrock model
         model = BedrockModel(model_id=MODEL_ID, region_name=region)
