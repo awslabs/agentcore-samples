@@ -16,6 +16,7 @@ import string
 import sys
 
 import boto3
+from botocore.exceptions import ClientError
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -237,16 +238,33 @@ def main():
     # Use a consistent bucket name format
     s3_bucket_name = f"{account_id}-{region}-lakehouse-agent"
 
+    # Probe first: in us-east-1, create_bucket on a bucket you already own
+    # returns 200 instead of BucketAlreadyOwnedByYou, so it cannot tell a new
+    # bucket from an existing one.
     try:
-        create_params = {"Bucket": s3_bucket_name}
-        if region != "us-east-1":
-            create_params["CreateBucketConfiguration"] = {"LocationConstraint": region}
-        s3.create_bucket(**create_params)
-        print(f"✅ Created S3 bucket: {s3_bucket_name}")
-    except s3.exceptions.BucketAlreadyOwnedByYou:
+        s3.head_bucket(Bucket=s3_bucket_name)
+        bucket_exists = True
+    except ClientError as e:
+        # A HEAD error has no body, so botocore reports the HTTP status ("404") as the code.
+        if e.response["Error"]["Code"] not in ("404", "NoSuchBucket"):
+            print(f"❌ Error checking S3 bucket {s3_bucket_name}: {e}")
+            raise
+        bucket_exists = False
+
+    if bucket_exists:
         print(f"✅ S3 bucket exists: {s3_bucket_name}")
-    except Exception as e:
-        print(f"⚠️  S3 bucket creation note: {e}")
+    else:
+        try:
+            create_params = {"Bucket": s3_bucket_name}
+            if region != "us-east-1":
+                create_params["CreateBucketConfiguration"] = {"LocationConstraint": region}
+            s3.create_bucket(**create_params)
+            print(f"✅ Created S3 bucket: {s3_bucket_name}")
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            print(f"✅ S3 bucket exists: {s3_bucket_name}")
+        except Exception as e:
+            print(f"❌ Error creating S3 bucket: {e}")
+            raise
 
     # Tag the query-results bucket (fail-soft; regular S3 has no tags-at-create,
     # so this is a separate put_bucket_tagging call).

@@ -57,6 +57,9 @@ class IAMRolesSetup:
             "lakehouse-administrators-role",
         ]
 
+        # Roles found already present by create_role (reused, not created)
+        self.existing_roles: set[str] = set()
+
     def get_trust_policy(self) -> dict[str, Any]:
         """
         Create trust policy for AgentCore Runtime, Lambda role, and current account.
@@ -275,6 +278,7 @@ class IAMRolesSetup:
             try:
                 response = self.iam_client.get_role(RoleName=role_name)
                 print(f"✅ Role {role_name} already exists")
+                self.existing_roles.add(role_name)
                 return response["Role"]["Arn"]
             except self.iam_client.exceptions.NoSuchEntityException:
                 pass
@@ -441,6 +445,7 @@ class IAMRolesSetup:
                 print(f"✅ Stored parameter: {param_name}")
             except Exception as e:
                 print(f"❌ Error storing parameter {param_name}: {e}")
+                raise
 
     def setup(self):
         """Run the complete IAM roles setup."""
@@ -488,7 +493,10 @@ class IAMRolesSetup:
         self.store_role_arns_in_ssm(role_arns)
 
         print("\n✨ IAM roles setup completed successfully!")
-        print("\n🔐 Created roles:")
+        if self.existing_roles:
+            print("\n🔐 Roles (created or already present):")
+        else:
+            print("\n🔐 Created roles:")
         for role_name, role_arn in role_arns.items():
             print(f"   - {role_name}")
             print(f"     ARN: {role_arn}")

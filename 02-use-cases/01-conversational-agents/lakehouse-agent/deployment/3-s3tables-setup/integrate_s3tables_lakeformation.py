@@ -14,11 +14,12 @@ Usage:
     python integrate_s3tables_lakeformation.py
 """
 
-import boto3
 import json
-import sys
 import os
+import sys
 import time
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -28,7 +29,7 @@ from utils.aws_session_utils import get_aws_session
 class S3TablesLakeFormationIntegration:
     def __init__(self):
         """Initialize the integration setup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.iam = boto3.client("iam")
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
@@ -227,7 +228,8 @@ class S3TablesLakeFormationIntegration:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print("✅ S3 Tables already registered")
         except Exception as e:
-            print(f"⚠️  Registration note: {e}")
+            print(f"❌ Error registering S3 Tables: {e}")
+            raise
 
     def create_federated_catalog(self):
         """Create federated catalog for S3 Tables."""
@@ -263,7 +265,7 @@ class S3TablesLakeFormationIntegration:
         except Exception as e:
             print(f"❌ Error creating catalog: {e}")
             print(f"   Error type: {type(e).__name__}")
-            print(f"   Full error: {str(e)}")
+            print(f"   Full error: {e!s}")
             raise
 
     def store_configuration(self, role_arn: str, catalog_name: str):
@@ -286,7 +288,8 @@ class S3TablesLakeFormationIntegration:
                 )
                 print(f"✅ {name}")
             except Exception as e:
-                print(f"⚠️  Error storing {name}: {e}")
+                print(f"❌ Error storing {name}: {e}")
+                raise
 
     def run(self):
         """Run the complete integration process."""
