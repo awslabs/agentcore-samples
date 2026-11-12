@@ -26,6 +26,7 @@ from botocore.exceptions import ClientError
 # Repo utils (idp flag reader) — deployment/5a-gateway-setup/interceptor-request/ → ../../..
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 from utils.idp_config import get_idp_provider
+from utils.notebook_init import wait_for
 
 
 class TenantRoleMappingSetup:
@@ -74,6 +75,15 @@ class TenantRoleMappingSetup:
         """
         print(f"\n📦 Creating DynamoDB table: {self.table_name}")
 
+        # Same states as botocore's DynamoDB TableExists waiter (wait_until_exists):
+        # ACTIVE is done, ResourceNotFoundException means keep waiting; polled every 20 s, 25 times.
+        def _table_active():
+            try:
+                status = self.dynamodb_client.describe_table(TableName=self.table_name)["Table"]["TableStatus"]
+            except self.dynamodb_client.exceptions.ResourceNotFoundException:
+                return False, "not found yet"
+            return status == "ACTIVE", status
+
         try:
             # Check if table already exists
             existing_tables = self.dynamodb_client.list_tables()["TableNames"]
@@ -81,8 +91,7 @@ class TenantRoleMappingSetup:
                 print(f"✅ Table {self.table_name} already exists")
 
                 # Wait for table to be active
-                table = self.dynamodb.Table(self.table_name)
-                table.wait_until_exists()
+                wait_for(f"Table {self.table_name} active", _table_active, interval=20, timeout=20 * 25)
                 print("✅ Table is active")
                 return True
 
@@ -116,8 +125,7 @@ class TenantRoleMappingSetup:
                 ],
             )
 
-            print("⏳ Waiting for table to be created...")
-            table.wait_until_exists()
+            wait_for(f"Table {self.table_name} active", _table_active, interval=20, timeout=20 * 25)
 
             print(f"✅ Table {self.table_name} created successfully")
             print(f"   Table ARN: {table.table_arn}")

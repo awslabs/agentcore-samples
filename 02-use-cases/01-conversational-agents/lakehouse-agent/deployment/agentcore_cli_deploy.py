@@ -72,6 +72,7 @@ SAMPLE_DIR = DEPLOYMENT_DIR.parent
 
 sys.path.insert(0, str(SAMPLE_DIR))
 from utils.idp_config import get_idp_provider
+from utils.notebook_init import wait_for
 
 SSM_PREFIX = "/app/lakehouse-agent/"
 REQUIRED_CLI_MAJOR_MINOR = "0.30."
@@ -428,7 +429,37 @@ def destroy(project: Project, assume_yes: bool) -> None:
     cfn = session.client("cloudformation", region_name=region)
     print(f"🗑️  Deleting stack {name} ...")
     cfn.delete_stack(StackName=name)
-    cfn.get_waiter("stack_delete_complete").wait(StackName=name, WaiterConfig={"Delay": 15, "MaxAttempts": 80})
+
+    # The same success and failure states as botocore's stack_delete_complete waiter
+    # (botocore data/cloudformation/2010-05-15/waiters-2.json, "StackDeleteComplete").
+    success_states = ("DELETE_COMPLETE",)
+    success_errors = ("ValidationError",)
+    failure_states = (
+        "DELETE_FAILED",
+        "CREATE_FAILED",
+        "ROLLBACK_FAILED",
+        "UPDATE_ROLLBACK_IN_PROGRESS",
+        "UPDATE_ROLLBACK_FAILED",
+        "UPDATE_ROLLBACK_COMPLETE",
+        "UPDATE_COMPLETE",
+    )
+
+    def _stack_gone():
+        try:
+            stack = cfn.describe_stacks(StackName=name)["Stacks"][0]
+        except cfn.exceptions.ClientError as e:
+            if e.response.get("Error", {}).get("Code") in success_errors:
+                return True, "DELETE_COMPLETE"
+            raise
+        status = stack["StackStatus"]
+        if status in success_states:
+            return True, status
+        if status in failure_states:
+            raise RuntimeError(f"Stack {name} delete failed: {status} {stack.get('StackStatusReason', '')}".rstrip())
+        return False, status
+
+    # Polls every 15 s for up to 20 min, the same budget as the waiter it replaces (15 s x 80).
+    wait_for(f"Stack {name} delete", _stack_gone, interval=15, timeout=15 * 80)
     print(f"   ✅ Stack {name} deleted")
 
     ssm = session.client("ssm", region_name=region)
