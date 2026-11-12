@@ -297,6 +297,7 @@ def extract_bearer_token_from_mcp(event: dict[str, Any]) -> str | None:
 
         if auth_header:
             # Remove 'Bearer ' prefix if present
+            has_bearer_prefix = auth_header.startswith(("Bearer ", "bearer "))
             if auth_header.startswith("Bearer "):
                 token = auth_header.replace("Bearer ", "", 1)
             elif auth_header.startswith("bearer "):
@@ -304,7 +305,10 @@ def extract_bearer_token_from_mcp(event: dict[str, Any]) -> str | None:
             else:
                 token = auth_header
 
-            logger.info("✅ Bearer token extracted from MCP gateway request")
+            if has_bearer_prefix and token:
+                logger.info("✅ Bearer token extracted from MCP gateway request")
+            else:
+                logger.warning("⚠️  Authorization header is not in 'Bearer <token>' form")
             return token
 
         logger.warning("⚠️  Bearer token not found in MCP gateway request headers")

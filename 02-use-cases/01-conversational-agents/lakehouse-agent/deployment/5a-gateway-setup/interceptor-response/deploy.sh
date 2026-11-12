@@ -115,6 +115,15 @@ if [ -z "$LAMBDA_ROLE_ARN" ]; then
     exit 1
 fi
 
+# The SSM value can outlive the role (for example after a cleanup that kept SSM),
+# so confirm the role itself exists before using it.
+if ! aws iam get-role --role-name "${LAMBDA_ROLE_ARN##*/}" --query 'Role.Arn' --output text >/dev/null; then
+    echo "❌ Lambda role not found or not readable: $LAMBDA_ROLE_ARN"
+    echo "   Please ensure the request interceptor has been deployed first"
+    echo "   Run: cd ../interceptor-request && ./deploy.sh"
+    exit 1
+fi
+
 echo "✅ Lambda role ready: $LAMBDA_ROLE_ARN"
 
 # Check if Lambda function already exists

@@ -365,7 +365,10 @@ def get_allowed_tools_from_dynamodb(claim_name: str, claim_value: str) -> list[s
         item = response["Item"]
         allowed_tools = item.get("allowed_tools", [])
 
-        logger.info(f"✅ Found {len(allowed_tools)} allowed tools for {claim_name}={claim_value}")
+        if allowed_tools:
+            logger.info(f"✅ Found {len(allowed_tools)} allowed tools for {claim_name}={claim_value}")
+        else:
+            logger.warning(f"⚠️  Mapping for {claim_name}={claim_value} lists no allowed tools")
         logger.info(f"   Allowed tools: {allowed_tools}")
 
         return allowed_tools
@@ -530,6 +533,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # no-DDB-mapping branch. The IdP-specific logic lives inside
         # validate_and_decode_jwt / get_claim_for_authorization (dual-IdP
         # preserved); these failure branches are IdP-invariant.
+        # denied stays True unless the caller's allowed tools were applied; it
+        # only picks the log wording below.
+        denied = True
         if not auth_header.startswith("Bearer "):
             logger.warning("🚫 No Bearer token found — failing closed (empty tool list)")
             filtered_tools = []
@@ -563,8 +569,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     else:
                         # Filter tools based on allowed list and system filters
                         filtered_tools = filter_tools(tools, allowed_tools)
+                        denied = False
 
-        logger.info(f"✅ Filtered tools: {[tool.get('name') for tool in filtered_tools]}")
+        if denied:
+            logger.warning("🚫 Filtered tools: [] (access denied)")
+        else:
+            logger.info(f"✅ Filtered tools: {[tool.get('name') for tool in filtered_tools]}")
         logger.info(f"🔢 Tool count: {len(tools)} → {len(filtered_tools)}")
 
         # Update response body with filtered tools
@@ -585,7 +595,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             },
         }
 
-        logger.info("✅ Response filtering completed")
+        if denied:
+            logger.warning("🚫 Response filtering completed: access denied, empty tool list returned")
+        else:
+            logger.info("✅ Response filtering completed")
         return response
 
     except Exception as e:

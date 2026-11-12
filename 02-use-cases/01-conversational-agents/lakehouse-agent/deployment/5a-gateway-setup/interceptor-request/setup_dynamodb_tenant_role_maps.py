@@ -260,18 +260,35 @@ class TenantRoleMappingSetup:
             print(f"❌ Unexpected error: {e}")
             return False
 
-    def verify_data(self):
-        """Verify the data in the table."""
+    def verify_data(self) -> list[str]:
+        """
+        Verify the data in the table.
+
+        Returns:
+            List of errors; empty when every seeded mapping is present
+        """
         print("\n🔍 Verifying table data...")
 
         try:
             table = self.dynamodb.Table(self.table_name)
 
+            # The table can also hold the other IdP's rows, so check for the
+            # seeded keys rather than an item count. A strongly consistent
+            # get_item sees the writes just made; a scan may not.
+            missing = []
+            for item in self.get_seed_data({}):
+                key = {"claim_name": item["claim_name"], "claim_value": item["claim_value"]}
+                if "Item" not in table.get_item(Key=key, ConsistentRead=True):
+                    missing.append(f"({key['claim_name']}, {key['claim_value']})")
+
             # Scan table to get all items
             response = table.scan()
             items = response.get("Items", [])
 
-            print(f"✅ Found {len(items)} items in table:")
+            if missing:
+                print(f"❌ Found {len(items)} items in table, without the mapping(s) {', '.join(missing)}:")
+            else:
+                print(f"✅ Found {len(items)} items in table:")
             for item in items:
                 print(f"   - Key: ({item['claim_name']}, {item['claim_value']})")
                 print(f"     Target: {item['role_type']} = {item['role_value']}")
@@ -282,9 +299,17 @@ class TenantRoleMappingSetup:
 
         except Exception as e:
             print(f"❌ Error verifying data: {e}")
+            return [f"table data not verified: {e}"]
 
-    def store_table_info_in_ssm(self):
-        """Store table information in SSM Parameter Store."""
+        return [f"mapping {key} not found in table {self.table_name}" for key in missing]
+
+    def store_table_info_in_ssm(self) -> list[str]:
+        """
+        Store table information in SSM Parameter Store.
+
+        Returns:
+            List of errors; empty when both parameters were stored
+        """
         print("\n💾 Storing table information in SSM Parameter Store...")
 
         try:
@@ -315,9 +340,17 @@ class TenantRoleMappingSetup:
 
         except Exception as e:
             print(f"❌ Error storing SSM parameters: {e}")
+            return [f"SSM parameters not stored: {e}"]
 
-    def update_lambda_role_permissions(self):
-        """Add DynamoDB read permissions to Lambda role."""
+        return []
+
+    def update_lambda_role_permissions(self) -> list[str]:
+        """
+        Add DynamoDB read permissions to Lambda role.
+
+        Returns:
+            List of errors; empty when the policy was attached
+        """
         print("\n🔑 Updating Lambda role permissions for DynamoDB access...")
 
         try:
@@ -351,8 +384,11 @@ class TenantRoleMappingSetup:
             print("✅ Added DynamoDB read permissions to Lambda role")
 
         except Exception as e:
-            print(f"⚠️  Could not update Lambda role: {e}")
+            print(f"❌ Could not update Lambda role: {e}")
             print("   You may need to add DynamoDB permissions manually")
+            return [f"DynamoDB read policy not added to the Lambda role: {e}"]
+
+        return []
 
     def setup(self):
         """Run the complete setup."""
@@ -369,14 +405,24 @@ class TenantRoleMappingSetup:
             print("\n❌ Failed to populate seed data")
             sys.exit(1)
 
+        # The remaining steps all run; their errors are collected so deploy.sh
+        # (and the notebook cell that runs it) sees a non-zero exit.
+        errors = []
+
         # Verify data
-        self.verify_data()
+        errors += self.verify_data()
 
         # Store table info in SSM
-        self.store_table_info_in_ssm()
+        errors += self.store_table_info_in_ssm()
 
         # Update Lambda role permissions
-        self.update_lambda_role_permissions()
+        errors += self.update_lambda_role_permissions()
+
+        if errors:
+            print(f"\n❌ setup_dynamodb_tenant_role_maps.py finished with {len(errors)} error(s):")
+            for err in errors:
+                print(f"   • {err}")
+            sys.exit(1)
 
         print("\n" + "=" * 70)
         print("✨ Setup completed successfully!")
