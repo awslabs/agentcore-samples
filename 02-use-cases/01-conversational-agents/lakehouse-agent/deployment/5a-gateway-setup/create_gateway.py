@@ -874,7 +874,8 @@ def main():
                 target_id = find_target_id(setup.client, gateway_response["gatewayId"], "lakehouse-mcp-target")
                 wait_for_target_ready(setup.client, gateway_response["gatewayId"], target_id, "lakehouse-mcp-target")
         else:
-            print("\n⚠️  Gateway not active yet. You can create the target later.")
+            print("\n⚠️  Gateway not active; cannot create target. Re-run after gateway reaches ACTIVE.")
+            sys.exit(1)
 
         # Store gateway configuration in SSM
         config.store_gateway_parameters(
