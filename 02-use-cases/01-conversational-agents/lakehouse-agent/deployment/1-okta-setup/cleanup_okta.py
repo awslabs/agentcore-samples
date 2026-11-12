@@ -82,6 +82,24 @@ SSM_PARAMS = [
     "okta-administrators-group-id",
 ]
 
+# Returned by the _find_* helpers when the lookup itself failed, which is not the same as "not found".
+_LOOKUP_FAILED = object()
+
+
+def _is_not_found(err) -> bool:
+    """True only for an Okta HTTP 404 (errorCode E0000007, resource not found).
+
+    The Okta SDK returns errors instead of raising them (its raiseException option
+    defaults to False), and both of its error types, OktaAPIError and HTTPError,
+    carry the HTTP status as `.status`.
+    """
+    return getattr(err, "status", None) == 404
+
+
+def _err_text(err) -> str:
+    """The SDK's error types define `.message` but no __str__."""
+    return getattr(err, "message", None) or str(err)
+
 
 class OktaCleanup:
     def __init__(self, keep_ssm: bool = False):
@@ -99,104 +117,161 @@ class OktaCleanup:
         self.region = session.region_name
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.keep_ssm = keep_ssm
+        # Failed lookups and deletes are collected here; run() prints ✨ only when this
+        # stays empty. "Not found" outcomes are not failures.
+        self.errors = []
 
         print("🧹 Okta Cleanup")
         print(f"   Org URL: {self.org_url}")
         print(f"   Region:  {self.region}")
 
+    def _lookup_failed(self, what: str, err):
+        print(f"   ❌ Error listing {what}: {_err_text(err)}")
+        self.errors.append(f"{what} not listed: {_err_text(err)}")
+        return _LOOKUP_FAILED
+
+    def _delete_failed(self, what: str, err):
+        print(f"   ❌ Error deleting {what}: {_err_text(err)}")
+        self.errors.append(f"{what}: {_err_text(err)}")
+
     async def _find_app(self, label: str = OKTA_APP_NAME):
-        """Return Okta app object matching `label`, or None."""
+        """Return Okta app object matching `label`, None if absent, or _LOOKUP_FAILED."""
         try:
-            apps, _, _ = await self.okta.list_applications()
-            for a in apps or []:
-                if a.label == label:
-                    return a
+            apps, _, err = await self.okta.list_applications()
         except Exception as e:
-            print(f"⚠️  Error listing apps: {e}")
+            apps, err = None, e
+        if err:
+            return self._lookup_failed("apps", err)
+        for a in apps or []:
+            if a.label == label:
+                return a
         return None
 
     async def _find_auth_server(self):
         try:
-            servers, _, _ = await self.okta.list_authorization_servers()
-            for s in servers or []:
-                if s.name == OKTA_AUTH_SERVER_NAME:
-                    return s
+            servers, _, err = await self.okta.list_authorization_servers()
         except Exception as e:
-            print(f"⚠️  Error listing auth servers: {e}")
+            servers, err = None, e
+        if err:
+            return self._lookup_failed("auth servers", err)
+        for s in servers or []:
+            if s.name == OKTA_AUTH_SERVER_NAME:
+                return s
         return None
 
     async def _find_group(self, name: str):
         try:
-            groups, _, _ = await self.okta.list_groups(query_params={"q": name})
-            for g in groups or []:
-                if g.profile.name == name:
-                    return g
+            groups, _, err = await self.okta.list_groups(query_params={"q": name})
         except Exception as e:
-            print(f"⚠️  Error listing groups: {e}")
+            groups, err = None, e
+        if err:
+            return self._lookup_failed(f"groups (looking for {name})", err)
+        for g in groups or []:
+            if g.profile.name == name:
+                return g
         return None
 
     async def _find_user(self, login: str):
         try:
-            user, _, _ = await self.okta.get_user(login)
-            return user
-        except Exception:
-            return None
+            user, _, err = await self.okta.get_user(login)
+        except Exception as e:
+            user, err = None, e
+        if err and not _is_not_found(err):
+            return self._lookup_failed(f"user {login}", err)
+        return user
 
     async def delete_app(self, label: str = OKTA_APP_NAME):
         print(f"\n🗑️  Deleting Okta application: {label}")
         app = await self._find_app(label)
+        if app is _LOOKUP_FAILED:
+            return
         if not app:
             print(f"   ⏭️  App not found: {label}")
             return
         try:
-            # Okta requires deactivation before deletion.
-            await self.okta.deactivate_application(app.id)
-            await self.okta.delete_application(app.id)
-            print(f"   ✅ Deleted app: {label}")
+            # Okta requires deactivation before deletion. Both calls return
+            # (response, error) rather than raising.
+            _, err = await self.okta.deactivate_application(app.id)
+            if not err:
+                _, err = await self.okta.delete_application(app.id)
         except Exception as e:
-            print(f"   ❌ Error deleting app: {e}")
+            err = e
+        if err and _is_not_found(err):
+            print(f"   ⏭️  App not found: {label}")
+        elif err:
+            self._delete_failed(f"app {label}", err)
+        else:
+            print(f"   ✅ Deleted app: {label}")
 
     async def delete_auth_server(self):
         print("\n🗑️  Deleting Okta custom authorization server...")
         server = await self._find_auth_server()
+        if server is _LOOKUP_FAILED:
+            return
         if not server:
             print(f"   ⏭️  Auth server not found: {OKTA_AUTH_SERVER_NAME}")
             return
         try:
-            await self.okta.deactivate_authorization_server(server.id)
-            await self.okta.delete_authorization_server(server.id)
-            print(f"   ✅ Deleted auth server: {OKTA_AUTH_SERVER_NAME}")
+            _, err = await self.okta.deactivate_authorization_server(server.id)
+            if not err:
+                _, err = await self.okta.delete_authorization_server(server.id)
         except Exception as e:
-            print(f"   ❌ Error deleting auth server: {e}")
+            err = e
+        if err and _is_not_found(err):
+            print(f"   ⏭️  Auth server not found: {OKTA_AUTH_SERVER_NAME}")
+        elif err:
+            self._delete_failed(f"auth server {OKTA_AUTH_SERVER_NAME}", err)
+        else:
+            print(f"   ✅ Deleted auth server: {OKTA_AUTH_SERVER_NAME}")
 
     async def delete_groups(self):
         print("\n🗑️  Deleting Okta groups...")
         for name in GROUP_NAMES:
             g = await self._find_group(name)
+            if g is _LOOKUP_FAILED:
+                continue
             if not g:
                 print(f"   ⏭️  Group not found: {name}")
                 continue
             try:
-                await self.okta.delete_group(g.id)
-                print(f"   ✅ Deleted group: {name}")
+                _, err = await self.okta.delete_group(g.id)
             except Exception as e:
-                print(f"   ❌ Error deleting group {name}: {e}")
+                err = e
+            if err and _is_not_found(err):
+                print(f"   ⏭️  Group not found: {name}")
+            elif err:
+                self._delete_failed(f"group {name}", err)
+            else:
+                print(f"   ✅ Deleted group: {name}")
 
     async def delete_users(self):
         print("\n🗑️  Deleting Okta test users...")
         for login in USER_LOGINS:
             u = await self._find_user(login)
+            if u is _LOOKUP_FAILED:
+                continue
             if not u:
                 print(f"   ⏭️  User not found: {login}")
                 continue
+            # Okta deletes only a DEPROVISIONED user; on any other status the first
+            # call deactivates and the second deletes. A user left deactivated by an
+            # earlier run gets one call, because a second call would 404.
+            status = getattr(u, "status", None)
+            calls = 1 if str(getattr(status, "value", status)).upper() == "DEPROVISIONED" else 2
+            err = None
             try:
-                # Okta requires deactivation before deletion: on an active user
-                # the first call deactivates, the second deletes permanently.
-                await self.okta.deactivate_or_delete_user(u.id)
-                await self.okta.deactivate_or_delete_user(u.id)
-                print(f"   ✅ Deleted user: {login}")
+                for _ in range(calls):
+                    _, err = await self.okta.deactivate_or_delete_user(u.id)
+                    if err:
+                        break
             except Exception as e:
-                print(f"   ❌ Error deleting user {login}: {e}")
+                err = e
+            if err and _is_not_found(err):
+                print(f"   ⏭️  User not found: {login}")
+            elif err:
+                self._delete_failed(f"user {login}", err)
+            else:
+                print(f"   ✅ Deleted user: {login}")
 
     def delete_ssm_parameters(self):
         if self.keep_ssm:
@@ -212,8 +287,10 @@ class OktaCleanup:
                 print(f"   ⏭️  Not found: {full}")
             except Exception as e:
                 print(f"   ❌ Error deleting {full}: {e}")
+                self.errors.append(f"SSM {full}: {e}")
 
-    async def run(self):
+    async def run(self) -> int:
+        """Run every delete step and return the process exit code (1 if any step failed)."""
         await self.delete_app(OKTA_APP_NAME)
         # Dedicated OBO token-exchange service app (owned here, per the
         # cleanup-ownership note at the top of this file).
@@ -222,7 +299,13 @@ class OktaCleanup:
         await self.delete_groups()
         await self.delete_users()
         self.delete_ssm_parameters()
+        if self.errors:
+            print(f"\n❌ cleanup_okta.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            return 1
         print("\n✨ Okta cleanup complete!")
+        return 0
 
 
 def print_plan(keep_ssm: bool) -> None:
@@ -262,7 +345,7 @@ def main():
         sys.exit(2)
 
     cleanup = OktaCleanup(keep_ssm=args.keep_ssm)
-    asyncio.run(cleanup.run())
+    sys.exit(asyncio.run(cleanup.run()))
 
 
 if __name__ == "__main__":
