@@ -85,15 +85,20 @@ def run_coro(coro):
     """
     outcome = {}
 
+    # Not nest_asyncio: under ipykernel 7 it can drop cells queued behind this one,
+    # because the kernel runs every cell in one shared context.
     def _worker():
         try:
             outcome["value"] = asyncio.run(coro)
         except BaseException as e:
             outcome["error"] = e
 
+    # On an interrupt, KeyboardInterrupt is raised in the join loop below while the coroutine keeps
+    # running in the worker, its result unused; a daemon thread does not keep the process alive.
     worker = threading.Thread(target=_worker, name="run_coro", daemon=True)
     worker.start()
-    # Short joins keep the cell interruptible (a single blocking join is not).
+    # Short joins keep the cell interruptible on every platform; before Python 3.14,
+    # lock waits on Windows cannot be interrupted, so a plain join() may hang there.
     while worker.is_alive():
         worker.join(timeout=0.2)
     if "error" in outcome:
@@ -116,6 +121,9 @@ def require(namespace, *names, rerun_from):
     Returns silently when every name is defined. Otherwise it prints which names are
     missing and where to re-run from, then raises MissingPrerequisite carrying the
     same two lines, so the cell stops before it reaches a NameError.
+
+    Import require inside each guarded cell, so a cell run on its own in a fresh kernel
+    reaches this message instead of a NameError on `require` itself.
     """
     __tracebackhide__ = True  # IPython and pytest leave this frame out of the traceback
     missing = [name for name in names if name not in namespace]
@@ -137,7 +145,9 @@ def _secs(value):
     return int(value) if float(value).is_integer() else value
 
 
-def wait_for(label, check, interval, timeout, *, raise_on_timeout=True, clock=time.monotonic, sleep=time.sleep):
+def wait_for(
+    label, check, interval, timeout, *, raise_on_timeout=True, quiet_s=0, clock=time.monotonic, sleep=time.sleep
+):
     """Poll check() every `interval` seconds until it reports done, for at most `timeout` seconds.
 
     check() returns (done, status). While waiting, a progress line is printed when the
@@ -145,6 +155,10 @@ def wait_for(label, check, interval, timeout, *, raise_on_timeout=True, clock=ti
     and a timeout line if it never does. On timeout it raises TimeoutError, or returns False
     when raise_on_timeout is False (the caller then decides what to do). Returns True when done.
     Exceptions raised by check() propagate unchanged.
+
+    With quiet_s, nothing is printed for the first quiet_s seconds, so a wait that finishes
+    inside that window is silent. The timeout line always prints, and so does the done line
+    once a progress line has been printed.
 
         >>> wait_for("Gateway targets delete", lambda: (not list_targets(), "deleting"), interval=5, timeout=60)
     """
@@ -155,7 +169,8 @@ def wait_for(label, check, interval, timeout, *, raise_on_timeout=True, clock=ti
         done, status = check()
         elapsed = clock() - start
         if done:
-            print(f"✅ {label} done in {int(elapsed)} s")
+            if last_print is not None or elapsed >= quiet_s:
+                print(f"✅ {label} done in {int(elapsed)} s")
             return True
         if elapsed >= timeout:
             message = f"❌ {label} did not finish within {_secs(timeout)} s"
@@ -163,7 +178,9 @@ def wait_for(label, check, interval, timeout, *, raise_on_timeout=True, clock=ti
             if raise_on_timeout:
                 raise TimeoutError(message)
             return False
-        if last_print is None or status != last_status or clock() - last_print >= PROGRESS_EVERY_S:
+        if elapsed >= quiet_s and (
+            last_print is None or status != last_status or clock() - last_print >= PROGRESS_EVERY_S
+        ):
             print(f"⏳ {label}: {status}, {int(elapsed)} s elapsed (timeout {_secs(timeout)} s)…")
             last_status, last_print = status, clock()
         sleep(interval)
