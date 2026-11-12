@@ -77,6 +77,9 @@ from utils.notebook_init import wait_for
 SSM_PREFIX = "/app/lakehouse-agent/"
 REQUIRED_CLI_MAJOR_MINOR = "0.30."
 TARGET_NAME = "default"
+# StackStatus values after a create or update that succeeded. CLEANUP_IN_PROGRESS
+# only removes replaced resources; the new ones are already live.
+DEPLOYED_STACK_STATES = ("CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS")
 PLACEHOLDER_ACCOUNT = "000000000000"
 PLACEHOLDER_DISCOVERY_URL = "https://idp.placeholder.invalid/.well-known/openid-configuration"
 ROLE_SCRIPT = "deployment/2-lakehouse-tenant-roles-setup/setup_runtime_roles.py"
@@ -354,7 +357,18 @@ def read_runtime_outputs(project: Project, aws: AwsContext) -> dict[str, str]:
     hashed output logical IDs.
     """
     cfn = aws.client("cloudformation")
-    outputs = cfn.describe_stacks(StackName=project.stack_name())["Stacks"][0].get("Outputs", [])
+    stack = cfn.describe_stacks(StackName=project.stack_name())["Stacks"][0]
+    # A stack that rolled back still has the previous runtime's outputs, so the
+    # outputs alone cannot show that this deploy took effect.
+    status = stack["StackStatus"]
+    if status not in DEPLOYED_STACK_STATES:
+        reason = stack.get("StackStatusReason", "")
+        fail(
+            f"Stack {project.stack_name()} is in {status}{f' ({reason})' if reason else ''}, "
+            "not CREATE_COMPLETE or UPDATE_COMPLETE, so its runtime may not be the code just deployed. "
+            "Check the stack's events in the CloudFormation console."
+        )
+    outputs = stack.get("Outputs", [])
     found: dict[str, str] = {}
     for out in outputs:
         match = re.fullmatch(r"Runtime (ARN|ID) for agent: (\w+)", out.get("Description", ""))
