@@ -935,8 +935,26 @@ with st.sidebar:
             st.session_state.idp_config = load_config_from_ssm()
             if st.session_state.idp_config.get("runtime_arn"):
                 st.session_state.runtime_arn = st.session_state.idp_config["runtime_arn"]
-            st.success("✅ Configuration reloaded")
-            st.rerun()
+            # The values login and chat need on the active IdP. gateway_url is left out:
+            # it only feeds the tools panel, which works without it.
+            if IDP_PROVIDER == "okta":
+                needed = (
+                    "runtime_arn",
+                    "okta_org_url",
+                    "okta_auth_server_id",
+                    "okta_app_client_id",
+                    "okta_app_client_secret",
+                )
+            else:
+                needed = ("runtime_arn", "cognito_user_pool_id", "cognito_app_client_id")
+            missing = [k for k in needed if not st.session_state.idp_config.get(k)]
+            if missing:
+                st.warning(
+                    "⚠️ Configuration reloaded, but these values could not be read from SSM: " + ", ".join(missing)
+                )
+            else:
+                st.success("✅ Configuration reloaded")
+                st.rerun()
 
     st.markdown("---")
 
