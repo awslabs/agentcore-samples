@@ -182,7 +182,8 @@ class OBOCleanup:
                     remaining = self.bedrock.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", [])
                     return not remaining, f"{len(remaining)} target(s) still listed"
 
-                # Same budget as before (12 x 5 s); on timeout it carries on to the gateway delete, as before.
+                # No raise on timeout: the gateway delete below still runs and prints its own error
+                # if it fails, and the rest of the teardown continues.
                 wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
         except Exception as e:
             print(f"   ⚠️  Error listing/deleting targets: {e}")
@@ -287,10 +288,11 @@ class OBOCleanup:
                             return True, "deleted"
                         status = items[0].get("status")
                         if status not in ("DELETING", "ACTIVE", "CREATING"):
-                            raise _UnexpectedStatus(status)  # stop waiting, as before
+                            raise _UnexpectedStatus(status)  # any other status stops the wait at once
                         return False, status
 
-                    # Same budget as before (40 x 15 s, ~10 min). A timeout warns and teardown continues (D-090).
+                    # Up to 10 min (15 s x 40). A timeout warns, lists the collection under
+                    # "Not confirmed deleted" at the end, and the teardown continues.
                     try:
                         gone = wait_for(
                             "AOSS collection delete", _collection_gone, interval=15, timeout=600, raise_on_timeout=False

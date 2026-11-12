@@ -430,10 +430,13 @@ def destroy(project: Project, assume_yes: bool) -> None:
     print(f"🗑️  Deleting stack {name} ...")
     cfn.delete_stack(StackName=name)
 
-    # The same success and failure states as botocore's stack_delete_complete waiter
-    # (botocore data/cloudformation/2010-05-15/waiters-2.json, "StackDeleteComplete").
+    # Polled with wait_for, not the boto3 waiter, so a long delete prints progress. The states below
+    # are botocore's StackDeleteComplete waiter's (data/cloudformation/2010-05-15/waiters-2.json).
     success_states = ("DELETE_COMPLETE",)
+    # describe_stacks by name raises ValidationError once the stack no longer exists,
+    # so the waiter counts that error as success too.
     success_errors = ("ValidationError",)
+    # Copied from the waiter's failure acceptors, UPDATE_COMPLETE included.
     failure_states = (
         "DELETE_FAILED",
         "CREATE_FAILED",
@@ -458,7 +461,7 @@ def destroy(project: Project, assume_yes: bool) -> None:
             raise RuntimeError(f"Stack {name} delete failed: {status} {stack.get('StackStatusReason', '')}".rstrip())
         return False, status
 
-    # Polls every 15 s for up to 20 min, the same budget as the waiter it replaces (15 s x 80).
+    # Polls every 15 s for up to 20 min (15 s x 80).
     wait_for(f"Stack {name} delete", _stack_gone, interval=15, timeout=15 * 80)
     print(f"   ✅ Stack {name} deleted")
 

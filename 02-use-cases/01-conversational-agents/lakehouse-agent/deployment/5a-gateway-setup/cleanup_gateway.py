@@ -122,7 +122,8 @@ class GatewayCleanup:
                         remaining = self.bedrock.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", [])
                         return not remaining, f"{len(remaining)} target(s) still listed"
 
-                    # Same budget as before (12 x 5 s); on timeout it carries on to the gateway delete, as before.
+                    # No raise on timeout: the gateway delete below still runs and prints its own error
+                    # if it fails, and the rest of the teardown continues.
                     wait_for("Gateway targets delete", _targets_gone, interval=5, timeout=60, raise_on_timeout=False)
             except Exception as e:
                 print(f"   ⚠️  Error deleting targets: {e}")

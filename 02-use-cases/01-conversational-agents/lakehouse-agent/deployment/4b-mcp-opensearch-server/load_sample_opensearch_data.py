@@ -60,7 +60,8 @@ from utils.idp_config import get_idp_provider
 CLAIM_NOTES_INDEX = "claim-notes"
 SSM_PREFIX = "/app/lakehouse-agent/"
 
-# Loading and confirmation timings.
+# Loading and confirmation timings. Bulk responses slower than 30 s were seen on re-loads,
+# so each request may take up to 60 s and the load is retried.
 READ_TIMEOUT_S = 60  # per request
 LOAD_ATTEMPTS = 3
 RETRY_PAUSES_S = (5, 15)  # pause before attempt 2, then before attempt 3
@@ -536,6 +537,8 @@ def confirm_searchable(client: OpenSearch, docs: list[dict]) -> bool:
             missing, wrong_owner = check_notes(client, docs)
             last_error = None
         except Exception as e:
+            # Any error counts as "not searchable yet" and polling goes on; if the
+            # final check also fails, its error is printed below.
             missing, wrong_owner, last_error = [], [], e
         if last_error is None and not missing and not wrong_owner:
             print(f"   ✅ {total}/{total} confirmed")
