@@ -86,13 +86,13 @@ echo "📦 Packaging Lambda function..."
 # compiled module built for another Python version) ends up in the package.
 rm -rf "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-response/dist"
 mkdir -p dist
-"$PYTHON_BIN" -m pip install -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
+"$PYTHON_BIN" -m pip install -q --disable-pip-version-check -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
 cp lambda_function.py dist/
 
 # zip adds to an existing archive rather than replacing it, so remove the old package first.
 rm -f "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-response/response-interceptor-lambda.zip"
 cd dist
-zip -r ../response-interceptor-lambda.zip .
+zip -q -r ../response-interceptor-lambda.zip .
 cd ..
 
 echo "✅ Package created: response-interceptor-lambda.zip"
@@ -129,12 +129,12 @@ echo "✅ Lambda role ready: $LAMBDA_ROLE_ARN"
 # Check if Lambda function already exists
 echo ""
 echo "🔍 Checking if Lambda function exists..."
-if aws lambda get-function --function-name lakehouse-gateway-response-interceptor --region $AWS_REGION 2>/dev/null; then
+if aws lambda get-function --function-name lakehouse-gateway-response-interceptor --region $AWS_REGION >/dev/null 2>/dev/null; then
     echo "📝 Updating existing Lambda function..."
     aws lambda update-function-code \
         --function-name lakehouse-gateway-response-interceptor \
         --zip-file fileb://response-interceptor-lambda.zip \
-        --region $AWS_REGION
+        --region $AWS_REGION >/dev/null
 
     # update-function-code returns while Lambda is still applying the change
     # (LastUpdateStatus=InProgress). Wait for it to settle before issuing
@@ -149,7 +149,7 @@ if aws lambda get-function --function-name lakehouse-gateway-response-intercepto
         --function-name lakehouse-gateway-response-interceptor \
         --environment "Variables={$LAMBDA_ENV_VARS}" \
         --kms-key-arn "" \
-        --region $AWS_REGION
+        --region $AWS_REGION >/dev/null
 
     wait_with_progress "Lambda configuration update" "5 min" aws lambda wait function-updated \
         --function-name lakehouse-gateway-response-interceptor \
@@ -176,7 +176,7 @@ else
             --memory-size 256 \
             --environment "Variables={$LAMBDA_ENV_VARS}" \
             --tags Application=lakehouse-agent,Purpose=claims-response-interceptor \
-            --region $AWS_REGION 2>/dev/null; then
+            --region $AWS_REGION >/dev/null 2>/dev/null; then
             wait_with_progress "Lambda becoming active" "5 min" aws lambda wait function-active \
                 --function-name lakehouse-gateway-response-interceptor \
                 --region $AWS_REGION
@@ -206,7 +206,7 @@ aws ssm put-parameter \
     --value "$LAMBDA_FUNCTION_ARN" \
     --type String \
     --overwrite \
-    --region $AWS_REGION
+    --region $AWS_REGION >/dev/null
 
 echo "✅ Stored parameter: /app/lakehouse-agent/response-interceptor-lambda-arn"
 

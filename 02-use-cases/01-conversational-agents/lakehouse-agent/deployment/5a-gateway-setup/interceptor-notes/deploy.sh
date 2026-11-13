@@ -90,7 +90,7 @@ echo "📦 Packaging Lambda function..."
 # compiled module built for another Python version) ends up in the package.
 rm -rf "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-notes/dist"
 mkdir -p dist
-"$PYTHON_BIN" -m pip install -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
+"$PYTHON_BIN" -m pip install -q --disable-pip-version-check -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
 cp lambda_function.py dist/
 # zip adds to an existing archive rather than replacing it, so remove the old package first.
 rm -f "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-notes/notes-interceptor-lambda.zip"
@@ -127,14 +127,14 @@ sleep 10
 
 echo ""
 echo "🔍 Checking if Lambda function exists..."
-if aws lambda get-function --function-name lakehouse-notes-interceptor --region $AWS_REGION 2>/dev/null; then
+if aws lambda get-function --function-name lakehouse-notes-interceptor --region $AWS_REGION >/dev/null 2>/dev/null; then
     echo "📝 Updating existing Lambda function..."
     # Each update returns before Lambda finishes applying it; wait in between so the
     # configuration update does not fail with ResourceConflictException.
     aws lambda update-function-code \
         --function-name lakehouse-notes-interceptor \
         --zip-file fileb://notes-interceptor-lambda.zip \
-        --region $AWS_REGION
+        --region $AWS_REGION >/dev/null
     wait_with_progress "Lambda code update" "5 min" aws lambda wait function-updated \
         --function-name lakehouse-notes-interceptor \
         --region $AWS_REGION
@@ -143,7 +143,7 @@ if aws lambda get-function --function-name lakehouse-notes-interceptor --region 
         --function-name lakehouse-notes-interceptor \
         --environment "Variables={$LAMBDA_ENV_VARS}" \
         --kms-key-arn "" \
-        --region $AWS_REGION
+        --region $AWS_REGION >/dev/null
     wait_with_progress "Lambda configuration update" "5 min" aws lambda wait function-updated \
         --function-name lakehouse-notes-interceptor \
         --region $AWS_REGION
@@ -164,7 +164,7 @@ else
             --memory-size 256 \
             --environment "Variables={$LAMBDA_ENV_VARS}" \
             --tags Application=lakehouse-agent,Purpose=notes-interceptor \
-            --region $AWS_REGION 2>/dev/null; then
+            --region $AWS_REGION >/dev/null 2>/dev/null; then
             wait_with_progress "Lambda becoming active" "5 min" aws lambda wait function-active \
                 --function-name lakehouse-notes-interceptor \
                 --region $AWS_REGION
@@ -192,7 +192,7 @@ aws ssm put-parameter \
     --value "$LAMBDA_FUNCTION_ARN" \
     --type String \
     --overwrite \
-    --region $AWS_REGION
+    --region $AWS_REGION >/dev/null
 echo "✅ Stored parameter: /app/lakehouse-agent/notes-interceptor-lambda-arn"
 
 # CloudWatch Logs retention. The log group is created up front (ignoring "already exists")
