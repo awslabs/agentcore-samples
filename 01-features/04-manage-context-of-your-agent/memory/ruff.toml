@@ -38,6 +38,7 @@ ignore = [
     "RUF010",  # explicit str() inside an f-string
     "RUF013",  # implicit Optional
     "UP006",   # typing.Dict -> dict
+    "UP017",   # datetime.UTC alias
     "UP031",   # printf-style formatting
     "UP035",   # deprecated typing imports
 ]
