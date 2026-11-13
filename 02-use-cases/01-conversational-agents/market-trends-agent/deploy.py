@@ -51,6 +51,7 @@ import logging
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -623,7 +624,7 @@ class MarketTrendsAgentDeployer:
         agent_name: str,
         role_name: str = "MarketTrendsAgentRole",
         entrypoint: str = "market_trends_agent.py",
-        requirements_file: str = None,
+        requirements_file: str | None = None,
     ) -> str:
         """Deploy the Market Trends Agent using the AgentCore SDK and boto3.
 
@@ -755,7 +756,7 @@ def main():
     # Check prerequisites
     if not args.skip_checks and not check_prerequisites():
         logger.error("❌ Prerequisites not met. Fix issues above or use --skip-checks")
-        exit(1)
+        sys.exit(1)
 
     # Create deployer and deploy
     region = args.region or boto3.session.Session().region_name or "us-east-1"
@@ -768,7 +769,7 @@ def main():
         logger.info("Run 'uv run python test_agent.py --region %s' to test your deployed agent.", region)
     else:
         logger.error("❌ Deployment failed")
-        exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

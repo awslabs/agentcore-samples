@@ -5,12 +5,13 @@ This module contains all memory-related tools for managing broker profiles,
 conversation history, and financial interests using AgentCore Memory.
 """
 
-from langchain_core.tools import tool
-from bedrock_agentcore.memory import MemoryClient
 import hashlib
 import logging
 import os
 import re
+
+from bedrock_agentcore.memory import MemoryClient
+from langchain_core.tools import tool
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ def get_memory_from_ssm():
 
     except ssm_client.exceptions.ParameterNotFound:
         logger.error("Memory ARN not found in SSM Parameter Store. Please run deployment first.")
-        raise Exception("Memory not deployed. Run 'uv run python deploy.py' first.")
+        raise RuntimeError("Memory not deployed. Run 'uv run python deploy.py' first.")
     except Exception as e:
         logger.error(f"Error retrieving memory from SSM: {e}")
         raise
@@ -132,7 +133,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
     """Create memory tools with the provided memory client and configuration"""
 
     @tool
-    def list_conversation_history(actor_id_override: str = None):
+    def list_conversation_history(actor_id_override: str | None = None):
         """Retrieve recent conversation history and user preferences from memory"""
         try:
             # Use provided actor_id or default
@@ -168,7 +169,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
             return "No conversation history available"
 
     @tool
-    def get_broker_financial_profile(actor_id_override: str = None):
+    def get_broker_financial_profile(actor_id_override: str | None = None):
         """Retrieve the long-term financial interests and investment profile from multiple memory strategies
 
         Args:
@@ -227,7 +228,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                             for message in event["messages"]:
                                 content = message.get("content", "")
                                 # Look for profile-related information
-                                if any(
+                                if len(content) > 50 and any(  # Meaningful content
                                     keyword in content.lower()
                                     for keyword in [
                                         "broker",
@@ -238,10 +239,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                                         "client",
                                     ]
                                 ):
-                                    if len(content) > 50:  # Meaningful content
-                                        profile_elements.append(
-                                            content[:200] + "..." if len(content) > 200 else content
-                                        )
+                                    profile_elements.append(content[:200] + "..." if len(content) > 200 else content)
 
                     if profile_elements:
                         return "Broker Profile (from conversation history):\n" + "\n\n".join(profile_elements[-2:])
@@ -255,7 +253,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
             return "Unable to retrieve financial profile at this time"
 
     @tool
-    def update_broker_financial_interests(interests_update: str, actor_id_override: str = None):
+    def update_broker_financial_interests(interests_update: str, actor_id_override: str | None = None):
         """Update or add to the broker's financial interests and investment preferences
 
         Args:

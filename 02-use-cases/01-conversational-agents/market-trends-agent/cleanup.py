@@ -13,9 +13,9 @@ Removes all resources created by deploy.py including:
 
 import argparse
 import logging
-import boto3
 from pathlib import Path
 
+import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 # Configure logging
