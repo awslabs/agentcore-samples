@@ -167,7 +167,7 @@ Configuration details are saved to `results/online_eval_config.json`.
 # Disable
 aws bedrock-agentcore-control update-online-evaluation-config \
     --online-evaluation-config-id <config-id-from-results/online_eval_config.json> \
-    --enable-config false
+    --execution-status DISABLED
 
 # Delete when no longer needed
 aws bedrock-agentcore-control delete-online-evaluation-config \
