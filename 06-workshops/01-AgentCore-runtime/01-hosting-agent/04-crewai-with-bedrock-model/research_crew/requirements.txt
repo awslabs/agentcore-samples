@@ -1,5 +1,0 @@
-crewai
-crewai-tools
-bedrock-agentcore<=0.1.5
-langchain-community
-duckduckgo-search

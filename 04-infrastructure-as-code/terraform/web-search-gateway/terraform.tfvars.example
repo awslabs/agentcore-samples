@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars and edit as needed. Every value below is optional —
+# the defaults produce a working demo on their own.
+
+region      = "eu-west-1"
+name_prefix = "websearch-poc"
+
+# ---------------------------------------------------------------------------
+# Governance demo
+#
+# Both lists are empty by default so the first run is unfiltered. Uncomment to
+# show the admin-level content-compliance lever: these lists are hidden from the
+# calling agent and applied to every request, so no prompt injection can widen
+# them. The include list requires connector_version 1.2.0.
+# ---------------------------------------------------------------------------
+
+# domain_include = ["sec.gov", "reuters.com"]
+# domain_exclude = ["example-blocked.com"]
+
+connector_version = "1.2.0"
+
+# ---------------------------------------------------------------------------
+# Optional: let an identity you already hold call the Gateway directly, instead
+# of assuming the generated demo caller role.
+# ---------------------------------------------------------------------------
+
+# existing_caller_principal_arn = "arn:aws:iam::123456789012:user/your-user"
+# existing_caller_principal_arn = "arn:aws:iam::123456789012:role/your-role"
+
+tags = {
+  Project   = "agentcore-websearch-poc"
+  ManagedBy = "terraform"
+}

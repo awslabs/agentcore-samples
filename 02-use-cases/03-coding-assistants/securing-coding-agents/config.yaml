@@ -1,0 +1,128 @@
+# AgentCore Policy Sample Configuration
+# All AWS resource IDs are auto-discovered — do not hardcode ARNs here.
+
+region: us-west-2
+
+policy_engine:
+  name: coding-agent-policy-engine
+  policies_dir: ./policies
+  enforcement_mode: ENFORCE  # ENFORCE or LOG_ONLY
+
+runtime:
+  name: coding-assistant-runtime
+  model_id: us.anthropic.claude-sonnet-4-20250514
+
+scenarios:
+  # --- File System: ALLOW (within workspace) ---
+  - name: allow-file-write-workspace
+    target: FileSystemTarget
+    tool: write_file
+    input: {path: "/workspace/src/main.py", content: "print('hello')"}
+    expected: ALLOW
+
+  - name: allow-file-read-workspace
+    target: FileSystemTarget
+    tool: read_file
+    input: {path: "/workspace/src/app.py"}
+    expected: ALLOW
+
+  - name: allow-file-write-test
+    target: FileSystemTarget
+    tool: write_file
+    input: {path: "/workspace/src/tests/test_auth.py", content: "def test_login(): pass"}
+    expected: ALLOW
+
+  - name: allow-file-read-config
+    target: FileSystemTarget
+    tool: read_file
+    input: {path: "/workspace/src/config.json"}
+    expected: ALLOW
+
+  - name: allow-list-workspace
+    target: FileSystemTarget
+    tool: list_directory
+    input: {path: "/workspace/src/"}
+    expected: ALLOW
+
+  # --- File System: DENY (outside workspace) ---
+  - name: deny-file-write-etc
+    target: FileSystemTarget
+    tool: write_file
+    input: {path: "/etc/passwd", content: "malicious"}
+    expected: DENY
+
+  - name: deny-file-read-ssh-keys
+    target: FileSystemTarget
+    tool: read_file
+    input: {path: "/root/.ssh/id_rsa"}
+    expected: DENY
+
+  - name: deny-file-read-env
+    target: FileSystemTarget
+    tool: read_file
+    input: {path: "/home/user/.env"}
+    expected: DENY
+
+  # --- Shell: ALLOW (safe commands) ---
+  - name: allow-shell-npm-test
+    target: ShellTarget
+    tool: execute
+    input: {command: "npm test"}
+    expected: ALLOW
+
+  - name: allow-shell-npm-build
+    target: ShellTarget
+    tool: execute
+    input: {command: "npm run build"}
+    expected: ALLOW
+
+  - name: allow-shell-pytest
+    target: ShellTarget
+    tool: execute
+    input: {command: "python -m pytest"}
+    expected: ALLOW
+
+  # --- Shell: DENY (dangerous commands) ---
+  - name: deny-shell-rm-rf
+    target: ShellTarget
+    tool: execute
+    input: {command: "rm -rf /"}
+    expected: DENY
+
+  - name: deny-shell-sudo
+    target: ShellTarget
+    tool: execute
+    input: {command: "sudo apt install malware"}
+    expected: DENY
+
+  - name: deny-shell-chmod-777
+    target: ShellTarget
+    tool: execute
+    input: {command: "chmod 777 /tmp/script.sh"}
+    expected: DENY
+
+  # --- Restricted Tools: DENY (blanket forbid) ---
+  - name: deny-python-repl
+    target: CodeTarget
+    tool: python_repl
+    input: {code: "print(2+2)"}
+    expected: DENY
+
+  - name: deny-retrieve
+    target: RetrieveTarget
+    tool: retrieve
+    input: {query: "auth handler", top_k: 3}
+    expected: DENY
+
+  - name: deny-http-request
+    target: HttpTarget
+    tool: http_request
+    input: {url: "https://api.github.com/repos", method: "GET"}
+    expected: DENY
+
+  # --- Admin Tools: DENY (blanket forbid) ---
+  - name: deny-api-invoke
+    target: ApiTarget
+    tool: invoke
+    input: {endpoint: "https://external.example.com", method: "POST"}
+    expected: DENY

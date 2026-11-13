@@ -243,6 +243,7 @@ aws bedrock-agentcore-control delete-online-evaluation-config \
 ## Next Steps
 
 - Run DeepEval / AutoEval metrics as managed or custom-derived evaluators — see [`3p-evals/`](3p-evals/)
+- Score several quality dimensions in one judge call, each with its own scale and result — see [`multi-dimension-evaluators/`](multi-dimension-evaluators/)
 - Add trajectory evaluators (`Builtin.TrajectoryExactOrderMatch`, `TrajectoryInOrderMatch`, `TrajectoryAnyOrderMatch`) using `expected_trajectory` in `ReferenceInputs`
 - Explore [`ground-truth-based-evaluation/`](../ground-truth-based-evaluation/) for `EvaluationClient`, `DatasetRunner`, and `BatchRunner` patterns
 - Explore [`custom-code-based-evaluation/`](../custom-code-based-evaluation/) for deterministic Lambda evaluators

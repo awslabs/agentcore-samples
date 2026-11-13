@@ -1,4 +1,0 @@
-{
-    "model": {"name": "claude45sonnet", "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0"},
-    "system_prompt": {"name": "prompt1", "prompt": "You are an experienced agent supporting developers using Amazon Bedrock AgentCore and LangFuse."}
-}

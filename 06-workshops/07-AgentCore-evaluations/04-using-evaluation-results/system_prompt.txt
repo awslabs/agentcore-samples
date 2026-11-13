@@ -1,7 +1,0 @@
-# Your Agent's System Prompt
-#
-# Paste your agent's FULL system prompt below.
-# The analyzer needs this to generate targeted improvements.
-#
-# Delete everything below this line and paste your prompt:
-

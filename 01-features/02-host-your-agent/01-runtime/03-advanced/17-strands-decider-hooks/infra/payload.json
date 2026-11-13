@@ -1,0 +1,41 @@
+{
+  "state": {
+    "customer": {"plan": "enterprise", "tenure_months": 38, "open_tickets": 2},
+    "subject": "Charged twice for October invoice",
+    "message": "Hi, we were billed twice this month (INV-2210 and INV-2211). This is the second time this year. If it isn't fixed this week we'll have to review our contract."
+  },
+  "questions": {
+    "category": {
+      "type": "choice",
+      "instructions": "Which team should handle this ticket?",
+      "criteria": {
+        "billing": "charges, invoices, refunds",
+        "technical": "bugs, outages, errors",
+        "account": "access, users, settings",
+        "sales": "plans, upgrades, pricing"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is this ticket?",
+      "criteria": ["low", "normal", "high", "critical"]
+    },
+    "sentiment": {
+      "type": "score",
+      "instructions": "How does the customer feel?",
+      "criteria": ["calm", "annoyed", "frustrated", "angry"]
+    },
+    "churn_risk": {
+      "type": "noul",
+      "instructions": "Is the customer signaling they may cancel or leave?"
+    },
+    "refund": {
+      "type": "noul",
+      "instructions": "Does resolving this require issuing a refund?"
+    },
+    "auto_reply": {
+      "type": "noul",
+      "instructions": "Can a standard template reply fully resolve this without a human?"
+    }
+  }
+}

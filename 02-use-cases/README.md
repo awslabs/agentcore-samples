@@ -44,6 +44,7 @@ Agents that help developers write, run, or fix code. Tasks tend to be longer-run
 |--------|-------------|----------|--------------|
 | [text-to-python-ide](./03-coding-assistants/text-to-python-ide/) | Code generation and execution environment with AgentCore Code Interpreter | Text-to-Python IDE with sandboxed execution | Runtime, Code Interpreter, Memory, Policy |
 | [claude-code-gateway-mcp-server](./03-coding-assistants/claude-code-gateway-mcp-server/) | Integrate Claude Code with MCP Server using AgentCore Gateway for dynamic tool loading and centralized access | Single MCP endpoint for Claude Code | Gateway, Identity |
+| [securing-coding-agents](./03-coding-assistants/securing-coding-agents/) | Fine-grained access control on coding agents using Cedar policies with AgentCore Gateway and Policy Engine | Guardrails for file, shell, and tool access | Runtime, Gateway, Policy, Identity (Cognito) |
 
 
 ## Resources

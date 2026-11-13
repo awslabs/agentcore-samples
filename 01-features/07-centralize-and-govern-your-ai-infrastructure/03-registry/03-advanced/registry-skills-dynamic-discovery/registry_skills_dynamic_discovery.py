@@ -109,6 +109,18 @@ print(f"  {C.BOLD}ID:{C.RESET}   {C.CYAN}{REGISTRY_ID}{C.RESET}")
 print(f"\n{C.BOLD}=== 2. Register an Agent Skill ==={C.RESET}")
 
 skill_definition_schema = json.dumps(
+    # SECURITY NOTE: The skill definition below contains publisher-provided metadata
+    # that will be stored in the registry and later consumed by agents. The registry
+    # stores this metadata without interpretation. Consumers are responsible for
+    # validating this data before acting on it.
+    #
+    # In production:
+    # - Validate package identifiers against your organization's approved allowlist
+    # - Pin exact package versions and install from a controlled source (AWS CodeArtifact)
+    # - Restrict repository URLs to approved sources
+    # - Consider using AWS CodeArtifact for package management
+    #
+    # See README.md "Security Considerations" and utils/security_config.py for details.
     {
         "repository": {
             "url": "https://github.com/anthropics/skills/tree/main/skills/pdf",
@@ -203,6 +215,11 @@ def search_and_load_skill(query: str) -> str:
     Performs semantic search, downloads the top matching skill package
     (SKILL.md + supporting files), installs dependencies, and returns
     the skill instructions.
+
+    SECURITY: Registry search results contain publisher-provided metadata.
+    The load_skill_from_registry function validates all packages and URLs
+    against the allowlist in utils/security_config.py before execution.
+    See README.md "Security Considerations" for production guidance.
 
     Args:
         query: Natural language description of the skill needed (e.g., 'PDF processing').

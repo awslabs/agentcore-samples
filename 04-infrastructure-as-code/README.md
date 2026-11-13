@@ -132,4 +132,4 @@ For Terraform samples, also install:
 - [AWS CloudFormation Documentation](https://docs.aws.amazon.com/cloudformation/)
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
 - [Terraform Documentation](https://www.terraform.io/docs)
-- [Workshops](../06-workshops/) - Learn AgentCore fundamentals in Jupyter Notebooks
+- [Features](../01-features/) - Learn AgentCore fundamentals feature by feature

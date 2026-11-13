@@ -1,0 +1,2 @@
+boto3>=1.40.0
+matplotlib>=3.8

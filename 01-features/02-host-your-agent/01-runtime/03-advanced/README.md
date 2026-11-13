@@ -18,6 +18,11 @@ Beyond basic agent and tool hosting, AgentCore runtime provides advanced capabil
 | 10 | [MCP Dynamic Client Registration](10-mcp-dynamic-client-registration/) | Auth0 OAuth + DCR for MCP server authentication | deploy/invoke/cleanup |
 | 11 | [Middleware Support](11-middleware-support/) | Starlette middleware for observability and error handling | deploy/invoke/cleanup |
 | 12 | [Egress-Controlled Code Execution](12-egress-coding-execution/) | Sandbox untrusted code in the microVM with broker-mediated, allowlisted egress | Reference (Docker-based) |
+| 13 | [Async-EC2 Capacity Provider](13-async-ec2-capacity-provider/) | Show how to deploy an async workload in Runtime with Instance capacity provider | deploy/invoke/cleanup  |
+| 14 | [Bring-your-own Warm Pool](14-byo-warm-pool/) | How to create your own warm-pool to reach ms latency with Runtime v2 | deploy --options  |
+| 15 | [Bring-your-own Storage with FUSE](15-byo-storage-with-fuse/) | How to create your own mount point (to S3) using FUSE | deploy --options  |
+| 16 | [Session Endpoints Web Preview](16-session-endpoints/) | Preview a web app a coding agent edits inside a session, through a Session endpoint and a local endpoint | Notebook |
+| 17 | [Deploy Strands Decider on Runtime with Hooks](17-strands-decider-hooks/) | How to deploy your Strands Decider decision model in Runtime using custom hooks, bigger image size (up to 10GB) and bigger microVM | deploy --options  |
 
 ## Tutorial Formats
 

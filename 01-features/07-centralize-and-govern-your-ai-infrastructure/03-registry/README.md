@@ -18,6 +18,7 @@ AWS Agent registry lets you discover and manage agents, tools, and resources acr
 | `00-getting-started/end-to-end/02-registry-end-to-end-oauth/` | End-to-end with Cognito CUSTOM_JWT OAuth authentication |
 | `01-advanced/admin-approval-workflow/` | EventBridge + Lambda + DynamoDB approval pipeline with Slack notifications |
 | `01-advanced/consumer-discovery-semantic-search/` | 12 semantic search scenarios across 14 e-commerce capabilities |
+| `03-advanced/custom-metadata-in-registry/` | Custom metadata schema and validation, automated approval with EventBridge + Lambda, metadata-filtered search, and a Strands agent that searches through the registry MCP endpoint |
 | `01-advanced/discovery-and-invocation-at-runtime/` | Orchestrator agent that discovers and invokes tools from registry at runtime |
 | `01-advanced/kiro-registry-dcr-auth0/` | registry as an MCP server in Kiro IDE via Auth0 DCR (RFC 7591) |
 | `01-advanced/kiro/kiro-power-publisher-workflow/` | Manage registry records directly from Kiro IDE chat |
@@ -35,7 +36,7 @@ by concern: authentication (OAuth, DCR), automation (Lambda sync), runtime integ
 
 ## Finding Things
 
-- **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`
+- **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`; Governance metadata: `custom-metadata-in-registry`
 - **By role** → Consumer: `consumer-discovery-semantic-search`, `kiro/*`; Publisher: `00-getting-started/step-by-step`, `publish-agentcore-tools-in-registry`; Admin: `admin-approval-workflow`
 - **By complexity** → Beginner: `00-getting-started/`; Intermediate: `consumer-discovery`, `admin-approval`, `registry-synchronize`; Advanced: `discovery-and-invocation-at-runtime`, `registry-push-sync-lambda`
 
@@ -70,6 +71,10 @@ python 01-advanced/registry-push-sync-lambda/deploy_lambda_push_sync.py
 python 01-advanced/publish-agentcore-tools-in-registry/publish_agentcore_a2a_mcp_in_registry.py
 python 01-advanced/discovery-and-invocation-at-runtime/discovery_and_invocation_at_runtime.py
 python 01-advanced/kiro-registry-dcr-auth0/dcr_registry_search_mcp_in_kiro.py
+
+# Custom metadata (each .sh runs the matching steps/*.py; see the folder README)
+cd 03-advanced/custom-metadata-in-registry && ./setup.sh && ./00_setup.sh && ./01_define_schema.sh && ./02_register.sh \
+  && ./03_enrich_and_submit.sh && ./04_discover.sh && ./05_agent_discover.sh && ./99_cleanup.sh
 ```
 
 ## Documentation

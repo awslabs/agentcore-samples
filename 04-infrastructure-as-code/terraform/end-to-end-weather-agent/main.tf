@@ -24,7 +24,15 @@ resource "null_resource" "trigger_build" {
   }
 
   provisioner "local-exec" {
-    command = "${path.module}/scripts/build-image.sh \"${aws_codebuild_project.agent_image.name}\" \"${data.aws_region.current.id}\" \"${aws_ecr_repository.weather_ecr.name}\" \"${var.image_tag}\" \"${aws_ecr_repository.weather_ecr.repository_url}\""
+    # IMAGE_TAG is passed through the environment, not interpolated into
+    # the command string, so a value like "latest$(cmd)" can't be
+    # re-parsed as shell syntax by the /bin/sh -c this provisioner runs
+    # under (double-quoting alone only blocks ;/&&/|, not $()/backticks).
+    command = "${path.module}/scripts/build-image.sh \"${aws_codebuild_project.agent_image.name}\" \"${data.aws_region.current.id}\" \"${aws_ecr_repository.weather_ecr.name}\" \"$IMAGE_TAG\" \"${aws_ecr_repository.weather_ecr.repository_url}\""
+
+    environment = {
+      IMAGE_TAG = var.image_tag
+    }
   }
 
   depends_on = [
