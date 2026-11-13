@@ -1,14 +1,20 @@
+import logging
 import os
 import time
-import logging
-from playwright.sync_api import sync_playwright, Playwright, BrowserType
+
 from bedrock_agentcore.tools.browser_client import browser_session
-from langchain_core.tools import tool
 from langchain_aws import ChatBedrock
+from langchain_core.tools import tool
+from playwright.sync_api import BrowserType, Playwright, sync_playwright
 
 logger = logging.getLogger(__name__)
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+# deploy.py bundles libatomic (needed by Playwright's Node driver) in lib/ of the code package
+_BUNDLED_LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+if os.path.isdir(_BUNDLED_LIB_DIR):
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [_BUNDLED_LIB_DIR, os.environ.get("LD_LIBRARY_PATH")]))
 
 
 def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
@@ -31,9 +37,7 @@ def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
                 model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
                 region_name=AWS_REGION,
             )
-            prompt = "Extract stock price and key information for {} from this page content. Be concise:\n\n{}".format(
-                symbol, content[:3000]
-            )
+            prompt = f"Extract stock price and key information for {symbol} from this page content. Be concise:\n\n{content[:3000]}"
             result = llm.invoke(prompt).content
             return result
 
@@ -128,12 +132,12 @@ def search_news_with_browser(playwright: Playwright, query: str, news_source: st
                             time.sleep(2)
                             continue
                         else:
-                            raise Exception("Got error page after retries, trying fallback")
+                            raise RuntimeError("Got error page after retries, trying fallback")
 
                     # Success - break out of retry loop
                     break
 
-                except Exception as e:
+                except Exception:
                     if attempt < max_retries - 1:
                         print(f"Attempt {attempt + 1} failed, retrying...")
                         time.sleep(2)
@@ -147,7 +151,7 @@ def search_news_with_browser(playwright: Playwright, query: str, news_source: st
                             time.sleep(3)
                             content = page.inner_text("body")
                         else:
-                            raise e
+                            raise
 
             # Use LLM to extract headlines and highlights
             llm = ChatBedrock(
@@ -177,7 +181,7 @@ def get_stock_data(symbol: str) -> str:
         with sync_playwright() as p:
             return get_stock_data_with_browser(p, symbol)
     except Exception as e:
-        return f"Error getting stock data for {symbol}: {str(e)}"
+        return f"Error getting stock data for {symbol}: {e!s}"
 
 
 @tool
@@ -239,4 +243,4 @@ def search_news(query: str, news_source: str = "bloomberg") -> str:
                     logger.warning(f"Final fallback source {fallback_source} failed: {final_fallback_error}")
                     continue
 
-        return f"Error searching {news_source} for '{query}': {str(e)}. Multiple fallback sources also failed. This may be due to temporary server issues or rate limiting. Try again in a few minutes or use a different query."
+        return f"Error searching {news_source} for '{query}': {e!s}. Multiple fallback sources also failed. This may be due to temporary server issues or rate limiting. Try again in a few minutes or use a different query."
