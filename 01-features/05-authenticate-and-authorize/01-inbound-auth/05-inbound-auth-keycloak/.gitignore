@@ -1,0 +1,8 @@
+.env
+.venv/
+cdk.out/
+__pycache__/
+agentcore_state.json
+agent/private-idp-keycloak-agent/agentcore/aws-targets.json
+cdk.context.json
+uv.lock

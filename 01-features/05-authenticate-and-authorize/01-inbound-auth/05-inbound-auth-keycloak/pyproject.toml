@@ -1,0 +1,24 @@
+[project]
+name = "agentcore-private-idp-keycloak"
+version = "0.1.0"
+description = "Private IdP connectivity from AgentCore Identity to a self-hosted Keycloak that uses a private CA"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.237.1",
+    "boto3>=1.42.0",
+    "botocore>=1.44.2",
+    "constructs>=10.0.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.ruff]
+line-length = 120
