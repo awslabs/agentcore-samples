@@ -16,6 +16,8 @@ import logging
 import boto3
 from pathlib import Path
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -189,14 +191,14 @@ class MarketTrendsAgentCleaner:
             objects = self.s3_client.list_objects_v2(Bucket=code_bucket, Prefix=f"{self.agent_name}/")
             for obj in objects.get("Contents", []):
                 self.s3_client.delete_object(Bucket=code_bucket, Key=obj["Key"])
-            logger.info(f"   ✅ Deleted code package from {code_bucket}")
+            logger.info("   ✅ Deleted code package from %s", code_bucket)
             if not self.s3_client.list_objects_v2(Bucket=code_bucket).get("KeyCount"):
                 self.s3_client.delete_bucket(Bucket=code_bucket)
-                logger.info(f"   ✅ Deleted empty bucket {code_bucket}")
+                logger.info("   ✅ Deleted empty bucket %s", code_bucket)
         except self.s3_client.exceptions.NoSuchBucket:
             logger.info("   📋 No code package bucket found")
-        except Exception as e:
-            logger.warning(f"   ⚠️  Could not clean code package bucket: {e}")
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("   ⚠️  Could not clean code package bucket: %s", e)
 
         try:
             # List buckets and look for CodeBuild artifacts (older container-based deploys)

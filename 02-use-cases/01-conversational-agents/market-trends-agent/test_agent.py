@@ -35,6 +35,7 @@ PROMPTS = [
 
 
 def resolve_agent_arn(cli_arn: str | None) -> str:
+    """Return the runtime ARN from --agent-arn, AGENT_RUNTIME_ARN or .agent_arn."""
     if cli_arn:
         return cli_arn
     if os.environ.get("AGENT_RUNTIME_ARN"):
@@ -46,6 +47,7 @@ def resolve_agent_arn(cli_arn: str | None) -> str:
 
 
 def main() -> int:
+    """Send the smoke-test prompts to the agent and print the replies."""
     parser = argparse.ArgumentParser(description="Smoke test the deployed Market Trends Agent")
     parser.add_argument("--agent-arn", help="Runtime ARN (default: AGENT_RUNTIME_ARN or .agent_arn)")
     parser.add_argument("--region", help="AWS region (default: the region in the agent ARN)")

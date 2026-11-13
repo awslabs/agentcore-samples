@@ -765,7 +765,7 @@ def main():
 
     if runtime_arn:
         logger.info("\n🎯 Deployment completed successfully!")
-        logger.info(f"Run 'uv run python test_agent.py --region {region}' to test your deployed agent.")
+        logger.info("Run 'uv run python test_agent.py --region %s' to test your deployed agent.", region)
     else:
         logger.error("❌ Deployment failed")
         exit(1)
