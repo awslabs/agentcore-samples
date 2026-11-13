@@ -8,17 +8,16 @@ This script:
 3. Creates AgentCore Gateway with IAM authorizer
 4. Creates OpenAPI target pointing to stub API
 5. Verifies tool generation
-
-Based on: amazon-bedrock-agentcore-samples/06-workshops/02-AgentCore-gateway/04-integration/01-runtime-gateway
 """
 
-import boto3
 import json
 import sys
 import time
 
 # import uuid
 from pathlib import Path
+
+import boto3
 
 # Configuration
 GATEWAY_NAME = "visa-b2b-payment-gateway"
@@ -185,7 +184,7 @@ def create_gateway(agentcore_client, role_arn):
                 break
 
         if not gateway_id:
-            raise Exception(f"Gateway {GATEWAY_NAME} exists but couldn't be found in list")
+            raise RuntimeError(f"Gateway {GATEWAY_NAME} exists but couldn't be found in list")
 
         # Get full gateway details including URL
         gateway_details = agentcore_client.get_gateway(gatewayIdentifier=gateway_id)

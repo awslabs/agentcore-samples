@@ -1,6 +1,0 @@
-langchain[aws]
-langgraph
-langsmith[otel]
-langchain-community
-opentelemetry-instrumentation-langchain
-bedrock-agentcore

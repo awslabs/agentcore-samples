@@ -50,13 +50,10 @@ eggs/
 .eggs/
 
 lib/
-!06-workshops/02-AgentCore-gateway/04-integration/04-enterprise-mcp-demo/cdk/lib
 !05-blueprints/**/lib/
 !02-use-cases/visa-b2b-account-payable-agent/infrastructure/lib/
 !04-infrastructure-as-code/cdk/typescript/knowledge-base-rag-agent/infrastructure/lib/
 !01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/05-community/gateway-mcp-inspector/client/src/lib/
-!06-workshops/01-AgentCore-runtime/01-hosting-agent/05-java-agents/01-springai-with-bedrock-model/infra/lib/
-!06-workshops/01-AgentCore-runtime/01-hosting-agent/05-java-agents/02-embabel-with-bedrock-model/infra/lib/
 !02-use-cases/lakehouse-agent/deployment/advanced-agentcore-policy-gateway-interceptor/lib/
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/cdk/lib/
 lib64/
@@ -259,9 +256,6 @@ Test-Downloads/
 
 ### Docker ###
 .dockerignore
-06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/runtime/requirements.txt
-06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/backend/session_binding/requirements.txt
-06-workshops/03-AgentCore-identity/07-Outbound_Auth_3LO_ECS_Fargate/cdk.context.json
 
 ### Claude Code Assistant ###
 .claude/
@@ -289,6 +283,7 @@ plan/
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/agent/Dockerfile
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/typescript-agents/hr-assistant/Dockerfile
+!01-features/02-host-your-agent/01-runtime/03-advanced/*/agent/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*
@@ -297,7 +292,6 @@ plan/
 **/runtime_config.json
 **/aws-targets.json
 !01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/**/aws-targets.json
-!06-workshops/02-AgentCore-gateway/**/aws-targets.json
 **/.cli/deployed-state.json
 
 # Evaluation and session results

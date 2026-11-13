@@ -1,8 +1,0 @@
-{
-  "domainName": "example.com",
-  "hostedZoneName": "",
-  "hostedZoneId": "",
-  "certificateArn": "",
-  "mcpMetadataKey": "com.example/target"
-
-}

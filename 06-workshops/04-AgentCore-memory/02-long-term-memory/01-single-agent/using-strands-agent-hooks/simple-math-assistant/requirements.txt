@@ -1,4 +1,0 @@
-boto3
-strands-agents
-strands-agents-tools
-bedrock-agentcore

@@ -239,4 +239,4 @@ This sample demonstrated four Cedar policy patterns for controlling AI agent too
 3. Time-based policies that restrict tool availability to defined hours using the gateway system clock
 4. Forbid rules that provide hard boundaries overriding any permit
 
-These patterns can be combined and adapted for other agent use cases beyond healthcare. For more on Cedar policy syntax and AgentCore Policy capabilities, see the [AgentCore Policy Docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html), [Cedar Language](https://docs.cedarpolicy.com/), and the [Policy Tutorial](../../../06-workshops/08-AgentCore-policy/).
+These patterns can be combined and adapted for other agent use cases beyond healthcare. For more on Cedar policy syntax and AgentCore Policy capabilities, see the [AgentCore Policy Docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html), [Cedar Language](https://docs.cedarpolicy.com/), and the [Policy samples](../../../../01-features/07-centralize-and-govern-your-ai-infrastructure/02-policy/).
