@@ -1,0 +1,16 @@
+// Temporal permit (workflow sequencing + freshness).
+// execute_sql_query has NO unconditional permit. It is reachable only when the
+// agent has successfully read the database schema in the same policy session
+// within the last 30 minutes. This stops the agent from guessing table and
+// column names and keeps its picture of the schema fresh.
+permit(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when temporal {
+  formerly within 30m
+    AgentCore::Action::"DatabaseToolsTarget___get_tables_information"::response{
+      eventResource: resource
+    }
+};

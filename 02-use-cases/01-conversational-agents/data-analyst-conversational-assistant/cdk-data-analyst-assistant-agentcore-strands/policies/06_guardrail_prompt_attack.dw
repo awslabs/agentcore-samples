@@ -1,0 +1,13 @@
+// Guardrail forbid: block prompt-injection or jailbreak text smuggled into the
+// tool arguments the agent sends to the database tool.
+forbid(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when guardrails {
+  BedrockGuardrails::PromptAttack(
+    ["PROMPT_INJECTION", "JAILBREAK"],
+    [context.input.description, context.input.sql_query]
+  ).maxConfidenceScore().greaterThan(decimal("0.4"))
+};

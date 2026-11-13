@@ -1,0 +1,21 @@
+// Temporal forbid (re-grounding after a denial).
+// Once an execute_sql_query call has been denied in this session (it touched a
+// PII or cost column, tripped a guardrail, hit the rate limit, ...), every
+// further query is denied until the agent re-reads the schema with
+// get_tables_information. Uses the Dogwood `!L since within W R` idiom:
+// "a denied query (R) happened in the last 5 minutes, and no successful schema
+// lookup (L) has happened since". A denied call is recorded as ::error.
+forbid(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when temporal {
+  !AgentCore::Action::"DatabaseToolsTarget___get_tables_information"::response{
+    eventResource: resource
+  }
+  since within 5m
+    AgentCore::Action::"DatabaseToolsTarget___execute_sql_query"::error{
+      eventResource: resource
+    }
+};
