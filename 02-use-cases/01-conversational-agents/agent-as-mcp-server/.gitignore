@@ -1,0 +1,22 @@
+# Override root .gitignore exclusion of lib/ — CDK source lives in agentcore/cdk/lib/
+!agentcore/cdk/lib/
+!agentcore/cdk/lib/**
+
+# Secrets + deployment state (never commit)
+.env
+.cognito-state.json
+agentcore/aws-targets.json
+agentcore/.cli/
+agentcore/.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# CDK / Node
+agentcore/cdk/node_modules/
+agentcore/cdk/cdk.out/
+agentcore/cdk/*.js
+agentcore/cdk/*.d.ts
+!agentcore/cdk/jest.config.js

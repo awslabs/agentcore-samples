@@ -1,0 +1,4 @@
+# Dependencies for scripts/test_frontdoor.py
+mcp>=1.24.0,<2.0
+httpx>=0.27
+boto3>=1.40
