@@ -45,9 +45,11 @@ Usage:
 import argparse
 import os
 import sys
+import time
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -157,12 +159,32 @@ class LakeFormationSetup:
         print(f"   ❌ Grant FAILED: {resource} for {principal}: {error}")
         self.failed_grants.append(f"{resource} for {principal}")
 
+    def _grant(self, **params) -> str:
+        """Call grant_permissions; retry only AccessDeniedException. Returns the ✅-line suffix."""
+        # Grants right after the roles and tables are created can be rejected briefly while
+        # Lake Formation and Glue catch up; observed live, and the grant passed on re-run.
+        waits = (5, 10, 20)
+        for attempt in range(1, len(waits) + 2):
+            try:
+                self.lakeformation.grant_permissions(**params)
+                return f" (after {attempt} attempts)" if attempt > 1 else ""
+            except ClientError as e:
+                if e.response.get("Error", {}).get("Code") != "AccessDeniedException" or attempt > len(waits):
+                    raise
+                wait = waits[attempt - 1]
+                print(
+                    f"   ⏳ Grant rejected (AccessDeniedException); retrying in {wait} s "
+                    f"(attempt {attempt + 1}/{len(waits) + 1})…"
+                )
+                time.sleep(wait)
+        raise AssertionError("unreachable")
+
     def grant_database_permissions(self, role_arn: str, role_name: str):
         """Grant database-level permissions to a role."""
         print(f"\n🔐 Granting database permissions to {role_name}...")
 
         try:
-            self.lakeformation.grant_permissions(
+            suffix = self._grant(
                 CatalogId=self.account_id,  # Top-level CatalogId is just the account ID
                 Principal={"DataLakePrincipalIdentifier": role_arn},
                 Resource={
@@ -174,7 +196,7 @@ class LakeFormationSetup:
                 Permissions=["DESCRIBE"],
                 PermissionsWithGrantOption=[],
             )
-            print(f"   ✅ Granted DESCRIBE on database {self.namespace}")
+            print(f"   ✅ Granted DESCRIBE on database {self.namespace}{suffix}")
         except self.lakeformation.exceptions.AlreadyExistsException:
             print("   ✅ Database permissions already exist")
         except Exception as e:
@@ -185,7 +207,7 @@ class LakeFormationSetup:
         print(f"   Granting {', '.join(permissions)} on table {table_name}...")
 
         try:
-            self.lakeformation.grant_permissions(
+            suffix = self._grant(
                 CatalogId=self.account_id,  # Top-level CatalogId is just the account ID
                 Principal={"DataLakePrincipalIdentifier": role_arn},
                 Resource={
@@ -198,7 +220,7 @@ class LakeFormationSetup:
                 Permissions=permissions,
                 PermissionsWithGrantOption=[],
             )
-            print(f"   ✅ Granted permissions on {table_name}")
+            print(f"   ✅ Granted permissions on {table_name}{suffix}")
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Permissions already exist for {table_name}")
         except Exception as e:
@@ -233,8 +255,8 @@ class LakeFormationSetup:
         }
 
         try:
-            self.lakeformation.grant_permissions(**grant_params)
-            print(f"   ✅ Granted column permissions on {table_name}")
+            suffix = self._grant(**grant_params)
+            print(f"   ✅ Granted column permissions on {table_name}{suffix}")
 
             # Apply row filter if provided
             if row_filter:
@@ -279,8 +301,8 @@ class LakeFormationSetup:
         }
 
         try:
-            self.lakeformation.grant_permissions(**grant_params)
-            print(f"   ✅ Granted wildcard column permissions on {table_name}")
+            suffix = self._grant(**grant_params)
+            print(f"   ✅ Granted wildcard column permissions on {table_name}{suffix}")
 
             if row_filter:
                 self._apply_row_filter(role_arn, table_name, row_filter)
