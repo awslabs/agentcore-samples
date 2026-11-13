@@ -81,7 +81,7 @@ def get_memory_from_ssm():
 
     except ssm_client.exceptions.ParameterNotFound:
         logger.error("Memory ARN not found in SSM Parameter Store. Please run deployment first.")
-        raise Exception("Memory not deployed. Run 'AWS_PROFILE=burner python deploy.py' first.")
+        raise Exception("Memory not deployed. Run 'uv run python deploy.py' first.")
     except Exception as e:
         logger.error(f"Error retrieving memory from SSM: {e}")
         raise

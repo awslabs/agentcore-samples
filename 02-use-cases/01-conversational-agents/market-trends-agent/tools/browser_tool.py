@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
+# deploy.py bundles libatomic (needed by Playwright's Node driver) in lib/ of the code package
+_BUNDLED_LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+if os.path.isdir(_BUNDLED_LIB_DIR):
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [_BUNDLED_LIB_DIR, os.environ.get("LD_LIBRARY_PATH")]))
+
 
 def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
     """Get stock data using browser"""

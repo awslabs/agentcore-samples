@@ -182,8 +182,24 @@ class MarketTrendsAgentCleaner:
         """Remove S3 artifacts (best effort)"""
         logger.info("🗑️  Cleaning up S3 artifacts...")
 
+        # Code package bucket created by deploy.py
         try:
-            # List buckets and look for CodeBuild artifacts
+            account_id = boto3.client("sts").get_caller_identity()["Account"]
+            code_bucket = f"agentcore-market-trends-{account_id}-{self.region}"
+            objects = self.s3_client.list_objects_v2(Bucket=code_bucket, Prefix=f"{self.agent_name}/")
+            for obj in objects.get("Contents", []):
+                self.s3_client.delete_object(Bucket=code_bucket, Key=obj["Key"])
+            logger.info(f"   ✅ Deleted code package from {code_bucket}")
+            if not self.s3_client.list_objects_v2(Bucket=code_bucket).get("KeyCount"):
+                self.s3_client.delete_bucket(Bucket=code_bucket)
+                logger.info(f"   ✅ Deleted empty bucket {code_bucket}")
+        except self.s3_client.exceptions.NoSuchBucket:
+            logger.info("   📋 No code package bucket found")
+        except Exception as e:
+            logger.warning(f"   ⚠️  Could not clean code package bucket: {e}")
+
+        try:
+            # List buckets and look for CodeBuild artifacts (older container-based deploys)
             buckets = self.s3_client.list_buckets()
 
             for bucket in buckets["Buckets"]:
@@ -314,7 +330,9 @@ class MarketTrendsAgentCleaner:
 def main():
     """Main cleanup function"""
     parser = argparse.ArgumentParser(description="Clean up all Market Trends Agent resources")
-    parser.add_argument("--region", default="us-east-1", help="AWS region (default: us-east-1)")
+    parser.add_argument(
+        "--region", default=None, help="AWS region (default: your AWS profile's region, else us-east-1)"
+    )
     parser.add_argument(
         "--skip-iam",
         action="store_true",
@@ -327,6 +345,7 @@ def main():
     )
 
     args = parser.parse_args()
+    args.region = args.region or boto3.session.Session().region_name or "us-east-1"
 
     if args.dry_run:
         logger.info("🔍 DRY RUN MODE - No resources will be deleted")
@@ -335,7 +354,7 @@ def main():
         logger.info("   - AgentCore Memory instances")
         logger.info("   - ECR repositories")
         logger.info("   - CodeBuild projects")
-        logger.info("   - S3 artifacts")
+        logger.info("   - S3 code package and artifacts")
         logger.info("   - SSM parameters")
         if not args.skip_iam:
             logger.info("   - IAM roles and policies")
