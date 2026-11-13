@@ -1,0 +1,21 @@
+// Stateless forbid on the tool input: block SQL that references PII or internal
+// cost columns. Cedar `like` is case-sensitive, so lower- and upper-case forms
+// are listed. The db_tools Lambda keeps a case-insensitive check as a second layer.
+forbid(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when {
+  // PII fields
+  context.input.sql_query like "*email*" || context.input.sql_query like "*EMAIL*" ||
+  context.input.sql_query like "*phone*" || context.input.sql_query like "*PHONE*" ||
+  context.input.sql_query like "*ssn*" || context.input.sql_query like "*SSN*" ||
+  context.input.sql_query like "*address*" || context.input.sql_query like "*ADDRESS*" ||
+  context.input.sql_query like "*credit_card*" || context.input.sql_query like "*CREDIT_CARD*" ||
+  // Internal cost data
+  context.input.sql_query like "*cost_per_unit*" || context.input.sql_query like "*COST_PER_UNIT*" ||
+  context.input.sql_query like "*profit_margin*" || context.input.sql_query like "*PROFIT_MARGIN*" ||
+  context.input.sql_query like "*wholesale_price*" || context.input.sql_query like "*WHOLESALE_PRICE*" ||
+  context.input.sql_query like "*procurement*" || context.input.sql_query like "*PROCUREMENT*"
+};

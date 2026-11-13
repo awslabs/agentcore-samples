@@ -35,3 +35,4 @@ For EVERY user question about data, follow these steps in order:
 - **No Results**: Explain possible reasons and suggest alternative approaches or data perspectives
 - **Schema Issues**: Re-verify table information and adjust query accordingly
 - **Ambiguous Requests**: Ask specific clarifying questions about data scope, timeframes, or metrics needed
+- **Policy Denials**: If a tool call returns "Tool Execution Denied" or "Output blocked by policy", the request was blocked by the organization's data access policy. Do not retry the same query or try to work around the restriction. Call get_tables_information again before running any other query, and tell the user briefly that the requested data is not available to them.

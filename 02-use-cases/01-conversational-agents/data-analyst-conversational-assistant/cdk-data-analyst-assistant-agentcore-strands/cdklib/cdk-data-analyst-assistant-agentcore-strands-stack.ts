@@ -26,6 +26,7 @@ import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
+import * as fs from 'fs';
 import * as path from 'path';
 import { aws_bedrockagentcore as bedrockagentcore } from 'aws-cdk-lib';
 
@@ -651,86 +652,92 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
     gatewayTarget.addDependency(gateway);
 
     // ================================
-    // AGENTCORE POLICY ENGINE (Cedar Authorization + Guardrails-in-Policy)
+    // AGENTCORE POLICY ENGINE (Dogwood: authorization + temporal + guardrails)
     // ================================
 
-    // Policy Engine provides fine-grained Cedar-based authorization and guardrail
-    // content filtering for Gateway tool calls.
+    // Policies are authored in Dogwood, the AgentCore policy language (a superset of
+    // Cedar that adds `when temporal { }` history-aware conditions). Each policy lives
+    // in its own file under ../policies/*.dw and is evaluated by the Policy Engine on
+    // every Gateway tool call — before the tool runs (permit/forbid) and on its result
+    // (suppressOutput). See ../policies/README.md.
     const policyEngine = new bedrockagentcore.CfnPolicyEngine(this, 'PolicyEngine', {
       name: `VideoGamesSalesPolicy_${uniqueSuffix}`,
-      description: 'Cedar authorization + guardrails-in-policy for data analyst gateway tools',
+      description: 'Dogwood authorization, temporal, and guardrail policies for data analyst gateway tools',
     });
-
-    // Helper to create a policy using 'Definition.Policy.Statement' format
-    // (required for guardrails-in-policy Cedar syntax that CDK types don't yet support)
-    const createPolicy = (id: string, name: string, description: string, statement: string, dependsOn: cdk.CfnResource) => {
-      const policy = new cdk.CfnResource(this, id, {
-        type: 'AWS::BedrockAgentCore::Policy',
-        properties: {
-          PolicyEngineId: policyEngine.attrPolicyEngineId,
-          Name: name,
-          Description: description,
-          ValidationMode: 'IGNORE_ALL_FINDINGS',
-          Definition: {
-            Policy: {
-              Statement: statement,
-            },
-          },
-        },
-      });
-      policy.addDependency(dependsOn);
-      return policy;
-    };
-
-    // Cedar policy: allow all tool calls (default permit)
-    const allowDefaultPolicy = createPolicy(
-      'AllowDefaultPolicy',
-      'allowDefaultToolAccess',
-      'Permit all tool calls that are not explicitly forbidden',
-      'permit(principal, action, resource is AgentCore::Gateway);',
-      policyEngine,
-    );
-
-    // Guardrail policy: block prompt injection attempts
-    createPolicy(
-      'BlockPromptAttackPolicy',
-      'blockPromptAttacks',
-      'Block prompt injection attempts detected with high confidence',
-      'forbid(principal, action == AgentCore::Action::"Http", resource is AgentCore::Gateway)\nwhen guardrails { BedrockGuardrails::PromptAttack(["PROMPT_INJECTION"], [context.input.prompt])["PROMPT_INJECTION"].confidenceScore.greaterThan(decimal("0.4")) };',
-      allowDefaultPolicy,
-    );
-
-    // Guardrail policy: block violent or hateful content
-    createPolicy(
-      'BlockHarmfulContentPolicy',
-      'blockHarmfulContent',
-      'Block requests containing violence or hate speech',
-      'forbid(principal, action == AgentCore::Action::"Http", resource is AgentCore::Gateway)\nwhen guardrails { BedrockGuardrails::ContentFilter(["VIOLENCE", "HATE"], [context.input.prompt]).maxConfidenceScore().greaterThan(decimal("0.2")) };',
-      allowDefaultPolicy,
-    );
-
-    // Guardrail policy: suppress PII in output
-    createPolicy(
-      'SuppressPiiOutputPolicy',
-      'suppressPiiInOutput',
-      'Suppress responses containing SSN, credit card numbers, email, or phone numbers',
-      'suppressOutput(principal, action == AgentCore::Action::"Http", resource is AgentCore::Gateway)\nwhen guardrails { BedrockGuardrails::SensitiveInformation(["US_SOCIAL_SECURITY_NUMBER", "CREDIT_DEBIT_CARD_NUMBER", "EMAIL", "PHONE"], [context.output.text]).maxConfidenceScore().greaterThan(decimal("0.2")) };',
-      allowDefaultPolicy,
-    );
 
     // Attach Policy Engine to Gateway in ENFORCE mode.
     // The Gateway must be updated with this config BEFORE action-referencing policies
-    // can be created (they need the schema from attached gateway targets).
+    // can be created (they need the action schema from the attached gateway target).
     gateway.policyEngineConfiguration = {
       arn: policyEngine.attrPolicyEngineArn,
       mode: 'ENFORCE',
     };
 
-    // Policies that reference specific actions (e.g. DatabaseToolsTarget___execute_sql_query)
-    // require the policy engine to be attached to the gateway AND the gateway target to
-    // exist — otherwise "Cannot find Action in schema".
-    allowDefaultPolicy.addDependency(gateway);
-    allowDefaultPolicy.addDependency(gatewayTarget);
+    // Dogwood policy files, in creation order. The {{GATEWAY_ARN}} placeholder is
+    // replaced with this stack's Gateway ARN: a policy that names a specific action
+    // must also name the specific Gateway resource.
+    const dogwoodPolicies: { id: string; name: string; file: string; description: string }[] = [
+      { id: 'PermitGetTablesInformationPolicy', name: 'permitGetTablesInformation', file: '01_permit_get_tables_information.dw',
+        description: 'Base permit: the schema lookup tool is always reachable' },
+      { id: 'PermitSqlAfterSchemaLookupPolicy', name: 'permitSqlAfterSchemaLookup', file: '02_permit_sql_after_schema_lookup.dw',
+        description: 'Temporal permit: execute_sql_query only after a schema lookup in the last 30 minutes' },
+      { id: 'ForbidSensitiveColumnsPolicy', name: 'forbidSensitiveColumns', file: '03_forbid_sensitive_columns.dw',
+        description: 'Block SQL that references PII or internal cost columns' },
+      { id: 'ForbidQueryRateLimitPolicy', name: 'forbidQueryRateLimit', file: '04_forbid_query_rate_limit.dw',
+        description: 'Temporal forbid: at most 20 queries per session in 5 minutes' },
+      { id: 'ForbidRequeryUntilSchemaRefreshPolicy', name: 'forbidRequeryUntilSchemaRefresh', file: '05_forbid_requery_until_schema_refresh.dw',
+        description: 'Temporal forbid: after a denied query, require a fresh schema lookup before querying again' },
+      { id: 'GuardrailPromptAttackPolicy', name: 'guardrailPromptAttack', file: '06_guardrail_prompt_attack.dw',
+        description: 'Guardrail: block prompt injection or jailbreak text in tool arguments' },
+      { id: 'GuardrailHarmfulContentPolicy', name: 'guardrailHarmfulContent', file: '07_guardrail_harmful_content.dw',
+        description: 'Guardrail: block violent or hateful content in the query description' },
+      { id: 'SuppressPiiOutputPolicy', name: 'suppressPiiOutput', file: '08_suppress_pii_output.dw',
+        description: 'Guardrail: suppress query results containing SSN, card numbers, email, or phone numbers' },
+    ];
+
+    // Load a .dw file and drop full-line `//` comments. The service only recognises the
+    // suppressOutput effect when it is the first token of the statement, so comments
+    // stay in the source files for readers but are not sent to the API.
+    const loadDogwoodPolicy = (file: string): string =>
+      fs.readFileSync(path.join(__dirname, '../policies', file), 'utf-8')
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//'))
+        .join('\n')
+        .trim()
+        .split('{{GATEWAY_ARN}}')
+        .join(gateway.attrGatewayArn);
+
+    // Raw CfnResource with 'Definition.Policy.Statement': the typed CfnPolicy only
+    // exposes the 'cedar' definition, while Dogwood statements (temporal, guardrails,
+    // suppressOutput) go in the 'policy' definition.
+    // Policies are created one at a time (each depends on the previous one), and all
+    // of them wait for the Gateway (with the engine attached) and its target.
+    let previousPolicy: cdk.CfnResource | undefined;
+    for (const p of dogwoodPolicies) {
+      const policy = new cdk.CfnResource(this, p.id, {
+        type: 'AWS::BedrockAgentCore::Policy',
+        properties: {
+          PolicyEngineId: policyEngine.attrPolicyEngineId,
+          Name: p.name,
+          Description: p.description,
+          // Policy validation cannot interpret temporal or guardrail conditions, so it
+          // reports findings such as "Overly Restrictive"; create the policies anyway.
+          ValidationMode: 'IGNORE_ALL_FINDINGS',
+          Definition: {
+            Policy: {
+              Statement: loadDogwoodPolicy(p.file),
+            },
+          },
+        },
+      });
+      policy.addDependency(policyEngine);
+      policy.addDependency(gateway);
+      policy.addDependency(gatewayTarget);
+      if (previousPolicy) {
+        policy.addDependency(previousPolicy);
+      }
+      previousPolicy = policy;
+    }
 
     // ================================
     // AGENTCORE EVALUATORS (LLM-as-a-Judge)
@@ -1040,7 +1047,7 @@ Score 1 for responses that fail to address the question or are incorrect.`,
 
     new cdk.CfnOutput(this, "PolicyEngineId", {
       value: policyEngine.attrPolicyEngineId,
-      description: "The ID of the AgentCore Policy Engine for Cedar authorization + guardrails",
+      description: "The ID of the AgentCore Policy Engine (Dogwood authorization, temporal, and guardrail policies)",
     });
 
     new cdk.CfnOutput(this, "SqlAccuracyEvaluatorArn", {

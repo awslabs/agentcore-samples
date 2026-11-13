@@ -1,0 +1,15 @@
+// Guardrail suppressOutput: the query runs, but if the rows it returns contain
+// SSNs, card numbers, email addresses, or phone numbers, the gateway withholds
+// the whole response. The policy sees the Lambda's raw JSON result ({"result": [...]}),
+// so a JSONPath over every top-level value screens the rows, errors, and messages.
+suppressOutput(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when guardrails {
+  BedrockGuardrails::SensitiveInformation(
+    ["US_SOCIAL_SECURITY_NUMBER", "CREDIT_DEBIT_CARD_NUMBER", "EMAIL", "PHONE"],
+    ["$.*"]
+  ).count() > 0
+};
