@@ -1,10 +1,11 @@
 version = 1
-revision = 2
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*'",
-    "python_full_version < '3.12'",
+    "python_full_version >= '3.11.5' and python_full_version < '3.12'",
+    "python_full_version < '3.11.5'",
 ]
 
 [[package]]
@@ -16,8 +17,10 @@ dependencies = [
     { name = "bedrock-agentcore-starter-toolkit" },
     { name = "boto3" },
     { name = "opentelemetry-sdk" },
-    { name = "strands-agents" },
-    { name = "strands-agents-tools" },
+    { name = "strands-agents", version = "0.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
+    { name = "strands-agents", version = "1.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
+    { name = "strands-agents-tools", version = "0.1.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
+    { name = "strands-agents-tools", version = "0.2.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
     { name = "uv" },
 ]
 
@@ -1763,11 +1766,11 @@ wheels = [
 
 [[package]]
 name = "soupsieve"
-version = "2.8"
+version = "4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6d/e6/21ccce3262dd4889aa3332e5a119a3491a95e8f60939870a3a035aabac0d/soupsieve-2.8.tar.gz", hash = "sha256:e2dd4a40a628cb5f28f6d4b0db8800b8f581b65bb380b97de22ba5ca8d72572f", size = 103472, upload-time = "2025-08-27T15:39:51.78Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/5e/19b7c5d20bc2f226c44f33a9d9aab9740efed7555b96e656231fd564e514/soupsieve-4.0.tar.gz", hash = "sha256:ccd6470b256394ac44b08b86fd94b30a17d335a5335c8a3d15565f7b03d3c8cf", size = 151929, upload-time = "2026-11-03T14:28:55.388Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/a0/bb38d3b76b8cae341dad93a2dd83ab7462e6dbcdd84d43f54ee60a8dc167/soupsieve-2.8-py3-none-any.whl", hash = "sha256:0cc76456a30e20f5d7f2e14a98a4ae2ee4e5abdc7c5ea0aafe795f344bc7984c", size = 36679, upload-time = "2025-08-27T15:39:50.179Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/18/d24df2f733ee0655c58717d51add4118a70e64692d0e47d403b9aac4cf98/soupsieve-4.0-py3-none-any.whl", hash = "sha256:5e7494bfce90e06676cfb4c5c2cf22243e98e5cf24646bb1ecdda46d318550a0", size = 50158, upload-time = "2026-11-03T14:28:53.988Z" },
 ]
 
 [[package]]
@@ -1797,8 +1800,37 @@ wheels = [
 
 [[package]]
 name = "strands-agents"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11.5'",
+]
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "docstring-parser" },
+    { name = "mcp" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation-threading" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+    { name = "watchdog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/d0/bdb73ffab397a287dcc703e2ebd020979c43580f96e91d3c712a380cbae1/strands_agents-0.3.0.tar.gz", hash = "sha256:77574aec23b9d366c18b45fd830a5c8d8c470738fcb5ef8cf0110024d832c402", size = 196006, upload-time = "2025-07-11T19:00:10.454Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/3b/1673c7401baa7130b6b1fc4a78f133f0a15b219e85d8684bf70ffe1013c0/strands_agents-0.3.0-py3-none-any.whl", hash = "sha256:c2dcceb5f27151694d7ace52d822b4d793aa26e87331aff71abbc1ddcb99f4aa", size = 141682, upload-time = "2025-07-11T19:00:08.6Z" },
+]
+
+[[package]]
+name = "strands-agents"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version == '3.12.*'",
+    "python_full_version >= '3.11.5' and python_full_version < '3.12'",
+]
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
@@ -1818,8 +1850,39 @@ wheels = [
 
 [[package]]
 name = "strands-agents-tools"
+version = "0.1.9"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11.5'",
+]
+dependencies = [
+    { name = "aws-requests-auth" },
+    { name = "dill" },
+    { name = "pillow" },
+    { name = "prompt-toolkit" },
+    { name = "pyjwt" },
+    { name = "rich" },
+    { name = "slack-bolt" },
+    { name = "strands-agents", version = "0.3.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "sympy" },
+    { name = "tenacity" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "watchdog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/f0/357cdce388d1db7ec3cad028b98528742da178d36b30f468270138eba94b/strands_agents_tools-0.1.9.tar.gz", hash = "sha256:ecb08fe4940d20ebc34cd5222b16e16c0ae67e40f902afd87dbb8106fe51a1d3", size = 266173, upload-time = "2025-07-11T20:32:48.229Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/81/5d97a24f10ceb7c53dc51158a1b3bc737408f651d7179bfb0dc9ed7b7dd9/strands_agents_tools-0.1.9-py3-none-any.whl", hash = "sha256:4b7067c6544f2a845b38bc9f9f80fca3049263eee40cc71801c8d7cd482fbc84", size = 179571, upload-time = "2025-07-11T20:32:46.92Z" },
+]
+
+[[package]]
+name = "strands-agents-tools"
 version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version == '3.12.*'",
+    "python_full_version >= '3.11.5' and python_full_version < '3.12'",
+]
 dependencies = [
     { name = "aiohttp" },
     { name = "aws-requests-auth" },
@@ -1833,7 +1896,7 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
     { name = "slack-bolt" },
-    { name = "strands-agents" },
+    { name = "strands-agents", version = "1.6.0", source = { registry = "https://pypi.org/simple" } },
     { name = "sympy" },
     { name = "tenacity" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
