@@ -284,6 +284,9 @@ plan/
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/cicd-gated-evaluation/mcp-server/Dockerfile
 !01-features/06-observe-evaluate-optimize-your-agent/02-evaluate/typescript-agents/hr-assistant/Dockerfile
 !01-features/02-host-your-agent/01-runtime/03-advanced/*/agent/Dockerfile
+!01-features/02-host-your-agent/01-runtime/04-coding-agents/05-autonomous-coding-agent-durable/coding-agent/Dockerfile
+!01-features/02-host-your-agent/01-runtime/04-coding-agents/05-autonomous-coding-agent-durable/sandbox/Dockerfile
+!01-features/02-host-your-agent/01-runtime/04-coding-agents/05-autonomous-coding-agent-durable/evaluator-agent/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*
