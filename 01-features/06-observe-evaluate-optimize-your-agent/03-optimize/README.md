@@ -32,7 +32,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 
 - AWS account with Bedrock AgentCore access enabled
 - AWS CLI configured: `aws configure` (or set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`)
-- IAM caller permissions:
+- IAM caller permissions (see [optimization prerequisites](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/optimization-prereqs.html)):
   - `bedrock-agentcore:GetConfigurationBundle*`, `ListConfigurationBundleVersions`, `CreateConfigurationBundle`, `UpdateConfigurationBundle`, `DeleteConfigurationBundle`
   - `bedrock-agentcore:StartRecommendation`, `GetRecommendation`
   - `bedrock-agentcore:StartABTest`, `StopABTest`, `GetABTest`, `DeleteABTest`, `ListABTests`
@@ -43,6 +43,20 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 - Access to Amazon Bedrock models (Nova Lite) in your region
 
 > **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. Budget ~45 minutes for the full workflow.
+
+### Running This in Workshop Studio
+
+- **Region is fixed by the event, not by you.** `deploy.py`, `invoke.py`, `optimize.py`, `cleanup.py`, and `insights.py` all resolve their region from `$AWS_DEFAULT_REGION` (falling back to `us-east-1` if unset) the first time they create a runtime, and from the runtime's own recorded region on every call after that -- so once `deploy.py` has run once for a given `--name`, every other script follows it automatically. Confirm Amazon Bedrock Optimization is available in the event's region before starting; it is a **preview** feature at the time of writing.
+- **Pre-provisioned lab roles** may not include `iam:CreateRole`/`PassRole` (needed by `deploy.py` to create the per-agent execution role) or the permissions listed above for ConfigurationBundles, Recommendations, and ABTesting. If any script fails with `AccessDenied`, check the lab role's attached policies before assuming it's a code issue.
+- **Transaction Search must be enabled** for the agent's OTel spans to land in the `aws/spans` log group that Insights and Recommendations read from. If a workshop account doesn't have it pre-enabled, see [`06-workshops/06-AgentCore-observability/00-enable-transaction-search-template`](../../../06-workshops/06-AgentCore-observability/00-enable-transaction-search-template/transaction_search.yml).
+- **Amazon Nova Lite** is used by the built-in evaluators and recommendations; confirm it's enabled for the account/region before running `optimize.py`.
+
+### Further Reading
+
+- [Optimizing production agents with Amazon Bedrock AgentCore Observability](https://aws.amazon.com/blogs/machine-learning/optimizing-production-agents-with-amazon-bedrock-agentcore-observability/)
+- [Detecting silent agent failures with Amazon Bedrock AgentCore Optimization](https://aws.amazon.com/blogs/machine-learning/detecting-silent-agent-failures-with-amazon-bedrock-agentcore-optimization/)
+- [Introducing Agent Quality Optimization in AgentCore (preview)](https://aws.amazon.com/blogs/machine-learning/introducing-agent-quality-optimization-in-agentcore-now-in-preview/)
+- [Optimizing agent system prompts with Amazon Bedrock AgentCore](https://aws.amazon.com/blogs/machine-learning/optimizing-agent-system-prompts-with-amazon-bedrock-agentcore/)
 
 ## Quick Start
 
@@ -65,6 +79,25 @@ python optimize.py --name HRAssistV1
 python cleanup.py --name HRAssistV1
 ```
 
+## Sample Prompts
+
+Prompts you can send through `invoke.py --name HRAssistV1 --prompt "..."` (or via `agentcore invoke`, Step 2 below) to exercise the HR Assistant that the rest of this workflow evaluates and optimizes:
+
+**Prompt**: `Employee ID: EMP-001. What is my current PTO balance?`
+**Expected Behavior**: Agent calls `get_pto_balance` and reports the exact remaining days.
+
+**Prompt**: `Employee ID: EMP-001. Please submit a PTO request from 2026-06-01 to 2026-06-05 for a family vacation.`
+**Expected Behavior**: Agent calls `submit_pto_request` and confirms the request with a ticket/reference.
+
+**Prompt**: `Employee ID: EMP-042. Tell me about the 401k plan -- how much does the company match?`
+**Expected Behavior**: Agent calls `get_benefits_summary` and states the match percentage.
+
+**Prompt**: `Employee ID: EMP-002. What is the parental leave policy for primary caregivers?`
+**Expected Behavior**: Agent calls `lookup_hr_policy` and summarizes the policy.
+
+**Prompt**: `Employee ID: EMP-999. What is my current PTO balance?`
+**Expected Behavior**: Agent calls `get_pto_balance`, gets an "employee not found" tool error, and reports it clearly -- this is one of the failure modes `insights.py --generate-traces` sends deliberately so `FailureAnalysis` has something to cluster.
+
 ## AgentCore CLI Examples
 
 The following commands reproduce the full optimization workflow from the command line.
@@ -77,7 +110,7 @@ node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
   || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
 agentcore --version | grep -q '^0\.' \
   || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
-agentcore --version   # 0.20.1 or later
+agentcore --version   # should print 0.30.0
 ```
 
 ### Step 1: Deploy the HR Assistant
@@ -115,7 +148,7 @@ agentcore run batch-evaluation \
 
 ### Step 3: Run Insights
 
-After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`.
+After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`. The CLI insights commands require an `agentcore` project with a deployed runtime (v0.30.0+).
 
 ```bash
 # Run FailureAnalysis together with GoalSuccessRate over the agent's sessions:
@@ -235,6 +268,11 @@ agentcore add online-eval \
   --enable-on-create
 agentcore deploy
 
+# Register named endpoints for each runtime version (required for target-based mode)
+agentcore add runtime-endpoint --runtime HRAssistant   --name v1
+agentcore add runtime-endpoint --runtime HRAssistantV2 --name v2
+agentcore deploy
+
 # Create A/B test with target-based routing (90/10 canary)
 agentcore add ab-test \
   --name HRTargetABTest \
@@ -300,6 +338,8 @@ dp.start_batch_evaluation(
     },
 )
 ```
+
+`Builtin.FailureAnalysis` is an insight evaluator: like any session-level evaluator it scores each session, and it also groups the failures it finds across sessions into insights, each with root causes, suggested fixes, and the spans where the failures occurred. It is currently the only insight evaluator.
 
 `Builtin.FailureAnalysis` works in three steps:
 
@@ -498,6 +538,8 @@ User --> [gateway] --90%--> [Target HRAgentV1 -> HR runtime v1 (stable)]  --> Cl
 
 ### From Triage to Optimization
 
+![Recommendations, Configuration Bundles, A/B Testing, Deploy Winner loop](images/ac-optimization.png)
+
 After insights identifies failure patterns, you can feed those findings into the Recommendations API to generate an improved system prompt:
 
 1. Run `Builtin.FailureAnalysis` to identify recurring failure insights and their root causes.
@@ -574,3 +616,13 @@ This supports testing both prompt changes and tool description improvements in t
 | **Target-based v2 wins** | Ramp to 50%, then 100% cutover; delete v1 runtime |
 | **Regression detected** | Stop A/B test immediately (`update_ab_test(executionStatus="STOPPED")`), investigate |
 | **Inconclusive** | Continue sending traffic to accumulate sample size (p < 0.05 threshold) |
+
+## Clean Up
+
+```bash
+python cleanup.py --name HRAssistV1
+```
+
+Deletes, in order, any A/B tests, online evaluation configs, configuration bundles, gateway tracing delivery, gateway targets and gateway, AgentCore runtime(s), and IAM execution role(s) recorded in `optimize_state_{name}.json` (or `agent_state_{name}.json` if that's the only state file present, covering just the runtime and role). Each deletion is wrapped so a resource that's already gone or was never created is skipped rather than aborting the run -- safe to run after a partial or interrupted `optimize.py`. It does not delete the S3 deployment package or bucket that `deploy.py` creates.
+
+If you ran the [AgentCore CLI Examples](#agentcore-cli-examples) instead, use Step 7's `agentcore remove`/`agentcore stop` commands in that section -- `cleanup.py` only tears down resources created by the Python scripts.
