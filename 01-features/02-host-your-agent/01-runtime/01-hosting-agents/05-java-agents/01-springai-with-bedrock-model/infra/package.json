@@ -27,6 +27,6 @@
     "constructs": "^10.3.0"
   },
   "overrides": {
-    "fast-xml-parser": ">=5.8.0"
+    "fast-xml-parser": ">=5.12.0"
   }
 }
