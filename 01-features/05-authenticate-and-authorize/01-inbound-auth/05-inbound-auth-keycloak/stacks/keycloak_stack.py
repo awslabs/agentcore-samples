@@ -74,6 +74,7 @@ class KeycloakStack(Stack):
             "PrivateCaAcmPermission",
             certificate_authority_arn=ca.attr_arn,
             principal="acm.amazonaws.com",
+            source_account=self.account,
             actions=["IssueCertificate", "GetCertificate", "ListPermissions"],
         )
         acm_permission.add_dependency(activation)

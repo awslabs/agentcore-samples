@@ -30,6 +30,8 @@ fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export AWS_REGION=${AWS_REGION:-$(aws configure get region 2>/dev/null || echo "us-east-1")}
+# boto3 reads AWS_DEFAULT_REGION, CDK (config.py) reads AWS_REGION. Keep them the same.
+export AWS_DEFAULT_REGION=$AWS_REGION
 export CDK_DEFAULT_ACCOUNT=$ACCOUNT_ID
 echo "Account: $ACCOUNT_ID  Region: $AWS_REGION"
 echo ""

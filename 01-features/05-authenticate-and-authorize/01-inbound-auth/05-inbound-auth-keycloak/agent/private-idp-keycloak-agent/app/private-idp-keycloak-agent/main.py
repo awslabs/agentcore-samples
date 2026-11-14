@@ -44,7 +44,8 @@ def fetch_token_from_private_idp(*, access_token: str) -> dict:
     parts = access_token.split(".")
     if len(parts) == 3:
         payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
-        result["claims"] = payload
+        # Return selected claims. Keycloak service-account tokens also carry clientHost/clientAddress (private IPs).
+        result["claims"] = {k: payload.get(k) for k in ("iss", "aud", "azp", "scope", "exp")}
     else:
         result["token_type"] = "opaque"
 
@@ -88,7 +89,7 @@ async def invoke(payload, context):
 
     try:
         token_info = fetch_token_from_private_idp()
-        log.info("Token acquired successfully: client_id=%s", token_info.get("client_id"))
+        log.info("Token acquired successfully: azp=%s", token_info.get("claims", {}).get("azp"))
         return json.dumps(token_info, indent=2)
     except Exception as e:  # noqa: BLE001 - report token errors in the agent response
         log.error("Failed to acquire token: %s", e)

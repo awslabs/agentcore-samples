@@ -75,7 +75,7 @@ The sample uses general-purpose mode because ACM doesn't issue certificates from
 ## Prerequisites
 
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) 2.27 or later
-- [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html) v2
+- [AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html) 2.1148.1 or later. The sample pins `aws-cdk-lib` 2.277.0, and earlier CLI versions fail with `Cloud assembly schema version mismatch`.
 - [uv](https://docs.astral.sh/uv/) and Python 3.12 or later
 - Node.js 20 or later
 - [AgentCore CLI](https://github.com/aws/agentcore-cli) 0.30.0 (`npm install -g @aws/agentcore@0.30.0`)
@@ -83,10 +83,11 @@ The sample uses general-purpose mode because ACM doesn't issue certificates from
 - IAM permissions to create the resources listed in [Resources](#resources), plus:
   - `secretsmanager:GetSecretValue` on the CA certificate secret
   - `iam:CreateServiceLinkedRole` for the AgentCore Identity service-linked role
+  - `ec2:CreateNetworkInterface` for the managed VPC Lattice endpoint
 
 ### Cost
 
-AWS Private CA in general-purpose mode costs USD 400 per CA per month, prorated (about USD 13 per day). Fargate, the ALB, and the NAT gateway add about USD 1–2 per day. For details, see [AWS Private CA pricing](https://aws.amazon.com/private-ca/pricing/).
+The sample creates an AWS Private CA in general-purpose mode, which has a monthly charge per CA. It also runs Fargate, an ALB, and a NAT gateway. For current prices, see [AWS Private CA pricing](https://aws.amazon.com/private-ca/pricing/), and run the cleanup script when you're done.
 
 ## Setup
 
@@ -132,6 +133,8 @@ AWS Private CA in general-purpose mode costs USD 400 per CA per month, prorated 
 - `certificateConfigurations` takes one entry, either `s3` or `secretsManager`. The secret is a plaintext PEM string with CA certificates and no private key.
 - An `UpdateOauth2CredentialProvider` call without `certificateConfigurations` removes the CA. `setup_agentcore.py` includes it when it updates the provider.
 - `agentcore.json` declares the credential provider without a `discoveryUrl`, so `agentcore deploy` doesn't update the provider.
+- `setup_agentcore.py` adds your gateway URL to `agent/private-idp-keycloak-agent/agentcore/agentcore.json`, so git shows the file as modified while the sample is deployed. Don't commit that change. `cleanup_sample.sh` removes it.
+- `agent/private-idp-keycloak-agent/agentcore/cdk/` is the AgentCore CLI's standard CDK project. It includes code for resource types that this sample doesn't use, such as Payments. That code only runs for resources defined in `agentcore.json`.
 
 ## Usage
 
@@ -153,7 +156,8 @@ The agent ignores the prompt. Use any value, such as `"test"`.
     "iss": "https://keycloak.agentcore-sample.example.com/realms/agentcore",
     "aud": ["agentcore-gateway", "account"],
     "azp": "agentcore-m2m",
-    "scope": "openid email profile"
+    "scope": "openid email profile",
+    "exp": 1794600685
   },
   "gateway": {
     "result": {

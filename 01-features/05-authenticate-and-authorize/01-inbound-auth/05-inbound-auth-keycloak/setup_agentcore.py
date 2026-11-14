@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import json
+import os
 import pathlib
 import time
 
@@ -52,8 +53,9 @@ TOOLS = [
     },
 ]
 
-session = boto3.Session()
-REGION = session.region_name or "us-east-1"
+# Same Region resolution as config.py (CDK): AWS_REGION first, then the boto3 default.
+REGION = os.environ.get("AWS_REGION") or boto3.Session().region_name or "us-east-1"
+session = boto3.Session(region_name=REGION)
 cfn = session.client("cloudformation", region_name=REGION)
 secrets = session.client("secretsmanager", region_name=REGION)
 control = session.client("bedrock-agentcore-control", region_name=REGION)
@@ -207,6 +209,17 @@ def configure_agent(gateway_url: str) -> None:
     print(f"  GATEWAY_URL written to {AGENT_CONFIG}")
 
 
+def unconfigure_agent() -> None:
+    """Remove GATEWAY_URL from agentcore.json so the file matches the committed version."""
+    spec = json.loads(AGENT_CONFIG.read_text())
+    runtime = spec["runtimes"][0]
+    env_vars = [v for v in runtime.get("envVars", []) if v["name"] != "GATEWAY_URL"]
+    if env_vars != runtime.get("envVars", []):
+        runtime["envVars"] = env_vars
+        AGENT_CONFIG.write_text(json.dumps(spec, indent=2) + "\n")
+        print(f"Removed GATEWAY_URL from {AGENT_CONFIG}.")
+
+
 def setup() -> None:
     """Create the AgentCore resources."""
     vpc = stack_outputs(VPC_STACK)
@@ -251,6 +264,7 @@ def cleanup() -> None:
         if e.response["Error"]["Code"] != "ResourceNotFoundException":
             raise
         print(f"Credential provider '{CREDENTIAL_PROVIDER_NAME}' not found (skipping).")
+    unconfigure_agent()
     STATE_FILE.unlink(missing_ok=True)
 
 

@@ -31,13 +31,15 @@ class GatewayInfraStack(Stack):
         )
 
         # --- Gateway IAM Role ---
-        # The condition block is omitted so the role can be used before the
-        # gateway ID is known. For production use, add SourceAccount and
-        # SourceArn conditions after gateway creation.
+        # aws:SourceAccount limits the trust to gateways in this account. The gateway ID
+        # isn't known yet, so add an aws:SourceArn condition after the gateway is created.
         self.gateway_role = iam.Role(
             self,
             "GatewayRole",
-            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            assumed_by=iam.ServicePrincipal(
+                "bedrock-agentcore.amazonaws.com",
+                conditions={"StringEquals": {"aws:SourceAccount": self.account}},
+            ),
         )
 
         self.mcp_echo_fn.grant_invoke(self.gateway_role)
