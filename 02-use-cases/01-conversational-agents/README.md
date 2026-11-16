@@ -27,6 +27,7 @@ Agents that interact with users in real time through a chat or query interface. 
 | Sample | Vertical | Complexity | AgentCore features |
 |--------|----------|------------|-------------------|
 | [A2A-multi-agent-incident-response](./A2A-multi-agent-incident-response/) | IT / DevOps | Advanced | Runtime, Gateway, Memory, A2A using Strands + OpenAI Agents + Google ADK |
+| [agent-as-mcp-server](./agent-as-mcp-server/) | Finance / Back Office | Intermediate | Runtime (MCP protocol), Gateway, Identity (Cognito OAuth); a Strands agent exposed as one MCP tool to Claude, Kiro, and other MCP clients |
 | [AWS-operations-agent](./AWS-operations-agent/) | Cloud Operations | Advanced | Runtime, Gateway, Memory, Policy, Observability; built with Strands, ADK, and OpenAI Agents SDK |
 | [customer-support-assistant-vpc](./customer-support-assistant-vpc/) | Retail / E-commerce | Intermediate | Runtime, Gateway deployed inside a VPC with private endpoints |
 | [deep-research-agent](./deep-research-agent/) | Research / Q&A | Intermediate | Runtime, Gateway (Web Search); iterative Plan → Search → Reflect → Synthesize loop with auto-provisioning |

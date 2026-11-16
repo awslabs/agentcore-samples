@@ -1,0 +1,31 @@
+[
+  {
+    "name": "lookup_expense_policy",
+    "description": "Look up the company expense policy (spending limit and receipt rules) for a category: meals, travel, office, or software.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Expense category, e.g. 'meals'"
+        }
+      },
+      "required": ["category"]
+    }
+  },
+  {
+    "name": "record_decision",
+    "description": "Record the final approve/reject decision for an expense report in the expense system.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "employee": { "type": "string", "description": "Employee name" },
+        "category": { "type": "string", "description": "Expense category" },
+        "amount_usd": { "type": "number", "description": "Amount in USD" },
+        "decision": { "type": "string", "description": "'APPROVED' or 'REJECTED'" },
+        "reason": { "type": "string", "description": "One-sentence justification citing the policy rule" }
+      },
+      "required": ["employee", "category", "amount_usd", "decision", "reason"]
+    }
+  }
+]
