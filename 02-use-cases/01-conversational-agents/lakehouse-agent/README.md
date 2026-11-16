@@ -13,6 +13,7 @@ A lakehouse data processing system demonstrating Amazon Bedrock AgentCore capabi
 - [Option A: Deploy via Jupyter Notebooks](#option-a-deploy-via-jupyter-notebooks)
 - [Option B: Deploy via CLI Scripts](#option-b-deploy-via-cli-scripts)
 - [What Gets Deployed](#what-gets-deployed)
+- [Sample Prompts](#sample-prompts)
 - [Cleanup](#cleanup)
 - [Testing](#testing)
 - [Usage Examples](#usage-examples)
@@ -702,6 +703,21 @@ The system includes an optional login audit feature that records every Cognito a
 - IAM role: `lakehouse-cognito-post-auth-role`
 
 **This step is entirely optional.** The rest of the system (claims queries, summaries, text-to-SQL) works without it. If skipped, administrators will see a message that the login audit table doesn't exist when they try to query login history.
+
+---
+
+## Sample Prompts
+
+After deployment, open the Streamlit UI (`08-streamlit-ui.ipynb`) and try these prompts.
+
+Signed in as a policyholder (for example `policyholder001`):
+- "Show me my claims": you see only your own claims.
+- "What notes are there on my claims?": you see only your own notes.
+
+Signed in as `admin`:
+- "Show me all claims with their status and amount": you see the full claims table.
+
+Administrators and policyholders get different tools, so an admin can also use tools such as `text_to_sql` and `query_login_audit`.
 
 ---
 
