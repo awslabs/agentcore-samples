@@ -56,6 +56,7 @@ lib/
 !01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/05-community/gateway-mcp-inspector/client/src/lib/
 !02-use-cases/lakehouse-agent/deployment/advanced-agentcore-policy-gateway-interceptor/lib/
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/agentcore/cdk/lib/
+!01-features/05-authenticate-and-authorize/01-inbound-auth/05-inbound-auth-keycloak/agent/private-idp-keycloak-agent/agentcore/cdk/lib/
 lib64/
 parts/
 sdist/
