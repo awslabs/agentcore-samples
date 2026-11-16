@@ -164,17 +164,17 @@ echo "🚀 Deploying Lambda function: $LAMBDA_NAME"
 ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
 # Check if Lambda exists
-if aws lambda get-function --function-name $LAMBDA_NAME --region $REGION 2>/dev/null; then
+if aws lambda get-function --function-name $LAMBDA_NAME --region $REGION >/dev/null 2>/dev/null; then
     echo "♻️  Updating existing Lambda function"
     aws lambda update-function-code \
         --function-name $LAMBDA_NAME \
         --zip-file fileb:///tmp/post-auth-lambda.zip \
-        --region $REGION
+        --region $REGION >/dev/null
     
     aws lambda update-function-configuration \
         --function-name $LAMBDA_NAME \
         --environment "Variables={LOGIN_AUDIT_TABLE=${TABLE_NAME}}" \
-        --region $REGION
+        --region $REGION >/dev/null
 else
     echo "✨ Creating new Lambda function"
     aws lambda create-function \
@@ -188,8 +188,9 @@ else
         --environment "Variables={LOGIN_AUDIT_TABLE=${TABLE_NAME}}" \
         --description "Cognito Post-Authentication trigger for login audit logging" \
         --tags Application=lakehouse-agent,Purpose=cognito-post-auth \
-        --region $REGION
+        --region $REGION >/dev/null
 fi
+echo "✅ Lambda function code and configuration in place"
 
 # Step 5: Grant Cognito permission to invoke Lambda
 echo ""
