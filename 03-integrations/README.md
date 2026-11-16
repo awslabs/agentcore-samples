@@ -21,6 +21,10 @@ This folder contains framework and protocol integrations that demonstrate how to
 * **[SageMaker AI](./amazon-sagemakerai/)**: MLflow integration with AgentCore Runtime
 * **[Bedrock Agent](./bedrock-agent/)**: Integration between Bedrock Agents and AgentCore Gateway
 
+## 🌐 Gateway
+
+* **[SpecStream](./gateway/specstream/)**: Live web search and page extraction through AgentCore Gateway (OpenAPI API-key target and remote MCP passthrough)
+
 ## 🖥️ Agents Hosted Outside Runtime
 
 * **[Agents on AWS Lambda](./agents-hosted-outside-runtime/agents-on-aws-lambda/)**: Running agents on Lambda with AgentCore integration
