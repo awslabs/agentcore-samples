@@ -11,11 +11,12 @@ can reach your agents.
 | `02-inbound-auth-EntraID/` | Microsoft Entra ID | Three patterns: runtime inbound auth, gateway M2M, gateway with 3LO Auth Code (OneNote) |
 | `03-inbound-auth-okta/` | Okta | Two patterns: runtime inbound auth with scope validation, gateway with full OAuth flow |
 | `04-inbound-auth-pingfederate/` | PingFederate | Full CDK deployment: VPC, VPN, PingFederate on EC2, AgentCore gateway with custom JWT |
+| `05-inbound-auth-keycloak/` | Keycloak | CDK deployment: Keycloak with a private CA certificate, reached over VPC Lattice |
 
 ## How this section is organized
 
 Each sub-folder focuses on a single identity provider and contains self-contained Python scripts
-(or a CDK app for PingFederate). The scripts demonstrate how to:
+(or a CDK app for PingFederate and Keycloak). The scripts demonstrate how to:
 
 1. Create an AgentCore runtime or gateway with `authorizerType="CUSTOM_JWT"`
 2. Configure `discoveryUrl`, `allowedAudience`, and `allowedClients` for the provider
@@ -37,7 +38,7 @@ Each sub-folder focuses on a single identity provider and contains self-containe
 - Python 3.10+
 - AWS CLI configured with credentials
 - `bedrock-agentcore` package: `pip install bedrock-agentcore`
-- An account at the relevant identity provider (Cognito, Entra ID, Okta, or PingFederate)
+- An account at the relevant identity provider (Cognito, Entra ID, Okta, PingFederate, or Keycloak)
 
 ## Running the Python Scripts
 
@@ -86,6 +87,15 @@ python okta_gateway_auth.py
 cd 04-inbound-auth-pingfederate/
 pip install -r requirements.txt   # CDK dependencies
 ./deploy_sample.sh                 # Full CDK deploy
+# Cleanup:
+./cleanup_sample.sh
+```
+
+### 05-inbound-auth-keycloak
+
+```bash
+cd 05-inbound-auth-keycloak/
+./deploy_sample.sh                 # CDK deploy + credential provider, gateway and runtime
 # Cleanup:
 ./cleanup_sample.sh
 ```

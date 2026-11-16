@@ -34,6 +34,10 @@ ignore = [
 # broad handlers are top-level request handlers, tool error paths and setup
 # scripts that log the failure and return a user-facing message rather than crash.
 "02-use-cases/01-conversational-agents/data-analyst-conversational-assistant/**/*.py" = ["BLE001"]
+# Same BLE001 rationale for the market trends agent: the broad handlers are agent
+# tool error paths that return a message to the model instead of failing the
+# turn, plus deploy/cleanup steps that log the failure and continue.
+"02-use-cases/01-conversational-agents/market-trends-agent/**/*.py" = ["BLE001"]
 # Same BLE001 rationale for these samples (relocated from 06-workshops): the broad
 # handlers are top-level CLI/viewer loops, Lambda interceptors and setup/teardown
 # scripts that log the failure and keep going rather than crash. S110 covers the
