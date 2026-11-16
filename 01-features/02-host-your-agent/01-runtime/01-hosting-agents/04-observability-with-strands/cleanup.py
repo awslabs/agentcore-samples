@@ -16,6 +16,7 @@ import sys
 import time
 
 import boto3
+from botocore.exceptions import ClientError
 
 # ── Load Config ────────────────────────────────────────────────────────────────
 
@@ -49,11 +50,13 @@ def cleanup(config):
         eps = control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
         for ep in eps.get("runtimeEndpoints", []):
             ep_name = ep["name"]
-            control.delete_agent_runtime_endpoint(agentRuntimeId=runtime_id, name=ep_name)
+            if ep_name == "DEFAULT":
+                continue  # DEFAULT endpoint is auto-deleted with the runtime
+            control.delete_agent_runtime_endpoint(agentRuntimeId=runtime_id, endpointName=ep_name)
             print(f"  Deleted endpoint: {ep_name}")
         # Wait for deletion
         time.sleep(10)
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # Delete runtime
@@ -61,7 +64,7 @@ def cleanup(config):
     try:
         control.delete_agent_runtime(agentRuntimeId=runtime_id)
         print("  Runtime deletion initiated")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # Delete IAM role
@@ -72,7 +75,7 @@ def cleanup(config):
             iam.delete_role_policy(RoleName=role_name, PolicyName=p)
         iam.delete_role(RoleName=role_name)
         print(f"  Deleted role: {role_name}")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     # Delete S3 artifacts
@@ -80,7 +83,7 @@ def cleanup(config):
     try:
         s3.delete_object(Bucket=s3_bucket, Key=s3_prefix)
         print("  Deleted S3 object")
-    except Exception as e:
+    except ClientError as e:
         print(f"  Warning: {e}")
 
     print("\nCleanup complete.")
