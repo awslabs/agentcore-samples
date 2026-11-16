@@ -76,7 +76,7 @@ def create_execution_role(agent_name: str) -> str:
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
                 ],
-                "Resource": "arn:aws:logs:*:*:*",
+                "Resource": f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/*",
             },
         ],
     }
@@ -123,6 +123,16 @@ def zip_and_upload(agent_name: str, code_files: list[str]):
             )
     except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
         pass
+
+    s3.put_public_access_block(
+        Bucket=S3_BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
 
     pkg_dir = f"deployment_package_{agent_name}"
     zip_file = f"deployment_package_{agent_name}.zip"
