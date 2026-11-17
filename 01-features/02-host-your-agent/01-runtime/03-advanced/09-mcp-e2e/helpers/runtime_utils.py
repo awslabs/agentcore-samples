@@ -150,8 +150,10 @@ def serve(mcp: MCPServer, wrap: Callable[[ASGIApp], ASGIApp] | None = None) -> N
     """Run the server on the AgentCore Runtime MCP contract: port 8000, path /mcp.
 
     stateless_http applies to MCP 2025-11-25 and earlier clients; 2026-07-28 is always stateless.
+    MCP_LEGACY_STATEFUL=true gives those earlier clients stateful mode (05-compatibility-e2e).
     wrap adds ASGI middleware around the MCP app (04-protocol-e2e uses it to answer one call with HTTP 500).
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    app: ASGIApp = mcp.streamable_http_app(stateless_http=True, host=HOST)
+    stateful = os.getenv("MCP_LEGACY_STATEFUL", "false").lower() == "true"
+    app: ASGIApp = mcp.streamable_http_app(stateless_http=not stateful, host=HOST)
     uvicorn.run(wrap(app) if wrap else app, host=HOST, port=PORT)

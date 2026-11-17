@@ -16,7 +16,7 @@ A finance assistant MCP server that asks the user for input (elicitation) and as
 | Server asks the client's model | `sampling/createMessage` during the tool call | The same round trip. Sampling is deprecated (SEP-2577): new tools should call a model API directly |
 | Client capabilities | Sent once, in `initialize` | Sent on every request, in `_meta` |
 | Where the server keeps state between rounds | In the open session | In `requestState`, sealed by the server and returned by the client |
-| On AgentCore Runtime | Needs [stateful mode](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/mcp-stateful-features.html) | Works in the default stateless mode |
+| On AgentCore Runtime | Needs stateful mode (see `05-compatibility-e2e`) | Works in the default stateless mode |
 
 ### Tutorial details
 

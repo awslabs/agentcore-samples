@@ -4,7 +4,7 @@
 
 The [Model Context Protocol](https://modelcontextprotocol.io/) defines how AI agents discover and use tools, read resources, and ask a user or a model for something. The [2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28) makes the protocol stateless: no handshake, no protocol session, and every request self-describing.
 
-Amazon Bedrock AgentCore Runtime hosts MCP servers on both the new and earlier protocol versions, choosing the behavior per request from the `MCP-Protocol-Version` header, with no configuration change. These four tutorials cover the server features, the client features, the utilities, and the base protocol on one MCP Python SDK v2 server.
+Amazon Bedrock AgentCore Runtime hosts MCP servers on both the new and earlier protocol versions, choosing the behavior per request from the `MCP-Protocol-Version` header, with no configuration change. These five tutorials cover the whole feature set on one MCP Python SDK v2 server: the server features, the client features, the utilities, the base protocol, and what your existing clients and servers see.
 
 <img src="img/overview.png" style="width: 90%;">
 
@@ -34,14 +34,14 @@ The [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changel
 | Tools | `tools/list`, `tools/call` | yes | yes, plus cache hints and typed results | 01 |
 | Resources | `resources/list`, `resources/read` | yes | yes | 01 |
 | Prompts | `prompts/list`, `prompts/get` | yes | yes | 01 |
-| Discovery | `initialize` → `server/discover` | yes | yes, but it lists only 2026-07-28 | 01 |
-| Elicitation | `elicitation/create` | stateful mode only | multi round-trip requests | 02 |
+| Discovery | `initialize` → `server/discover` | yes | yes, but it lists only 2026-07-28 | 01, 05 |
+| Elicitation | `elicitation/create` | stateful mode only | multi round-trip requests | 02, 05 |
 | Sampling | `sampling/createMessage` | stateful mode only | the same, deprecated | 02 |
-| Progress | `notifications/progress` | yes, in either mode (with SSE responses, the SDK default) | yes | 03 |
+| Progress | `notifications/progress` | yes, in either mode (with SSE responses, the SDK default) | yes | 03, 05 |
 | Health checks | `ping` → `GET /ping` | either | `GET /ping`; without it AgentCore Runtime only sees a server that stops answering | 03 |
 | Cancellation | `notifications/cancelled` → closing the stream | yes | **the disconnect does not reach the server yet** | 03 |
 | Errors | — | mostly HTTP 200 | the HTTP status matches | 04 |
-| Sessions | `Mcp-Session-Id` → runtime session header | yes | yes | 04 |
+| Sessions | `Mcp-Session-Id` → runtime session header | yes | yes | 04, 05 |
 | Resource subscriptions | `resources/subscribe` → `subscriptions/listen` | yes | not covered here | — |
 | Logging | `logging/setLevel` → `_meta` log level | yes | deprecated; `logging/setLevel` is removed and the level is set per request | — |
 | Roots | `roots/list` | not covered here | deprecated | — |
@@ -56,6 +56,7 @@ The [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changel
 ├── 02-client-e2e/           # Elicitation and sampling as multi round-trip requests
 ├── 03-utilities-e2e/        # Progress, health checks, and cancellation
 ├── 04-protocol-e2e/         # No handshake, sessions, and errors, behind a Cognito JWT
+├── 05-compatibility-e2e/    # Earlier clients, stateful mode, and an existing SDK v1 server
 └── helpers/                 # Shared code: deploy, serve, storage, and the MCP clients
 ```
 
@@ -86,12 +87,16 @@ A five-step report that streams progress as it runs, a background job that keeps
 
 A runtime behind an Amazon Cognito JWT authorizer, showing that a 2026-07-28 client's first request needs no handshake, that the runtime session header decides which microVM answers, and how the same seven failures come back on each protocol version.
 
+### 05 — Compatibility
+
+Three runtimes: the SDK v2 server in its default stateless mode and in stateful mode, and an unchanged SDK v1 server. An earlier client gets its tools and progress in either mode but needs stateful mode for elicitation, and an SDK v2 client falls back to `initialize` for the old server unless you pin it to 2026-07-28.
+
 ## Prerequisites
 
 * Python 3.12 or later, and `pip install -r requirements.txt`
 * AWS credentials, and a Region where AgentCore Runtime V2 is available, for example `export AWS_REGION=us-west-2`
 * Access to Amazon Bedrock AgentCore Runtime. Folder 02 also calls Claude Haiku 5.5 on Amazon Bedrock
-* AWS services used: AgentCore Runtime, IAM, S3, DynamoDB, Secrets Manager (02), Cognito (04)
+* AWS services used: AgentCore Runtime, IAM, S3, DynamoDB, Secrets Manager (02, 05), Cognito (04)
 
 ### Region and cost
 
