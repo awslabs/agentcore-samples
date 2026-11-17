@@ -1,126 +1,68 @@
-"""
-Invoke the MCP server e2e agent using JSON-RPC messages.
+"""Call the finance tracker with MCP 2026-07-28 requests through boto3: tools, resources, and prompts.
 
-Demonstrates: initialize, tools/list, tools/call (add_expense, get_balance),
-resources/list, resources/read, prompts/list, prompts/get.
-
-Usage:
-    python deploy.py   # deploy first
-    python invoke.py   # run this demo
+There is no initialize handshake: every request carries its protocol version in _meta and headers.
+Usage: python invoke.py
 """
 
-import json
 import sys
+from pathlib import Path
 
-import boto3
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "helpers"))
+from deploy_utils import load_config
+from dynamo_utils import FinanceDB
+from mcp_client import EARLIER, McpClient, new_session_id, show
 
-
-def load_config() -> dict:
-    try:
-        with open("runtime_config.json") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print("Error: runtime_config.json not found. Run deploy.py first.")
-        sys.exit(1)
-
-
-def send_jsonrpc(client, arn: str, method: str, params: dict = None, msg_id: int = 1) -> dict:
-    """Send a JSON-RPC message to the MCP server."""
-    message = {"jsonrpc": "2.0", "id": msg_id, "method": method}
-    if params:
-        message["params"] = params
-
-    response = client.invoke_agent_runtime(
-        agentRuntimeArn=arn,
-        payload=json.dumps(message).encode("utf-8"),
-        contentType="application/json",
-        accept="application/json, text/event-stream",
-    )
-    body = response["response"].read().decode("utf-8")
-    # Handle SSE response: extract JSON from data: lines
-    for line in body.splitlines():
-        if line.startswith("data:"):
-            data = line[5:].strip()
-            if data:
-                return json.loads(data)
-    # Fall back to direct JSON parse
-    return json.loads(body) if body else {}
-
-
-def main():
-    config = load_config()
-    arn = config["runtime_arn"]
-    region = config["region"]
-    client = boto3.client("bedrock-agentcore", region_name=region)
-
-    print("═══ MCP Server E2E Demo ═══")
-    print(f"Runtime: {arn}\n")
-
-    # 1. Initialize
-    print("── Initialize ──")
-    result = send_jsonrpc(
-        client,
-        arn,
-        "initialize",
-        {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {"name": "demo-client", "version": "1.0.0"},
-        },
-        msg_id=1,
-    )
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    # 2. List tools
-    print("── tools/list ──")
-    result = send_jsonrpc(client, arn, "tools/list", msg_id=2)
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    # 3. Add an expense
-    print("── tools/call: add_expense ──")
-    result = send_jsonrpc(
-        client,
-        arn,
-        "tools/call",
-        {
-            "name": "add_expense",
-            "arguments": {
-                "user_alias": "demo_user",
-                "amount": 42.50,
-                "description": "Lunch meeting",
-                "category": "food",
-            },
-        },
-        msg_id=3,
-    )
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    # 4. Get balance
-    print("── tools/call: get_balance ──")
-    result = send_jsonrpc(
-        client,
-        arn,
-        "tools/call",
-        {
-            "name": "get_balance",
-            "arguments": {"user_alias": "demo_user"},
-        },
-        msg_id=4,
-    )
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    # 5. List resources
-    print("── resources/list ──")
-    result = send_jsonrpc(client, arn, "resources/list", msg_id=5)
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    # 6. List prompts
-    print("── prompts/list ──")
-    result = send_jsonrpc(client, arn, "prompts/list", msg_id=6)
-    print(f"  {json.dumps(result, indent=2)[:500]}\n")
-
-    print("✓ Demo complete. Run 'python cleanup.py' to delete the runtime.")
-
+USER = "alice"
 
 if __name__ == "__main__":
-    main()
+    config = load_config(HERE)
+    FinanceDB(config["table"]).clear_user(USER)  # start every run from the same data
+    mcp = McpClient(config["runtime_arn"], config["region"], session_id=new_session_id())
+
+    discover = mcp.request("server/discover")
+    show("server/discover", discover, ("supportedVersions", "capabilities"))
+
+    tools = mcp.request("tools/list")
+    print(
+        f"── tools/list  HTTP {tools.status}  ttlMs={tools.result.get('ttlMs')} cacheScope={tools.result.get('cacheScope')}"
+    )
+    print(f"   {[t['name'] for t in tools.result.get('tools', [])]}")
+
+    show(
+        "tools/call add_income",
+        mcp.call_tool("add_income", {"user_alias": USER, "amount": 3000, "description": "Salary"}),
+    )
+    show(
+        "tools/call add_expense",
+        mcp.call_tool("add_expense", {"user_alias": USER, "amount": 42.5, "description": "Lunch", "category": "food"}),
+    )
+    show(
+        "tools/call set_budget",
+        mcp.call_tool("set_budget", {"user_alias": USER, "category": "food", "monthly_limit": 400}),
+    )
+    show("tools/call get_balance", mcp.call_tool("get_balance", {"user_alias": USER}))
+
+    templates = mcp.request("resources/templates/list")
+    print(f"── resources/templates/list  {[t['uriTemplate'] for t in templates.result.get('resourceTemplates', [])]}")
+    budgets = mcp.request("resources/read", {"uri": f"finance://budgets/{USER}"}, name=f"finance://budgets/{USER}")
+    print(f"── resources/read finance://budgets/{USER}\n   {budgets.result['contents'][0]['text']}")
+
+    prompts = mcp.request("prompts/list")
+    print(f"── prompts/list  {[p['name'] for p in prompts.result.get('prompts', [])]}")
+    prompt = mcp.request(
+        "prompts/get", {"name": "budget_analysis", "arguments": {"user_alias": USER}}, name="budget_analysis"
+    )
+    print(f"── prompts/get budget_analysis\n   {prompt.result['messages'][0]['content']['text'][:200]}")
+
+    # Errors keep their HTTP status in 2026-07-28: an unknown resource is HTTP 400 with -32602.
+    show(
+        "resources/read finance://unknown (expected error)",
+        mcp.request("resources/read", {"uri": "finance://unknown/x"}, name="finance://unknown/x"),
+    )
+
+    # The same server still answers an MCP 2025-11-25 client.
+    earlier = McpClient(config["runtime_arn"], config["region"], session_id=new_session_id())
+    init = earlier.initialize()
+    print(f"── {EARLIER} initialize  protocolVersion={init.result.get('protocolVersion')}")
+    show(f"{EARLIER} tools/call get_balance", earlier.call_tool("get_balance", {"user_alias": USER}, version=EARLIER))

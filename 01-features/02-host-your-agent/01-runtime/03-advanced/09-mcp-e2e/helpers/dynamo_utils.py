@@ -1,113 +1,92 @@
-import boto3
-from datetime import datetime
-from typing import Dict, List
+"""DynamoDB storage for the finance tracker. deploy.py copies this file into each zip."""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
+
+import boto3
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 class FinanceDB:
-    def __init__(self, table_name: str = "finance_tracker", region_name: str = "us-east-1"):
-        self.dynamodb = boto3.resource("dynamodb", region_name=region_name)
-        self.table_name = table_name
-        self.table = self.dynamodb.Table(table_name)
+    """One item per transaction or budget, keyed by user. The table name comes from FINANCE_TABLE."""
 
-    def create_table(self) -> str:
-        """Create the finance tracker table if it doesn't exist"""
-        try:
-            # Check if table already exists
-            self.table.load()
-            return f"Table {self.table_name} already exists"
-        except self.dynamodb.meta.client.exceptions.ResourceNotFoundException:
-            # Table doesn't exist, create it
-            try:
-                table = self.dynamodb.create_table(
-                    TableName=self.table_name,
-                    KeySchema=[
-                        {"AttributeName": "pk", "KeyType": "HASH"},
-                        {"AttributeName": "sk", "KeyType": "RANGE"},
-                    ],
-                    AttributeDefinitions=[
-                        {"AttributeName": "pk", "AttributeType": "S"},
-                        {"AttributeName": "sk", "AttributeType": "S"},
-                    ],
-                    BillingMode="PAY_PER_REQUEST",
-                )
-                table.wait_until_exists()
-                return f"Table {self.table_name} created successfully"
-            except Exception as e:
-                return f"Error creating table: {str(e)}"
-        except Exception as e:
-            return f"Error checking table: {str(e)}"
+    def __init__(self, table_name: str | None = None) -> None:
+        self.table_name = table_name or os.getenv("FINANCE_TABLE", "finance_tracker")
+        # Built when the server imports this module, as the Runtime V2 guide recommends: the snapshot keeps the
+        # loaded service model and the credential provider, which refreshes the role's credentials itself.
+        # Only the connection is opened again after a restore.
+        self.table: Any = boto3.resource("dynamodb").Table(self.table_name)
 
-    def delete_table(self) -> str:
-        """Delete the finance tracker table"""
-        try:
-            self.table.delete()
-            self.table.wait_until_not_exists()
-            return f"Table {self.table_name} deleted successfully"
-        except Exception as e:
-            return f"Error deleting table: {str(e)}"
-
-    def add_transaction(
-        self,
-        user_alias: str,
-        transaction_type: str,
-        amount: float,
-        description: str,
-        category: str,
-    ) -> str:
-        """Add a transaction to DynamoDB"""
+    def add_transaction(self, user_alias: str, kind: str, amount: float, description: str, category: str) -> dict:
         item = {
             "pk": f"USER#{user_alias}",
-            "sk": f"TRANSACTION#{datetime.now().isoformat()}",
-            "type": transaction_type,
-            "amount": Decimal(str(amount)),  # Convert float to Decimal
+            "sk": f"TRANSACTION#{now()}",
+            "type": kind,
+            "amount": Decimal(str(amount)),
             "description": description,
             "category": category,
-            "date": datetime.now().isoformat(),
-            "created_at": datetime.now().isoformat(),
+            "date": now(),
         }
-
         self.table.put_item(Item=item)
-        return f"{transaction_type.title()} of ${abs(amount):.2f} added for {user_alias}"
+        return {"type": kind, "amount": float(amount), "description": description, "category": category}
 
-    def set_budget(self, user_alias: str, category: str, monthly_limit: float) -> str:
-        """Set budget for a category"""
-        item = {
-            "pk": f"USER#{user_alias}",
-            "sk": f"BUDGET#{category}",
-            "category": category,
-            "monthly_limit": Decimal(str(monthly_limit)),  # Convert float to Decimal
-            "set_date": datetime.now().isoformat(),
-        }
+    def set_budget(self, user_alias: str, category: str, monthly_limit: float) -> dict:
+        self.table.put_item(
+            Item={
+                "pk": f"USER#{user_alias}",
+                "sk": f"BUDGET#{category}",
+                "category": category,
+                "monthly_limit": Decimal(str(monthly_limit)),
+                "set_date": now(),
+            }
+        )
+        return {"category": category, "monthly_limit": monthly_limit}
 
-        self.table.put_item(Item=item)
-        return f"Budget set for {category}: ${monthly_limit:.2f}/month"
-
-    def get_transactions(self, user_alias: str) -> List[Dict]:
-        """Get all transactions for a user"""
+    def _query(self, user_alias: str, prefix: str) -> list[dict]:
         response = self.table.query(
             KeyConditionExpression="pk = :pk AND begins_with(sk, :sk)",
-            ExpressionAttributeValues={
-                ":pk": f"USER#{user_alias}",
-                ":sk": "TRANSACTION#",
-            },
+            ExpressionAttributeValues={":pk": f"USER#{user_alias}", ":sk": prefix},
         )
         return response.get("Items", [])
 
-    def get_budgets(self, user_alias: str) -> List[Dict]:
-        """Get all budgets for a user"""
-        response = self.table.query(
-            KeyConditionExpression="pk = :pk AND begins_with(sk, :sk)",
-            ExpressionAttributeValues={":pk": f"USER#{user_alias}", ":sk": "BUDGET#"},
-        )
-        return response.get("Items", [])
+    def get_transactions(self, user_alias: str) -> list[dict]:
+        return self._query(user_alias, "TRANSACTION#")
 
-    def get_balance(self, user_alias: str) -> Dict:
-        """Calculate balance from transactions"""
+    def get_budgets(self, user_alias: str) -> list[dict]:
+        return self._query(user_alias, "BUDGET#")
+
+    def clear_user(self, user_alias: str) -> None:
+        """Delete every item of one user. Each invoke.py calls it first, so every run starts from the same data."""
+        query: dict[str, Any] = {
+            "KeyConditionExpression": "pk = :pk",
+            "ExpressionAttributeValues": {":pk": f"USER#{user_alias}"},
+            "ProjectionExpression": "pk, sk",
+        }
+        with self.table.batch_writer() as batch:
+            while True:
+                page = self.table.query(**query)
+                for item in page.get("Items", []):
+                    batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
+                if "LastEvaluatedKey" not in page:
+                    break
+                query["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
+    def get_balance(self, user_alias: str) -> dict:
         transactions = self.get_transactions(user_alias)
-
-        total = sum(float(t["amount"]) for t in transactions)  # Convert Decimal to float
         income = sum(float(t["amount"]) for t in transactions if t["type"] == "income")
-        expenses = sum(abs(float(t["amount"])) for t in transactions if t["type"] == "expense")
+        expenses = sum(-float(t["amount"]) for t in transactions if t["type"] == "expense")
+        return {"balance": income - expenses, "income": income, "expenses": expenses}
 
-        return {"balance": total, "income": income, "expenses": expenses}
+    def spending_by_category(self, user_alias: str, since: str | None = None) -> dict[str, float]:
+        spending: dict[str, float] = {}
+        for t in self.get_transactions(user_alias):
+            if t["type"] == "expense" and (since is None or t["date"] >= since):
+                spending[t["category"]] = spending.get(t["category"], 0.0) - float(t["amount"])
+        return spending
