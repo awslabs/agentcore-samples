@@ -2,7 +2,7 @@
 
 Every sample deploys the same way: a code zip with an arm64 Python 3.13 build of the server's
 requirements, an IAM execution role, and an agent runtime with serverProtocol=MCP and
-platformVersion=V2. Inbound auth is IAM (SigV4).
+platformVersion=V2. Inbound auth is IAM (SigV4) unless a sample passes a JWT authorizer.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -179,6 +180,55 @@ def ensure_role(name: str, table_arn: str | None = None, secret_arn: str | None 
     return arn
 
 
+def find_user_pool_id(name: str) -> str | None:
+    cognito = session.client("cognito-idp")
+    for page in cognito.get_paginator("list_user_pools").paginate(MaxResults=60):
+        for pool in page["UserPools"]:
+            if pool["Name"] == name:
+                return pool["Id"]
+    return None
+
+
+def ensure_cognito(name: str, username: str = "demo-user") -> dict[str, str]:
+    """A Cognito user pool, an app client, and one demo user with a generated password, for JWT inbound auth."""
+    cognito = session.client("cognito-idp")
+    pool_id = find_user_pool_id(name)
+    if pool_id is None:
+        pool_id = cognito.create_user_pool(
+            PoolName=name,
+            Policies={"PasswordPolicy": {"MinimumLength": 16}},
+            AdminCreateUserConfig={"AllowAdminCreateUserOnly": True},
+        )["UserPool"]["Id"]
+    clients = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60)["UserPoolClients"]
+    client_id = next((c["ClientId"] for c in clients if c["ClientName"] == f"{name}-client"), None)
+    if client_id is None:
+        client_id = cognito.create_user_pool_client(
+            UserPoolId=pool_id,
+            ClientName=f"{name}-client",
+            ExplicitAuthFlows=["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+            GenerateSecret=False,
+        )["UserPoolClient"]["ClientId"]
+    try:
+        cognito.admin_create_user(UserPoolId=pool_id, Username=username, MessageAction="SUPPRESS")
+    except cognito.exceptions.UsernameExistsException:
+        pass
+    password = secrets.token_urlsafe(24) + "aA1!"  # a new one on every deploy; deploy.py saves it locally
+    cognito.admin_set_user_password(UserPoolId=pool_id, Username=username, Password=password, Permanent=True)
+    log(f"✓ Cognito user pool {name} with user {username}")
+    return {
+        "user_pool_id": pool_id,
+        "client_id": client_id,
+        "username": username,
+        "password": password,
+        "discovery_url": f"https://cognito-idp.{REGION}.amazonaws.com/{pool_id}/.well-known/openid-configuration",
+    }
+
+
+def jwt_authorizer(cognito: dict[str, str]) -> dict[str, Any]:
+    """AgentCore Runtime's inbound JWT authorizer, accepting tokens issued to the Cognito app client."""
+    return {"customJWTAuthorizer": {"discoveryUrl": cognito["discovery_url"], "allowedClients": [cognito["client_id"]]}}
+
+
 # ---------------------------------------------------------------- code zip
 def _uv() -> list[str]:
     if importlib.util.find_spec("uv"):
@@ -242,6 +292,7 @@ def deploy_runtime(
     code_key: str,
     entry_point: str,
     env: dict[str, str] | None = None,
+    authorizer: dict[str, Any] | None = None,
     idle_timeout: int | None = None,
 ) -> dict[str, str]:
     """Create the runtime, or update it if it exists, and wait for READY."""
@@ -260,6 +311,8 @@ def deploy_runtime(
         # 0.0.0.0 inside the microVM, as AgentCore Runtime requires; the runtime authenticates every request.
         "environmentVariables": {"MCP_HOST": "0.0.0.0", **(env or {})},  # nosec B104
     }
+    if authorizer:
+        args["authorizerConfiguration"] = authorizer
     if idle_timeout:  # seconds without requests before AgentCore ends a session (unless /ping says HealthyBusy)
         args["lifecycleConfiguration"] = {"idleRuntimeSessionTimeout": idle_timeout}
     runtime_id = find_runtime_id(name)
@@ -288,12 +341,12 @@ def deploy_runtime(
     return {"name": name, "runtime_id": runtime_id, "runtime_arn": runtime["agentRuntimeArn"]}
 
 
-def smoke_test(runtime_arn: str) -> None:
+def smoke_test(runtime_arn: str, client: Any = None) -> None:
     """AgentCore doesn't run the entry point at create time, so READY doesn't mean the server starts."""
     sys.path.insert(0, str(HELPERS))
     from mcp_client import McpClient
 
-    client = McpClient(runtime_arn, REGION, session_id=new_session_id_for_smoke())
+    client = client or McpClient(runtime_arn, REGION, session_id=new_session_id_for_smoke())
     reply = client.request("tools/list")
     if reply.error:
         sys.exit(f"✗ Smoke test: tools/list failed: {reply.error}")
@@ -308,7 +361,7 @@ def new_session_id_for_smoke() -> str:
 
 
 def save_config(sample_dir: Path, config: dict[str, Any]) -> None:
-    """Write runtime_config.json, readable only by you.
+    """Write runtime_config.json readable only by you (04 keeps its demo user's password there).
 
     Each deploy.py saves the resource names first, so cleanup.py can delete whatever exists even when a
     later step fails, and saves again once the runtime is READY.
@@ -378,6 +431,18 @@ def delete_secret(name: str) -> None:
         secrets.delete_secret(SecretId=name, ForceDeleteWithoutRecovery=True)
         log(f"✓ Deleted secret {name}")
     except secrets.exceptions.ResourceNotFoundException:
+        pass
+
+
+def delete_cognito(name: str) -> None:
+    cognito = session.client("cognito-idp")
+    user_pool_id = find_user_pool_id(name)
+    if user_pool_id is None:
+        return
+    try:
+        cognito.delete_user_pool(UserPoolId=user_pool_id)  # its app clients and users go with it
+        log(f"✓ Deleted Cognito user pool {name} ({user_pool_id})")
+    except cognito.exceptions.ResourceNotFoundException:
         pass
 
 
