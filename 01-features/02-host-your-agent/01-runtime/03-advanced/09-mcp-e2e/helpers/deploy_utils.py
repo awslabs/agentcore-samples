@@ -238,8 +238,18 @@ def _uv() -> list[str]:
     sys.exit("uv is required to build arm64 wheels: pip install uv")
 
 
-def upload_code(sample_dir: Path, key: str) -> None:
-    """Zip a server's *.py, the runtime helpers, and an arm64 build of its requirements; upload to S3."""
+def upload_code(
+    sample_dir: Path,
+    key: str,
+    agents: str = "agents",
+    requirements: str = "requirements.txt",
+    helpers: list[str] | None = None,
+) -> None:
+    """Zip a server's *.py, the runtime helpers it needs, and an arm64 build of its requirements; upload to S3.
+
+    05-compatibility-e2e passes agents_v1 and requirements-v1.txt, with helpers=[], to package an MCP
+    Python SDK v1 server: the shared runtime helpers import MCPServer, which only SDK v2 has.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         package = Path(tmp) / "package"
         subprocess.run(
@@ -257,11 +267,12 @@ def upload_code(sample_dir: Path, key: str) -> None:
                 "--target",
                 str(package),
                 "-r",
-                str(sample_dir / "requirements.txt"),
+                str(sample_dir / requirements),
             ],
             check=True,
         )
-        copied = [*sorted((sample_dir / "agents").glob("*.py")), *(HELPERS / f for f in RUNTIME_HELPERS)]
+        copied = [*sorted((sample_dir / agents).glob("*.py"))]
+        copied += [HELPERS / f for f in (RUNTIME_HELPERS if helpers is None else helpers)]
         for source in copied:
             shutil.copy(source, package / source.name)
         archive = Path(tmp) / "code.zip"
@@ -341,13 +352,16 @@ def deploy_runtime(
     return {"name": name, "runtime_id": runtime_id, "runtime_arn": runtime["agentRuntimeArn"]}
 
 
-def smoke_test(runtime_arn: str, client: Any = None) -> None:
-    """AgentCore doesn't run the entry point at create time, so READY doesn't mean the server starts."""
+def smoke_test(runtime_arn: str, client: Any = None, version: str | None = None) -> None:
+    """AgentCore doesn't run the entry point at create time, so READY doesn't mean the server starts.
+
+    version="2025-11-25" asks as an earlier client, for a server that doesn't speak 2026-07-28.
+    """
     sys.path.insert(0, str(HELPERS))
-    from mcp_client import McpClient
+    from mcp_client import LATEST, McpClient
 
     client = client or McpClient(runtime_arn, REGION, session_id=new_session_id_for_smoke())
-    reply = client.request("tools/list")
+    reply = client.request("tools/list", version=version or LATEST)
     if reply.error:
         sys.exit(f"✗ Smoke test: tools/list failed: {reply.error}")
     log(f"✓ Smoke test: {len(reply.result.get('tools', []))} tools")
