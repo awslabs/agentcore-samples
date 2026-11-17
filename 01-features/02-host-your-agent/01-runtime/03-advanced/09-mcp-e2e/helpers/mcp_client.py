@@ -1,15 +1,16 @@
 """Send MCP JSON-RPC requests to an AgentCore Runtime (client side).
 
-McpClient uses boto3 invoke_agent_runtime (IAM auth); sdk_http_client signs the MCP Python SDK v2 client's
-requests with SigV4. MCP 2026-07-28 has no initialize handshake: each request carries its protocol version
-and client capabilities in params._meta, and the MCP-Protocol-Version, Mcp-Method, and Mcp-Name headers
-(boto3 sends them as mcpProtocolVersion, mcpMethod, and mcpName).
+McpClient uses boto3 invoke_agent_runtime (IAM auth). HttpMcpClient sends plain HTTPS with a bearer
+token, for runtimes with a JWT authorizer. MCP 2026-07-28 has no initialize handshake: each request
+carries its protocol version and client capabilities in params._meta, and the MCP-Protocol-Version,
+Mcp-Method, and Mcp-Name headers (boto3 sends them as mcpProtocolVersion, mcpMethod, and mcpName).
 """
 
 from __future__ import annotations
 
 import itertools
 import json
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ class Reply:
     status: int
     message: dict[str, Any]  # the JSON-RPC response: {"result": ...} or {"error": ...}
     notifications: list[dict[str, Any]] = field(default_factory=list)  # e.g. notifications/progress
+    headers: dict[str, str] = field(default_factory=dict)  # HTTP response headers (HttpMcpClient only)
 
     @property
     def result(self) -> dict[str, Any]:
@@ -241,3 +243,79 @@ def sdk_http_client(region: str, session_id: str | None = None) -> httpx2.AsyncC
     """An httpx2 client for mcp.client.streamable_http_client, signed with SigV4."""
     headers = {SESSION_HEADER: session_id} if session_id else {}
     return httpx2.AsyncClient(headers=headers, auth=SigV4(region), timeout=httpx2.Timeout(30, read=300))
+
+
+# ---------------------------------------------------------------- plain HTTPS with a bearer token (JWT runtimes)
+def cognito_token(region: str, client_id: str, username: str, password: str) -> str:
+    """Sign in to Cognito and return the access token that the runtime's JWT authorizer checks."""
+    result = boto3.client("cognito-idp", region_name=region).initiate_auth(
+        ClientId=client_id,
+        AuthFlow="USER_PASSWORD_AUTH",
+        AuthParameters={"USERNAME": username, "PASSWORD": password},
+    )
+    return result["AuthenticationResult"]["AccessToken"]
+
+
+class HttpMcpClient:
+    """MCP over HTTPS with the standard headers. boto3 always signs with SigV4, which a JWT runtime rejects.
+
+    token=None sends no Authorization header; auth=SigV4(region) signs instead (both for the error demos).
+    """
+
+    def __init__(
+        self,
+        runtime_arn: str,
+        region: str,
+        token: str | None,
+        session_id: str | None = None,
+        auth: httpx2.Auth | None = None,
+    ) -> None:
+        self.url = runtime_url(runtime_arn, region)
+        self.token = token
+        self.session_id = session_id
+        self.http = httpx2.Client(auth=auth, timeout=httpx2.Timeout(30, read=120))
+
+    def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        name: str | None = None,
+        version: str = LATEST,
+        headers: dict[str, str] | None = None,
+    ) -> Reply:
+        """Send one request. JSON-RPC errors are returned, not raised. A session conflict is retried."""
+        sent = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        sent["Mcp-Method"] = method
+        if method != "initialize":  # earlier clients send the version they negotiated, after initialize
+            sent["MCP-Protocol-Version"] = version
+        if name:
+            sent["Mcp-Name"] = name
+        if self.session_id:
+            sent[SESSION_HEADER] = self.session_id
+        if self.token:
+            sent["Authorization"] = f"Bearer {self.token}"
+        sent.update(headers or {})
+        body = request_body(method, params, version)
+        for attempt in range(5):
+            response = self.http.post(self.url, headers=sent, json=body)
+            try:
+                messages = parse(response.text) if response.text.strip() else []
+            except ValueError:
+                messages = []  # not a JSON-RPC body
+            message = messages[-1] if messages else {"body": response.text}
+            reply = Reply(response.status_code, message, messages[:-1], dict(response.headers))
+            # RetryableConflictException: the session is being set up or torn down. Retry with a short backoff.
+            error = reply.error or {}
+            if not (error.get("code") == -32005 and "retry" in error.get("message", "").lower()):
+                return reply
+            time.sleep(0.5 * 2**attempt)
+        return reply
+
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None, **extra: Any) -> Reply:
+        return self.request("tools/call", {"name": name, "arguments": arguments or {}}, name=name, **extra)
+
+    def initialize(self) -> Reply:
+        """The MCP 2025-11-25 handshake."""
+        params = {"protocolVersion": EARLIER, "capabilities": {}, "clientInfo": {"name": "mcp-e2e", "version": "1"}}
+        return self.request("initialize", params, version=EARLIER)

@@ -4,7 +4,7 @@
 
 The [Model Context Protocol](https://modelcontextprotocol.io/) defines how AI agents discover and use tools, read resources, and ask a user or a model for something. The [2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28) makes the protocol stateless: no handshake, no protocol session, and every request self-describing.
 
-Amazon Bedrock AgentCore Runtime hosts MCP servers on both the new and earlier protocol versions, choosing the behavior per request from the `MCP-Protocol-Version` header, with no configuration change. These three tutorials cover the server features, the client features, and the utilities on one MCP Python SDK v2 server.
+Amazon Bedrock AgentCore Runtime hosts MCP servers on both the new and earlier protocol versions, choosing the behavior per request from the `MCP-Protocol-Version` header, with no configuration change. These four tutorials cover the server features, the client features, the utilities, and the base protocol on one MCP Python SDK v2 server.
 
 <img src="img/overview.png" style="width: 90%;">
 
@@ -40,8 +40,8 @@ The [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changel
 | Progress | `notifications/progress` | yes, in either mode (with SSE responses, the SDK default) | yes | 03 |
 | Health checks | `ping` → `GET /ping` | either | `GET /ping`; without it AgentCore Runtime only sees a server that stops answering | 03 |
 | Cancellation | `notifications/cancelled` → closing the stream | yes | **the disconnect does not reach the server yet** | 03 |
-| Errors | — | mostly HTTP 200 | the HTTP status matches | 01 |
-| Sessions | `Mcp-Session-Id` → runtime session header | yes | yes | 03 |
+| Errors | — | mostly HTTP 200 | the HTTP status matches | 04 |
+| Sessions | `Mcp-Session-Id` → runtime session header | yes | yes | 04 |
 | Resource subscriptions | `resources/subscribe` → `subscriptions/listen` | yes | not covered here | — |
 | Logging | `logging/setLevel` → `_meta` log level | yes | deprecated; `logging/setLevel` is removed and the level is set per request | — |
 | Roots | `roots/list` | not covered here | deprecated | — |
@@ -55,6 +55,7 @@ The [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changel
 ├── 01-server-e2e/           # Tools, resources, and prompts on MCP Python SDK v2
 ├── 02-client-e2e/           # Elicitation and sampling as multi round-trip requests
 ├── 03-utilities-e2e/        # Progress, health checks, and cancellation
+├── 04-protocol-e2e/         # No handshake, sessions, and errors, behind a Cognito JWT
 └── helpers/                 # Shared code: deploy, serve, storage, and the MCP clients
 ```
 
@@ -62,9 +63,9 @@ Every folder has the same shape: `agents/` with the server, then `deploy.py`, `i
 
 | Helper | What it does |
 |:--|:--|
-| `deploy_utils.py` | The code zip, IAM role, DynamoDB table, and the agent runtime |
+| `deploy_utils.py` | The code zip, IAM role, DynamoDB table, Cognito user pool, and the agent runtime |
 | `runtime_utils.py` | Serving the MCP app, `GET /ping` with `HealthyBusy`, and the shared `requestState` key |
-| `mcp_client.py` | An MCP client over boto3, and the MCP Python SDK v2 transport signed with SigV4 |
+| `mcp_client.py` | MCP clients over boto3 and over plain HTTPS, and the MCP Python SDK v2 transport |
 | `dynamo_utils.py` | The finance storage the samples share |
 
 ## What each folder shows
@@ -81,12 +82,16 @@ A tool that asks the user for an expense and then for a confirmation built from 
 
 A five-step report that streams progress as it runs, a background job that keeps its microVM alive by reporting `HealthyBusy` on `GET /ping`, and cancellation. Closing the response stream is the 2026-07-28 cancellation signal, but the disconnect doesn't reach the server through AgentCore Runtime today, so the folder also shows a cancel tool that works.
 
+### 04 — Base protocol
+
+A runtime behind an Amazon Cognito JWT authorizer, showing that a 2026-07-28 client's first request needs no handshake, that the runtime session header decides which microVM answers, and how the same seven failures come back on each protocol version.
+
 ## Prerequisites
 
 * Python 3.12 or later, and `pip install -r requirements.txt`
 * AWS credentials, and a Region where AgentCore Runtime V2 is available, for example `export AWS_REGION=us-west-2`
 * Access to Amazon Bedrock AgentCore Runtime. Folder 02 also calls Claude Haiku 5.5 on Amazon Bedrock
-* AWS services used: AgentCore Runtime, IAM, S3, DynamoDB, Secrets Manager (02)
+* AWS services used: AgentCore Runtime, IAM, S3, DynamoDB, Secrets Manager (02), Cognito (04)
 
 ### Region and cost
 
