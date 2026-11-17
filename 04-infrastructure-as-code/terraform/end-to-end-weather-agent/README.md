@@ -621,7 +621,7 @@ For multi-region:
 3. **Explore related patterns**
    - [Multi-Agent Runtime](../multi-agent-runtime/) - Agent-to-Agent communication
    - [MCP Server Pattern](../mcp-server-agentcore-runtime/) - MCP protocol with JWT auth
-   - [AgentCore Samples](https://github.com/aws-samples/amazon-bedrock-agentcore-samples) - More examples
+   - [AgentCore Samples](https://github.com/awslabs/agentcore-samples) - More examples
 
 4. **Add production features**
    - Monitoring and alerting

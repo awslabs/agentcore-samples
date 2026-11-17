@@ -569,7 +569,7 @@ For current pricing information, please refer to:
 - [AWS Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html)
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - [Amazon Cognito Documentation](https://docs.aws.amazon.com/cognito/)
-- [AgentCore Samples Repository](https://github.com/aws-samples/amazon-bedrock-agentcore-samples)
+- [AgentCore Samples Repository](https://github.com/awslabs/agentcore-samples)
 
 ## 🤝 Contributing
 

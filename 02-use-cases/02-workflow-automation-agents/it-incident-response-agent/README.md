@@ -981,9 +981,9 @@ We welcome contributions! Please see the repository-level
 submitting pull requests, and code standards.
 
 **Quick links:**
-- 🐛 [Report a bug](https://github.com/aws-samples/amazon-bedrock-agentcore-samples/issues/new?labels=bug&template=bug_report.md)
-- 💡 [Request a feature](https://github.com/aws-samples/amazon-bedrock-agentcore-samples/issues/new?labels=enhancement&template=feature_request.md)
-- 💬 [Ask a question / start a discussion](https://github.com/aws-samples/amazon-bedrock-agentcore-samples/discussions)
+- 🐛 [Report a bug](https://github.com/awslabs/agentcore-samples/issues/new?labels=bug&template=bug_report.md)
+- 💡 [Request a feature](https://github.com/awslabs/agentcore-samples/issues/new?labels=enhancement&template=feature_request.md)
+- 💬 [Ask a question / start a discussion](https://github.com/awslabs/agentcore-samples/discussions)
 
 ## Security
 
@@ -999,7 +999,7 @@ This project is licensed under the **Apache License 2.0** — see the repository
 
 - [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
 - [AgentCore CLI Reference](https://github.com/aws/agentcore-cli)
-- [Strands Agents SDK](https://github.com/strands-agents/strands-agents-python)
+- [Strands Agents SDK](https://github.com/strands-agents/harness-sdk)
 - [AgentCore CDK Constructs](https://github.com/aws/agentcore-l3-cdk-constructs)
 
 ## Disclaimer
