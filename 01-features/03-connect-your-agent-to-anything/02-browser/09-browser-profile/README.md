@@ -129,32 +129,37 @@ When the browser is created with `recording={"enabled": True, "s3Location": {...
 
 ### Download and decompress
 
+Set `SESSION_PREFIX` to the S3 prefix for the session, including the trailing slash. The example reads all recording batches and combines their events in timestamp order.
+
 ```python
-import boto3, gzip, json
+import gzip
+import json
+from contextlib import closing
+
+import boto3
 
 s3 = boto3.client("s3")
 BUCKET_NAME = "your-bucket"
+SESSION_PREFIX = "browser-recordings/your-session-id/"
 
-# List recordings for a session
-response = s3.list_objects_v2(
-    Bucket=BUCKET_NAME, Prefix=f"browser_recordings/{session_id}"
-)
-for obj in response.get("Contents", []):
-    key = obj["Key"]
-    if key.endswith(".gz"):
-        filename = key.split("/")[-1]
-        s3.download_file(BUCKET_NAME, key, filename)
-        print(f"Downloaded: {filename}")
-
-# Decompress — each line is a JSON rrweb event
 events = []
-with gzip.open(filename, "rt") as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            events.append(json.loads(line))
+pages = s3.get_paginator("list_objects_v2").paginate(Bucket=BUCKET_NAME, Prefix=SESSION_PREFIX)
+for page in pages:
+    for obj in page.get("Contents", []):
+        key = obj["Key"]
+        if not key.endswith(".ndjson.gz"):
+            continue
+        with (
+            closing(s3.get_object(Bucket=BUCKET_NAME, Key=key)["Body"]) as body,
+            gzip.open(body, "rt", encoding="utf-8") as batch,
+        ):
+            events.extend(json.loads(line) for line in batch if line.strip())
 
-with open("events.json", "w") as f:
+if not events:
+    raise ValueError(f"No recording events found at s3://{BUCKET_NAME}/{SESSION_PREFIX}")
+
+events.sort(key=lambda event: event["timestamp"])
+with open("events.json", "w", encoding="utf-8") as f:
     json.dump(events, f)
 ```
 
