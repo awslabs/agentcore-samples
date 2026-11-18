@@ -13,7 +13,7 @@
     "@aws-amplify/ui-react": "^6.13.0",
     "@radix-ui/react-scroll-area": "^1.0.5",
     "@radix-ui/react-slot": "^1.0.2",
-    "aws-amplify": "^6.15.7",
+    "aws-amplify": "^6.22.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "lucide-react": "^0.454.0",
