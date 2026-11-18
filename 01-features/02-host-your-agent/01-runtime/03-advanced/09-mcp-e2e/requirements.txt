@@ -1,0 +1,8 @@
+# What you install on your machine to deploy and call the samples.
+# platformVersion (Runtime V2) needs boto3 1.43.95 or later.
+boto3>=1.43.95
+# The MCP Python SDK v2 client (02-client-e2e and later) and its HTTP client.
+mcp>=2.3,<3
+httpx2
+# deploy.py uses uv to build arm64 wheels for the code zip.
+uv
