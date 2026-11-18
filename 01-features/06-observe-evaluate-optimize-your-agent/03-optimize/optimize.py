@@ -324,6 +324,33 @@ def stop_ab_test(ab_test_id: str):
 # ── Cleanup function (also called with --cleanup-only) ────────────────────
 
 
+# Deletes that follow an asynchronous change must wait for it to finish:
+# an online eval config cannot be deleted while UPDATING, and a gateway cannot
+# be deleted while any of its targets still exists (including DELETING ones).
+CLEANUP_WAIT_TIMEOUT_SECONDS = 120
+CLEANUP_WAIT_INTERVAL_SECONDS = 5
+
+
+def _wait_online_eval_settled(ctrl_client, oe_id: str) -> str:
+    """Wait until an online eval config leaves CREATING/UPDATING; return its status."""
+    deadline = time.time() + CLEANUP_WAIT_TIMEOUT_SECONDS
+    while True:
+        status = ctrl_client.get_online_evaluation_config(onlineEvaluationConfigId=oe_id).get("status")
+        if status not in ("CREATING", "UPDATING") or time.time() >= deadline:
+            return status
+        time.sleep(CLEANUP_WAIT_INTERVAL_SECONDS)
+
+
+def _wait_gateway_targets_gone(ctrl_client, gateway_id: str) -> int:
+    """Wait until a gateway lists no targets; return how many remain."""
+    deadline = time.time() + CLEANUP_WAIT_TIMEOUT_SECONDS
+    while True:
+        remaining = len(ctrl_client.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", []))
+        if remaining == 0 or time.time() >= deadline:
+            return remaining
+        time.sleep(CLEANUP_WAIT_INTERVAL_SECONDS)
+
+
 def run_cleanup(state: dict):
     """Delete all AWS resources created during the workflow."""
     print("\n" + "=" * 60)
@@ -362,8 +389,9 @@ def run_cleanup(state: dict):
             continue
         print(f"2. Deleting online eval config ({label}): {oe_id}")
         try:
+            _wait_online_eval_settled(_ctrl, oe_id)
             _ctrl.update_online_evaluation_config(onlineEvaluationConfigId=oe_id, executionStatus="DISABLED")
-            time.sleep(2)
+            _wait_online_eval_settled(_ctrl, oe_id)
             _ctrl.delete_online_evaluation_config(onlineEvaluationConfigId=oe_id)
             print(f"   Deleted: {oe_id}")
         except Exception as e:
@@ -415,13 +443,15 @@ def run_cleanup(state: dict):
             print(f"5. Deleting gateway target ({tname}): {t_id}")
             try:
                 _ctrl.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=t_id)
-                time.sleep(3)
                 print(f"   Deleted: {t_id}")
             except Exception as e:
                 print(f"   Skipped: {e}")
 
         print(f"5. Deleting gateway: {gateway_id}")
         try:
+            remaining = _wait_gateway_targets_gone(_ctrl, gateway_id)
+            if remaining:
+                print(f"   {remaining} target(s) still attached after {CLEANUP_WAIT_TIMEOUT_SECONDS}s; trying anyway")
             _ctrl.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   Deleted gateway: {gateway_id}")
         except Exception as e:
