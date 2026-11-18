@@ -102,7 +102,7 @@ for ab_id, label in [
             time.sleep(3)
         dp.delete_ab_test(abTestId=ab_id)
         print(f"   Deleted: {ab_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped: {e}")
 
 # ── 2. Delete online evaluation configs ───────────────────────────────────
@@ -121,7 +121,7 @@ for oe_id, label in [
         wait_online_eval_settled(oe_id)
         ctrl.delete_online_evaluation_config(onlineEvaluationConfigId=oe_id)
         print(f"   Deleted: {oe_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped: {e}")
 
 # ── 3. Delete configuration bundles ───────────────────────────────────────
@@ -137,7 +137,7 @@ for b_id, label in [
     try:
         ctrl.delete_configuration_bundle(bundleId=b_id)
         print(f"   Deleted: {b_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped: {e}")
 
 # ── 4. Delete gateway tracing ─────────────────────────────────────────────
@@ -148,7 +148,7 @@ if delivery_id:
     try:
         logs.delete_delivery(id=delivery_id)
         print(f"   Deleted delivery: {delivery_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped delivery: {e}")
 
 delivery_source = state.get("delivery_source_name")
@@ -157,7 +157,7 @@ if delivery_source:
     try:
         logs.delete_delivery_source(name=delivery_source)
         print(f"   Deleted delivery source: {delivery_source}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped delivery source: {e}")
 
 # ── 5. Delete gateway targets and gateway ─────────────────────────────────
@@ -174,7 +174,7 @@ if gateway_id:
         try:
             ctrl.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=t_id)
             print(f"   Deleted: {t_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     print(f"5. Deleting gateway: {gateway_id}")
@@ -184,7 +184,7 @@ if gateway_id:
             print(f"   {remaining} target(s) still attached after {WAIT_TIMEOUT_SECONDS}s; trying anyway")
         ctrl.delete_gateway(gatewayIdentifier=gateway_id)
         print(f"   Deleted gateway: {gateway_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped gateway: {e}")
 
 # ── 6. Delete AgentCore runtimes ──────────────────────────────────────────
@@ -199,7 +199,7 @@ for rt_id, label in [
     try:
         ctrl.delete_agent_runtime(agentRuntimeId=rt_id)
         print(f"   Deleted runtime: {rt_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped runtime: {e}")
 
 # ── 7. Delete IAM roles ───────────────────────────────────────────────────
@@ -216,7 +216,7 @@ for role_name, label in [
             iam.delete_role_policy(RoleName=role_name, PolicyName=policy)
         iam.delete_role(RoleName=role_name)
         print(f"   Deleted: {role_name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"   Skipped: {e}")
 
 print("\nCleanup complete.")

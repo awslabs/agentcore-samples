@@ -187,7 +187,7 @@ def _save_state():
         }
         state_file.write_text(json.dumps(state, indent=2))
         print(f"\nState saved to {state_file}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"\nWarning: could not save state to {state_file}: {e}")
 
 
@@ -230,7 +230,7 @@ def fetch_eval_scores(eval_id: str) -> dict:
             logGroupName=log_group,
             logStreamName=stream_name,
         ).get("events", [])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  CloudWatch fallback failed: {e}")
         return {}
 
@@ -243,7 +243,7 @@ def fetch_eval_scores(eval_id: str) -> dict:
             score = attrs.get("gen_ai.evaluation.score.value")
             if name and score is not None:
                 scores.setdefault(name, []).append(float(score))
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip log events that are not evaluation results
             continue
     return {k: sum(v) / len(v) for k, v in scores.items() if v}
 
@@ -347,7 +347,7 @@ def stop_ab_test(ab_test_id: str):
                     break
                 time.sleep(5)
         print(f"A/B test {ab_test_id}: executionStatus={ab.get('executionStatus')}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Stop skipped: {e}")
 
 
@@ -406,7 +406,7 @@ def run_cleanup(state: dict):
                 time.sleep(3)
             _dp.delete_ab_test(abTestId=ab_id)
             print(f"   Deleted: {ab_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 2. Delete online evaluation configs
@@ -424,7 +424,7 @@ def run_cleanup(state: dict):
             _wait_online_eval_settled(_ctrl, oe_id)
             _ctrl.delete_online_evaluation_config(onlineEvaluationConfigId=oe_id)
             print(f"   Deleted: {oe_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 3. Delete configuration bundles
@@ -439,7 +439,7 @@ def run_cleanup(state: dict):
         try:
             _ctrl.delete_configuration_bundle(bundleId=b_id)
             print(f"   Deleted: {b_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 4. Delete gateway delivery and source
@@ -449,7 +449,7 @@ def run_cleanup(state: dict):
         try:
             _logs.delete_delivery(id=delivery_id)
             print(f"   Deleted delivery: {delivery_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped delivery: {e}")
 
     delivery_source = state.get("delivery_source_name")
@@ -458,7 +458,7 @@ def run_cleanup(state: dict):
         try:
             _logs.delete_delivery_source(name=delivery_source)
             print(f"   Deleted delivery source: {delivery_source}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped delivery source: {e}")
 
     # 5. Delete gateway targets and gateway
@@ -474,7 +474,7 @@ def run_cleanup(state: dict):
             try:
                 _ctrl.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=t_id)
                 print(f"   Deleted: {t_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"   Skipped: {e}")
 
         print(f"5. Deleting gateway: {gateway_id}")
@@ -484,7 +484,7 @@ def run_cleanup(state: dict):
                 print(f"   {remaining} target(s) still attached after {CLEANUP_WAIT_TIMEOUT_SECONDS}s; trying anyway")
             _ctrl.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   Deleted gateway: {gateway_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped gateway: {e}")
 
     # 6. Delete AgentCore runtimes
@@ -498,7 +498,7 @@ def run_cleanup(state: dict):
         try:
             _ctrl.delete_agent_runtime(agentRuntimeId=rt_id)
             print(f"   Deleted runtime: {rt_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped runtime: {e}")
 
     # 7. Delete IAM roles
@@ -515,7 +515,7 @@ def run_cleanup(state: dict):
                 iam.delete_role_policy(RoleName=role_name, PolicyName=policy)
             iam.delete_role(RoleName=role_name)
             print(f"   Deleted: {role_name}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     print("\nCleanup complete.")
@@ -556,6 +556,7 @@ else:
         ],
         capture_output=False,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"deploy.py failed with exit code {result.returncode}")
@@ -707,7 +708,7 @@ print("\n" + "=" * 60)
 print("STEP 5a: System Prompt Recommendation")
 print("=" * 60)
 
-now = datetime.now(timezone.utc)
+now = datetime.now(timezone.utc)  # noqa: UP017 - datetime.UTC requires Python 3.11; this sample supports 3.10+
 start_dt = now - timedelta(days=7)
 
 # Trace source for the system prompt recommendation:
@@ -956,7 +957,7 @@ try:
         logType="TRACES",
     )
     print(f"Delivery source created: {DELIVERY_SOURCE_NAME}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Delivery source: {e}")
 
 destinations = logs.describe_delivery_destinations().get("deliveryDestinations", [])
@@ -977,7 +978,7 @@ try:
     )
     DELIVERY_ID = delivery["delivery"]["id"]
     print(f"Delivery created: {DELIVERY_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Delivery: {e}")
     for d in logs.describe_deliveries().get("deliveries", []):
         if d.get("deliverySourceName") == DELIVERY_SOURCE_NAME:
@@ -1099,7 +1100,7 @@ for i, prompt in enumerate(GW_PROMPTS):
         else:
             fail += 1
             print(f"  [{i + 1:2d}] ERR {resp.status_code}: {resp.text[:80]}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         fail += 1
         print(f"  [{i + 1:2d}] ERR {e}")
     time.sleep(1)
@@ -1184,6 +1185,7 @@ else:
         ],
         capture_output=False,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"deploy.py (v2) failed with exit code {result.returncode}")
@@ -1364,7 +1366,7 @@ for i, prompt in enumerate(TARGET_PROMPTS):
         else:
             fail += 1
             print(f"  [{i + 1:2d}] ERR {resp.status_code}: {resp.text[:80]}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         fail += 1
         print(f"  [{i + 1:2d}] ERR {e}")
     time.sleep(1)
