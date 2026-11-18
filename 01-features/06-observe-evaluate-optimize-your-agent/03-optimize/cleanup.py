@@ -81,6 +81,7 @@ for ab_id, label in [
 
 for oe_id, label in [
     (state.get("online_eval_id"), "v1"),
+    (state.get("online_eval_target_v1_id"), "v1 canary control"),
     (state.get("online_eval_v2_id"), "v2"),
 ]:
     if not oe_id:

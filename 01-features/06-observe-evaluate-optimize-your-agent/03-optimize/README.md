@@ -532,7 +532,11 @@ User --> [gateway] --90%--> [Target HRAgentV1 -> HR runtime v1 (stable)]  --> Cl
 
 **Phased rollout:** 10% canary -> validate no regressions -> 50% ramp -> gather statistical significance -> 100% cutover -> decommission old runtime.
 
-**`gatewayFilter.targetPaths`** restricts the A/B routing rule to requests matching the control target's path, so only traffic for this test is affected.
+**`gatewayFilter.targetPaths`** restricts the A/B routing rule to requests matching the control target's path, so only traffic for this test is affected. For the same reason, `optimize.py` sends all canary traffic to `/HRAgentV1/invocations` and lets the gateway split it. Requests sent straight to `/HRAgentV2/invocations` would bypass the split.
+
+`optimize.py` sends 20 sessions to keep the step short. At 90/10 that is about 18 sessions on v1 and 2 on v2: enough to see the routing in the per-variant `n=` counts, not enough for statistical significance. Each variant uses an online evaluation config created for this test instead of the config from the Step 7 test. When the Step 7 config was reused, this step reported the Step 7 results unchanged as its own.
+
+Both A/B steps ignore any analysis whose `analysisTimestamp` is earlier than the last request plus the session timeout, because an analysis computed that early cannot include this run's sessions. The first analysis after that point can still be partial. Online evaluation keeps scoring sessions and the service republishes the analysis, so the console may later show larger `n` values and different percentages than the script printed. Compare the printed `n=` values with the number of sessions sent to see whether the analysis covers all of them. Promotion follows the [Decision Framework](#decision-framework): the treatment bundle is promoted only when at least one evaluator is significantly better and none is significantly worse. An inconclusive result keeps the control unchanged.
 
 ## Key Concepts
 
