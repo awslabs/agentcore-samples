@@ -6,6 +6,7 @@ Demonstrates the full optimization loop:
   2. Create baseline Configuration Bundle and send traffic
   3. Run baseline batch evaluation (GoalSuccessRate, Helpfulness, Correctness)
   4. Generate system prompt recommendation from production traces
+     (or from an insights batch evaluation with --insights-eval-arn)
   5. Generate tool description recommendation from production traces
   6. Create control and treatment configuration bundles
   7. A/B test via config-bundle routing (same runtime, different configs)
@@ -18,6 +19,10 @@ Usage:
 
     # Skip deployment (use existing state files):
     python optimize.py --name HRAssistV1 --skip-deploy
+
+    # Chain insights into the system prompt recommendation (Step 5a reads the
+    # FailureAnalysis batch evaluation produced by insights.py instead of raw traces):
+    python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
 
     # Cleanup only:
     python optimize.py --name HRAssistV1 --cleanup-only
@@ -59,6 +64,15 @@ parser.add_argument(
     action="store_true",
     help="Skip all demo steps and only run cleanup",
 )
+parser.add_argument(
+    "--insights-eval-arn",
+    default=None,
+    help=(
+        "ARN of an insights batch evaluation (printed by insights.py). When set, the "
+        "system prompt recommendation in Step 5a uses the sessions that batch evaluation "
+        "analyzed as its traces, instead of the last 7 days of CloudWatch traces."
+    ),
+)
 args = parser.parse_args()
 
 REGION = args.region
@@ -81,6 +95,22 @@ print(f"REGION     = {REGION}")
 print(f"SUFFIX     = {SUFFIX}")
 print(f"V1_NAME    = {V1_NAME}")
 print(f"V2_NAME    = {V2_NAME}")
+
+INSIGHTS_EVAL_ARN = args.insights_eval_arn
+if INSIGHTS_EVAL_ARN:
+    # Fail fast, before any resource is created, if the ARN points at another
+    # region or account: the recommendation would reject it only after
+    # deployment, traffic, and baseline evaluation (~10 minutes in).
+    _arn_parts = INSIGHTS_EVAL_ARN.split(":")
+    if len(_arn_parts) < 6 or _arn_parts[2] != "bedrock-agentcore":
+        sys.exit(f"--insights-eval-arn is not a bedrock-agentcore ARN: {INSIGHTS_EVAL_ARN}")
+    if _arn_parts[3] != REGION or _arn_parts[4] != ACCOUNT_ID:
+        sys.exit(
+            f"--insights-eval-arn is in region={_arn_parts[3]} account={_arn_parts[4]}, "
+            f"but this run uses region={REGION} account={ACCOUNT_ID}. "
+            "Run insights.py against the same runtime, or pass --region to match."
+        )
+    print(f"INSIGHTS   = {INSIGHTS_EVAL_ARN}")
 
 SCRIPT_DIR = Path(__file__).parent
 
@@ -680,20 +710,36 @@ print("=" * 60)
 now = datetime.now(timezone.utc)
 start_dt = now - timedelta(days=7)
 
+# Trace source for the system prompt recommendation:
+#   - Default: raw agent traces from CloudWatch for the last 7 days.
+#   - With --insights-eval-arn: the insights batch evaluation from insights.py.
+#     The recommendation reads the same sessions Builtin.FailureAnalysis
+#     analyzed. insights.py sends mostly failure-mode sessions, so the
+#     recommendation works from those failing sessions rather than from all
+#     recent traffic.
+if INSIGHTS_EVAL_ARN:
+    sp_agent_traces = {"batchEvaluation": {"batchEvaluationArn": INSIGHTS_EVAL_ARN}}
+    print("Trace source: insights batch evaluation (chained from insights.py)")
+    print(f"  {INSIGHTS_EVAL_ARN}")
+else:
+    sp_agent_traces = {
+        "cloudwatchLogs": {
+            "logGroupArns": [LOG_GROUP_ARN],
+            "serviceNames": [SERVICE_NAME],
+            "startTime": start_dt,
+            "endTime": now,
+        }
+    }
+    print("Trace source: CloudWatch agent traces from the last 7 days")
+    print("  (pass --insights-eval-arn to use the sessions analyzed by insights.py instead)")
+
 sp_rec_resp = dp.start_recommendation(
     name=f"HRSpRec{SUFFIX}",
     type="SYSTEM_PROMPT_RECOMMENDATION",
     recommendationConfig={
         "systemPromptRecommendationConfig": {
             "systemPrompt": {"text": CURRENT_SYSTEM_PROMPT},
-            "agentTraces": {
-                "cloudwatchLogs": {
-                    "logGroupArns": [LOG_GROUP_ARN],
-                    "serviceNames": [SERVICE_NAME],
-                    "startTime": start_dt,
-                    "endTime": now,
-                }
-            },
+            "agentTraces": sp_agent_traces,
             "evaluationConfig": {
                 "evaluators": [{"evaluatorArn": "arn:aws:bedrock-agentcore:::evaluator/Builtin.GoalSuccessRate"}]
             },

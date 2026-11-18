@@ -75,6 +75,10 @@ python insights.py --name HRAssistV1 --generate-traces
 # Run the full optimization workflow
 python optimize.py --name HRAssistV1
 
+# [Optional] Chain insights into the system prompt recommendation
+# (insights.py prints this command, with the ARN filled in, when it finishes)
+python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
+
 # Clean up all resources
 python cleanup.py --name HRAssistV1
 ```
@@ -427,7 +431,16 @@ Example output from `python insights.py --generate-traces` (trimmed). The servic
 
 ### Chaining Insights into Recommendations
 
-Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures:
+Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures.
+
+With the Python scripts, run `insights.py` first. It ends by printing the `optimize.py` command with its batch evaluation ARN. Passing `--insights-eval-arn` makes Step 5a read that batch evaluation instead of the last 7 days of raw CloudWatch traces. The rest of the workflow (tool description recommendation, bundles, A/B tests) is unchanged.
+
+```bash
+python insights.py --name HRAssistV1 --generate-traces
+python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
+```
+
+The ARN must be in the same account and region as the run; `optimize.py` checks this before creating any resources.
 
 ```bash
 # CLI:

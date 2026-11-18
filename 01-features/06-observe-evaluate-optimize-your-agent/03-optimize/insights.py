@@ -361,3 +361,19 @@ for s in summaries:
 print("\nFull response saved to insights_result.json")
 with open("insights_result.json", "w", encoding="utf-8") as f:
     json.dump(result, f, indent=2, default=str)
+
+# ── Next step: chain insights into a recommendation ───────────────────────
+#
+# optimize.py --insights-eval-arn uses this batch evaluation as the trace source
+# for the system prompt recommendation, so it works from the same sessions that
+# FailureAnalysis analyzed above.
+
+print("\n" + "=" * 60)
+print("NEXT STEP: Chain Insights into a Recommendation")
+print("=" * 60)
+if insights and EVAL_ARN:
+    print("Generate a system prompt recommendation from the sessions analyzed above:")
+    print(f"  python optimize.py --name {args.name} --skip-deploy --insights-eval-arn {EVAL_ARN}")
+else:
+    print("No insights were generated, so there are no failures to target yet.")
+    print("Re-run with --generate-traces, or after more traffic, before chaining into optimize.py.")
