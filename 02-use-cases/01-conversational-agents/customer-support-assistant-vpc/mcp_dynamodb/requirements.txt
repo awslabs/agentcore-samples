@@ -13,7 +13,7 @@ attrs==25.3.0
     #   cyclopts
     #   jsonschema
     #   referencing
-authlib==1.6.5
+authlib==1.9.1
     # via fastmcp
 bedrock-agentcore==0.1.6
     # via mcp-dynamodb (pyproject.toml)
