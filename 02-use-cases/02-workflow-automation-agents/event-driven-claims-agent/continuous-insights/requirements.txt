@@ -1,0 +1,2 @@
+# Scripts in this folder. Python 3.12 or later.
+boto3>=1.44.5,<2

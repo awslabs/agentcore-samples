@@ -1,0 +1,15 @@
+# Local environment
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Written by the scripts: account-specific, never commit
+agent_state_*.json
+sessions_*.jsonl
+insights/
+
+# Local notes
+local/
+
+# macOS
+.DS_Store
