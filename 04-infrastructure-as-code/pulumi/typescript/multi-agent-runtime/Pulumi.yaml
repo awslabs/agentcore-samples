@@ -1,0 +1,3 @@
+name: multi-agent-runtime
+runtime: nodejs
+description: Multi-agent runtime with orchestrator and specialist agents on AWS Bedrock AgentCore

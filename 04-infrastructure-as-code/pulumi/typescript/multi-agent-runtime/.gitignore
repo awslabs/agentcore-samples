@@ -1,0 +1,10 @@
+/bin/
+/node_modules/
+/.venv/
+/.claude/
+/__pycache__/
+**/__pycache__/
+*.pyc
+/.pytest_cache/
+/.eslintcache
+.DS_Store

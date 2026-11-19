@@ -1,0 +1,18 @@
+{
+  "name": "multi-agent-runtime",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18",
+    "@eslint/js": "^9.22.0",
+    "eslint": "^9.22.0",
+    "typescript-eslint": "^8.26.0"
+  },
+  "dependencies": {
+    "@pulumi/aws": "7.23.0",
+    "@pulumi/pulumi": "^3.0.0",
+    "typescript": "^4.0.0"
+  }
+}
