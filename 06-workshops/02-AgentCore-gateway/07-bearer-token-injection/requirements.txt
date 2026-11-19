@@ -1,9 +1,0 @@
-strands-agents
-strands-agents-tools
-bedrock-agentcore
-PyYAML
-ddgs
-bedrock_agentcore_starter_toolkit
-requests>=2.32.0  # Security update
-urllib3>=2.0.0    # Security update
-cryptography>=41.0.0  # For secure token handling

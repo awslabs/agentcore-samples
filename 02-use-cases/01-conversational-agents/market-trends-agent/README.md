@@ -46,8 +46,7 @@ See [Systematic Agent Quality Improvement](#systematic-agent-quality-improvement
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 20+ and the [AgentCore CLI](https://github.com/aws/agentcore-cli) — required on a brand-new account to bootstrap the CodeBuild project and S3 source bucket (run `agentcore deploy` once; subsequent re-deploys are handled by `deploy.py`)
+- Python 3.10+ and [uv](https://docs.astral.sh/uv/) — no Docker, Node.js or CodeBuild needed
 - AWS CLI configured with appropriate credentials
 - boto3 ≥ 1.42 — required for the Evaluations control-plane APIs (`list_evaluators`, `create_evaluator`, `create_online_evaluation_config`). `uv sync` installs a compatible version.
 - Access to Amazon Bedrock AgentCore
@@ -72,21 +71,25 @@ uv run python deploy.py
 
 # Custom configuration (optional)
 uv run python deploy.py \
-  --agent-name "my-market-agent" \
+  --agent-name "my_market_agent" \
   --region "us-west-2" \
   --role-name "MyCustomRole"
 ```
 
 **Available Options:**
-- `--agent-name`: Name for the agent (default: market_trends_agent)
+- `--agent-name`: Name for the agent — letters, digits and underscores only (default: market_trends_agent)
 - `--role-name`: IAM role name (default: MarketTrendsAgentRole)
-- `--region`: AWS region (default: us-east-1)
+- `--region`: AWS region (default: your AWS profile's region, else us-east-1)
 - `--skip-checks`: Skip prerequisite validation
+
+`deploy.py` uses AgentCore Runtime direct code deployment: it installs the ARM64 Linux dependencies locally with uv, zips them with the agent code, uploads the zip to an S3 bucket it creates (`agentcore-market-trends-<account>-<region>`) and creates or updates the runtime. It also creates the AgentCore Memory and the execution role, and saves the runtime ARN to `.agent_arn`. Re-run it after changing the code to update the runtime in place.
 
 4. **Test the Agent**
 ```bash
 uv run python test_agent.py
 ```
+
+`test_agent.py` reads `.agent_arn`, shares a broker profile and asks two market questions in one session. Pass `--agent-arn` to test a different runtime.
 
 ---
 
@@ -125,15 +128,16 @@ After setting up your profile, ask for market insights:
 
 ```bash
 uv run python -c "
-import boto3, json
-client = boto3.client('bedrock-agentcore', region_name='us-west-2')
+import boto3, json, uuid
 with open('.agent_arn', 'r') as f: arn = f.read().strip()
+client = boto3.client('bedrock-agentcore', region_name=arn.split(':')[3])
+session_id = f'market-trends-chat-{uuid.uuid4().hex}'
 print('Market Trends Agent Chat (type quit to exit)')
 while True:
     try:
         msg = input('You: ')
         if msg.lower() in ['quit', 'exit']: break
-        resp = client.invoke_agent_runtime(agentRuntimeArn=arn, payload=json.dumps({'prompt': msg}))
+        resp = client.invoke_agent_runtime(agentRuntimeArn=arn, runtimeSessionId=session_id, payload=json.dumps({'prompt': msg}))
         print('Agent:', resp['response'].read().decode('utf-8'))
     except KeyboardInterrupt: break
 "
@@ -891,7 +895,7 @@ aws logs tail /aws/bedrock-agentcore/evaluations/results/<config-id> --follow
 
 ## Cleanup
 
-> **Order matters:** Run the [Cleanup Evaluators](#cleanup-evaluators) block above **before** running `cleanup.py`. The top-level `cleanup.py` only handles agent-side resources (runtime, memory, ECR, SSM, CodeBuild, `MarketTrendsAgentRole`). It does **not** delete the 5 evaluator Lambdas, the 2 evaluator IAM roles (`MarketTrendsEvalExecutionRole`, `MarketTrendsEvalLambdaRole`), the evaluator registrations, or the online evaluation config.
+> **Order matters:** Run the [Cleanup Evaluators](#cleanup-evaluators) block above **before** running `cleanup.py`. The top-level `cleanup.py` only handles agent-side resources (runtime, memory, S3 code package, SSM, `MarketTrendsAgentRole`, plus ECR/CodeBuild leftovers from older container-based deploys). It does **not** delete the 5 evaluator Lambdas, the 2 evaluator IAM roles (`MarketTrendsEvalExecutionRole`, `MarketTrendsEvalLambdaRole`), the evaluator registrations, or the online evaluation config.
 
 ### Complete Resource Cleanup
 
@@ -912,9 +916,8 @@ uv run python cleanup.py --region "<aws_region>"
 **What gets cleaned up:**
 - AgentCore Runtime instances
 - AgentCore Memory instances
-- ECR repositories and container images
-- CodeBuild projects
-- S3 build artifacts
+- S3 code package bucket (`agentcore-market-trends-<account>-<region>`)
+- ECR repositories, CodeBuild projects and S3 build artifacts from older container-based deploys
 - SSM parameters
 - IAM roles and policies (unless `--skip-iam`)
 - Local deployment files
@@ -929,7 +932,7 @@ The project creates two distinct IAM roles.
 **Agent execution role** (`MarketTrendsAgentRole`, created by `deploy.py`) — attached to the AgentCore Runtime, least-privilege:
 - `bedrock:InvokeModel` — for Claude Haiku
 - `bedrock-agentcore:*` — for memory and runtime operations
-- `ecr:*` — for container registry access
+- AgentCore Browser session actions — for the browser tool
 - `xray:*` — for tracing
 - `logs:*` — for CloudWatch logging
 

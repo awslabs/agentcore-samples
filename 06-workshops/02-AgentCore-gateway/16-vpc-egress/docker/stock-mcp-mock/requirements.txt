@@ -1,2 +1,0 @@
-fastmcp>=2.0
-# force rebuild

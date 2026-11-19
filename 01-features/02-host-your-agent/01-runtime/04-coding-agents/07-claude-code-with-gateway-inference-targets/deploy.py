@@ -5,11 +5,11 @@ Run `python setup.py` first, then:
 
     python deploy.py [--region us-east-1]
 
-Creates an ECR repository, an ARM64 image (required by AgentCore Runtime), a Secrets
-Manager secret holding the OAuth client credentials, an IAM execution role scoped to
-that secret plus ECR pull and CloudWatch Logs, and the runtime itself. Only the
-secret's id reaches the container as an environment variable; the credential values
-do not.
+Creates an ECR repository, an ARM64 image (required by AgentCore Runtime), an
+AgentCore Identity OAuth2 credential provider holding the OAuth client credentials, an
+IAM execution role scoped to that provider plus ECR pull and CloudWatch Logs, and the
+runtime itself. Only the provider's name reaches the container as an environment
+variable; the credential values do not.
 
 Gateway configuration is read from .provision-state.json (written by setup.py). Every
 created resource is appended to .runtime-state.json as it is created, and cleanup.py
@@ -70,45 +70,62 @@ def gateway_outputs() -> dict[str, Any]:
     return out
 
 
-def ensure_secret(region: str, state: dict[str, Any], gw: dict[str, Any]) -> str:
+def ensure_credential_provider(region: str, state: dict[str, Any], gw: dict[str, Any]) -> dict[str, str]:
     # The client secret must not travel as a runtime environment variable: those are
-    # readable via GetAgentRuntime and appear in container metadata. Only the secret
-    # id is passed; the container reads the value with its execution role.
+    # readable via GetAgentRuntime and appear in container metadata. AgentCore Identity
+    # holds it instead and runs the client-credentials exchange itself, so the
+    # container is given only the provider's name.
     idp = boto3.client("cognito-idp", region_name=region)
     client = idp.describe_user_pool_client(UserPoolId=gw["user_pool_id"], ClientId=gw["client_id"])
-    sm = boto3.client("secretsmanager", region_name=region)
+    agc = boto3.client("bedrock-agentcore-control", region_name=region)
     name = f"{NAME}-oauth"
-    payload = json.dumps(
-        {
-            "client_id": gw["client_id"],
-            "client_secret": client["UserPoolClient"]["ClientSecret"],
-            "token_url": gw["token_url"],
-            "scope": gw["scope"],
+    config = {
+        "customOauth2ProviderConfig": {
+            # The token endpoint is read from the discovery document, so pointing this
+            # at an enterprise IdP needs no other change.
+            "oauthDiscovery": {"discoveryUrl": gw["discovery_url"]},
+            "clientId": gw["client_id"],
+            "clientSecret": client["UserPoolClient"]["ClientSecret"],
         }
-    )
+    }
+    # Check for an existing provider first, so a re-run refreshes its secret instead of
+    # failing on a name that is already taken.
     try:
-        arn = sm.create_secret(
-            Name=name,
-            SecretString=payload,
-            Description="OAuth client credentials for the Claude Code gateway sample",
-            Tags=[{"Key": k, "Value": v} for k, v in TAGS.items()],
-        )["ARN"]
-        record(state, "secret", secret_name=name, secret_arn=arn)
-        print(f"  created secret {name}")
+        agc.get_oauth2_credential_provider(name=name)
+        exists = True
     except ClientError as exc:
-        if exc.response["Error"]["Code"] != "ResourceExistsException":
+        if exc.response["Error"]["Code"] != "ResourceNotFoundException":
             raise
-        arn = sm.describe_secret(SecretId=name)["ARN"]
-        sm.put_secret_value(SecretId=name, SecretString=payload)
-        print(f"  reusing secret {name}, value refreshed")
-    return arn
-
-
-def runtime_env(gw: dict[str, Any], secret_arn: str) -> dict[str, str]:
-    # Carries no credential values, only the id of the secret holding them. Shared by
-    # deploy.py and update.py so the two cannot drift.
+        exists = False
+    if exists:
+        resp = agc.update_oauth2_credential_provider(
+            name=name,
+            credentialProviderVendor="CustomOauth2",
+            oauth2ProviderConfigInput=config,
+        )
+        print(f"  reusing credential provider {name}, secret refreshed")
+    else:
+        resp = agc.create_oauth2_credential_provider(
+            name=name,
+            credentialProviderVendor="CustomOauth2",
+            oauth2ProviderConfigInput=config,
+            tags=TAGS,
+        )
+        record(state, "credential_provider", name=name)
+        print(f"  created credential provider {name}")
     return {
-        "OAUTH_SECRET_ID": secret_arn,
+        "name": name,
+        "provider_arn": resp["credentialProviderArn"],
+        "secret_arn": resp["clientSecretArn"]["secretArn"],
+    }
+
+
+def runtime_env(gw: dict[str, Any], provider: dict[str, str]) -> dict[str, str]:
+    # Carries no credential values, only the name of the provider holding them. Shared
+    # by deploy.py and update.py so the two cannot drift.
+    return {
+        "OAUTH_PROVIDER_NAME": provider["name"],
+        "OAUTH_SCOPE": gw["scope"],
         "ANTHROPIC_BASE_URL": gw["inference_url"],
         "ANTHROPIC_MODEL": "mantle/anthropic.claude-sonnet-5",
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": "mantle/anthropic.claude-haiku-4-5",
@@ -163,13 +180,15 @@ def build_and_push(region: str, state: dict[str, Any]) -> str:
 # ── Execution role ────────────────────────────────────────────────────────────
 
 
-def ensure_role(region: str, state: dict[str, Any], secret_arn: str) -> str:
-    # secret_arn is the one secret the role may read, so GetSecretValue stays scoped
-    # to it rather than being granted account-wide.
+def ensure_role(region: str, state: dict[str, Any], provider: dict[str, str]) -> str:
+    # provider is the one credential provider the role may get tokens from, so the
+    # AgentCore Identity grants stay scoped to it rather than being granted
+    # account-wide.
     session = boto3.Session(region_name=region)
     iam = session.client("iam")
     account = session.client("sts").get_caller_identity()["Account"]
     role_name = f"{NAME}-exec-role"
+    identity_dir = f"arn:aws:bedrock-agentcore:{region}:{account}:workload-identity-directory/default"
     trust = {
         "Version": "2012-10-17",
         "Statement": [
@@ -217,10 +236,28 @@ def ensure_role(region: str, state: dict[str, Any], secret_arn: str) -> str:
                 ],
             },
             {
-                # Scoped to the single secret holding the OAuth client credentials.
+                # Fetching a token is checked against the token vault, the provider, and
+                # the runtime's workload identity. That identity is created with the
+                # runtime, so its id is not known yet; it is matched by the runtime name,
+                # which starts every id.
+                "Effect": "Allow",
+                "Action": ["bedrock-agentcore:GetResourceOauth2Token"],
+                "Resource": [
+                    f"arn:aws:bedrock-agentcore:{region}:{account}:token-vault/default",
+                    provider["provider_arn"],
+                    identity_dir,
+                    f"{identity_dir}/workload-identity/{NAME.replace('-', '_')}-*",
+                ],
+            },
+            {
+                # AgentCore Identity reads the provider's client secret with this role's
+                # permissions, so the role needs access to that one secret. The condition
+                # allows the read only when it comes through AgentCore, so code running in
+                # the container cannot fetch the secret itself.
                 "Effect": "Allow",
                 "Action": ["secretsmanager:GetSecretValue"],
-                "Resource": secret_arn,
+                "Resource": provider["secret_arn"],
+                "Condition": {"ForAnyValue:StringEquals": {"aws:CalledVia": ["bedrock-agentcore.amazonaws.com"]}},
             },
         ],
     }
@@ -258,11 +295,11 @@ def deploy(region: str) -> None:
     gw = gateway_outputs()
 
     uri = build_and_push(region, state)
-    secret_arn = ensure_secret(region, state, gw)
-    role_arn = ensure_role(region, state, secret_arn)
+    provider = ensure_credential_provider(region, state, gw)
+    role_arn = ensure_role(region, state, provider)
 
     agc = boto3.client("bedrock-agentcore-control", region_name=region)
-    env = runtime_env(gw, secret_arn)
+    env = runtime_env(gw, provider)
     print("  creating AgentCore Runtime")
     resp = agc.create_agent_runtime(
         agentRuntimeName=NAME.replace("-", "_"),

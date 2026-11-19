@@ -1,9 +1,0 @@
-boto3>=1.34.0
-strands-agents
-matplotlib>=3.7.0
-numpy>=1.24.0
-scipy>=1.10.0
-scikit-learn>=1.3.0
-strands-agents-tools
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit

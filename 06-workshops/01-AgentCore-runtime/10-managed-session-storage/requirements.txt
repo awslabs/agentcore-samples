@@ -1,3 +1,0 @@
-bedrock-agentcore
-claude-agent-sdk
-boto3>=1.42.75

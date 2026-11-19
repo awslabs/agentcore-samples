@@ -122,7 +122,7 @@ The `privateEndpoint` attribute on the OAuth2 credential provider tells AgentCor
 ### 1. Configure
 
 ```bash
-cd 06-workshops/03-AgentCore-identity/08-IDP-examples/PingFederate
+cd 01-features/05-authenticate-and-authorize/01-inbound-auth/04-inbound-auth-pingfederate
 ```
 
 Create a `.env` file:

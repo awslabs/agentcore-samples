@@ -1,7 +1,0 @@
-boto3
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
-strands-agents[otel]
-strands-agents-tools
-opentelemetry-sdk
-opentelemetry-exporter-otlp-proto-http

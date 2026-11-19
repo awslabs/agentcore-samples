@@ -1,4 +1,0 @@
-bedrock_agentcore_starter_toolkit
-langfuse
-autoevals
-openai

@@ -147,4 +147,5 @@
 - Srividya Ponnada (psrivi)
 - Gilbert Lepadatu (gilbertlep)
 - Santhosh Kuriakose (kuriaks1)
+- Phelipe Fabres (phelipefabres)
 - Abhiram Shaji (abhiramshaji-cyber)
