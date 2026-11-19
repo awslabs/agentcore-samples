@@ -1,0 +1,6 @@
+# Pinned to the versions validated on AgentCore Runtime. torch is pinned in
+# the Dockerfile, where it's installed from the CPU-only index.
+strands-decider[cpu]==0.3.0
+bedrock-agentcore==1.25.4
+transformers==5.22.2
+peft==0.21.2

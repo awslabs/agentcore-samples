@@ -1,8 +1,8 @@
-# [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html) Web Answer Tool
+# [Amazon Bedrock AgentCore Web Answer](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-answer-tool.html)
 
 ![Web Answer Tool architecture](images/tutorial-architecture.png)
 
-The Amazon Bedrock AgentCore Web Answer Tool turns a natural-language question into
+Amazon Bedrock AgentCore Web Answer turns a natural-language question into
 a concise answer grounded in current public-web sources. It is exposed as a
 managed MCP connector through an AgentCore Gateway. The service performs retrieval,
 page-content lookup, answer synthesis, and citation generation server-side.
@@ -62,7 +62,7 @@ arn:aws:bedrock-agentcore:<region>:aws:tool/web-answer.v1
 
 ## Documentation
 
-- [Amazon Bedrock AgentCore overview](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)
+- [Amazon Bedrock AgentCore Web Answer documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-answer-tool.html)
 - [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
 - [Built-in Gateway connectors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connectors.html)
 

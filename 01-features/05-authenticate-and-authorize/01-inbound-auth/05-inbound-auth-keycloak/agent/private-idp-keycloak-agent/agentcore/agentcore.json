@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "PrivateIdpKeycloakAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "PrivateIdpKeycloakAgent"
+  },
+  "runtimes": [
+    {
+      "name": "PrivateIdpKeycloakAgent",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/private-idp-keycloak-agent/",
+      "runtimeVersion": "PYTHON_3_12",
+      "envVars": [],
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP"
+    }
+  ],
+  "memories": [],
+  "credentials": [
+    {
+      "authorizerType": "OAuthCredentialProvider",
+      "name": "keycloak-private-idp",
+      "scopes": [
+        "openid"
+      ],
+      "vendor": "CustomOauth2",
+      "usage": "outbound"
+    }
+  ],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": []
+}
