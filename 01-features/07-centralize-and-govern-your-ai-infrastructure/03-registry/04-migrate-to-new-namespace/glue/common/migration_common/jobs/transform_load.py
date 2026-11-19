@@ -36,6 +36,8 @@ from migration_common.registry_api import (
     RegistryApiError,
     TargetNameClaims,
     TargetRegistryClient,
+    claim_key,
+    disambiguated_target_name,
     validate_target_request,
 )
 from migration_common.settings import (
@@ -236,10 +238,34 @@ class TargetNameClaimPool:
     Every canonical target gets one claim set regardless of which role or external ID accesses
     it. The sequence coordinator preserves staged order while workers transform concurrently, so
     local, Glue, dry-run, and live attempts choose the same claimant.
+
+    ``duplicate_names`` is ``transform.duplicateNames``. With ``suffix``, a record that cannot keep
+    the name it came with is moved onto a distinct one instead of being refused -- and *which* record
+    moves is decided before the loop starts, by :func:`plan_target_names`, from committed state and
+    source identity. That is what ``name_owners`` and ``assigned_names`` carry:
+
+    * ``name_owners`` maps a target identity ``(registryId, name, recordVersion)`` to the canonical
+      claimant id entitled to it. Any other record wanting that identity is moved off it. It is also
+      handed to each claim set as claims already held, so the guard enforces the plan instead of
+      giving a contested identity to whichever record reaches it first (see ``_planned_claims``).
+    * ``assigned_names`` maps a canonical claimant id to the name that source record was already
+      migrated under, so a record that answers to a suffixed name keeps answering to it.
+
+    Both are empty for the ``fail`` default (nothing is ever moved) and for direct single-record
+    callers, which have no other records to be judged against; then ``suffix`` falls back to giving
+    the name to the first claimant in staged order, which is all one record can be ordered by.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        duplicate_names: str = "fail",
+        name_owners: dict[tuple[str, str, str | None], str] | None = None,
+        assigned_names: dict[str, str] | None = None,
+    ) -> None:
         self._claims: dict[tuple[str, str, str], TargetNameClaims] = {}
+        self._duplicate_names = duplicate_names
+        self._name_owners = dict(name_owners or {})
+        self._assigned_names = dict(assigned_names or {})
         self._lock = threading.Lock()
         self._sequence = threading.Condition()
         self._next_sequence = 0
@@ -250,9 +276,44 @@ class TargetNameClaimPool:
         with self._lock:
             claims = self._claims.get(key)
             if claims is None:
-                claims = TargetNameClaims()
+                claims = TargetNameClaims(self._planned_claims(target), duplicate_names=self._duplicate_names)
                 self._claims[key] = claims
             return claims
+
+    def _planned_claims(self, target: dict[str, Any]) -> dict[tuple[str, str, str | None], str] | None:
+        """The plan, as claims already held by the records it assigned them to.
+
+        Handing the guard the plan up front is what makes it *enforce* the plan rather than race for
+        it: a record asking for an identity the plan gave to a different source record is refused and
+        falls back to its own suffixed name, whether that other record has been processed yet or not.
+        Without this, two records planned onto one identity -- which happens when a record's own name
+        coincides with the suffixed name planned for another -- would be resolved by whichever reached
+        the claim first, so a re-extract that paginated differently could rename a different record.
+
+        Only for ``suffix``: nothing is planned under the default, and a plan handed to it anyway must
+        not change which record it refuses.
+        """
+        if self._duplicate_names != "suffix":
+            return None
+        registry_id = str(target["registryId"])
+        return {key: claimant for key, claimant in self._name_owners.items() if key[0] == registry_id}
+
+    def claim(
+        self,
+        target: dict[str, Any],
+        name: str,
+        record_version: Any,
+        source_record_id: str,
+    ) -> str:
+        """Claim one identity without sequence coordination, for single-record callers."""
+        registry_id = str(target["registryId"])
+        return self.for_target(target).claim(
+            registry_id,
+            name,
+            record_version,
+            source_record_id,
+            preferred_name=self._preferred_name(registry_id, name, record_version, source_record_id),
+        )
 
     def claim_in_order(
         self,
@@ -261,17 +322,49 @@ class TargetNameClaimPool:
         name: str,
         record_version: Any,
         source_record_id: str,
-    ) -> None:
-        """Claim one identity when its staged-input turn arrives, then release the next turn."""
+    ) -> str:
+        """Claim one identity when its staged-input turn arrives, then release the next turn.
+
+        Returns the name actually claimed, which differs from ``name`` only when the record is not the
+        one entitled to that identity and ``duplicateNames`` is ``suffix``.
+        """
         with self._sequence:
             while sequence != self._next_sequence:
                 self._sequence.wait()
             try:
-                self.for_target(target).claim(str(target["registryId"]), name, record_version, source_record_id)
+                return self.claim(target, name, record_version, source_record_id)
             finally:
                 self._next_sequence += 1
                 self._advance_past_skipped()
                 self._sequence.notify_all()
+
+    def _preferred_name(
+        self,
+        registry_id: str,
+        name: str,
+        record_version: Any,
+        source_record_id: str,
+    ) -> str | None:
+        """The name this record should be given ahead of the one it came with, if any.
+
+        Two reasons a record is given a different name, in this order:
+
+        1. It already answers to a distinct name from an earlier run. Keeping it is what makes a
+           re-run an update rather than a rename, and it holds whether or not the record it once
+           collided with is in this run's window at all.
+        2. Another source record is entitled to the name it came with, so this one moves off it.
+
+        Only the record's own identity and committed state decide either, never arrival order.
+        """
+        if self._duplicate_names != "suffix":
+            return None
+        established = self._assigned_names.get(source_record_id)
+        if established and established != name and established == disambiguated_target_name(name, source_record_id):
+            return established
+        owner = self._name_owners.get(claim_key(registry_id, name, record_version))
+        if owner is not None and owner != source_record_id:
+            return disambiguated_target_name(name, source_record_id)
+        return None
 
     def skip(self, sequence: int) -> None:
         """Release a sequence whose record failed before reaching the identity claim."""
@@ -286,6 +379,140 @@ class TargetNameClaimPool:
         while self._next_sequence in self._skipped_sequences:
             self._skipped_sequences.remove(self._next_sequence)
             self._next_sequence += 1
+
+
+def plan_target_names(
+    store: Any,
+    raw_objects: list[dict[str, Any]],
+    *,
+    mapping_by_id: dict[str, dict[str, Any]],
+    transformer: RecordTransformer,
+    known_record_ids: dict[str, dict[str, str]],
+    assigned_names: dict[str, dict[str, dict[str, str | None]]],
+) -> tuple[dict[tuple[str, str, str | None], str], dict[str, str]]:
+    """Decide which source record is entitled to each target name, before any of them is written.
+
+    Returns ``(name_owners, established_names)`` in the shape ``TargetNameClaimPool`` takes them.
+
+    Only used for ``duplicateNames = "suffix"``, and worth its cost only there: it reads the staged
+    records a second time, because choosing a name for one record means knowing which other records
+    want it, and the load itself streams records rather than holding them. Both returned maps are
+    sized by the number of records in the run, like the crosswalk rows the run already accumulates.
+
+    Entitlement is decided in this order, and neither step can be influenced by staged order or by
+    which subset of a registry this run happens to carry:
+
+    1. **A record already in the target registry keeps the name it is there under.** Committed state
+       (the id map's ``names``) names those records -- including records this run does not stage at
+       all, whose names an incremental run must not hand to something else. A record that was migrated
+       before names were recorded can only be there under its own unsuffixed name, because a
+       collision failed the record instead of renaming it, so that is what it is credited with.
+    2. **Otherwise the lowest canonical claimant id wins** -- ``account/region/registry/recordId``,
+       which is a total order over source records and the same in every run, so every run resolves a
+       set of colliding records the same way whichever order it sees them in.
+
+    A record whose name changed in the source registry since it was migrated *releases* the identity
+    it held: the load renames that target record in place, so the old name is free for whoever is next
+    entitled to it. A record that holds the *suffixed* form of the name it still comes with has not
+    been renamed -- that is what an earlier run moved it onto -- and keeps it.
+    """
+    owners: dict[tuple[str, str, str | None], str] = {}
+    candidates: dict[tuple[str, str, str | None], str] = {}
+    # Every identity a staged record asks for, so the records that do not get the one they asked for
+    # can be planned onto their suffixed name below.
+    requests: list[tuple[tuple[str, str, str | None], str, str, Any]] = []
+    # The identity (name + recordVersion) each source record is already in the target registry under,
+    # keyed by canonical claimant id.
+    established: dict[str, dict[str, str | None]] = {}
+    released: set[tuple[str, str, str | None]] = set()
+
+    def reserve(into: dict[tuple[str, str, str | None], str], key: tuple[str, str, str | None], claimant: str) -> None:
+        held = into.get(key)
+        if held is None or claimant < held:
+            into[key] = claimant
+
+    for mapping_id, mapping in mapping_by_id.items():
+        registry_id = str(mapping["target"]["registryId"])
+        for record_id, entry in assigned_names.get(mapping_id, {}).items():
+            claimant = _source_claimant_id(mapping, record_id)
+            established[claimant] = entry
+            reserve(owners, claim_key(registry_id, str(entry["name"]), entry.get("recordVersion")), claimant)
+
+    for _source_key, envelope in store.iter_json_lines_objects(raw_objects, read_ahead=STAGED_READ_AHEAD):
+        mapping_id = str(envelope.get("mappingId", ""))
+        mapping = mapping_by_id.get(mapping_id)
+        old_record_id = _old_record_id(envelope)
+        preview_record = envelope.get("record")
+        if mapping is None or not old_record_id or not isinstance(preview_record, dict):
+            continue
+        context = dict(mapping)
+        context["oldRecordId"] = old_record_id
+        try:
+            # The transform the load will run, not an approximation of it: a name planned from
+            # different rules than the name claimed is a plan that silently stops applying.
+            transformed = transformer.transform(preview_record, context)
+        except Exception:
+            # Any transform failure, not silently: the load transforms this record again and reports
+            # the failure against it, with the reason. Planning only needs to leave it out of the names
+            # it hands out, and must not fail the whole run for one unplannable record.
+            LOGGER.debug(
+                "Planning left out staged record %s for mapping %s: it does not transform",
+                old_record_id,
+                mapping_id,
+                exc_info=True,
+            )
+            continue
+        registry_id = str(mapping["target"]["registryId"])
+        claimant = _source_claimant_id(mapping, transformed.old_record_id)
+        name = str(transformed.record["name"])
+        version = transformed.record.get("recordVersion")
+        key = claim_key(registry_id, name, version)
+        entry = established.get(claimant)
+        if entry is None and transformed.old_record_id in known_record_ids.get(mapping_id, {}):
+            entry = {"name": name, "recordVersion": _optional_version(version)}
+            established[claimant] = entry
+        if entry is not None:
+            held = claim_key(registry_id, str(entry["name"]), entry.get("recordVersion"))
+            # The two identities this record is still entitled to: the name it now comes with, and the
+            # suffixed form of that name, which is what it is in the registry under if an earlier run
+            # moved it off a collision.
+            entitled = {key, claim_key(registry_id, disambiguated_target_name(name, claimant), version)}
+            if held in entitled:
+                # It keeps what it holds, and asks for nothing else -- so it is not a candidate for the
+                # name it came with when what it holds is the suffixed form of that name.
+                reserve(owners, held, claimant)
+                continue
+            if owners.get(held) == claimant:
+                # Renamed (or given a new recordVersion) in the source registry since it was migrated.
+                # The load renames that target record in place, so the identity it held comes free.
+                released.add(held)
+        reserve(candidates, key, claimant)
+        requests.append((key, claimant, name, version))
+
+    for key in released:
+        owners.pop(key, None)
+    for key, claimant in candidates.items():
+        owners.setdefault(key, claimant)
+
+    # The suffixed name planned for every record that does not get the name it asked for. Reserving it
+    # is what keeps a *third* record whose own name happens to be that suffixed form from being handed
+    # it as well: without this the two would race, and which of them ended up renamed would depend on
+    # the order the records were staged in. Lowest claimant id again decides between two records whose
+    # suffixed names coincide, and a record that asked for the name under its own steam keeps it, so
+    # neither reservation depends on staged order.
+    moved: dict[tuple[str, str, str | None], str] = {}
+    for key, claimant, name, version in requests:
+        if owners.get(key) == claimant:
+            continue
+        reserve(moved, claim_key(key[0], disambiguated_target_name(name, claimant), version), claimant)
+    for key, claimant in moved.items():
+        owners.setdefault(key, claimant)
+    return owners, {claimant: str(entry["name"]) for claimant, entry in established.items()}
+
+
+def _optional_version(value: Any) -> str | None:
+    """A recordVersion as the id map stores it: a string, or ``None`` when the record has none."""
+    return None if value in (None, "") else str(value)
 
 
 def _process_record(
@@ -354,22 +581,43 @@ def _process_record(
         # transformation, service calls, and status polling remain concurrent. Canonical source
         # identity prevents equal record IDs from different Preview registries being mistaken for
         # an idempotent replay. The live client repeats the claim immediately before lookup/write.
+        requested_name = str(transformed.record["name"])
+        claimed_name = requested_name
         if name_claims is not None and claim_sequence is not None:
-            name_claims.claim_in_order(
+            claimed_name = name_claims.claim_in_order(
                 claim_sequence,
                 target,
-                str(transformed.record["name"]),
+                requested_name,
                 transformed.record.get("recordVersion"),
                 source_claimant_id,
             )
         elif dry_run or clients is None:
             # Direct single-record callers do not need sequence coordination, but still need the
             # same no-client validation on a dry run.
-            (name_claims or TargetNameClaimPool()).for_target(target).claim(
-                str(target["registryId"]),
-                str(transformed.record["name"]),
+            pool = name_claims or TargetNameClaimPool()
+            claimed_name = pool.claim(
+                target,
+                requested_name,
                 transformed.record.get("recordVersion"),
                 source_claimant_id,
+            )
+
+        # ``duplicateNames = "suffix"``: this record is not the one entitled to the name it came with
+        # (or already answers to a distinct one), so the claim resolved it onto a name derived from its
+        # own source identity. Only the dedup key moves -- ``displayName`` and the crosswalk's
+        # ``previewName`` keep the name the source record has, so the record stays recognisable. The
+        # renamed payload goes back through ``validate_target_request``, which bounds field lengths, so
+        # the one bounded field this rewrites is not left unchecked; the *shape* of the new name needs
+        # no re-check, being a truncation of an already-valid name plus ``-<hex>``.
+        if claimed_name != requested_name:
+            transformed.record["name"] = claimed_name
+            outcome.name = claimed_name
+            validate_target_request(transformed.record)
+            outcome.warnings.append(
+                f"Target name {requested_name!r} in registry {target['registryId']} does not belong to this "
+                f"record, and duplicateNames is 'suffix', so it was migrated as {claimed_name!r} -- the name "
+                f"it keeps on every later run. Its displayName still reads "
+                f"{str(transformed.record['displayName'])!r}. Look this record up by the name above."
             )
 
         if dry_run or clients is None:
@@ -578,10 +826,6 @@ def main(argv: list[str] | None = None) -> None:
         },
     )
     clients = None if dry_run else TargetClientPool(settings["api"]["target"], run_id)
-    # Shared by every worker in both modes. It orders only the in-memory identity reservation by
-    # staged position; all transformation and target work remains concurrent. Dry-run uses no client,
-    # while live clients retain their own identical final pre-write guard.
-    name_claims = TargetNameClaimPool()
     # What every previous live load of these mappings produced: source recordId -> target recordId. Read
     # once up front (it is one small object per mapping) and consulted per record, so a record that
     # was renamed in Preview since it was last migrated is still recognised as the same record.
@@ -594,6 +838,39 @@ def main(argv: list[str] | None = None) -> None:
                 len(known),
                 store.location(watermark_state.idmap_key(mapping_id)),
             )
+    duplicate_names = str(settings["transform"].get("duplicateNames") or "fail")
+    name_owners: dict[tuple[str, str, str | None], str] = {}
+    established_names: dict[str, str] = {}
+    if duplicate_names == "suffix":
+        # Decide which record is entitled to which name before loading any of them, so the answer
+        # comes from source identity and committed state rather than from the order this run's extract
+        # happens to have staged the records in, or from which of them this run stages at all. Costs a
+        # second pass over the staged records, which is why it is only done in this mode.
+        name_owners, established_names = plan_target_names(
+            store,
+            raw_objects,
+            mapping_by_id=mapping_by_id,
+            transformer=transformer,
+            known_record_ids=known_record_ids,
+            assigned_names={
+                mapping_id: watermark_state.read_idmap_names(store, mapping_id) for mapping_id in mapping_by_id
+            },
+        )
+        LOGGER.info(
+            "duplicateNames=suffix: %d target name(s) planned, %d record(s) already hold one",
+            len(name_owners),
+            len(established_names),
+        )
+    # Shared by every worker in both modes. It orders only the in-memory identity reservation by
+    # staged position; all transformation and target work remains concurrent. Dry-run uses no client,
+    # while live clients retain their own identical final pre-write guard. `transform.duplicateNames`
+    # is enforced here rather than in the transform, which sees one record at a time and so cannot
+    # know that a name is already taken.
+    name_claims = TargetNameClaimPool(
+        duplicate_names=duplicate_names,
+        name_owners=name_owners,
+        assigned_names=established_names,
+    )
     summaries = _initialize_summaries(extract_manifest, mapping_by_id)
     # Per-mapping old->new id crosswalk rows, accumulated in memory and written as one CSV per
     # registry at the end (customers need this to repoint dependencies that referenced a preview
@@ -1272,12 +1549,13 @@ def _commit_id_maps(
     run_id: str,
     dry_run: bool,
 ) -> None:
-    """Fold this run's old->new record ids into each mapping's saved id map.
+    """Fold this run's old->new record ids, and the name each record was migrated under, into each
+    mapping's saved id map.
 
     Unlike the watermark, this is committed even when records failed, and it records a record that
     was created and then failed to settle. Both follow from what the map is for: the entries name
     records that exist in the target registry, and forgetting one does not make the next run re-read it
-    safely -- it makes the next run create a second copy of it.
+    safely -- it makes the next run create a second copy of it, or hand its name to something else.
 
     Skipped for a dry run, which creates nothing to remember.
     """
@@ -1286,13 +1564,29 @@ def _commit_id_maps(
             summary["idMapCommitted"] = False
             summary["idMapSkipReason"] = "dry run: nothing was written to the target registry"
             continue
-        pairs = {
-            str(row["oldRecordId"]): str(row["newRecordId"])
-            for row in crosswalk_rows.get(mapping_id, [])
-            if row.get("oldRecordId") and row.get("newRecordId")
+        rows = [row for row in crosswalk_rows.get(mapping_id, []) if row.get("oldRecordId") and row.get("newRecordId")]
+        pairs = {str(row["oldRecordId"]): str(row["newRecordId"]) for row in rows}
+        # The identity the record is in the target registry under, which is not always the name it has
+        # in the source registry (see duplicateNames = "suffix"). Recorded so a later run gives this
+        # record the same name again instead of deciding the question a second time.
+        names = {
+            str(row["oldRecordId"]): {
+                "name": str(row["name"]),
+                "recordVersion": _optional_version(row.get("recordVersion")),
+            }
+            for row in rows
+            if row.get("name")
         }
         merged = watermark_state.merge_idmap(watermark_state.read_idmap(store, mapping_id), pairs)
-        key = watermark_state.write_idmap(store, mapping_id, merged, run_id=run_id, updated_at=utc_now())
+        merged_names = watermark_state.merge_idmap_names(watermark_state.read_idmap_names(store, mapping_id), names)
+        key = watermark_state.write_idmap(
+            store,
+            mapping_id,
+            merged,
+            run_id=run_id,
+            updated_at=utc_now(),
+            names=merged_names,
+        )
         summary["idMapCommitted"] = True
         summary["idMapArtifact"] = store.location(key)
         summary["idMapRecordCount"] = len(merged)

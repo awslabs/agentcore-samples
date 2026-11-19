@@ -20,7 +20,8 @@ records updated *during* the previous run. Re-processing is harmless because the
 idempotent upsert.
 
 This module also holds the **id map**, the other thing a run has to remember for the next one:
-which target record each source record became. Both are committed state under ``state/``, keyed per
+which target record each source record became, and -- so a later run cannot hand a name to a
+different record -- what that target record is called. Both are committed state under ``state/``, keyed per
 mapping, read at the start of a run and written at the end, so they live together rather than in
 two near-identical modules. Their names are prefixed (``read_idmap`` beside ``read``) because their
 commit rules are deliberately *not* the same -- see ``read_idmap`` below.
@@ -241,6 +242,70 @@ def merge_idmap(previous: dict[str, str], pairs: dict[str, str]) -> dict[str, st
     return merged
 
 
+def read_idmap_names(store: Any, mapping_id: str) -> dict[str, dict[str, str | None]]:
+    """Read the target identity each source record was migrated *under*, empty when unrecorded.
+
+    Stored in the same object as the id map because it answers the same question at a different
+    granularity: ``records`` says which target record a source record became, ``names`` says what
+    that record is called. Returned as ``{sourceRecordId: {"name": ..., "recordVersion": ...}}``;
+    ``recordVersion`` is kept with the name because the target dedup key is the pair, so a name is
+    only taken for the version it was taken with.
+
+    The loader needs this to keep ``transform.duplicateNames = "suffix"`` stable. Which record keeps
+    a shared name has to be the same answer on every run, and without committed state the only
+    answer available is "whichever record this run happened to stage first" -- which silently renames
+    records when the next run stages a different subset, or the same set in a different order. See
+    ``plan_target_names`` in the transform/load job.
+
+    Individually missing or malformed entries are skipped rather than fatal: a map written before
+    this was recorded has none at all, and "not recorded" is a state the loader has to handle anyway.
+    A non-object ``names`` is an error, for the same reason a non-object ``records`` is.
+    """
+    value = store.get_json_if_present(idmap_key(mapping_id))
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise IdMapError(f"Id map {idmap_key(mapping_id)} is not a JSON object")
+    names = value.get("names", {})
+    if not isinstance(names, dict):
+        raise IdMapError(f"Id map {idmap_key(mapping_id)} has a non-object 'names'")
+    resolved: dict[str, dict[str, str | None]] = {}
+    for old, entry in names.items():
+        if old in (None, "") or not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if name in (None, ""):
+            continue
+        version = entry.get("recordVersion")
+        resolved[str(old)] = {
+            "name": str(name),
+            "recordVersion": None if version in (None, "") else str(version),
+        }
+    return resolved
+
+
+def merge_idmap_names(
+    previous: dict[str, dict[str, str | None]],
+    entries: dict[str, dict[str, str | None]],
+) -> dict[str, dict[str, str | None]]:
+    """Fold this run's assigned target identities into the stored ones, newer winning.
+
+    Additive for the same reason ``merge_idmap`` is: a record this run's window did not carry still
+    exists in the target registry under the name it was given, and forgetting that name is what lets
+    a later run hand it to a different record.
+    """
+    merged = dict(previous)
+    for old, entry in entries.items():
+        if old in (None, "") or not isinstance(entry, dict) or entry.get("name") in (None, ""):
+            continue
+        version = entry.get("recordVersion")
+        merged[str(old)] = {
+            "name": str(entry["name"]),
+            "recordVersion": None if version in (None, "") else str(version),
+        }
+    return merged
+
+
 def write_idmap(
     store: Any,
     mapping_id: str,
@@ -248,8 +313,13 @@ def write_idmap(
     *,
     run_id: str,
     updated_at: str,
+    names: dict[str, dict[str, str | None]] | None = None,
 ) -> str:
-    """Persist ``mapping_id``'s id map and return its key."""
+    """Persist ``mapping_id``'s id map and return its key.
+
+    The whole document is rewritten, so ``records`` and ``names`` must both be the merged sets (see
+    ``merge_idmap`` and ``merge_idmap_names``), not just what this run produced.
+    """
     key = idmap_key(mapping_id)
     store.put_json(
         key,
@@ -260,6 +330,7 @@ def write_idmap(
             "updatedAt": updated_at,
             "recordCount": len(records),
             "records": records,
+            "names": names or {},
         },
     )
     return key
