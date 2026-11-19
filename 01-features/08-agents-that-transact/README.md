@@ -9,7 +9,7 @@ Amazon Bedrock AgentCore payments is a fully managed service that enables microt
 
 Learn more about the latest features in this [blog post](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/).
 
-> **Testnet only.** All samples use Base Sepolia (Ethereum) or Solana Devnet with free USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no real-world value.
+> **Testnet by default.** All samples use Base Sepolia (Ethereum) or Solana Devnet with free USDC from [faucet.circle.com](https://faucet.circle.com/). Testnet USDC has no real-world value. The exception is [`02-use-cases/pay-for-x402-aws-marketplace/`](02-use-cases/pay-for-x402-aws-marketplace/), which pays with AWS Billing and makes real charges on your AWS bill.
 
 ## Start here
 
@@ -48,6 +48,7 @@ Tutorials in `00-getting-started/` build on each other — start with Tutorial 0
 - **Pay for data with a pre-payment trust gate (x402-secure)** → `02-use-cases/pay-for-x402-secure-data/`
 - **Pay for data (simple x402 flow)** → `02-use-cases/pay-for-data/`
 - **Pay for premium research with an OpenAI agent** → `02-use-cases/pay-for-research-with-openai-agent/`
+- **Pay for x402 APIs on AWS Marketplace with AWS Billing** → `02-use-cases/pay-for-x402-aws-marketplace/`
 
 ## Resources
 
@@ -81,7 +82,7 @@ python 00-getting-started/01-agents-payments-and-limits/langgraph_payment_agent.
 
 ## Security
 
-- All tutorials use **testnet only** for learning and enablement purpose(Base Sepolia / Solana Devnet). No real funds are involved.
+- All tutorials use **testnet only** for learning and enablement purpose(Base Sepolia / Solana Devnet). No real funds are involved. The exception is `02-use-cases/pay-for-x402-aws-marketplace/`, which pays with AWS Billing and makes real charges on your AWS bill.
 - Never commit `.env` files or private keys. Use AWS Secrets Manager for production credentials.
 - Follow IAM least-privilege: separate ControlPlaneRole, ManagementRole, and ProcessPaymentRole.
 - Follow [AWS shared responsibility model](https://aws.amazon.com/compliance/shared-responsibility-model/)
