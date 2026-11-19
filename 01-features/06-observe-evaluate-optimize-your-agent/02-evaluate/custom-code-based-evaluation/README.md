@@ -401,7 +401,7 @@ For TRACE-level evaluators, `evaluator_input.target_trace_id` identifies which t
 # Disable (must disable before deleting while evaluators are locked)
 aws bedrock-agentcore-control update-online-evaluation-config \
     --online-evaluation-config-id <config-id> \
-    --enable-config false
+    --execution-status DISABLED
 
 # Delete
 aws bedrock-agentcore-control delete-online-evaluation-config \
