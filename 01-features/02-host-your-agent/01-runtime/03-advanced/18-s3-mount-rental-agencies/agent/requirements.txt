@@ -1,0 +1,4 @@
+strands-agents==1.65.0
+bedrock-agentcore==1.26.0
+duckdb==2.0.0
+matplotlib==3.11.2
