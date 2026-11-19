@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-import { App } from 'aws-cdk-lib';
-import { readAgentCoreProject, resolveTargetStacks, transformAgentCoreJson } from '@aws/agentcore-cdk';
-import { AgentCoreStack } from '../lib/cdk-stack';
+import { App } from "aws-cdk-lib";
+import {
+  readAgentCoreProject,
+  resolveTargetStacks,
+  transformAgentCoreJson,
+} from "@aws/agentcore-cdk";
+import { AgentCoreStack } from "../lib/cdk-stack";
 
 try {
   // The AgentCore CLI runs this app from agentcore/cdk/; readAgentCoreProject walks up to agentcore/.
@@ -25,6 +29,9 @@ try {
   }
   app.synth();
 } catch (error) {
-  console.error('AgentCore CDK synthesis failed:', error instanceof Error ? error.message : error);
+  console.error(
+    "AgentCore CDK synthesis failed:",
+    error instanceof Error ? error.message : error,
+  );
   process.exit(1);
 }

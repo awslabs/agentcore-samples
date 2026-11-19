@@ -37,11 +37,7 @@ class ScriptedModel(Model):
         yield {"messageStart": {"role": "assistant"}}
         if self.mode == "loop" or (self.mode == "tools" and turn < 2):
             name = "get_product_info" if turn == 0 or self.mode == "loop" else "get_return_policy"
-            arguments = (
-                {"query": "PROD-002"}
-                if name == "get_product_info"
-                else {"product_category": "electronics"}
-            )
+            arguments = {"query": "PROD-002"} if name == "get_product_info" else {"product_category": "electronics"}
             yield {
                 "contentBlockStart": {
                     "contentBlockIndex": 0,
@@ -60,11 +56,7 @@ class ScriptedModel(Model):
             }
             stop_reason = "tool_use"
         else:
-            answer = (
-                messages[0]["content"][0]["text"]
-                if self.mode == "echo"
-                else "Smart Watch: 30 days."
-            )
+            answer = messages[0]["content"][0]["text"] if self.mode == "echo" else "Smart Watch: 30 days."
             yield {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": answer}}}
             stop_reason = "end_turn"
         yield {"contentBlockStop": {"contentBlockIndex": 0}}
@@ -79,9 +71,7 @@ class ScriptedModel(Model):
 
 @pytest.fixture
 async def client():
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
-    ) as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://test") as client:
         yield client
 
 
@@ -174,17 +164,13 @@ async def test_malformed_json_and_health(client, models):
 
 @pytest.mark.parametrize("origin", ["https://untrusted.invalid", "null", "http://localhost:8080"])
 async def test_browser_origin_is_rejected_before_inference(client, models, origin):
-    response = await client.post(
-        "/invocations", json={"prompt": "hello"}, headers={"origin": origin}
-    )
+    response = await client.post("/invocations", json={"prompt": "hello"}, headers={"origin": origin})
     assert response.status_code == 403
     assert not models
 
 
 async def test_form_style_json_is_rejected_before_inference(client, models):
-    response = await client.post(
-        "/invocations", content='{"prompt":"hello"}', headers={"content-type": "text/plain"}
-    )
+    response = await client.post("/invocations", content='{"prompt":"hello"}', headers={"content-type": "text/plain"})
     assert response.status_code == 415
     assert not models
 
@@ -248,9 +234,7 @@ async def test_sequential_and_concurrent_requests_do_not_share_history(client, m
     monkeypatch.setattr(main, "BedrockModel", build)
     prompts = ["marker-one", "marker-two", "marker-three"]
     first = await client.post("/invocations", json={"prompt": prompts[0]})
-    later = await asyncio.gather(
-        *(client.post("/invocations", json={"prompt": p}) for p in prompts[1:])
-    )
+    later = await asyncio.gather(*(client.post("/invocations", json={"prompt": p}) for p in prompts[1:]))
     assert [r.json()["response"] for r in [first, *later]] == prompts
     assert len(models) == 3
     for model, prompt in zip(models, prompts, strict=True):
@@ -264,9 +248,7 @@ async def test_runaway_tool_loop_is_bounded(client, monkeypatch):
     monkeypatch.setattr(main, "BedrockModel", lambda **kwargs: model)
     response = await client.post("/invocations", json={"prompt": "Keep looking things up"})
     assert response.status_code == 200
-    assert response.json() == {
-        "response": "Too many reasoning steps. Try a more specific question."
-    }
+    assert response.json() == {"response": "Too many reasoning steps. Try a more specific question."}
     assert len(model.requests) == main.MAX_MODEL_CALLS
 
 

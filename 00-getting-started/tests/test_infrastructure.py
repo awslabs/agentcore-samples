@@ -84,9 +84,7 @@ def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
         {"bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"},
         f"arn:aws:bedrock:us-west-2::foundation-model/{main.MODEL_ID}",
     )
-    runtime = next(
-        r["Properties"] for r in resources.values() if r["Type"] == "AWS::BedrockAgentCore::Runtime"
-    )
+    runtime = next(r["Properties"] for r in resources.values() if r["Type"] == "AWS::BedrockAgentCore::Runtime")
     source = runtime["AgentRuntimeArtifact"]["CodeConfiguration"]["Code"]["S3"]
     assert by_service["s3"] == (
         {"s3:GetObject", "s3:GetObjectVersion"},
@@ -99,9 +97,7 @@ def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
         "logs:PutLogEvents",
         "logs:PutResourcePolicy",
     }
-    assert by_service["logs"][1].endswith(
-        f"/aws/bedrock-agentcore/runtimes/{runtime['AgentRuntimeName']}*"
-    )
+    assert by_service["logs"][1].endswith(f"/aws/bedrock-agentcore/runtimes/{runtime['AgentRuntimeName']}*")
     assert set(by_service) - {"kms"} == {"bedrock", "s3", "logs"}
     if "kms" in by_service:
         assert by_service["kms"][0] == {"kms:Decrypt"}
@@ -128,9 +124,7 @@ def test_role_trust_is_service_and_account_scoped(resources):
 
 
 def test_zip_contains_current_code_and_linux_arm64_dependencies(resources):
-    runtime = next(
-        r["Properties"] for r in resources.values() if r["Type"] == "AWS::BedrockAgentCore::Runtime"
-    )
+    runtime = next(r["Properties"] for r in resources.values() if r["Type"] == "AWS::BedrockAgentCore::Runtime")
     key = runtime["AgentRuntimeArtifact"]["CodeConfiguration"]["Code"]["S3"]["Prefix"]
     with ZipFile(OUTPUT / ("asset." + key)) as archive:
         names = archive.namelist()
