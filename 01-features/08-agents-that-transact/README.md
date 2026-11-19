@@ -21,7 +21,7 @@ New? There are various ways to get started with [AgentCore payments](https://doc
 
 | Folder | What's inside |
 |--------|---------------|
-| [`00-getting-started/`](00-getting-started/) | Eight step-by-step tutorials covering setup → local agents → runtime deploy → wallet ops → gateway → browser payments → memory + payments → multi-agent orchestration |
+| [`00-getting-started/`](00-getting-started/) | Ten step-by-step tutorials covering setup → local agents → runtime deploy → wallet ops → gateway → browser payments → memory + payments → multi-agent orchestration → MPP (machine payments protocol) → pay-per-use with `upto` |
 | [`01-payments-skills-and-cli/`](01-payments-skills-and-cli/) | Add AgentCore x402 payments to an agent via the `aws-agents` coding-assistant plugin (existing agent, new agent, or OpenClaw — no coding assistant) |
 | [`02-use-cases/`](02-use-cases/) | Real-world end-to-end use cases deployed on AgentCore runtime |
 
