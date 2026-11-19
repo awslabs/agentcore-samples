@@ -1,0 +1,29 @@
+{
+  "customer_id": "CUST003",
+  "summary": {
+    "period": "last_12_months",
+    "total_inflow": 85000000,
+    "total_outflow": 82000000,
+    "average_monthly_volume": 6916667,
+    "transaction_count": 3200
+  },
+  "top_counterparties": [
+    { "name": "Manufacturer X", "country": "China", "volume": 25000000, "type": "outflow" },
+    { "name": "Distributor Y", "country": "Brazil", "volume": 18000000, "type": "inflow" },
+    { "name": "Supplier Z", "country": "Vietnam", "volume": 15000000, "type": "outflow" },
+    { "name": "Retailer W", "country": "Mexico", "volume": 12000000, "type": "inflow" }
+  ],
+  "geographic_distribution": {
+    "domestic": 25,
+    "international": 75
+  },
+  "high_risk_jurisdictions": ["Venezuela", "Myanmar"],
+  "suspicious_patterns": [
+    {
+      "type": "round_amount_transactions",
+      "count": 15,
+      "description": "Multiple transactions at exactly $99,999"
+    }
+  ],
+  "large_transactions_over_100k": 180
+}
