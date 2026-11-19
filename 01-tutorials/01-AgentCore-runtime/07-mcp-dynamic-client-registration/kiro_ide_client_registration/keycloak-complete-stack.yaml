@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Keycloak EC2 + ALB (Phase 1 - no HTTPS, domain added later)'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC (use default VPC if unsure)
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least 2 subnets in different AZs for ALB
+  InstanceType:
+    Type: String
+    Default: t4g.medium
+    AllowedValues: [t4g.small, t4g.medium, t4g.large]
+
+Resources:
+  KeycloakAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}/keycloak-admin-password'
+      Description: Auto-generated Keycloak admin password
+      GenerateSecretString:
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\$`'
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB SG - allows 80 and 443 from internet
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 SG - allows 8080 from ALB only
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8080, ToPort: 8080, SourceSecurityGroupId: !Ref ALBSecurityGroup}
+
+  KeycloakRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: 'sts:AssumeRole'}
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ReadKeycloakSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref KeycloakAdminSecret
+
+  KeycloakInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref KeycloakRole]
+
+  KeycloakInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-arm64}}'
+      IamInstanceProfile: !Ref KeycloakInstanceProfile
+      SecurityGroupIds: [!Ref EC2SecurityGroup]
+      SubnetId: !Select [0, !Ref PublicSubnetIds]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf install -y java-17-amazon-corretto-headless
+          useradd -r -s /sbin/nologin keycloak
+
+          # Fetch password from Secrets Manager
+          KC_PASSWORD=$(aws secretsmanager get-secret-value --secret-id ${KeycloakAdminSecret} --region ${AWS::Region} --query SecretString --output text)
+
+          cd /tmp
+          wget -q https://github.com/keycloak/keycloak/releases/download/26.1.0/keycloak-26.1.0.tar.gz
+          tar -xzf keycloak-26.1.0.tar.gz
+          mv keycloak-26.1.0 /opt/keycloak
+          chown -R keycloak:keycloak /opt/keycloak
+
+          cat > /etc/systemd/system/keycloak.service <<SVCEOF
+          [Unit]
+          Description=Keycloak
+          After=network.target
+          [Service]
+          Type=simple
+          User=keycloak
+          Group=keycloak
+          Environment="KC_BOOTSTRAP_ADMIN_USERNAME=admin"
+          Environment="KC_BOOTSTRAP_ADMIN_PASSWORD=$KC_PASSWORD"
+          ExecStart=/opt/keycloak/bin/kc.sh start-dev --http-host=0.0.0.0 --hostname-strict=false --proxy-headers=xforwarded
+          [Install]
+          WantedBy=multi-user.target
+          SVCEOF
+
+          systemctl daemon-reload
+          systemctl enable keycloak
+          systemctl start keycloak
+      Tags:
+        - {Key: Name, Value: keycloak-server}
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      HealthCheckPath: /health/ready
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Targets:
+        - {Id: !Ref KeycloakInstance, Port: 8080}
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: keycloak-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups: [!Ref ALBSecurityGroup]
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - {Type: forward, TargetGroupArn: !Ref TargetGroup}
+
+Outputs:
+  InstanceId:
+    Value: !Ref KeycloakInstance
+  LoadBalancerDNS:
+    Value: !GetAtt LoadBalancer.DNSName
+    Description: ALB DNS - use this to test HTTP access. Add domain + ACM cert for HTTPS.
+  KeycloakHTTPURL:
+    Value: !Sub 'http://${LoadBalancer.DNSName}'
+  KeycloakAdminSecretArn:
+    Value: !Ref KeycloakAdminSecret
+    Description: 'Secrets Manager ARN for Keycloak admin password. Retrieve with: aws secretsmanager get-secret-value --secret-id <ARN> --query SecretString --output text'
+  GoogleRedirectURI:
+    Value: 'Configure after adding domain: https://<your-domain>/realms/main/broker/google/endpoint'
+  NextSteps:
+    Value: '1) Register domain 2) Create ACM cert 3) Add HTTPS listener 4) Configure Keycloak via SSM'

@@ -1,0 +1,4 @@
+bedrock-agentcore-starter-toolkit
+bedrock-agentcore
+mcp
+uv
