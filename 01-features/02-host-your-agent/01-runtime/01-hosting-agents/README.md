@@ -95,6 +95,6 @@ Every example follows the same 5-step flow using two boto3 clients:
 | Agent listens on | Port 8080 | Port 8080 | Port 8080 |
 | Request format | Free-form JSON | A2A JSON-RPC | AG-UI RunAgentInput |
 | Response format | JSON or SSE | A2A task result | AG-UI event stream |
-| Discovery | None | Agent card at `/.well-known/agent.json` | None |
+| Discovery | None | Agent card at `/.well-known/agent-card.json` | None |
 | Best for | Backend services | Agent-to-agent | Interactive UIs |
 | SDK helper | `BedrockAgentCoreApp` | FastAPI (custom) | FastAPI + `ag-ui-strands` |

@@ -8,7 +8,7 @@ The [Agent-to-Agent (A2A)](https://github.com/google/A2A) protocol enables agent
 
 ![A2A orchestration architecture](images/architecture-getting-started.png)
 
-An orchestrator agent (running in its own AgentCore runtime) routes user questions via A2A tasks to specialist worker agents. Each worker publishes an agent card at `/.well-known/agent.json` describing its capabilities. The orchestrator discovers workers through their agent cards and delegates subtasks, collecting results to produce a final answer.
+An orchestrator agent (running in its own AgentCore runtime) routes user questions via A2A tasks to specialist worker agents. Each worker publishes an agent card at `/.well-known/agent-card.json` describing its capabilities. The orchestrator discovers workers through their agent cards and delegates subtasks, collecting results to produce a final answer.
 
 ## How A2A Works on AgentCore runtime
 
@@ -22,7 +22,7 @@ An orchestrator agent (running in its own AgentCore runtime) routes user questio
                                  └──────────────────────┘
 ```
 
-1. **Agent Card** — each A2A agent publishes a JSON card at `/.well-known/agent.json` describing its capabilities
+1. **Agent Card** — each A2A agent publishes a JSON card at `/.well-known/agent-card.json` describing its capabilities
 2. **Task Submission** — clients send tasks via `POST /invocations` using JSON-RPC format
 3. **Task Execution** — the agent processes the task and returns results
 4. **Multi-Agent** — an orchestrator agent can discover and delegate to sub-agents
@@ -61,7 +61,7 @@ AGENT_CARD = {
     "skills": [{"id": "doc-search", "name": "Documentation Search"}],
 }
 
-@app.get("/.well-known/agent.json")
+@app.get("/.well-known/agent-card.json")
 async def agent_card():
     """A2A discovery endpoint."""
     return AGENT_CARD
@@ -122,7 +122,7 @@ response = client.invoke_agent_runtime(
 | Aspect | HTTP | A2A |
 |:-------|:-----|:----|
 | `protocolConfiguration` | `serverProtocol: 'HTTP'` | `serverProtocol: 'A2A'` |
-| Discovery | None | Agent card at `/.well-known/agent.json` |
+| Discovery | None | Agent card at `/.well-known/agent-card.json` |
 | Request format | Free-form JSON | A2A JSON-RPC (`tasks/send`) |
 | Response format | Free-form JSON | A2A task result with `parts` |
 | Multi-agent | Manual via tool calls | Built-in task-based orchestration |
