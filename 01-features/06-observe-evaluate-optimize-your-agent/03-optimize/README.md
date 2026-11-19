@@ -40,6 +40,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
   - `iam:CreateRole`, `AttachRolePolicy`, `PassRole` to create the execution role for the A/B test
   - `bedrock:InvokeModel`, `s3:*`, `ecr:*`, `xray:*`
 - Python 3.10+
+- Optional, only for the [AgentCore CLI Examples](#agentcore-cli-examples): Node.js 20+ and AgentCore CLI v0.30.0 (`npm install -g @aws/agentcore@0.30.0`). The Python scripts do not use the CLI.
 - Access to Amazon Bedrock models (Nova Lite) in your region
 
 > **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. Budget ~45 minutes for the full workflow.
@@ -48,13 +49,12 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 
 - **Region is fixed by the event, not by you.** `deploy.py`, `invoke.py`, `optimize.py`, `cleanup.py`, and `insights.py` all resolve their region from `$AWS_DEFAULT_REGION` (falling back to `us-east-1` if unset) the first time they create a runtime, and from the runtime's own recorded region on every call after that -- so once `deploy.py` has run once for a given `--name`, every other script follows it automatically. Confirm Amazon Bedrock Optimization is available in the event's region before starting; it is a **preview** feature at the time of writing.
 - **Pre-provisioned lab roles** may not include `iam:CreateRole`/`PassRole` (needed by `deploy.py` to create the per-agent execution role) or the permissions listed above for ConfigurationBundles, Recommendations, and ABTesting. If any script fails with `AccessDenied`, check the lab role's attached policies before assuming it's a code issue.
-- **Transaction Search must be enabled** for the agent's OTel spans to land in the `aws/spans` log group that Insights and Recommendations read from. If a workshop account doesn't have it pre-enabled, see [`06-workshops/06-AgentCore-observability/00-enable-transaction-search-template`](../../../06-workshops/06-AgentCore-observability/00-enable-transaction-search-template/transaction_search.yml).
+- **Transaction Search must be enabled** for the agent's OTel spans to land in the `aws/spans` log group that Insights and Recommendations read from. If a workshop account doesn't have it pre-enabled, see [Enable transaction search](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html) in the CloudWatch User Guide.
 - **Amazon Nova Lite** is used by the built-in evaluators and recommendations; confirm it's enabled for the account/region before running `optimize.py`.
 
 ### Further Reading
 
 - [Optimizing production agents with Amazon Bedrock AgentCore Observability](https://aws.amazon.com/blogs/machine-learning/optimizing-production-agents-with-amazon-bedrock-agentcore-observability/)
-- [Detecting silent agent failures with Amazon Bedrock AgentCore Optimization](https://aws.amazon.com/blogs/machine-learning/detecting-silent-agent-failures-with-amazon-bedrock-agentcore-optimization/)
 - [Introducing Agent Quality Optimization in AgentCore (preview)](https://aws.amazon.com/blogs/machine-learning/introducing-agent-quality-optimization-in-agentcore-now-in-preview/)
 - [Optimizing agent system prompts with Amazon Bedrock AgentCore](https://aws.amazon.com/blogs/machine-learning/optimizing-agent-system-prompts-with-amazon-bedrock-agentcore/)
 
