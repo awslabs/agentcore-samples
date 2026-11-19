@@ -1,4 +1,4 @@
-"""L4 defer-queue drain consumer (spec §12 — the thundering-herd fix).
+"""L4 defer-queue drain consumer (ADR-0011 — the thundering-herd fix).
 
 When the model tier was exhausted (L4), receipts were accepted and parked in SQS
 instead of dropped (the agent's `_defer_receipt`). When a tier recovers, a naive
@@ -60,12 +60,9 @@ def handler(event, context):
     """SQS batch (size 1) of deferred receipts. Replay each at the bounded rate."""
     results = []
     for record in event.get("Records", []):
-        try:
-            body = json.loads(record["body"])
-        except (KeyError, ValueError):
-            # Malformed message: let it fail so SQS redrives/DLQs it rather than
-            # silently dropping a receipt.
-            raise
+        # A malformed message raises here, so SQS redrives it to the DLQ rather than
+        # silently dropping a receipt.
+        body = json.loads(record["body"])
 
         time.sleep(_jitter())  # pace the drain BEFORE hitting the model
         result = _replay(body)

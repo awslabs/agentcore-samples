@@ -2,7 +2,7 @@
 
 Receives a flat event dict (the MCP tool input) and returns a JSON string.
 Reads only the userId it is handed — per-user data separation at the data layer
-(spec §5.5).
+(ADR-0004).
 """
 
 import json

@@ -1,9 +1,13 @@
-"""Phase 5 end-to-end: Cedar policy enforcement at the Gateway (no mocks).
+"""End-to-end: Cedar policy enforcement at the Gateway (no mocks).
 
 Cedar runs at the GATEWAY, not in the Lambda — so this drives a real MCP tool call
 through the gateway with the agent's own M2M token, deterministically (no LLM):
   - save_expense with total >= $2000  -> DENIED by BlockExcessiveExpense
   - save_expense with a small total   -> ALLOWED (AllowAllTools)
+  - the boundaries: exactly $2000 denied, $1999.99 allowed, totals with cents on both
+    sides of the limit, and a save without total_cents denied (the policy fails closed).
+    The policy compares total_cents, an integer, because Cedar will not compare the
+    decimals the Gateway passes for totals like 15.9 or 1250.0 with a whole number
 
 Requires a deployed stack (run via `make e2e`); skips cleanly otherwise.
 """
@@ -28,7 +32,7 @@ def _outputs():
     cfn = boto3.client("cloudformation", region_name=REGION)
     try:
         outs = cfn.describe_stacks(StackName=STACK)["Stacks"][0].get("Outputs", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means the stack is not reachable
         pytest.skip(f"stack {STACK} not deployed")
     return {o["OutputKey"]: o["OutputValue"] for o in outs}
 
@@ -77,8 +81,8 @@ def _m2m_token_and_gateway():
     return token, url
 
 
-def _call_save_expense(total: float) -> "tuple[bool, str]":
-    """Call save_expense through the gateway over MCP. Returns (denied, raw)."""
+def _call_save_expense(total: float, send_cents: bool = True) -> "tuple[bool, str]":
+    """Call save_expense through the gateway over MCP, as the agent does. Returns (denied, raw)."""
     from mcp.client.streamable_http import streamablehttp_client
     from strands.tools.mcp import MCPClient
 
@@ -92,6 +96,8 @@ def _call_save_expense(total: float) -> "tuple[bool, str]":
         "total": total,
         "category": "Meals & Entertainment",
     }
+    if send_cents:
+        args["total_cents"] = round(total * 100)
     with client as gw:
         tools = gw.list_tools_sync()
         name = next(
@@ -114,6 +120,35 @@ def test_over_threshold_save_is_denied_by_cedar():
 def test_under_threshold_save_is_allowed():
     denied, raw = _call_save_expense(12)
     assert not denied, f"$12 save_expense should be ALLOWED; got: {raw[:400]}"
+
+
+@pytest.mark.parametrize(
+    "total, should_deny",
+    [
+        (2000, True),  # the boundary: >= means the limit itself is blocked
+        (1999, False),
+        (1250.0, False),  # a whole-dollar amount the agent sends as a decimal
+        (2000.50, True),  # over the limit with cents: denied whether the comparison works or fails closed
+        # Under the limit with cents. The policy description says a fractional total makes the
+        # decimal-vs-Long comparison error and the forbid fail closed. If so this is DENIED, and
+        # every real receipt with cents goes to review instead of saving. This pins which it is.
+        (15.90, False),
+        (1999.99, False),
+    ],
+)
+def test_threshold_boundaries(total, should_deny):
+    denied, raw = _call_save_expense(total)
+    assert denied == should_deny, (
+        f"save_expense total={total}: expected {'DENIED' if should_deny else 'ALLOWED'}, got "
+        f"{'DENIED' if denied else 'ALLOWED'}: {raw[:400]}"
+    )
+
+
+def test_save_without_total_cents_is_denied():
+    """The policy fails closed: a save that does not state its amount in cents is denied,
+    so a client that omits it cannot slip a large amount past the check."""
+    denied, raw = _call_save_expense(12, send_cents=False)
+    assert denied, f"a save without total_cents should be DENIED; got: {raw[:400]}"
 
 
 def _call_tool(tool_suffix: str, args: dict) -> "tuple[bool, str]":

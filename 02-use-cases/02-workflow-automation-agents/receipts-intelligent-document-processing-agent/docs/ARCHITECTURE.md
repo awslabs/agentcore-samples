@@ -1,6 +1,6 @@
 # Architecture
 
-A receipt lands in S3; a dual-agent pipeline on AgentCore Runtime extracts a structured expense, an independent validator decides whether to auto-persist or route to human review, and the whole run is traced and evaluated in CloudWatch. A **model degradation ladder** keeps the pipeline serving through a Bedrock capacity event. This document is the map; the *why* behind each choice lives in [decisions/](decisions/).
+A receipt lands in S3; a dual-agent pipeline on AgentCore Runtime extracts a structured expense, an independent validator decides whether to auto-persist or route to human review, and the whole run is traced and evaluated in CloudWatch. A chat assistant, on its own Runtime, answers an employee's questions about their own expenses. A **model degradation ladder** keeps the pipeline serving through a Bedrock capacity event. This document is the map; the *why* behind each choice lives in [decisions/](decisions/).
 
 ![Receipts IDP architecture](diagrams/architecture.png)
 
@@ -25,7 +25,7 @@ flowchart TB
     end
 
     subgraph DP["Data plane — one receipt run (Runtime microVM)"]
-        AGENT["Dual agent:<br/>0. read rung (cached)<br/>1. OCR (Textract)<br/>2. EXTRACTOR → structured<br/>3. VALIDATOR → route<br/>4. persist or review"]
+        AGENT["Dual agent:<br/>0. read rung (cached)<br/>1. OCR (Textract)<br/>2. EXTRACTOR → structured<br/>3. VALIDATOR → approve or review<br/>(pinned tools)"]
         GW["AgentCore Gateway<br/>(1 MCP endpoint)<br/>Cedar on every tool call"]
         DDB[("DynamoDB<br/>Users / Expenses")]
         BR["Bedrock<br/>(global inference profile,<br/>per the active rung)"]
@@ -56,9 +56,25 @@ flowchart TB
 2. **OCR.** Textract `analyze_expense` reads the receipt straight from S3 (`S3Object`) and returns summary fields + line-item groups with per-field confidence.
 3. **Table parse.** A deterministic Markdown-table parser turns the line-item block into structured rows; the agent only re-derives rows the parser couldn't (hybrid extraction).
 4. **Extractor agent.** A Strands agent on the rung's model produces a structured expense via a forced `submit_expense` tool call — machine-checkable, not free text.
-5. **Validator agent.** An independent agent (sheddable from L2 down) sees only the OCR + the extractor's output and decides `AUTO_PERSIST` vs `NEEDS_REVIEW`.
-6. **Persist or review.** `save_expense` (Cedar-gated) on auto-persist, else `human_review` — both through the Gateway. A Cedar denial on `save_expense` falls back to `human_review`.
-7. **Return + observe.** A structured result with `confidence`, `needs_review`, and the `rung`; the trace span is tagged with the rung so a degraded run is visible.
+5. **Validator agent.** An independent agent (sheddable from L2 down) sees only the OCR + the extractor's output, decides, and acts by calling exactly one of two pinned tools: `approve_expense` or `send_to_review` ([ADR-0019](decisions/0019-validator-acts-through-pinned-tools.md)). The tools take its confidence and reasoning, never the expense fields, so it cannot change what is saved.
+6. **Persist or review.** `approve_expense` calls `save_expense` (Cedar-gated) through the Gateway; a Cedar denial files a `human_review` instead. `send_to_review` writes the reviewer note and calls `human_review`. If the validator decides nothing, or is shed, or the rung forces review, code files the review.
+7. **Return + observe.** A structured result with `confidence`, `needs_review`, and the `rung`. The invocation span carries the outcome as `receipts.*` attributes (status, total, whether Cedar blocked it, both confidences, the extracted fields), and the save or review call has its own tool span. The evaluators read these; without them a correct save would look like a skipped step.
+
+## Evaluation
+
+Evaluators were chosen from the business outward and contrast-tested before being trusted ([ADR-0017](decisions/0017-evaluators-from-business-outcomes.md)).
+
+- **Live, in AgentCore:**
+  - `ReceiptsLive` scores every pipeline session with `ReceiptsThresholdControl`, a monitor on the Cedar control.
+  - `ReceiptsAgent_ChatLive` scores every chat session with ConversationCompleteness and KnowledgeRetention.
+  - Online configs select sessions by service name, which is why chat has its own Runtime ([ADR-0018](decisions/0018-separate-chat-runtime.md)).
+- **On labelled data, in `evals/`:**
+  - extraction accuracy and routing (code-based, deployed as Lambdas)
+  - ToolParameterAccuracy on the extractor's part of the trace
+  - GoalSuccessRate with per-receipt assertions on the trace through the validator
+  - Correctness per chat turn
+
+  These run on the labelled set sent through the deployed stack (`evals/run_deployed.py`).
 
 ## The degradation ladder
 
@@ -82,18 +98,19 @@ At the floor, L4 buffers receipts in SQS and a jittered drain replays them so a 
 
 | Service | Role here |
 |---------|-----------|
-| **Runtime** | Hosts the dual-agent orchestrator in a session-isolated microVM (code-based, not the managed Harness — IDP needs a custom OCR step + forced structured output + the ladder). |
+| **Runtime** | Two Runtimes from one codebase: the pipeline (the dual-agent orchestrator, code-based, not the managed Harness, because IDP needs a custom OCR step, forced structured output and the ladder) and the chat assistant (multi-turn within a session). |
 | **Gateway** | Turns the DynamoDB read/write Lambdas into governed MCP tools through one endpoint. The single enforcement point. |
 | **Policy (Cedar)** | Gates `save_expense` on the tool input (amount ≥ $2,000 → review), deterministically, independent of the agents ([ADR-0012](decisions/0012-cedar-on-tool-input.md)). |
 | **Observability** | OTel traces/logs/metrics → CloudWatch GenAI Observability; each span tagged with the rung. Auto-instrumented (the Runtime is CLI/CDK-deployed). |
-| **Evaluations** | A SESSION LLM-as-judge evaluator (extraction quality + routing) + online eval with built-in metrics, scored from spans. |
-| **Memory** | Per-user facts + session summaries in custom `receipts/...` namespaces (sheddable on lower rungs). The agent degrades gracefully if Memory isn't deployed. |
+| **Evaluations** | Three code-based evaluators (one Lambda), a live config per Runtime, and built-in and third-party judges run on labelled data. See [Evaluation](#evaluation). |
 
 ## Component inventory
 
-- **`app/receiptsagent/`** — the agent. `main.py` (dual-agent entrypoint + the 503 step-down loop), `config.py` (the single env-read seam), `model/ladder.py` (rung resolution + the appconfigdata reader), `tools/` (OCR, structured output, the table parser), `gateway_auth.py` (M2M token), `memory/`, `mcp_client/`.
-- **`lambdas/`** — the Gateway tools (`get_user_profile`, `get_recent_expenses`, `lookup_merchant`, `save_expense`, `human_review`) + the front-door `trigger` + the ladder `controller` + the L4 `drain`, each with its schema under `lambdas/schemas/`.
-- **`agentcore/agentcore.json`** — the AgentCore resources (Runtime, Gateway + targets, PolicyEngine + Cedar policies, Evaluator, OnlineEvaluationConfig).
+- **`app/receiptsagent/`** — the agent. `main.py` (dual-agent entrypoint + the 503 step-down loop), `config.py` (the single env-read seam), `model/ladder.py` (rung resolution + the appconfigdata reader), `tools/` (OCR, structured output, the table parser).
+- **`lambdas/`** — the Gateway tools (`get_user_profile`, `get_recent_expenses`, `lookup_merchant`, `save_expense`, `human_review`) + the front-door `trigger` + the ladder `controller` + the L4 `drain` + the run-ledger writer, each with its schema under `lambdas/schemas/`.
+- **`agentcore/agentcore.json`** — the AgentCore resources: two Runtimes, the Gateway and targets, the PolicyEngine and Cedar policies, the code-based evaluators, the `ReceiptsLive` online config.
+- **`evaluators/business_outcomes/`** — the code-based evaluators, deployed as one Lambda.
+- **`evals/`** — the evaluation harness, labelled receipts and conversations, and the deployed-stack runner.
 - **`agentcore/cdk/`** — the supplementary infra (DynamoDB, S3, Cognito, SQS, AppConfig, alarms, EventBridge, the Lambdas) + the glue stack ([ADR-0001](decisions/0001-agentcore-cli-plus-cdk.md)).
 
 See [CONFIGURATION.md](CONFIGURATION.md) for the knobs and [tutorial.md](tutorial.md) for a guided run.

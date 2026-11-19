@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Seed the Users table with a sample user so the pipeline has profile context.
+"""Seed the Users table with the sample user, user-001, whose profile the chat
+assistant's get_user_profile tool reads. Rerunning overwrites the same row.
 
-Phase 1: just the Users table. Later phases may seed a Merchants catalog.
 Usage: python3 scripts/seed_dynamodb.py --region us-west-2
 """
 

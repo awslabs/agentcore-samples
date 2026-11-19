@@ -1,0 +1,8 @@
+[project]
+name = "receipts-business-outcomes-evaluator"
+version = "0.1.0"
+description = "Code-based AgentCore evaluators for the receipts agent: extraction accuracy, routing outcome, threshold control"
+requires-python = ">=3.12"
+dependencies = [
+    "bedrock-agentcore>=1.22.0,<2.0",
+]

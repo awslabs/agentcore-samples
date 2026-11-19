@@ -39,5 +39,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/ping', timeout=3)" || exit 1
 
-# Run the agent
-CMD ["python", "main.py"]
+# Run the agent under ADOT auto-instrumentation (opentelemetry-instrument comes from
+# aws-opentelemetry-distro). Without it the Runtime exports no traces, and neither
+# observability nor evaluation can see the agent.
+CMD ["opentelemetry-instrument", "python", "main.py"]
