@@ -39,7 +39,7 @@ cryptography==46.0.2
     # via authlib
 cyclopts==3.24.0
     # via fastmcp
-dnspython==2.8.0
+dnspython==2.9.2
     # via email-validator
 docstring-parser==0.17.0
     # via cyclopts
