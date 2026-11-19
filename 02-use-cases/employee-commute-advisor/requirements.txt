@@ -1,0 +1,10 @@
+strands-agents
+boto3
+botocore
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+mcp
+httpx
+anyio
+streamlit
+pandas
