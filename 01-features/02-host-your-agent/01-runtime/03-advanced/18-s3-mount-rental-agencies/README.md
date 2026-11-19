@@ -15,8 +15,8 @@ session context keys), see the [AgentCore Runtime documentation](https://docs.aw
 ```
  backend (invoke.py)                     AgentCore Runtime: one runtime, one execution role
  ┌───────────────────────┐              ┌─ session A (its own microVM) ─────────────────────────┐
- │ acme          -> sid A │─invoke(A)──►│  agent ─ DuckDB ─► /mnt/data    ─► datasets/market/   │ shared, read-only
- │ brooklynhomes -> sid B │             │                 └► /mnt/private ─► users/A/           │ Acme only
+ │ acme         -> sid A │─-invoke(A)──►│  agent ─ DuckDB ─► /mnt/data    ─► datasets/market/   │ shared, read-only
+ │ brooklynhomes-> sid B │              │                 └► /mnt/private ─► users/A/           │ Acme only
  └───────────────────────┘              └───────────────────────────────────────────────────────┘
              │                          ┌─ session B (its own microVM) ─────────────────────────┐
              └──────────────invoke(B)──►│  agent ─ DuckDB ─► /mnt/data    ─► datasets/market/   │
