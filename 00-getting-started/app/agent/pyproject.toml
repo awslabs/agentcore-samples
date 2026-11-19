@@ -1,0 +1,31 @@
+[project]
+name = "agentcore-customer-support-sample"
+version = "0.1.0"
+description = "A read-only product and returns assistant on AgentCore Runtime"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "bedrock-agentcore==1.26.0",
+    "strands-agents==1.65.0",
+    "starlette==1.10.0",
+    "botocore==1.44.5",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8,<10",
+    "pytest-asyncio>=1,<2",
+    "ruff>=0.14,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = ["S101"]
