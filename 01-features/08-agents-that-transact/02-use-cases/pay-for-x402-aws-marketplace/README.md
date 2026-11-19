@@ -73,7 +73,7 @@ The agent can't spend more than you allow. The sample enforces five limits:
   or the one `SELLER_URL` you set. If something the agent reads points it at a different URL, the
   client refuses to pay, even if the model tries.
 - **Idempotency.** Every payment carries a `clientToken`. If you retry with the same `clientToken`
-  and quote, you get the original payment back and aren't charged twice.
+  and quote within 8 hours, you get the original payment back and aren't charged twice.
 
 ### Files
 
@@ -108,8 +108,7 @@ python setup_gateway.py --region us-east-1      # or: echo "SELLER_URL=https://<
 ```
 
 `pip install -r requirements.txt` installs boto3, Strands Agents and the other dependencies from
-PyPI. See [boto3 version](#boto3-version) for how the sample handles a boto3 release that doesn't
-include the AWS Billing payment operations.
+PyPI. The AWS Billing payment operations need boto3 and botocore 1.44.7 or later.
 
 ### What setup creates
 
@@ -122,9 +121,11 @@ include the AWS Billing payment operations.
 2. **`AgentCorePaymentsResourceRetrievalRole`.** The payment manager's service role. It's limited to
    your account and to payment managers with this sample's name. It only has workload identity
    permissions, because AWS Billing has no credential provider.
-3. **A payment manager with the `AWS_IAM` authorizer.** AWS Billing doesn't work with `CUSTOM_JWT`,
-   because the charge goes to the AWS account that signs the request.
-4. **An AWS Billing connector.** You get one per manager, and there are no credentials to supply.
+3. **A payment manager with the `AWS_IAM` authorizer.** The session role and the agent role call it
+   with IAM credentials. AWS bills each payment to the account that owns the payment manager.
+4. **An AWS Billing connector.** `ProcessPayment` with `AWS_BILLING_X402` needs one. It takes no
+   credential provider, because the service binds the service-linked role, and a manager can have
+   at most one. See [Create a Payment Manager and Connector](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-create-manager.html).
 5. **`MarketplaceBuyerSessionRole`.** Creates, reads and deletes payment sessions on this payment
    manager. Explicitly denied `ProcessPayment`.
 6. **`MarketplaceBuyerAgentRole`.** What the agent runs as. It can call `ProcessPayment` and
@@ -180,16 +181,18 @@ and nothing is charged.
 
 ## Troubleshooting
 
-Most setup failures come from the AWS Marketplace service-linked role or a Region mismatch, and the
-error doesn't always say which one.
+Most setup failures come from the AWS Marketplace service-linked role or a Region mismatch. For the
+full list, see [AWS Billing errors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-troubleshooting.html#payments-troubleshooting-aws-billing).
 
 | Error | Likely cause |
 | --- | --- |
 | 400 when creating the connector, saying the AWS Marketplace service-linked role doesn't exist | `AWSServiceRoleForMarketplaceAgenticCommerce` isn't in the account. Setup creates it unless you pass `--skip-slr`. |
-| 403 when creating the connector: `Not authorized to perform iam:GetRole on the AWS Marketplace service-linked role` | The identity running setup can't read the service-linked role. |
+| `Not authorized to perform iam:GetRole on the AWS Marketplace service-linked role` when creating the connector | The identity running setup can't read the service-linked role. Grant it `iam:GetRole` on the role, as in [Administrator permissions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-iam-roles.html#payments-iam-admin). |
+| `Payment manager … has no AWS Billing payment connector` from `ProcessPayment` | Setup didn't finish step 4. Run `setup_aws_billing.py` again. |
 | 403 `Payment manager not found` from `ProcessPayment` | `PAYMENT_MANAGER_ARN` is from a different Region than `AWS_REGION`. Payment managers are Regional. |
 | 403 from `ProcessPayment` for one seller only | Your organization's Private Marketplace may block that seller's product. |
-| Any other 400, 403 or 404 from `ProcessPayment` | The product may have been withdrawn, or its listing may not support AWS Billing. Check the listing on AWS Marketplace. |
+| `quoteToken has expired. Request a new quote from the seller.` | Run the request again. The agent gets a fresh quote on every call. |
+| `The product in quoteToken was not found in AWS Marketplace.` | The product isn't available in AWS Marketplace, or isn't available to your account. Check the seller and product. |
 
 ## How the x402 exchange works
 
@@ -229,7 +232,9 @@ POST /payments/processPayment
 ```
 
 A successful response has `status` set to `PROOF_GENERATED` and the payment token, a signed JWT, in
-`paymentOutput.awsBillingX402.paymentToken`.
+`paymentOutput.awsBillingX402.paymentToken`. You can also bind the token to a key your agent holds
+by passing `options.dpopJwk` (DPoP, RFC 9449). The sample doesn't. See [Pay with AWS
+Billing](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-process-payment.html#payments-process-payment-aws-billing).
 
 Then send the original request again with an x402 v2 payment payload in the `PAYMENT-SIGNATURE`
 header, as base64 JSON. `accepted` must be the same entry whose quote you paid:
@@ -238,8 +243,8 @@ header, as base64 JSON. `accepted` must be the same entry whose quote you paid:
 { "x402Version": 2, "resource": <resource>, "accepted": <accepts[i]>, "payload": { "paymentToken": "<token>" } }
 ```
 
-The seller sets each quote's expiry, which can be only minutes, and payment tokens are short-lived,
-so get the quote, pay it and send the retry in one pass.
+The payment token is valid for 5 minutes after it's issued, and quotes expire too, so get the quote,
+pay it and send the retry in one pass.
 
 ## Before you take this to production
 
@@ -255,14 +260,6 @@ so get the quote, pay it and send the retry in one pass.
 - **Payments are processed in us-east-1.** AWS Marketplace handles every payment there, which is why
   the sample defaults to us-east-1. Other Regions work, but their payment calls go cross-Region and
   add a little latency.
-
-### boto3 version
-
-The sample makes every AgentCore payments call through boto3. If your boto3 release doesn't include
-the AWS Billing operations (creating the `AwsBilling` connector, and `ProcessPayment` with
-`AWS_BILLING_X402`), `AgentCorePaymentsClient` logs a warning and sends just those two calls as
-SigV4-signed HTTP requests, in the same request format. Run `pip install -U boto3 botocore` to pick
-up a release that includes them.
 
 ## Clean up instructions
 

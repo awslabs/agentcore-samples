@@ -8,8 +8,8 @@ Three small pieces that every buyer agent needs:
                            PAYMENT-SIGNATURE header the seller expects on the retry.
   MarketplacePayer         The full loop: call -> 402 -> ProcessPayment -> retry -> content.
 
-Nothing in here holds keys or wallets. The charge lands on the AWS bill of the account
-that signs the ProcessPayment call, as an AWS Marketplace line item.
+Nothing in here holds keys or wallets. The charge lands on the AWS bill of the account that
+owns the payment manager, as an AWS Marketplace line item.
 """
 
 from __future__ import annotations
@@ -26,20 +26,14 @@ from urllib.parse import urlparse
 
 import boto3
 import requests
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 from botocore.credentials import DeferredRefreshableCredentials
 from botocore.exceptions import ClientError
-from botocore.model import NoShapeFoundError
 from botocore.session import get_session
 
 log = logging.getLogger(__name__)
 
-SIGNING_NAME = "bedrock-agentcore"
-USER_ID_HEADER = "X-Amzn-Bedrock-AgentCore-Payments-User-Id"
 SLR_SERVICE_NAME = "agentcore-payments.marketplace.amazonaws.com"
 SLR_ROLE_NAME = "AWSServiceRoleForMarketplaceAgenticCommerce"
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 # AWS Billing payments: ProcessPayment takes this payment type and this fixed,
 # service-owned instrument ID. There is no per-user AWS Billing instrument to create.
 AWS_BILLING_PAYMENT_TYPE = "AWS_BILLING_X402"
@@ -95,16 +89,8 @@ class PaymentsApiError(Exception):
 
 
 class AgentCorePaymentsClient:
-    """boto3 wrapper for the AgentCore payments calls this sample uses.
-
-    Everything goes through boto3 (`bedrock-agentcore-control` and `bedrock-agentcore`).
-    The two AWS Billing calls, creating an `AwsBilling` connector and `ProcessPayment`
-    with `AWS_BILLING_X402`, need a boto3 release that includes them. On older releases this
-    class sends just those two calls as SigV4-signed HTTP requests instead, and logs a
-    warning. Upgrade boto3 and the fallback is never used.
-    """
-
-    _warned = False
+    """boto3 wrapper for the AgentCore payments calls this sample uses
+    (`bedrock-agentcore-control` and `bedrock-agentcore`)."""
 
     def __init__(self, region: str, session: boto3.Session | None = None, user_id: str = "default-user"):
         self.region = region
@@ -112,27 +98,6 @@ class AgentCorePaymentsClient:
         self.user_id = user_id
         self.cp = self.session.client("bedrock-agentcore-control", region_name=region)
         self.dp = self.session.client("bedrock-agentcore", region_name=region)
-        # The fallback signs requests to the same endpoints boto3 resolved.
-        self._cp_url = self.cp.meta.endpoint_url
-        self._dp_url = self.dp.meta.endpoint_url
-        self.boto3_has_aws_billing = self._boto3_supports_aws_billing()
-        if not self.boto3_has_aws_billing and not AgentCorePaymentsClient._warned:
-            AgentCorePaymentsClient._warned = True
-            log.warning(
-                "boto3 %s doesn't include the AWS Billing payment operations; signing those two calls directly. "
-                "Upgrade boto3 to remove this fallback.",
-                boto3.__version__,
-            )
-        self._http = requests.Session()
-
-    def _boto3_supports_aws_billing(self) -> bool:
-        try:
-            dp_model, cp_model = self.dp.meta.service_model, self.cp.meta.service_model
-            return "awsBillingX402" in dp_model.shape_for("PaymentInput").members and "AwsBilling" in (
-                cp_model.shape_for("PaymentConnectorType").enum or []
-            )
-        except (NoShapeFoundError, AttributeError):
-            return False
 
     def _boto(self, fn, operation: str, **kwargs) -> dict:
         try:
@@ -146,27 +111,6 @@ class AgentCorePaymentsClient:
             ) from e
         out.pop("ResponseMetadata", None)
         return out
-
-    def _signed_http(self, base: str, path: str, body: dict, operation: str, retries: int = 3) -> dict:
-        """Fallback for boto3 releases without the AWS Billing shapes. Same wire format."""
-        data = json.dumps(body)
-        headers = {"Content-Type": "application/json", USER_ID_HEADER: self.user_id}
-        for attempt in range(retries):
-            req = AWSRequest(method="POST", url=base + path, data=data, headers=dict(headers))
-            # Re-sign every attempt: credentials may refresh and signatures expire.
-            SigV4Auth(self.session.get_credentials().get_frozen_credentials(), SIGNING_NAME, self.region).add_auth(req)
-            resp = self._http.post(base + path, data=data, headers=dict(req.headers), timeout=30)
-            if resp.ok:
-                return resp.json() if resp.content else {}
-            if resp.status_code in RETRYABLE_STATUS and attempt < retries - 1:
-                time.sleep(0.5 * 2**attempt)  # same body, same clientToken: safe to retry
-                continue
-            try:
-                message = resp.json().get("message", resp.text)
-            except ValueError:
-                message = resp.text
-            raise PaymentsApiError(resp.status_code, message, operation)
-        raise AssertionError("unreachable")
 
     # Control plane
     def create_payment_manager(self, name: str, role_arn: str, description: str = "") -> dict:
@@ -191,20 +135,15 @@ class AgentCorePaymentsClient:
         return self._boto(self.cp.delete_payment_manager, "DeletePaymentManager", paymentManagerId=manager_id)
 
     def create_aws_billing_connector(self, manager_id: str, name: str) -> dict:
-        # credentialProviderConfigurations must be an empty list: the service binds the
-        # AWS Marketplace service-linked role itself and rejects a caller-supplied role.
-        kwargs = {
-            "name": name,
-            "type": "AwsBilling",
-            "credentialProviderConfigurations": [],
-            "clientToken": str(uuid.uuid4()),
-        }
-        if self.boto3_has_aws_billing:
-            return self._boto(
-                self.cp.create_payment_connector, "CreatePaymentConnector", paymentManagerId=manager_id, **kwargs
-            )
-        return self._signed_http(
-            self._cp_url, f"/payments/managers/{manager_id}/connectors", kwargs, "CreatePaymentConnector"
+        """Add the manager's AWS Billing connector. It takes no credential provider: the service
+        binds the AWS Marketplace service-linked role itself. A manager can have at most one."""
+        return self._boto(
+            self.cp.create_payment_connector,
+            "CreatePaymentConnector",
+            paymentManagerId=manager_id,
+            name=name,
+            type="AwsBilling",
+            clientToken=str(uuid.uuid4()),
         )
 
     def list_payment_connectors(self, manager_id: str) -> list[dict]:
@@ -245,20 +184,20 @@ class AgentCorePaymentsClient:
         self, manager_arn: str, session_id: str, accepted: dict, x402_version: int = 2, client_token: str | None = None
     ) -> dict:
         """Pay a seller's x402 requirement with AWS Billing. `accepted` is the exact entry from
-        the 402's `accepts` list that carries the quoteToken. AWS Billing uses a fixed,
-        service-owned payment instrument ID, so there is nothing to create per user or per
-        manager, and no connector ID is passed. clientToken makes retries idempotent."""
-        kwargs = {
-            "paymentManagerArn": manager_arn,
-            "paymentSessionId": session_id,
-            "paymentInstrumentId": AWS_BILLING_INSTRUMENT_ID,
-            "paymentType": AWS_BILLING_PAYMENT_TYPE,
-            "paymentInput": {"awsBillingX402": {"version": str(x402_version), "payload": accepted}},
-            "clientToken": client_token or str(uuid.uuid4()),
-        }
-        if self.boto3_has_aws_billing:
-            return self._boto(self.dp.process_payment, "ProcessPayment", userId=self.user_id, **kwargs)
-        return self._signed_http(self._dp_url, "/payments/processPayment", kwargs, "ProcessPayment")
+        the 402's `accepts` list whose network is aws:base. The manager must have an AWS Billing
+        connector, and the service-managed instrument ID is the same for every manager. Reusing
+        a clientToken within 8 hours returns the original payment instead of charging again."""
+        return self._boto(
+            self.dp.process_payment,
+            "ProcessPayment",
+            userId=self.user_id,
+            paymentManagerArn=manager_arn,
+            paymentSessionId=session_id,
+            paymentInstrumentId=AWS_BILLING_INSTRUMENT_ID,
+            paymentType=AWS_BILLING_PAYMENT_TYPE,
+            paymentInput={"awsBillingX402": {"version": str(x402_version), "payload": accepted}},
+            clientToken=client_token or str(uuid.uuid4()),
+        )
 
 
 # ── x402 helpers ─────────────────────────────────────────────────────────────
@@ -406,7 +345,7 @@ class MarketplacePayer:
         self.receipts.append(receipt)
         log.info("Paid $%s for %s (processPaymentId=%s)", amount, url, receipt.process_payment_id)
 
-        # Redeem right away: quotes can expire within minutes and payment tokens are short-lived.
+        # Redeem right away: the payment token is valid for 5 minutes, and quotes can expire too.
         headers = {
             **kwargs.pop("headers", {}),
             "PAYMENT-SIGNATURE": build_payment_signature(challenge, accepted, token_payload),

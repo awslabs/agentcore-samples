@@ -5,8 +5,8 @@ Creates (or reuses) these, then writes them to .env:
   1. AWSServiceRoleForMarketplaceAgenticCommerce  service-linked role AWS Marketplace uses to
                                                    create the agreement and meter usage
   2. AgentCorePaymentsResourceRetrievalRole        service role for the payment manager
-  3. Payment manager (AWS_IAM authorizer)          AWS Billing requires AWS_IAM, not CUSTOM_JWT
-  4. AWS Billing payment connector                 one per manager; no credentials to supply
+  3. Payment manager (AWS_IAM authorizer)          the two buyer roles call it with IAM credentials
+  4. AWS Billing payment connector                 at most one per manager; no credential provider
   5. MarketplaceBuyerSessionRole                   creates budgeted payment sessions; can't pay
   6. MarketplaceBuyerAgentRole                     what the agent runs as; can pay within a
                                                    session, can't create or change one
