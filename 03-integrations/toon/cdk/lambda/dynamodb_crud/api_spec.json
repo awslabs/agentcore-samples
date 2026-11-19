@@ -1,0 +1,89 @@
+[
+    {
+        "name": "get_customer",
+        "description": "Retrieve a customer profile using customer ID and optionally email address",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string",
+                    "description": "The unique identifier for the customer"
+                },
+                "email": {
+                    "type": "string",
+                    "description": "The customer's email address (optional, for exact match)"
+                }
+            },
+            "required": [
+                "customer_id"
+            ]
+        }
+    },
+    {
+        "name": "query_by_region",
+        "description": "Query customers by geographic region (Northeast, Southeast, Midwest, South, Southwest, West, Northwest, Mountain)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "region": {
+                    "type": "string",
+                    "description": "The geographic region to filter by"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of records to return (default: 50)"
+                }
+            },
+            "required": [
+                "region"
+            ]
+        }
+    },
+    {
+        "name": "query_by_tier",
+        "description": "Query customers by subscription tier (Free, Basic, Standard, Premium, Enterprise), sorted by monthly spend",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subscription_tier": {
+                    "type": "string",
+                    "description": "The subscription tier to filter by"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of records to return (default: 50)"
+                }
+            },
+            "required": [
+                "subscription_tier"
+            ]
+        }
+    },
+    {
+        "name": "batch_get_customers",
+        "description": "Retrieve all customer records from the database",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "scan_customers",
+        "description": "Scan the customers table with pagination to retrieve all records",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of records to return per page (default: 50)"
+                },
+                "last_evaluated_key": {
+                    "type": "object",
+                    "description": "The pagination key from previous scan to continue from"
+                }
+            },
+            "required": []
+        }
+    }
+]
