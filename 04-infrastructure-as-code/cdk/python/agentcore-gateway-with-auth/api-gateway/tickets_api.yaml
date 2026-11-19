@@ -1,0 +1,115 @@
+openapi: 3.0.0
+info:
+  title: Tickets API
+  description: API for ticket management with OAuth authentication
+  version: 1.0.0
+servers:
+  - url: PLACEHOLDER_API_GATEWAY_URL
+    description: Production server
+paths:
+  /tickets/get:
+    post:
+      operationId: getTicket
+      summary: Get ticket by ID
+      description: Retrieve a specific ticket by its ID
+      security:
+        - CognitoAuth: [agentcore-gateway/ticket-read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - request_id
+              properties:
+                user_id:
+                  type: string
+                  description: User identifier
+                request_id:
+                  type: string
+                  description: Ticket request ID (e.g., REQ-A1B2C3D4)
+      responses:
+        '200':
+          description: Ticket retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  ticket:
+                    type: object
+        '403':
+          description: Access denied
+        '404':
+          description: Ticket not found
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: PLACEHOLDER_LAMBDA_ARN
+
+  /tickets/update:
+    post:
+      operationId: updateTicket
+      summary: Update ticket
+      description: Update ticket comment or status
+      security:
+        - CognitoAuth: [agentcore-gateway/ticket-write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - request_id
+                - updates
+              properties:
+                user_id:
+                  type: string
+                  description: User identifier
+                request_id:
+                  type: string
+                  description: Ticket request ID
+                updates:
+                  type: object
+                  description: Fields to update
+                  properties:
+                    Comment:
+                      type: string
+                      description: Additional comment or note for the ticket
+                    ApprovalStatus:
+                      type: string
+                      description: Approval status of the ticket
+                      enum: [PENDING, APPROVED, REJECTED]
+                    ImplementationStatus:
+                      type: string
+                      description: Implementation status of the ticket
+                      enum: [NOT_STARTED, IN_PROGRESS, COMPLETED]
+      responses:
+        '200':
+          description: Ticket updated successfully
+        '403':
+          description: Access denied
+        '404':
+          description: Ticket not found
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: PLACEHOLDER_LAMBDA_ARN
+
+components:
+  securitySchemes:
+    CognitoAuth:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: cognito_user_pools
+      x-amazon-apigateway-authorizer:
+        type: cognito_user_pools
+        providerARNs:
+          - PLACEHOLDER_USER_POOL_ARN
