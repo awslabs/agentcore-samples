@@ -189,7 +189,7 @@ pathable==0.4.4
     # via jsonschema-path
 peewee==3.18.2
     # via yfinance
-pillow==11.3.0
+pillow==13.0.0
     # via
     #   matplotlib
     #   strands-agents-tools
