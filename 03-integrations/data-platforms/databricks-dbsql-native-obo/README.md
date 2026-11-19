@@ -40,30 +40,32 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    per-user token only when the exchange presents *no* client authentication. Set
    `onBehalfOfTokenExchangeConfig.onBehalfOfAuthenticationConfig.clientAuthenticationMethod` to
    `NO_CLIENT`, as in [`working-config.json`](working-config.json). It needs AWS CLI 2.39.0 or later, or
-   an AWS SDK that includes the setting, and needs no account allowlisting. An
-   existing provider can be updated with `update-oauth2-credential-provider`; that call takes the whole
-   `oauth2ProviderConfigInput`, so pass the provider's complete configuration with the setting added,
-   not the new field alone. That includes `privateEndpoint` when the provider reaches the workspace
-   through a VPC: an update that leaves it out fails with
-   `ValidationException: Cannot remove PrivateEndpoint configuration from CredentialProvider`. Creating
-   or updating a provider with a managed `privateEndpoint` also needs `iam:CreateServiceLinkedRole` and
-   `ec2:CreateNetworkInterface` on the principal that makes the call, not on the Gateway execution role;
-   a self-managed endpoint needs VPC Lattice permissions instead (see
-   [Connect to private identity providers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-private-idp.html)).
-   An update that leaves out `onBehalfOfTokenExchangeConfig` also removes `NO_CLIENT`, with no error,
-   and the exchange is then refused, so after any update confirm with `get-oauth2-credential-provider`
-   that `onBehalfOfAuthenticationConfig` is still in the output.
-   With the client secret authentication methods, which are the default, creating the provider fails without a
-   `clientId` and `clientSecret`, but with `NO_CLIENT` they are not sent on the on-behalf-of exchange, so
-   placeholder values are fine when the target's `listingMode` is `DYNAMIC` or the target carries a static
-   `mcpToolSchema` (see item 5). No Databricks service principal has to exist. `AWS_IAM_ID_TOKEN_JWT` creates a
-   provider with neither field, but in our testing the Gateway still generated an IAM JWT assertion for the
-   exchange (its execution role then needs `sts:GetWebIdentityToken`), and Databricks refused the exchange with
-   `401 invalid_client`: it read the IAM JWT as client authentication for a principal that is not a member of
-   the workspace. Keep a client secret method with placeholder values. Without `NO_CLIENT` the Gateway
+   an AWS SDK that includes the setting, and needs no account allowlisting. Without `NO_CLIENT` the Gateway
    authenticates with the `clientId` and `clientSecret`, and the exchange is refused unless the account was
    enabled under the earlier per-account arrangement. Set `NO_CLIENT` everywhere, including in accounts that
    were enabled that way. This is the single most common reason a correct configuration still fails.
+   - **Updating an existing provider.** `update-oauth2-credential-provider` takes the whole
+     `oauth2ProviderConfigInput`, so pass the provider's complete configuration with the setting added,
+     not the new field alone. When the provider reaches the workspace through a VPC, leaving out
+     `privateEndpoint` fails with
+     `ValidationException: Cannot remove PrivateEndpoint configuration from CredentialProvider`. Leaving out
+     `onBehalfOfTokenExchangeConfig` removes `NO_CLIENT`, with no error, and the exchange is then refused, so
+     after any update confirm with `get-oauth2-credential-provider` that `onBehalfOfAuthenticationConfig` is
+     still in the output. When the provider trusts a private CA, leaving out `certificateConfigurations`
+     removes the saved CA configuration.
+   - **Private endpoints.** Creating or updating a provider with a managed `privateEndpoint` also needs
+     `iam:CreateServiceLinkedRole` and `ec2:CreateNetworkInterface` on the principal that makes the call,
+     not on the Gateway execution role; a self-managed endpoint needs VPC Lattice permissions instead (see
+     [Connect to private identity providers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-private-idp.html)).
+   - **Placeholder client credentials.** With the client secret authentication methods, which are the
+     default, creating the provider fails without a `clientId` and `clientSecret`, but with `NO_CLIENT` they
+     are not sent on the on-behalf-of exchange, so placeholder values are fine when the target's
+     `listingMode` is `DYNAMIC` or the target carries a static `mcpToolSchema` (see item 5). No Databricks
+     service principal has to exist.
+   - **`AWS_IAM_ID_TOKEN_JWT` did not work in our testing.** It creates a provider with neither field, but
+     the Gateway still generated an IAM JWT assertion for the exchange (its execution role then needs
+     `sts:GetWebIdentityToken`), and Databricks refused the exchange with `401 invalid_client`. Keep a client
+     secret method with placeholder values.
 2. **Gateway execution role.** In the Gateway flow this role is the caller of AgentCore Identity, so it
    needs `gatewayExecutionRolePolicy` from [`working-config.json`](working-config.json): Secrets Manager
    read on the token vault secret, KMS decrypt through Secrets Manager, and the AgentCore Identity token
@@ -71,13 +73,11 @@ Three objects and no code: an inbound `CUSTOM_JWT` authorizer, a credential prov
    in [Set up outbound authorization for your gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-outbound-auth.html),
    and `NO_CLIENT` with a client secret method needs nothing beyond it. Keep `secretsmanager:GetSecretValue`
    even with `NO_CLIENT`: the secret is not sent, but Identity still reads it during the exchange. Do **not**
-   pin these to one
-   Region —
-   a Region-pinned policy produces `AccessDenied`, which Gateway reports as
+   pin these to one Region: a Region-pinned policy produces `AccessDenied`, which Gateway reports as
    `insufficient permissions for token exchange`, and that reads like an access problem with the
-   feature when it is your own role. A bare `Token exchange failed.`, with no reason after it, has also
-   cleared once this role's permissions were fixed, so check the role even when the message does not
-   mention permissions.
+   feature when it is your own role. If the Gateway returns a bare `Token exchange failed.` with no reason
+   after it, check this role as well: in one deployment that error cleared after the role's permissions
+   were fixed.
 
 ### Databricks
 
