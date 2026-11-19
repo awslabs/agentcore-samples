@@ -1,0 +1,105 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# =============================================================================
+# Table Definitions for Text-to-SQL
+# =============================================================================
+# This file defines the tables that will be created in AWS Glue Data Catalog
+# and that the agent can query via Athena.
+#
+# INSTRUCTIONS:
+# 1. Replace the example tables with your own
+# 2. Define columns with clear types and descriptions
+# 3. Document relationships (FK) in column comments
+# 4. Redeploy CDK after changes: cd cdk/ && cdk deploy
+
+# Glue database name (no spaces, use underscores)
+database_name: "my_company_demo"
+
+# Database description
+database_description: "Sample database for natural language queries"
+
+# Base S3 location for data (Parquet files)
+s3_data_prefix: "data"
+
+tables:
+  # --- Table 1: Customers ---
+  - name: customers
+    description: >
+      Registered customers on the platform.
+      Related to sales via customer_id.
+    columns:
+      - name: customer_id
+        type: bigint
+        comment: "PK - Unique customer identifier"
+      - name: name
+        type: string
+        comment: "Full name"
+      - name: email
+        type: string
+        comment: "Email address"
+      - name: registration_date
+        type: string
+        comment: "Registration date in YYYY-MM-DD format"
+      - name: country
+        type: string
+        comment: "Country of residence"
+      - name: segment
+        type: string
+        comment: "Customer segment: premium, regular, new"
+
+  # --- Table 2: Products ---
+  - name: products
+    description: >
+      Product catalog available for sale.
+      Related to sales via product_id.
+    columns:
+      - name: product_id
+        type: int
+        comment: "PK - Unique product identifier"
+      - name: name
+        type: string
+        comment: "Product name"
+      - name: category
+        type: string
+        comment: "Product category"
+      - name: price
+        type: double
+        comment: "Sale price in USD"
+      - name: stock
+        type: int
+        comment: "Available inventory units. Low < 50"
+      - name: supplier
+        type: string
+        comment: "Supplier name"
+
+  # --- Table 3: Sales ---
+  - name: sales
+    description: >
+      Sales transaction records.
+      FK: customer_id -> customers.customer_id, product_id -> products.product_id
+    columns:
+      - name: sale_id
+        type: bigint
+        comment: "PK - Unique sale identifier"
+      - name: customer_id
+        type: bigint
+        comment: "FK -> customers.customer_id"
+      - name: product_id
+        type: bigint
+        comment: "FK -> products.product_id"
+      - name: sale_date
+        type: string
+        comment: "Sale date in YYYY-MM-DD format"
+      - name: quantity
+        type: int
+        comment: "Units purchased"
+      - name: total_amount
+        type: double
+        comment: "Total amount in USD (with discount applied)"
+      - name: discount
+        type: double
+        comment: "Discount percentage applied (0.0 to 1.0)"
+      - name: payment_method
+        type: string
+        comment: "Payment method: credit_card, transfer, cash"
