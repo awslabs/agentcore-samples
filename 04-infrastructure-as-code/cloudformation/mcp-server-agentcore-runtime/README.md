@@ -83,7 +83,7 @@ The CloudFormation stack creates:
   - Lambda functions
   - Bedrock AgentCore Runtime
 - Python 3.8+ (for testing)
-- `boto3` and `mcp` Python packages (installed automatically by test script)
+- `boto3` and `mcp` Python packages: `pip install boto3 "mcp<2.0.0"`. MCP Python SDK 2.x removes `mcp.server.fastmcp` and `streamablehttp_client`, which this sample uses
 
 ## Quick Start
 
