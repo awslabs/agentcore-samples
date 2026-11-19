@@ -1,0 +1,6 @@
+# 1.43.32 is the first botocore release with AgentCore Gateway connector targets (setup_gateway.py).
+boto3>=1.43.32
+botocore>=1.43.32
+requests>=2.31
+python-dotenv>=1.0
+strands-agents>=1.0
