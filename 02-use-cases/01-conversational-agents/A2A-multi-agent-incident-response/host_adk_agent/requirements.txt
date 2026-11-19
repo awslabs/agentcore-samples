@@ -267,7 +267,7 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   mako
-mcp==1.23.0
+mcp==1.30.0
     # via google-adk
 multidict==6.7.0
     # via
