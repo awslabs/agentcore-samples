@@ -11,9 +11,9 @@ assistant that provides current conditions, UV index, wind, and sun/moon data:
   Part 5: Evaluations — on-demand scoring with built-in + custom evaluators
   Part 6: Cleanup
 
-The Gateway proxies to Open-Meteo (free weather API, no key required) via
-an MCP target, giving the agent access to real-time weather data with
-centralized auth and observability on the tool traffic.
+The Gateway proxies to Exa's hosted MCP server (https://mcp.exa.ai/mcp) via
+an MCP target, giving the agent web-search access to real-time weather data
+with centralized auth and observability on the tool traffic.
 
 Usage:
     python weather_agent.py
@@ -45,13 +45,11 @@ import boto3
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from utils.client import get_agentcore_client, get_agentcore_control_client
 from utils.iam import create_harness_role, delete_harness_role
-from utils.client import get_agentcore_control_client, get_agentcore_client
 
 # -- CLI -----------------------------------------------------------------------
-parser = argparse.ArgumentParser(
-    description="Weather Agent — Harness + Evals + Gateway + Observability"
-)
+parser = argparse.ArgumentParser(description="Weather Agent — Harness + Evals + Gateway + Observability")
 parser.add_argument("--skip-evals", action="store_true", help="Skip evaluation step")
 parser.add_argument("--skip-guardrail", action="store_true", help="Skip guardrail creation")
 parser.add_argument("--skip-cleanup", action="store_true", help="Keep resources after demo")
@@ -88,12 +86,12 @@ def poll_status(get_fn, extract_fn, target="READY", timeout=120, interval=5):
 
 def stream_response(harness_arn, session_id, message, tools=None):
     """Invoke harness and stream the response. Returns accumulated text."""
-    kwargs = dict(
-        harnessArn=harness_arn,
-        runtimeSessionId=session_id,
-        messages=[{"role": "user", "content": [{"text": message}]}],
-        model={"bedrockModelConfig": {"modelId": MODEL_ID}},
-    )
+    kwargs = {
+        "harnessArn": harness_arn,
+        "runtimeSessionId": session_id,
+        "messages": [{"role": "user", "content": [{"text": message}]}],
+        "model": {"bedrockModelConfig": {"modelId": MODEL_ID}},
+    }
     if tools:
         kwargs["tools"] = tools
 
@@ -169,9 +167,7 @@ try:
     print(f"  Target ID: {target_id}")
 
     poll_status(
-        lambda: gw_control.get_gateway_target(
-            gatewayIdentifier=gateway_id, targetId=target_id
-        ),
+        lambda: gw_control.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id),
         lambda r: r["status"],
     )
     print("  Gateway ready with Exa MCP target")
@@ -261,8 +257,7 @@ try:
     turn2_response = stream_response(
         harness_arn,
         session_id,
-        "What about the wind conditions in Paris right now? "
-        "Give me wind speed, direction, and gust information.",
+        "What about the wind conditions in Paris right now? Give me wind speed, direction, and gust information.",
         tools=tools,
     )
 
@@ -306,10 +301,12 @@ try:
         rules = xray.get_indexing_rules()
         sampling = rules["IndexingRules"][0]["Rule"]["Probabilistic"]["DesiredSamplingPercentage"]
         print(f"  Transaction Search sampling: {sampling}%")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Transaction Search check: {e}")
         print("  Enable Transaction Search for full trace visibility:")
-        print("  https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search-getting-started.html")
+        print(
+            "  https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search-getting-started.html"
+        )
 
     # Query recent traces for our harness
     print(f"\n  Querying traces for harness: {harness_id[:20]}...")
@@ -318,6 +315,7 @@ try:
         start_time = end_time - 300  # Last 5 minutes
 
         from datetime import datetime, timezone
+
         trace_resp = xray.get_trace_summaries(
             StartTime=datetime.fromtimestamp(start_time, tz=timezone.utc),
             EndTime=datetime.fromtimestamp(end_time, tz=timezone.utc),
@@ -332,7 +330,7 @@ try:
                 has_error = trace.get("HasError", False)
                 status_icon = "x" if has_error else "ok"
                 print(f"    Trace {i}: duration={duration:.2f}s status={status_icon}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  Trace query: {e}")
         print("  (Traces may take 1-2 minutes to appear after invocation)")
 
@@ -366,7 +364,9 @@ try:
             log_group = groups[0]["logGroupName"]
             log_group_basename = log_group.split("/")[-1]
             parts = log_group_basename.rsplit("-", 2)
-            service_name = f"{parts[0]}.DEFAULT" if len(parts) >= 3 else log_group_basename.replace("-DEFAULT", ".DEFAULT")
+            service_name = (
+                f"{parts[0]}.DEFAULT" if len(parts) >= 3 else log_group_basename.replace("-DEFAULT", ".DEFAULT")
+            )
 
             print(f"  Log group: {log_group}")
             print(f"  Service:   {service_name}")
@@ -426,7 +426,7 @@ try:
                 else:
                     print(f"  Evaluation ended with status: {status}")
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  Evaluation error: {e}")
 
     # ==========================================================================
@@ -461,31 +461,29 @@ finally:
             try:
                 control.delete_harness(harnessId=harness_id)
                 print(f"  Deleted harness: {harness_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  Warning (harness): {e}")
 
         if gateway_id and target_id:
             try:
-                gw_control.delete_gateway_target(
-                    gatewayIdentifier=gateway_id, targetId=target_id
-                )
+                gw_control.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
                 print(f"  Deleted target: {target_id}")
                 time.sleep(10)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  Warning (target): {e}")
 
         if gateway_id:
             try:
                 gw_control.delete_gateway(gatewayIdentifier=gateway_id)
                 print(f"  Deleted gateway: {gateway_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  Warning (gateway): {e}")
 
         if guardrail_id:
             try:
                 bedrock.delete_guardrail(guardrailIdentifier=guardrail_id)
                 print(f"  Deleted guardrail: {guardrail_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  Warning (guardrail): {e}")
 
         # Delete batch evaluations created by this run
@@ -498,9 +496,9 @@ finally:
                     try:
                         client.delete_batch_evaluation(batchEvaluationId=ev_id)
                         print(f"  Deleted batch evaluation: {ev_name}")
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Warning (batch evals): {e}")
 
         delete_harness_role()
