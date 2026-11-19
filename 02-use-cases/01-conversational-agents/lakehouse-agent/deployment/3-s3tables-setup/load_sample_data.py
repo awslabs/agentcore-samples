@@ -5,28 +5,44 @@ Load Sample Data into S3 Tables
 This script loads sample claims and users data into S3 Tables using Athena INSERT statements.
 """
 
-import boto3
-import sys
 import os
+import sys
 import time
+
+import boto3
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.notebook_init import wait_for
+
+
+class _QueryEndedError(Exception):
+    """The query ended FAILED or CANCELLED; carries Athena's final response."""
+
+    def __init__(self, response):
+        super().__init__(response["QueryExecution"]["Status"]["State"])
+        self.response = response
 
 
 def wait_for_query(athena, query_id, max_wait=120):
     """Wait for Athena query to complete."""
-    for _ in range(max_wait):
+    last = {}
+
+    def _finished():
         response = athena.get_query_execution(QueryExecutionId=query_id)
         status = response["QueryExecution"]["Status"]["State"]
+        if status in ["FAILED", "CANCELLED"]:
+            raise _QueryEndedError(response)
+        last["response"] = response
+        return status == "SUCCEEDED", status
 
-        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            return response
-
-        time.sleep(1)
-
-    return None
+    try:
+        # Each insert normally finishes in a few seconds; print progress only if one runs longer than 15 s.
+        done = wait_for("Athena query", _finished, interval=1, timeout=max_wait, raise_on_timeout=False, quiet_s=15)
+    except _QueryEndedError as ended:
+        return ended.response
+    return last["response"] if done else None
 
 
 def execute_query(athena, query, catalog, database, output_location, retries=2):
@@ -78,7 +94,7 @@ def execute_query(athena, query, catalog, database, output_location, retries=2):
 def main():
     print("\n📤 Loading sample data into S3 Tables...")
 
-    session, region, account_id = get_aws_session()
+    _session, region, _account_id = get_aws_session()
     ssm = boto3.client("ssm", region_name=region)
 
     # Assume the administrators role for Lake Formation permissions
@@ -224,12 +240,14 @@ def main():
         """,
     ]
 
+    failures = 0
     for i, insert_query in enumerate(claims_inserts, 1):
         try:
             execute_query(athena, insert_query, catalog_name, namespace, output_location)
             print(f"   ✅ Inserted claim {i}/{len(claims_inserts)}")
         except Exception as e:
             print(f"   ❌ Failed to insert claim {i}: {e}")
+            failures += 1
         time.sleep(1)  # Small delay between Iceberg writes
 
     # Insert users data
@@ -274,7 +292,12 @@ def main():
             print(f"   ✅ Inserted user {i}/{len(users_inserts)}")
         except Exception as e:
             print(f"   ❌ Failed to insert user {i}: {e}")
+            failures += 1
         time.sleep(1)  # Small delay between Iceberg writes
+
+    if failures:
+        print(f"\n⚠️ Data loading finished with {failures} failure(s)")
+        sys.exit(1)
 
     print("\n✨ Data loading complete!")
     print("\n📊 Verify data with:")

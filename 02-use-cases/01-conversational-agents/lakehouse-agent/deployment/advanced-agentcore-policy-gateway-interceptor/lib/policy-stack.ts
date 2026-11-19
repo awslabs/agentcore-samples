@@ -138,7 +138,7 @@ export class PolicyStack extends cdk.Stack {
 		gatewayRole.attachInlinePolicy(policyEvalPolicy);
 
 		// --- Step 3.5: Ensure CloudWatch Logs retention for Interceptor Lambdas ---
-		// The Interceptor Lambdas are created by Phase 1 (deployment/5-gateway-setup/
+		// The Interceptor Lambdas are created by Phase 1 (deployment/5a-gateway-setup/
 		// interceptor-{request,response}/deploy.sh). Their log groups are created
 		// implicitly on first invocation. This custom resource enforces a 30 day
 		// retention even when this stack is deployed before either Lambda has

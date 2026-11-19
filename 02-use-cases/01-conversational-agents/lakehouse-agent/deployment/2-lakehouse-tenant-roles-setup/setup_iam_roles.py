@@ -9,6 +9,10 @@ This script creates IAM roles for tenant-based access control:
 4. Configures trust policies for AgentCore Runtime
 5. Attaches necessary permissions for Athena and S3 access
 
+Run by notebook 02 (Step 2), after create_lambda_role.py has stored the
+interceptor Lambda role ARN at /app/lakehouse-agent/interceptor-lambda-role-arn.
+Each role ARN is written to /app/lakehouse-agent/roles/<role-name>.
+
 Usage:
     python setup_iam_roles.py
     python setup_iam_roles.py --account-id 123456789012
@@ -17,14 +21,17 @@ Arguments:
     --account-id: (Optional) AWS Account ID for trust policy. If not provided, uses current account.
 """
 
-import boto3
-import json
 import argparse
-from typing import Dict, Any
+import json
+import time
+from typing import Any
+
+import boto3
+from botocore.exceptions import ClientError
 
 
 class IAMRolesSetup:
-    def __init__(self, account_id: str = None):
+    def __init__(self, account_id: str | None = None):
         """
         Initialize IAM roles setup.
 
@@ -50,7 +57,10 @@ class IAMRolesSetup:
             "lakehouse-administrators-role",
         ]
 
-    def get_trust_policy(self) -> Dict[str, Any]:
+        # Roles found already present by create_role (reused, not created)
+        self.existing_roles: set[str] = set()
+
+    def get_trust_policy(self) -> dict[str, Any]:
         """
         Create trust policy for AgentCore Runtime, Lambda role, and current account.
 
@@ -101,7 +111,7 @@ class IAMRolesSetup:
 
         return {"Version": "2012-10-17", "Statement": statements}
 
-    def get_athena_s3_policy(self, bucket_name: str) -> Dict[str, Any]:
+    def get_athena_s3_policy(self, bucket_name: str) -> dict[str, Any]:
         """
         Create policy for Athena, S3, and S3 Tables access.
 
@@ -227,7 +237,7 @@ class IAMRolesSetup:
             ],
         }
 
-    def get_admin_policy(self, bucket_name: str) -> Dict[str, Any]:
+    def get_admin_policy(self, bucket_name: str) -> dict[str, Any]:
         """
         Create policy for administrators with additional DynamoDB access for audit logs.
 
@@ -252,7 +262,7 @@ class IAMRolesSetup:
 
         return base_policy
 
-    def create_role(self, role_name: str, trust_policy: Dict[str, Any]) -> str:
+    def create_role(self, role_name: str, trust_policy: dict[str, Any]) -> str:
         """
         Create IAM role with trust policy.
 
@@ -268,20 +278,14 @@ class IAMRolesSetup:
             try:
                 response = self.iam_client.get_role(RoleName=role_name)
                 print(f"✅ Role {role_name} already exists")
+                self.existing_roles.add(role_name)
                 return response["Role"]["Arn"]
             except self.iam_client.exceptions.NoSuchEntityException:
                 pass
 
-            # Create the role
-            response = self.iam_client.create_role(
-                RoleName=role_name,
-                AssumeRolePolicyDocument=json.dumps(trust_policy),
-                Description=f"IAM role for {role_name} group in lakehouse agent",
-                Tags=[
-                    {"Key": "Application", "Value": "lakehouse-agent"},
-                    {"Key": "Group", "Value": role_name},
-                ],
-            )
+            # Create the role, retrying while IAM's principal validation catches up.
+            # See _create_role_with_principal_retry for why this retry is necessary.
+            response = self._create_role_with_principal_retry(role_name, trust_policy)
 
             role_arn = response["Role"]["Arn"]
             print(f"✅ Created role: {role_name}")
@@ -292,7 +296,82 @@ class IAMRolesSetup:
             print(f"❌ Error creating role {role_name}: {e}")
             raise
 
-    def attach_inline_policy(self, role_name: str, policy_name: str, policy_document: Dict[str, Any]):
+    def _is_invalid_principal_error(self, error: ClientError) -> bool:
+        """Return True only for the MalformedPolicyDocument variant that means
+        "the principal is not valid *yet*".
+
+        ``MalformedPolicyDocument`` is also what IAM raises for a genuinely
+        broken policy document: a typo, a bad Action, malformed JSON. Retrying those for 30 seconds would turn a
+        clear, immediate failure into a slow one, so the retry is narrowed to
+        the invalid-principal message and everything else fails fast.
+        """
+        if error.response.get("Error", {}).get("Code") != "MalformedPolicyDocument":
+            return False
+        message = error.response.get("Error", {}).get("Message", "").lower()
+        return "invalid principal" in message or "invalid principals" in message
+
+    def _create_role_with_principal_retry(
+        self,
+        role_name: str,
+        trust_policy: dict[str, Any],
+        max_attempts: int = 5,
+    ) -> dict[str, Any]:
+        """Create the role, waiting out IAM's principal-validation lag.
+
+        IAM's read path and its principal-validation path are separately
+        eventually consistent. A role that ``GetRole`` already returns can still
+        be rejected as an invalid principal in another role's trust policy for a
+        few seconds after it was created. The ``get_role`` check in
+        ``get_trust_policy`` proves the role exists, not that IAM will accept it
+        as a principal yet.
+
+        The trust policy names the interceptor Lambda role explicitly, and
+        ``create_lambda_role.py`` creates that role in the cell just before this
+        script in notebook 02, so a "Run All" can reference it within seconds.
+        The retry keeps the explicit interceptor-role statement in place rather
+        than dropping it to make the error go away.
+
+        Backoff is 2/4/8/16s across 5 attempts (~30s total), comfortably beyond
+        the observed window without stalling a failed deploy for long.
+        """
+        delay = 2
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self.iam_client.create_role(
+                    RoleName=role_name,
+                    AssumeRolePolicyDocument=json.dumps(trust_policy),
+                    Description=f"IAM role for {role_name} group in lakehouse agent",
+                    Tags=[
+                        {"Key": "Application", "Value": "lakehouse-agent"},
+                        {"Key": "Group", "Value": role_name},
+                    ],
+                )
+            except ClientError as error:
+                if not self._is_invalid_principal_error(error):
+                    # A genuinely malformed policy, or any other error: fail now.
+                    raise
+                if attempt == max_attempts:
+                    print(
+                        f"   ❌ IAM still rejects the trust policy principal after "
+                        f"{max_attempts} attempts (~{sum(2**i for i in range(1, max_attempts))}s)."
+                    )
+                    print("      This is normally IAM eventual consistency and clears on a re-run.")
+                    print("      If it persists, verify the interceptor Lambda role ARN in SSM")
+                    print("      (/app/lakehouse-agent/interceptor-lambda-role-arn) still exists.")
+                    raise
+                print(
+                    f"   ⏳ IAM has not finished validating the trust-policy principal yet "
+                    f"(attempt {attempt}/{max_attempts}); waiting {delay}s."
+                )
+                print("      Expected on a clean-slate deploy: the interceptor Lambda role was")
+                print("      created seconds ago and IAM's principal validation lags its read path.")
+                time.sleep(delay)
+                delay *= 2
+
+        # Unreachable: the loop either returns or raises.
+        raise RuntimeError(f"create_role retry loop exited without result for {role_name}")
+
+    def attach_inline_policy(self, role_name: str, policy_name: str, policy_document: dict[str, Any]):
         """
         Attach inline policy to IAM role.
 
@@ -344,7 +423,7 @@ class IAMRolesSetup:
             print("   Using default bucket pattern: {account_id}-{region}-lakehouse-agent")
             return f"{self.account_id}-{self.region}-lakehouse-agent"
 
-    def store_role_arns_in_ssm(self, role_arns: Dict[str, str]):
+    def store_role_arns_in_ssm(self, role_arns: dict[str, str]):
         """
         Store role ARNs in SSM Parameter Store.
 
@@ -366,6 +445,7 @@ class IAMRolesSetup:
                 print(f"✅ Stored parameter: {param_name}")
             except Exception as e:
                 print(f"❌ Error storing parameter {param_name}: {e}")
+                raise
 
     def setup(self):
         """Run the complete IAM roles setup."""
@@ -413,7 +493,10 @@ class IAMRolesSetup:
         self.store_role_arns_in_ssm(role_arns)
 
         print("\n✨ IAM roles setup completed successfully!")
-        print("\n🔐 Created roles:")
+        if self.existing_roles:
+            print("\n🔐 Roles (created or already present):")
+        else:
+            print("\n🔐 Created roles:")
         for role_name, role_arn in role_arns.items():
             print(f"   - {role_name}")
             print(f"     ARN: {role_arn}")

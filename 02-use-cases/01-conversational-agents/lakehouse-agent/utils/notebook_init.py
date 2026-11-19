@@ -5,23 +5,31 @@ Notebook initialization utility for AWS session setup.
 This module provides a simple init_aws() function for Jupyter notebooks
 that loads credentials from .env and creates a validated AWS session.
 
+It also provides run_coro(), which runs an async coroutine to completion from a
+notebook cell (Jupyter's kernel already runs an event loop of its own).
+
 Usage in notebooks:
-    from utils.notebook_init import init_aws
+    from utils.notebook_init import init_aws, run_coro
 
     session, region, account_id = init_aws()
+    result = run_coro(some_async_function())
 """
 
-from .aws_session_utils import load_env_credentials, get_aws_session
-from typing import Tuple
+import asyncio
+import threading
+import time
+
 import boto3
+
+from .aws_session_utils import get_aws_session, load_env_credentials
 
 
 def init_aws(
     env_path: str = ".env",
-    profile_name: str = None,
-    region_name: str = None,
+    profile_name: str | None = None,
+    region_name: str | None = None,
     verbose: bool = True,
-) -> Tuple[boto3.Session, str, str]:
+) -> tuple[boto3.Session, str, str]:
     """
     Initialize AWS session for notebook use with automatic SSO fallback.
 
@@ -59,3 +67,130 @@ def init_aws(
     session, region, account_id = get_aws_session(profile_name=profile_name, region_name=region_name, verbose=verbose)
 
     return session, region, account_id
+
+
+def run_coro(coro):
+    """Run an async coroutine to completion from a notebook cell and return its result.
+
+    A Jupyter cell cannot call asyncio.run() directly, because the kernel already runs
+    an event loop. run_coro runs the coroutine with asyncio.run() in a short-lived worker
+    thread that has its own fresh event loop, waits for it, and returns the result. It
+    does not patch asyncio, so the kernel's own loop and message handling are untouched.
+
+    Any exception the coroutine raises (including an ExceptionGroup from an MCP client)
+    is re-raised unchanged in the calling thread.
+
+    Example:
+        >>> tools = run_coro(list_tools(token))
+    """
+    outcome = {}
+
+    # Not nest_asyncio: under ipykernel 7 it can drop cells queued behind this one,
+    # because the kernel runs every cell in one shared context.
+    def _worker():
+        try:
+            outcome["value"] = asyncio.run(coro)
+        except BaseException as e:
+            outcome["error"] = e
+
+    # On an interrupt, KeyboardInterrupt is raised in the join loop below while the coroutine keeps
+    # running in the worker, its result unused; a daemon thread does not keep the process alive.
+    worker = threading.Thread(target=_worker, name="run_coro", daemon=True)
+    worker.start()
+    # Short joins keep the cell interruptible on every platform; before Python 3.14,
+    # lock waits on Windows cannot be interrupted, so a plain join() may hang there.
+    while worker.is_alive():
+        worker.join(timeout=0.2)
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
+
+
+class MissingPrerequisite(RuntimeError):
+    """A notebook cell needs names that an earlier cell has not defined."""
+
+
+def require(namespace, *names, rerun_from):
+    """Stop a notebook cell early when an earlier cell it depends on has not run.
+
+    Put it on the first line of the cell's code, after any imports, and pass the
+    exact markdown heading of the section to re-run from:
+
+        >>> require(globals(), "a_ids", "b_ids", rerun_from="Fixture 2 verification")
+
+    Returns silently when every name is defined. Otherwise it prints which names are
+    missing and where to re-run from, then raises MissingPrerequisite carrying the
+    same two lines, so the cell stops before it reaches a NameError.
+
+    Import require inside each guarded cell, so a cell run on its own in a fresh kernel
+    reaches this message instead of a NameError on `require` itself.
+    """
+    __tracebackhide__ = True  # IPython and pytest leave this frame out of the traceback
+    missing = [name for name in names if name not in namespace]
+    if not missing:
+        return
+    message = (
+        f"❌ This cell needs {', '.join(missing)}, which an earlier cell did not define.\n"
+        f'Re-run from: "{rerun_from}" (then every cell below it).'
+    )
+    print(message)
+    raise MissingPrerequisite(message)
+
+
+# A long wait prints a progress line at most this often (and whenever its status changes).
+PROGRESS_EVERY_S = 15
+
+
+def _secs(value):
+    return int(value) if float(value).is_integer() else value
+
+
+def wait_for(
+    label, check, interval, timeout, *, raise_on_timeout=True, quiet_s=0, clock=time.monotonic, sleep=time.sleep
+):
+    """Poll check() every `interval` seconds until it reports done, for at most `timeout` seconds.
+
+    check() returns (done, status). While waiting, a progress line is printed when the
+    status changes and at most every 15 s otherwise; a done line when check() reports done;
+    and a timeout line if it never does. On timeout it raises TimeoutError, or returns False
+    when raise_on_timeout is False (the caller then decides what to do). Returns True when done.
+    Exceptions raised by check() propagate unchanged.
+
+    With quiet_s, nothing is printed for the first quiet_s seconds, so a wait that finishes
+    inside that window is silent. The timeout line always prints, and so does the done line
+    once a progress line has been printed.
+
+        >>> wait_for("Gateway targets delete", lambda: (not list_targets(), "deleting"), interval=5, timeout=60)
+    """
+    start = clock()
+    last_status = None
+    last_print = None
+    while True:
+        done, status = check()
+        elapsed = clock() - start
+        if done:
+            if last_print is not None or elapsed >= quiet_s:
+                print(f"✅ {label} done in {int(elapsed)} s")
+            return True
+        if elapsed >= timeout:
+            message = f"❌ {label} did not finish within {_secs(timeout)} s"
+            print(message)
+            if raise_on_timeout:
+                raise TimeoutError(message)
+            return False
+        if elapsed >= quiet_s and (
+            last_print is None or status != last_status or clock() - last_print >= PROGRESS_EVERY_S
+        ):
+            print(f"⏳ {label}: {status}, {int(elapsed)} s elapsed (timeout {_secs(timeout)} s)…")
+            last_status, last_print = status, clock()
+        sleep(interval)
+
+
+def pause(label, seconds, *, sleep=time.sleep):
+    """Wait a fixed number of seconds, saying so before and after.
+
+    >>> pause("IAM role propagation", 10)
+    """
+    print(f"⏳ {label}: waiting {_secs(seconds)} s…")
+    sleep(seconds)
+    print(f"✅ {label}: done ({_secs(seconds)} s)")

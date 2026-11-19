@@ -39,7 +39,7 @@ Stores login audit records with the following schema:
 
 ### 2. Lambda Function: `lakehouse-cognito-post-auth`
 
-- **Runtime**: Python 3.11
+- **Runtime**: Python 3.12
 - **Handler**: `post_auth_lambda.lambda_handler`
 - **Timeout**: 10 seconds
 - **Memory**: 256 MB

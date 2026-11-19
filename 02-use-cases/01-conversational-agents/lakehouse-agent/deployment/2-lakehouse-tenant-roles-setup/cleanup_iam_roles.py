@@ -9,14 +9,27 @@ Deletes:
 - LakeFormationS3TablesDataAccessRole
 - SSM parameters for role ARNs
 
+Run the Lake Formation revoke first. All four roles above are Lake Formation grant
+principals (see 3-s3tables-setup/setup_lakeformation_permissions.py). Deleting a role that
+still holds grants leaves each grant keyed to a principal ARN that no longer resolves, and
+this script cannot detect or report that — it deletes roles, not permissions.
+
+    cd ../3-s3tables-setup
+    python revoke_lakeformation_permissions.py
+
+That script must also run before cleanup_s3tables.py, which deletes the SSM identifiers the
+revoke needs to locate grants by resource. Notebook 09-optional-cleanup.ipynb runs the three
+in the correct order (Step 5 revoke → Step 6 s3tables → Step 7 roles).
+
 Usage:
     python cleanup_iam_roles.py [--keep-ssm]
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
+import sys
+
+import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
@@ -24,16 +37,23 @@ from utils.aws_session_utils import get_aws_session
 
 class IAMRolesCleanup:
     def __init__(self, keep_ssm=False):
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
         self.iam = boto3.client("iam")
         self.ssm = boto3.client("ssm", region_name=self.region)
         self.keep_ssm = keep_ssm
+        # Failed deletes are collected here; run() prints ✨ only when this stays empty.
+        # "Not found" outcomes are not failures.
+        self.errors = []
 
     def _delete_role(self, role_name):
         try:
             self.iam.get_role(RoleName=role_name)
         except self.iam.exceptions.NoSuchEntityException:
             print(f"   ⏭️  Role not found: {role_name}")
+            return
+        except Exception as e:
+            print(f"   ❌ Error checking {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
             return
 
         try:
@@ -55,6 +75,7 @@ class IAMRolesCleanup:
             print(f"   ✅ Deleted role: {role_name}")
         except Exception as e:
             print(f"   ❌ Error deleting {role_name}: {e}")
+            self.errors.append(f"role {role_name}: {e}")
 
     def delete_tenant_roles(self):
         print("\n🗑️  Deleting tenant IAM roles...")
@@ -89,14 +110,24 @@ class IAMRolesCleanup:
                 pass
             except Exception as e:
                 print(f"   ❌ Error: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{p}: {e}")
 
     def run(self):
         print("\n🧹 IAM Roles Cleanup")
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
+        print("\n⚠️  All four roles below are Lake Formation grant principals.")
+        print("   If you have not run 3-s3tables-setup/revoke_lakeformation_permissions.py,")
+        print("   stop now: deleting these roles orphans their grants, and this script")
+        print("   deletes roles only — it does not revoke permissions and cannot detect them.")
         self.delete_tenant_roles()
         self.delete_lakeformation_role()
         self.delete_ssm_parameters()
+        if self.errors:
+            print(f"\n❌ cleanup_iam_roles.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+            sys.exit(1)
         print("\n✨ IAM roles cleanup complete!")
 
 
