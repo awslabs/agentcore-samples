@@ -1,0 +1,6 @@
+bedrock-agentcore>=1.5.0
+strands-agents>=1.0.0
+
+# >=0.18.0: older ADOT ignores the span destination and spans land in the shared
+# aws/spans instead of the agent's log group. See README → Observability.
+aws-opentelemetry-distro>=0.18.0
