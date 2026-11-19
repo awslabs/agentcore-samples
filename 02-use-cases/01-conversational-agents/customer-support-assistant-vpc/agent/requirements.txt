@@ -126,7 +126,7 @@ opentelemetry-semantic-conventions==0.58b0
     #   opentelemetry-sdk
 packaging==25.0
     # via opentelemetry-instrumentation
-pillow==11.3.0
+pillow==13.0.0
     # via strands-agents-tools
 prompt-toolkit==3.0.52
     # via strands-agents-tools
