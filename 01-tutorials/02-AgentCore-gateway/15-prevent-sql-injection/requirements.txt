@@ -1,0 +1,6 @@
+mcp>=1.10.0
+boto3
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit>=0.1.21
+strands-agents
+requests
