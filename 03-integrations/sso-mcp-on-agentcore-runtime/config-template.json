@@ -1,0 +1,34 @@
+{
+  "identity_center": {
+    "instance_arn": "REPLACE_WITH_YOUR_IDENTITY_CENTER_INSTANCE_ARN",
+    "region": "REPLACE_WITH_YOUR_REGION",
+    "account_id": "REPLACE_WITH_YOUR_ACCOUNT_ID"
+  },
+  "user_config": {
+    "default_user_email": "REPLACE_WITH_YOUR_EMAIL",
+    "session_duration": 3600
+  },
+  "cross_account": {
+    "target_accounts": [
+      "REPLACE_WITH_TARGET_ACCOUNT_ID_1",
+      "REPLACE_WITH_TARGET_ACCOUNT_ID_2"
+    ],
+    "role_name": "CrossAccountMCPRole",
+    "external_id": "mcp-cross-account-access"
+  },
+  "cloudwatch": {
+    "default_region": "us-east-1",
+    "log_retention_days": 30,
+    "max_log_events": 100
+  },
+  "server": {
+    "name": "enterprise-cloudwatch-mcp-v2",
+    "version": "2.0.0",
+    "description": "Enterprise CloudWatch MCP Server with Identity Center"
+  },
+  "audit": {
+    "enabled": true,
+    "log_group": "/aws/mcp/enterprise-cloudwatch-audit",
+    "include_user_context": true
+  }
+}
