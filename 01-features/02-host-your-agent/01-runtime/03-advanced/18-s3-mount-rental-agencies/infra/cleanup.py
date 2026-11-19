@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Delete everything deploy.py created: runtime -> bucket contents -> stack. Dry run unless --yes.
 
     python infra/cleanup.py
@@ -40,10 +39,14 @@ def main() -> int:
     bucket = stack_outputs(a.stack_name).get("DataBucketName")
     if bucket:
         s3 = client("s3")
-        keys = [{"Key": o["Key"]} for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket) for o in page.get("Contents", [])]
+        keys = [
+            {"Key": o["Key"]}
+            for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket)
+            for o in page.get("Contents", [])
+        ]
         if not dry:
             for i in range(0, len(keys), 1000):
-                s3.delete_objects(Bucket=bucket, Delete={"Objects": keys[i:i + 1000], "Quiet": True})
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": keys[i : i + 1000], "Quiet": True})
         log(f"{'would empty' if dry else 'emptied'} s3://{bucket} ({len(keys)} objects)")
 
     cfn = client("cloudformation")

@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
 """Deploy: CloudFormation stack -> generated data into S3 -> agent image -> AgentCore runtime.
 
-    python infra/deploy.py                # everything (re-running updates what changed)
-    python infra/deploy.py --skip-stack   # agent code changed: new image + runtime update
+python infra/deploy.py                # everything (re-running updates what changed)
+python infra/deploy.py --skip-stack   # agent code changed: new image + runtime update
 """
 
 import argparse
@@ -10,13 +9,24 @@ import base64
 import hashlib
 import subprocess
 import time
-
 from pathlib import Path
 
 import data_gen
 from config import (
-    MODEL_ID, NAME, REGION, ROOT, RUNTIME_NAME, STACK_NAME, client, die,
-    find_runtime, load_state, log, save_state, session_id, stack_outputs,
+    MODEL_ID,
+    NAME,
+    REGION,
+    ROOT,
+    RUNTIME_NAME,
+    STACK_NAME,
+    client,
+    die,
+    find_runtime,
+    load_state,
+    log,
+    save_state,
+    session_id,
+    stack_outputs,
 )
 
 AGENT_DIR = ROOT / "agent"
@@ -25,8 +35,12 @@ AGENT_DIR = ROOT / "agent"
 def deploy_stack() -> dict:
     cfn = client("cloudformation")
     params = {"Name": NAME, "ModelId": MODEL_ID, "FoundationModelId": MODEL_ID.split(".", 1)[1]}
-    args = dict(StackName=STACK_NAME, TemplateBody=(ROOT / "infra" / "cfn.yaml").read_text(), Capabilities=["CAPABILITY_IAM"],
-                Parameters=[{"ParameterKey": k, "ParameterValue": v} for k, v in params.items()])
+    args = {
+        "StackName": STACK_NAME,
+        "TemplateBody": (ROOT / "infra" / "cfn.yaml").read_text(),
+        "Capabilities": ["CAPABILITY_IAM"],
+        "Parameters": [{"ParameterKey": k, "ParameterValue": v} for k, v in params.items()],
+    }
     try:
         status = cfn.describe_stacks(StackName=STACK_NAME)["Stacks"][0]["StackStatus"]
     except cfn.exceptions.ClientError:
@@ -64,8 +78,11 @@ def deploy_stack() -> dict:
 def _sync(s3, bucket: str, prefix: str, files: dict[str, Path]) -> int:
     """Make s3://bucket/prefix hold exactly `files` (key suffix -> local file): upload what changed
     (each object carries a SHA-256 of its content in its metadata), delete what's no longer there."""
-    have = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
-            for o in page.get("Contents", [])]
+    have = [
+        o["Key"]
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+        for o in page.get("Contents", [])
+    ]
     want = {prefix + rel: local for rel, local in files.items()}
     for key, local in want.items():
         digest = hashlib.sha256(local.read_bytes()).hexdigest()
@@ -75,7 +92,7 @@ def _sync(s3, bucket: str, prefix: str, files: dict[str, Path]) -> int:
         s3.upload_file(str(local), bucket, key, ExtraArgs={"Metadata": {"sha256": digest}})
     stale = sorted(set(have) - set(want))
     for i in range(0, len(stale), 1000):
-        s3.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in stale[i:i + 1000]], "Quiet": True})
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in stale[i : i + 1000]], "Quiet": True})
     return len(want)
 
 
@@ -115,11 +132,33 @@ def build_image(repo_uri: str) -> str:
     except ecr.exceptions.ImageNotFoundException:
         pass
     log(f"3/4 image {tag}: building linux/arm64")
-    user, password = base64.b64decode(ecr.get_authorization_token()["authorizationData"][0]["authorizationToken"]).decode().split(":", 1)
-    subprocess.run(["docker", "login", "--username", user, "--password-stdin", repo_uri.split("/", 1)[0]],
-                   input=password, text=True, check=True, capture_output=True)
-    subprocess.run(["docker", "buildx", "build", "--platform", "linux/arm64", "--provenance=false",
-                    "-t", uri, "--push", str(AGENT_DIR)], check=True)
+    user, password = (
+        base64.b64decode(ecr.get_authorization_token()["authorizationData"][0]["authorizationToken"])
+        .decode()
+        .split(":", 1)
+    )
+    subprocess.run(
+        ["docker", "login", "--username", user, "--password-stdin", repo_uri.split("/", 1)[0]],
+        input=password,
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "docker",
+            "buildx",
+            "build",
+            "--platform",
+            "linux/arm64",
+            "--provenance=false",
+            "-t",
+            uri,
+            "--push",
+            str(AGENT_DIR),
+        ],
+        check=True,
+    )
     return uri
 
 
@@ -160,7 +199,11 @@ def deploy_runtime(outputs: dict, image_uri: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--skip-stack", action="store_true", help="reuse the stack and dataset; rebuild the image and update the runtime")
+    ap.add_argument(
+        "--skip-stack",
+        action="store_true",
+        help="reuse the stack and dataset; rebuild the image and update the runtime",
+    )
     a = ap.parse_args()
     if a.skip_stack:
         outputs = stack_outputs() or die(f"stack {STACK_NAME} not found -- run without --skip-stack first")
@@ -170,9 +213,13 @@ def main() -> int:
     image_uri = build_image(outputs["RepositoryUri"])
     rt = deploy_runtime(outputs, image_uri)
     state = load_state()  # read again: upload_data may have added the agencies' session IDs
-    state.update(outputs=outputs, image_uri=image_uri, runtime_id=rt["agentRuntimeId"], runtime_arn=rt["agentRuntimeArn"])
+    state.update(
+        outputs=outputs, image_uri=image_uri, runtime_id=rt["agentRuntimeId"], runtime_arn=rt["agentRuntimeArn"]
+    )
     save_state(state)
-    log('done. next: python infra/invoke.py --agency acme "How do my listings compare with the market in my neighborhoods?"')
+    log(
+        'done. next: python infra/invoke.py --agency acme "How do my listings compare with the market in my neighborhoods?"'
+    )
     return 0
 
 

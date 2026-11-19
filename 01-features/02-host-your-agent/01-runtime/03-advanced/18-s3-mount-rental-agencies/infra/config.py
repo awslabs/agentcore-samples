@@ -38,8 +38,11 @@ def die(msg: str):
 
 
 def client(service: str, read_timeout: int = 60):
-    return boto3.client(service, region_name=REGION,
-                        config=Config(read_timeout=read_timeout, retries={"max_attempts": 3, "mode": "standard"}))
+    return boto3.client(
+        service,
+        region_name=REGION,
+        config=Config(read_timeout=read_timeout, retries={"max_attempts": 3, "mode": "standard"}),
+    )
 
 
 def load_state() -> dict:

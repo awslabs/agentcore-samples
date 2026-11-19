@@ -29,10 +29,10 @@ import matplotlib
 from botocore.exceptions import ClientError
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
-from strands import Agent, tool  # noqa: E402
-from strands.models import BedrockModel  # noqa: E402
+import matplotlib.pyplot as plt
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from strands import Agent, tool
+from strands.models import BedrockModel
 
 DATA = "/mnt/data"
 PRIVATE = "/mnt/private"
@@ -63,15 +63,18 @@ def _cache(src_root: str, dst_root: str) -> str:
         return src_root
 
     def copy(src: str) -> None:
-        dst = dst_root + src[len(src_root):]
+        dst = dst_root + src[len(src_root) :]
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
 
     t0 = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(8) as ex:  # one large sequential read per file, in parallel
         list(ex.map(copy, files))
-    print(f"[analyst] copied {len(files)} files ({sum(map(os.path.getsize, files)) / 1e6:,.0f} MB) from {src_root} "
-          f"to local disk in {time.monotonic() - t0:.1f} s", flush=True)
+    print(
+        f"[analyst] copied {len(files)} files ({sum(map(os.path.getsize, files)) / 1e6:,.0f} MB) from {src_root} "
+        f"to local disk in {time.monotonic() - t0:.1f} s",
+        flush=True,
+    )
     return dst_root
 
 
@@ -129,7 +132,7 @@ def con() -> duckdb.DuckDBPyConnection:
 
 
 def _markdown(cols: list[str], rows: list[tuple]) -> str:
-    cell = lambda v: f"{v:,.2f}" if isinstance(v, float) else str(v)  # noqa: E731
+    cell = lambda v: f"{v:,.2f}" if isinstance(v, float) else str(v)
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     lines += ["| " + " | ".join(cell(v) for v in r) + " |" for r in rows]
     return "\n".join(lines)
@@ -283,8 +286,12 @@ def agent(agency: str) -> Agent:
             model=BedrockModel(model_id=MODEL_ID, region_name=os.environ["AWS_REGION"], max_tokens=16000),
             tools=[list_datasets, run_sql, save_csv, save_chart],
             system_prompt=SYSTEM_PROMPT.format(
-                agency=agency, data=DATA, private=PRIVATE, max_rows=MAX_ROWS,
-                views="\n".join(f"- {n}: {src}" for n, src in VIEWS.items()) or "- none"),
+                agency=agency,
+                data=DATA,
+                private=PRIVATE,
+                max_rows=MAX_ROWS,
+                views="\n".join(f"- {n}: {src}" for n, src in VIEWS.items()) or "- none",
+            ),
             callback_handler=None,
         )
     return _agent
@@ -307,15 +314,19 @@ def probe(own: str, other: str) -> dict:
             return f"DENIED ({e.response['Error']['Code']})"
 
     portfolio = "data/my_listings/portfolio.parquet"
-    market_key = next((f"datasets/market/{os.path.relpath(os.path.join(d, f), DATA)}"
-                       for d, _, fs in os.walk(DATA) for f in fs), "datasets/market/")
+    market_key = next(
+        (f"datasets/market/{os.path.relpath(os.path.join(d, f), DATA)}" for d, _, fs in os.walk(DATA) for f in fs),
+        "datasets/market/",
+    )
     return {
         "caller": boto3.Session().client("sts", region_name=os.environ["AWS_REGION"]).get_caller_identity()["Arn"],
         "mounted /mnt/private": sorted(os.listdir(PRIVATE)),
         "s3 api": {
             f"read  own portfolio      users/{own}/{portfolio}": attempt("read", f"users/{own}/{portfolio}"),
             f"read  other's portfolio  users/{other}/{portfolio}": attempt("read", f"users/{other}/{portfolio}"),
-            f"write other's prefix     users/{other}/outputs/probe.txt": attempt("write", f"users/{other}/outputs/probe.txt"),
+            f"write other's prefix     users/{other}/outputs/probe.txt": attempt(
+                "write", f"users/{other}/outputs/probe.txt"
+            ),
             f"read  market data        {market_key}": attempt("read", market_key),
             "write market data        datasets/market/probe.txt": attempt("write", "datasets/market/probe.txt"),
         },

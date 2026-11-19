@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Ask the agent a question as one of the agencies, or check that the agencies are isolated.
 
     python infra/invoke.py --agency acme "How do my listings compare with the market in my neighborhoods?"
@@ -21,12 +20,20 @@ def main() -> int:
     ap.add_argument("prompt", nargs="?")
     ap.add_argument("--agency", required=True, choices=list(AGENCIES))
     ap.add_argument("--reset", action="store_true", help="start a new conversation (same session, same private data)")
-    ap.add_argument("--download", action="store_true", help="also copy the files the agent saved into ./outputs/<agency>/")
-    ap.add_argument("--probe", action="store_true", help="instead of a question, try the other agency's data through the S3 API")
+    ap.add_argument(
+        "--download", action="store_true", help="also copy the files the agent saved into ./outputs/<agency>/"
+    )
+    ap.add_argument(
+        "--probe", action="store_true", help="instead of a question, try the other agency's data through the S3 API"
+    )
     a = ap.parse_args()
     if bool(a.prompt) == a.probe:
         ap.error("give a prompt or --probe")
-    arn = load_state().get("runtime_arn") or (find_runtime() or {}).get("agentRuntimeArn") or die("runtime not found -- run infra/deploy.py")
+    arn = (
+        load_state().get("runtime_arn")
+        or (find_runtime() or {}).get("agentRuntimeArn")
+        or die("runtime not found -- run infra/deploy.py")
+    )
     sid = session_id(a.agency)
     if a.probe:
         other = next(k for k in AGENCIES if k != a.agency)
@@ -35,8 +42,12 @@ def main() -> int:
         payload = {"prompt": a.prompt, "agency": AGENCIES[a.agency]["name"], "reset": a.reset}
     log(f"{AGENCIES[a.agency]['name']} -> session {sid}")
     resp = client("bedrock-agentcore", read_timeout=900).invoke_agent_runtime(
-        agentRuntimeArn=arn, runtimeSessionId=sid, qualifier="DEFAULT",
-        payload=json.dumps(payload).encode(), contentType="application/json", accept="application/json",
+        agentRuntimeArn=arn,
+        runtimeSessionId=sid,
+        qualifier="DEFAULT",
+        payload=json.dumps(payload).encode(),
+        contentType="application/json",
+        accept="application/json",
     )
     out = json.loads(resp["response"].read())
     if "error" in out:
@@ -52,7 +63,7 @@ def main() -> int:
     for uri in out["outputs"]:
         log(f"saved {uri}")
         if a.download:
-            if not uri.startswith(expected) or "/" in uri[len(expected):]:  # the agent's output is untrusted input
+            if not uri.startswith(expected) or "/" in uri[len(expected) :]:  # the agent's output is untrusted input
                 log(f"  skipped: not under {expected}")
                 continue
             bucket, key = uri.removeprefix("s3://").split("/", 1)

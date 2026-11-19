@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate the sample data. Every value is made up; the same seed always gives the same files.
 
 - Shared market data (.cache/market/): synthetic New York City rental listings, one Parquet file per
@@ -22,9 +21,8 @@ from pathlib import Path
 
 import duckdb
 import numpy as np
-from faker import Faker
-
 from config import AGENCIES, DATA_GEN, ROOT
+from faker import Faker
 
 OUT = ROOT / ".cache" / "market"
 USERS_OUT = ROOT / ".cache" / "users"
@@ -79,10 +77,25 @@ BEDROOM_MIX = {  # probability of 0 (studio) to 4 bedrooms
     "Staten Island": [0.04, 0.24, 0.34, 0.28, 0.10],
 }
 # Yearly rent growth where it differs from the 4.5% default: fast-rising and flat neighborhoods.
-GROWTH = {"Bushwick": 0.085, "Bedford-Stuyvesant": 0.08, "Crown Heights": 0.075, "Ridgewood": 0.075,
-          "Mott Haven": 0.07, "Long Island City": 0.065, "Harlem": 0.06, "Astoria": 0.055, "Greenpoint": 0.055,
-          "Tribeca": 0.02, "SoHo": 0.025, "DUMBO": 0.025, "Upper East Side": 0.03, "Brooklyn Heights": 0.03,
-          "St. George": 0.035, "Riverdale": 0.035, "Tottenville": 0.03}
+GROWTH = {
+    "Bushwick": 0.085,
+    "Bedford-Stuyvesant": 0.08,
+    "Crown Heights": 0.075,
+    "Ridgewood": 0.075,
+    "Mott Haven": 0.07,
+    "Long Island City": 0.065,
+    "Harlem": 0.06,
+    "Astoria": 0.055,
+    "Greenpoint": 0.055,
+    "Tribeca": 0.02,
+    "SoHo": 0.025,
+    "DUMBO": 0.025,
+    "Upper East Side": 0.03,
+    "Brooklyn Heights": 0.03,
+    "St. George": 0.035,
+    "Riverdale": 0.035,
+    "Tottenville": 0.03,
+}
 BEDROOM_RENT = np.array([0.78, 1.00, 1.38, 1.80, 2.25])  # multiplier over a 1-bedroom
 BROKER_FEE = {"Manhattan": 0.55, "Brooklyn": 0.40, "Queens": 0.30, "Bronx": 0.25, "Staten Island": 0.20}
 STATUS = ["rented", "active", "withdrawn"]
@@ -102,18 +115,36 @@ def people(seed: int) -> tuple[dict, dict]:
     Faker once per row would take minutes; pools of a few thousand values are enough."""
     fake = Faker("en_US")
     Faker.seed(seed)
-    agencies = sorted({f"{fake.last_name()} {s}" for s in fake.random_choices(
-        ["Realty", "Properties", "Residential", "Homes", "& Partners", "Group"], length=400)})[:300]
+    agencies = sorted(
+        {
+            f"{fake.last_name()} {s}"
+            for s in fake.random_choices(
+                ["Realty", "Properties", "Residential", "Homes", "& Partners", "Group"], length=400
+            )
+        }
+    )[:300]
     rng = np.random.default_rng(seed)
-    agents = {"agent_id": np.arange(2000), "agent_name": np.array([fake.name() for _ in range(2000)]),
-              "agency": np.array(agencies)[rng.integers(0, len(agencies), 2000)]}
-    addresses = {"address_id": np.arange(20000),
-                 "street_address": np.array([f"{fake.building_number()} {fake.street_name()}" for _ in range(20000)])}
+    agents = {
+        "agent_id": np.arange(2000),
+        "agent_name": np.array([fake.name() for _ in range(2000)]),
+        "agency": np.array(agencies)[rng.integers(0, len(agencies), 2000)],
+    }
+    addresses = {
+        "address_id": np.arange(20000),
+        "street_address": np.array([f"{fake.building_number()} {fake.street_name()}" for _ in range(20000)]),
+    }
     return agents, addresses
 
 
-def month_rows(rng: np.random.Generator, start: dt.date, index: int, n: int, data_end: dt.date,
-               boroughs: list[str] | None = None, price: float = 1.0) -> dict:
+def month_rows(
+    rng: np.random.Generator,
+    start: dt.date,
+    index: int,
+    n: int,
+    data_end: dt.date,
+    boroughs: list[str] | None = None,
+    price: float = 1.0,
+) -> dict:
     """One month of listings. boroughs and price narrow and shift them for an agency's portfolio."""
     nb = np.array(NEIGHBORHOODS, dtype=object)
     weights = nb[:, 3].astype(float) * (np.isin(nb[:, 1], boroughs) if boroughs else 1)
@@ -140,25 +171,45 @@ def month_rows(rng: np.random.Generator, start: dt.date, index: int, n: int, dat
     season = 1 + 0.035 * np.cos(2 * np.pi * (month - 7.5) / 12)  # peaks in July-August
     growth = np.array([GROWTH.get(h[0], 0.045) for h in NEIGHBORHOODS])[hood]
     trend = (1 + growth) ** (index / 12)
-    going_rate = (base * BEDROOM_RENT[bedrooms] * (sqft / ((380 + 290 * bedrooms) * size)) ** 0.35 * season * trend
-                  * np.where(doorman, 1.09, 1) * np.where(laundry, 1.06, 1) * np.where(elevator, 1.03, 1)
-                  * np.where(year_built >= 2010, 1.05, 1))
+    going_rate = (
+        base
+        * BEDROOM_RENT[bedrooms]
+        * (sqft / ((380 + 290 * bedrooms) * size)) ** 0.35
+        * season
+        * trend
+        * np.where(doorman, 1.09, 1)
+        * np.where(laundry, 1.06, 1)
+        * np.where(elevator, 1.03, 1)
+        * np.where(year_built >= 2010, 1.05, 1)
+    )
     over = rng.lognormal(0, 0.10, n) * price  # how far the asking rent sits from the going rate
     rent = (np.round(going_rate * over / 25) * 25).astype(np.int32)
 
     days = calendar.monthrange(start.year, month)[1]
     day = rng.integers(0, days, n).astype(np.int32)  # days after the 1st; dates are built in SQL
     listed = np.datetime64(start) + day.astype("timedelta64[D]")
-    dom = np.maximum(1, np.round(rng.gamma(2.0, 9.0, n) * over ** 6 * np.where(broker, 1.15, 1))).astype(np.int32)
+    dom = np.maximum(1, np.round(rng.gamma(2.0, 9.0, n) * over**6 * np.where(broker, 1.15, 1))).astype(np.int32)
     gone = listed + dom.astype("timedelta64[D]") <= np.datetime64(data_end)
     withdrawn = rng.random(n) < 0.06
     status = np.where(~gone, 1, np.where(withdrawn, 2, 0)).astype(np.int8)
     return {
-        "listing_id": index * 1_000_000 + np.arange(n), "day": day, "neighborhood_id": hood.astype(np.int16),
-        "bedrooms": bedrooms, "bathrooms": bathrooms, "sqft": sqft, "rent_usd": rent, "broker_fee": broker,
-        "doorman": doorman, "elevator": elevator, "laundry_in_unit": laundry, "pets_allowed": pets,
-        "year_built": year_built, "status": status, "days_on_market": dom,
-        "agent_id": rng.integers(0, 2000, n), "address_id": rng.integers(0, 20000, n),
+        "listing_id": index * 1_000_000 + np.arange(n),
+        "day": day,
+        "neighborhood_id": hood.astype(np.int16),
+        "bedrooms": bedrooms,
+        "bathrooms": bathrooms,
+        "sqft": sqft,
+        "rent_usd": rent,
+        "broker_fee": broker,
+        "doorman": doorman,
+        "elevator": elevator,
+        "laundry_in_unit": laundry,
+        "pets_allowed": pets,
+        "year_built": year_built,
+        "status": status,
+        "days_on_market": dom,
+        "agent_id": rng.integers(0, 2000, n),
+        "address_id": rng.integers(0, 20000, n),
     }
 
 
@@ -198,7 +249,9 @@ def generate(force: bool = False) -> list[Path]:
             ORDER BY r.listed_date, r.listing_id
         ) TO '{path}' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 122880)""")
         con.unregister("rows")
-        print(f"[data_gen] {path.relative_to(ROOT)}  {cfg['rows_per_month']:,} rows  {path.stat().st_size / 1e6:,.1f} MB")
+        print(
+            f"[data_gen] {path.relative_to(ROOT)}  {cfg['rows_per_month']:,} rows  {path.stat().st_size / 1e6:,.1f} MB"
+        )
     lookup = OUT / "neighborhoods.csv"
     with lookup.open("w") as f:
         f.write("neighborhood_id,neighborhood,borough\n")
@@ -225,10 +278,21 @@ def generate_portfolios(force: bool = False) -> dict[str, list[Path]]:
         rng = np.random.default_rng(seed)
         con = duckdb.connect()
         con.register("agents", {"agent_id": np.arange(12), "agent_name": np.array([fake.name() for _ in range(12)])})
-        con.register("owners", {"owner_id": np.arange(400), "owner_name": np.array([fake.name() for _ in range(400)]),
-                                "owner_email": np.array([fake.email() for _ in range(400)])})
-        con.register("addresses", {"address_id": np.arange(5000),
-                                   "street_address": np.array([f"{fake.building_number()} {fake.street_name()}" for _ in range(5000)])})
+        con.register(
+            "owners",
+            {
+                "owner_id": np.arange(400),
+                "owner_name": np.array([fake.name() for _ in range(400)]),
+                "owner_email": np.array([fake.email() for _ in range(400)]),
+            },
+        )
+        con.register(
+            "addresses",
+            {
+                "address_id": np.arange(5000),
+                "street_address": np.array([f"{fake.building_number()} {fake.street_name()}" for _ in range(5000)]),
+            },
+        )
         con.register("statuses", {"status": np.arange(3, dtype=np.int8), "status_name": np.array(STATUS)})
         con.execute("CREATE TABLE p AS SELECT * FROM (SELECT 1) WHERE false")
         per_month = agency["listings"] // len(starts)
@@ -251,7 +315,9 @@ def generate_portfolios(force: bool = False) -> dict[str, list[Path]]:
                        JOIN owners o USING (owner_id) JOIN statuses s USING (status)"""
             con.execute(f"CREATE OR REPLACE TABLE p AS {select}" if i == 0 else f"INSERT INTO p {select}")
             con.unregister("rows")
-        con.execute(f"COPY (SELECT * FROM p ORDER BY listed_date, listing_id) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
+        con.execute(
+            f"COPY (SELECT * FROM p ORDER BY listed_date, listing_id) TO '{path}' (FORMAT parquet, COMPRESSION zstd)"
+        )
         print(f"[data_gen] {path.relative_to(ROOT)}  {per_month * len(starts):,} rows ({agency['name']})")
     return out
 
