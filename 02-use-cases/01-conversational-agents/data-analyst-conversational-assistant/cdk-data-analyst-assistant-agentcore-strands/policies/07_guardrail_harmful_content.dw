@@ -1,0 +1,12 @@
+// Guardrail forbid: block violent or hateful content in the query description.
+forbid(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when guardrails {
+  BedrockGuardrails::ContentFilter(
+    ["VIOLENCE", "HATE"],
+    [context.input.description]
+  ).maxConfidenceScore().greaterThan(decimal("0.2"))
+};

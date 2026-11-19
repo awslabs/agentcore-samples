@@ -1,0 +1,10 @@
+// Base permit: the schema-lookup tool is always reachable.
+// AgentCore Policy is deny-by-default, so every callable tool needs a permit.
+// It also matters for the temporal policies below: a denied call records only an
+// ::error event, so without this permit there would never be a
+// get_tables_information::response in the session history to match.
+permit(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___get_tables_information",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+);
