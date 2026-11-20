@@ -1,0 +1,4 @@
+boto3>=1.44.6  # first release that models s3BucketMount
+duckdb==2.0.0
+faker==40.54.0
+numpy==2.5.5
