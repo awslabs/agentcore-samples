@@ -1,12 +1,13 @@
 """A stateless assistant for a fictional shop. See README.md for setup and limits."""
 
 import asyncio
+import logging
 import os
 import re
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -19,6 +20,10 @@ from strands.types.exceptions import (
     MaxTokensReachedException,
     ModelThrottledException,
 )
+
+# The streaming parser logs raw malformed tool input at WARNING. Keep its
+# diagnostics out of customer logs; the application emits fixed error messages.
+logging.getLogger("strands.event_loop.streaming").disabled = True
 
 MODEL_ID = "amazon.nova-lite-v1:0"
 MAX_PROMPT_CHARS = 2_000
@@ -205,6 +210,8 @@ async def invoke(payload: object) -> dict:
             result = await create_agent().invoke_async(prompt)
     except TimeoutError:
         raise HTTPException(504, "The model took too long. Try again later.") from None
+    except BotoCoreError:
+        raise HTTPException(502, "Model connection failed. Check AWS credentials, region, and connectivity.") from None
     except (ClientError, EventLoopException, MaxTokensReachedException, ModelThrottledException):
         # Provider errors can contain request details; don't echo or log their text.
         app.logger.warning("Bedrock request failed; check model access, region, and quotas.")

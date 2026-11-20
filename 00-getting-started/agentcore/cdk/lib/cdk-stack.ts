@@ -95,7 +95,6 @@ export class AgentCoreStack extends Stack {
             "logs:CreateLogStream",
             "logs:DescribeLogStreams",
             "logs:PutLogEvents",
-            "logs:PutResourcePolicy", // Runtime configures delivery for this log group.
           ],
           resources: [logArn],
         }),
@@ -105,12 +104,6 @@ export class AgentCoreStack extends Stack {
     // This grants only S3-mediated decryption for this asset (or its bucket when
     // S3 Bucket Keys are enabled), without changing the key or bucket policy.
     const contextKey = "agentcoreSampleAssetKmsKeyArn";
-    if (process.env.AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN !== undefined) {
-      throw new Error(
-        "AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN is obsolete. Move the key ARN to " +
-          `context.${contextKey} in agentcore/cdk/cdk.json, then unset the variable.`,
-      );
-    }
     const assetKeyArn: unknown = this.node.tryGetContext(contextKey);
     if (assetKeyArn === undefined || assetKeyArn === null) {
       Annotations.of(this).addWarning(

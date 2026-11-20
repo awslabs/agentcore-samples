@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from test_infrastructure import resolve
+from test_infrastructure import load_stack, resolve
 from test_infrastructure import (
     test_boundary_is_attached_and_scopes_model_asset_and_logs as check_boundary,
 )
@@ -105,13 +105,12 @@ def configure(sample, value):
     path.write_text(json.dumps(config))
 
 
-def built_resources(sample):
-    templates = list((sample / "agentcore/cdk/cdk.out").glob("*.template.json"))
-    assert len(templates) == 1
-    return json.loads(templates[0].read_text()).get("Resources", {})
+def built_stack(sample):
+    return load_stack(sample / "agentcore/cdk/cdk.out")
 
 
-def check_kms(resources, expected):
+def check_kms(stack, expected):
+    resources, region = stack
     boundary = next(r for r in resources.values() if r["Type"] == "AWS::IAM::ManagedPolicy")
     role = next(r for r in resources.values() if r["Type"] == "AWS::IAM::Policy")
     grants = []
@@ -120,23 +119,22 @@ def check_kms(resources, expected):
         assert len(decrypt) == (0 if expected is None else 1)
         if decrypt:
             assert decrypt[0]["Resource"] == expected
-            assert resolve(decrypt[0]["Condition"]["StringEquals"]["kms:ViaService"]) == "s3.us-west-2.amazonaws.com"
+            assert resolve(decrypt[0]["Condition"]["StringEquals"]["kms:ViaService"]) == f"s3.{region}.amazonaws.com"
             grants.append(decrypt[0])
     if grants:
         assert grants[0] == grants[1]  # Exact key and both S3 encryption contexts in role AND boundary.
-    check_boundary(resources)
+    check_boundary(stack)
 
 
 def test_persisted_context_survives_fresh_native_builds(project):
-    sample, env, command = project
-    assert "AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN" not in env
+    sample, _, command = project
     configure(sample, ARN)
     for _ in range(2):
         # Remove only this fixture's products: every process must rediscover persisted context.
         for relative in ("agentcore/cdk/cdk.out", "agentcore/cdk/dist", "agentcore/.cache"):
             shutil.rmtree(sample / relative, ignore_errors=True)
         command("agentcore", "build", "--json")
-        check_kms(built_resources(sample), ARN)
+        check_kms(built_stack(sample), ARN)
 
 
 def test_documented_native_command_with_default_uv_locations(project, tmp_path):
@@ -179,7 +177,7 @@ def test_documented_native_command_with_default_uv_locations(project, tmp_path):
 
 @pytest.mark.parametrize("value", [None, "missing"])
 def test_default_no_kms_warns_and_cleanup_is_empty(project, value):
-    sample, env, command = project
+    sample, _, command = project
     path = sample / "agentcore/cdk/cdk.json"
     if value == "missing":
         config = json.loads(path.read_text())
@@ -188,7 +186,7 @@ def test_default_no_kms_warns_and_cleanup_is_empty(project, value):
     else:
         configure(sample, None)
     command("agentcore", "build", "--json")
-    check_kms(built_resources(sample), None)
+    check_kms(built_stack(sample), None)
     # Pinned CDK stores construct annotations in the assembly's additional metadata file.
     metadata_files = list((sample / "agentcore/cdk/cdk.out").glob("*.metadata.json"))
     assert len(metadata_files) == 1
@@ -196,11 +194,10 @@ def test_default_no_kms_warns_and_cleanup_is_empty(project, value):
     assert "Asset encryption has NOT been detected" in metadata
     assert f"context.{KEY}" in metadata
     command("agentcore", "remove", "all", "--yes")
-    # No orphan boundary even if a removed Runtime's setting or old environment is invalid.
+    # No orphan boundary even if the removed Runtime's setting is invalid.
     configure(sample, "invalid-after-removal")
-    env["AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN"] = ARN
     command("agentcore", "build", "--json")
-    assert not {r["Type"] for r in built_resources(sample).values()} - {"AWS::CDK::Metadata"}
+    assert not {r["Type"] for r in built_stack(sample)[0].values()} - {"AWS::CDK::Metadata"}
 
 
 @pytest.mark.parametrize("value", ["", " ", False, 123, [], {}, "not-an-arn", ARN.replace(":key/", ":alias/")])
@@ -212,12 +209,16 @@ def test_malformed_context_fails(project, value):
     assert "must be null or a KMS key ARN" in output
 
 
-@pytest.mark.parametrize("obsolete", ["", ARN])
-def test_obsolete_environment_fails_with_migration(project, obsolete):
-    sample, env, command = project
-    configure(sample, ARN)
-    env["AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN"] = obsolete
-    output = command("agentcore", "build", "--json", success=False)
-    assert "is obsolete" in output
-    assert f"context.{KEY}" in output
-    assert "unset the variable" in output
+def test_saved_target_in_another_region_with_stale_template(project):
+    sample, _, command = project
+    command("agentcore", "build", "--json")
+    target = {"name": "default", "region": "us-east-1", "account": "111122223333"}
+    (sample / "agentcore/aws-targets.json").write_text(json.dumps([target]))
+    key = ARN.replace("us-west-2", target["region"])
+    configure(sample, key)
+    command("agentcore", "build", "--json")
+    output = sample / "agentcore/cdk/cdk.out"
+    assert (output / "AgentCore-CustomerSupport.template.json").exists()
+    stack = built_stack(sample)
+    assert stack[1] == target["region"]
+    check_kms(stack, key)

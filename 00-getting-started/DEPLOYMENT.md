@@ -1,7 +1,7 @@
 # Deployment and maintenance notes
 
-Read this before deploying the [customer-support sample](README.md). Use a sandbox and fictional
-data. A local test/build is not evidence of live model access or deployability in your account.
+The [customer walkthrough](README.md) has the required deployment steps. These maintainer
+notes explain permissions, validation and retention. Use a sandbox and fictional data. A local test/build is not evidence of live model access or deployability in your account.
 
 ## Account, bootstrap and saved targets
 
@@ -17,17 +17,10 @@ saved target. Keep the original target for cleanup. The project is already CLI v
 `"version": 2` is the project schema, not CLI v2. No `create`, `import` or Toolkit install is needed.
 If already bootstrapped and bootstrap changes are prohibited, use `agentcore deploy --skip-bootstrap`.
 
-**Transaction Search requires platform-owner approval.** CLI 1.0.3 attempts to enable CloudWatch
-Transaction Search at deployment, even with the application's OTel exporter disabled. With your
-platform owner's approval, check:
-
-```bash
-aws xray get-trace-segment-destination --region "$AWS_REGION"
-```
-
-If not already `CloudWatchLogs` / `ACTIVE`, obtain approval for that account-level change before
-`deploy`. `OTEL_SDK_DISABLED` is not a switch for CLI account setup. Runtime log-group delivery
-policies and Transaction Search account setup are separate operations.
+The walkthrough sets `agentcore config transactionSearch false` so deploy skips account-level
+Transaction Search setup. If explicitly enabled with platform-owner approval, CLI 1.0.3 attempts
+setup but continues deployment if setup fails. `OTEL_SDK_DISABLED` controls the application,
+not this CLI behavior.
 
 ## Persistent asset KMS setting
 
@@ -53,9 +46,6 @@ KMS permission; they do **not** mean encryption was detected. Empty strings, wro
 malformed ARNs fail. A single setting assumes the same key for all configured targets; do not
 reuse this project across differently encrypted targets without reviewing its configuration.
 
-**Migration:** `AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN` is obsolete. Move its ARN to the persistent
-context, then `unset AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN`. Even an empty obsolete variable fails
-while the sample Runtime exists, so a stale shell cannot silently drop or override its grant.
 Use native `agentcore build` or `npm run cdk -- synth` from `agentcore/cdk`; plain
 `node dist/bin/cdk.js` does not load `cdk.json` context and is not a substitute for those commands.
 
@@ -89,8 +79,7 @@ After building, inspect both grants and conditions. Keep them together when cust
 - **Logs use a Runtime NAME PREFIX**, `/aws/bedrock-agentcore/runtimes/<runtime-name>*`, including
   streams—not the exact generated Runtime ID. Resources sharing that prefix also match. The
   generated ID cannot be used here without a Runtime → role → Runtime dependency cycle.
-  `logs:PutResourcePolicy` is scoped to that prefix for Runtime log-delivery setup, not `*`.
-- **Safe logs/output:** disable the Strands printing callback and OTel export. Log only fixed
+- **Safe logs/output:** disable the Strands printing callback, streaming parser diagnostics and OTel export. Log only fixed
   tool names on success, not arguments, results, prompts, answers or raw exception text. Strip
   complete Nova `<thinking>` preambles and reject malformed/empty answers. Account-level Bedrock
   model invocation logging is separate; check its data-handling implications before use.
@@ -143,7 +132,7 @@ with `agentcore config telemetry.enabled false` in its private `HOME/.agentcore/
 it does not rely on an invented configuration-routing or notices switch. Empty AWS credentials
 and the OS network boundary are the safety controls, not telemetry settings.
 They build a disposable project, persist a fictional KMS ARN across fresh processes, check both
-grants, reject malformed/stale settings, and exercise native `remove all` plus empty synthesis.
+grants, reject malformed settings, and exercise native `remove all` plus empty synthesis.
 They do **not** deploy or prove cloud deletion. Dependency acquisition needs registry access
 before running offline. No prebuilt/cache-bypass flag or patched package is required.
 
@@ -176,7 +165,7 @@ PR evidence remains in Git/PR history; rerun approved bounded cloud checks for b
 
 Use the README's `remove all` → `deploy` → `status` sequence only in this dedicated project and
 its original account/target. Confirm deletion of the stack, Runtime, execution role and boundary.
-`remove all` empties local declarations; restore them deliberately or use a fresh checkout to rerun.
+`remove all` empties local declarations; restore `agentcore/agentcore.json` before reusing this sample.
 
 Service-created CloudWatch logs/policies and uploaded assets may survive stack deletion. Identify
 the exact sample log group and ZIP/template versions from the deployment record; remove only

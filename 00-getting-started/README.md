@@ -30,7 +30,8 @@ Read [cleanup](#cleanup) before deploying. Use fictional data only.
 ```bash
 git clone https://github.com/awslabs/agentcore-samples.git
 cd agentcore-samples/00-getting-started
-npm install --global @aws/agentcore@1.0.3
+# In each tutorial shell, use the tested CLI without replacing your global version:
+agentcore() { npx --yes --package=@aws/agentcore@1.0.3 -- agentcore "$@"; }
 agentcore --version  # expect 1.0.3
 uv python install 3.13
 uv sync --project app/agent --frozen
@@ -40,8 +41,6 @@ uv run --project app/agent --frozen ruff check .
 uv run --project app/agent --frozen ruff format --check .
 ```
 
-To avoid replacing another CLI installation, use
-`npx --yes --package=@aws/agentcore@1.0.3 agentcore` instead of `agentcore` below.
 Do **not** install the repository-root `requirements.txt`: other samples use the legacy Starter
 Toolkit's conflicting executable. The `bedrock-agentcore` Python runtime SDK is still required.
 
@@ -106,9 +105,18 @@ Stop terminal A with **Ctrl-C** when finished.
 
 ## 3. Build, deploy and invoke
 
-**Mandatory before deployment:** read [DEPLOYMENT.md](DEPLOYMENT.md) for account/bootstrap and
-Transaction Search approval, persistent KMS configuration, saved targets and IAM boundaries.
-Do not bypass these checks or grant AdministratorAccess to follow the tutorial.
+Before building or deploying:
+
+- Confirm your sandbox account, Region and any saved `agentcore/aws-targets.json`. Start from
+  a clean sample, not another deployment's state. Use approved bootstrap permissions; if your
+  environment is already bootstrapped and changes are prohibited, add `--skip-bootstrap` to deploy.
+- Ask the bootstrap bucket owner how assets are encrypted. For a customer-managed key, set
+  `context.agentcoreSampleAssetKmsKeyArn` in `agentcore/cdk/cdk.json` to its exact key ARN
+  **before building**; otherwise leave it `null`. See [KMS details](DEPLOYMENT.md#persistent-asset-kms-setting).
+- Skip account-level CloudWatch Transaction Search setup; the tutorial doesn't need it. Note
+  your existing CLI preference (`agentcore config transactionSearch`), then run
+  `agentcore config transactionSearch false`. This is a user-wide CLI setting, not an AWS
+  account change. Keep it disabled through cleanup; restore your previous preference afterwards.
 
 ```bash
 agentcore build --json
@@ -158,7 +166,9 @@ agentcore status --json
 The boundary is omitted when `support` is removed. Confirm stack deletion and Runtime absence.
 Shared `CDKToolkit` resources remain, and uploaded ZIPs/service-created logs may remain too.
 Follow [artifact cleanup](DEPLOYMENT.md#cleanup-and-retention); never empty a shared bucket or
-delete shared bootstrap resources. Use a fresh checkout to rerun after removal.
+delete shared bootstrap resources. To rerun after confirmed cleanup, restore the example's
+local declaration with `git restore agentcore/agentcore.json` (this discards edits to that file).
+Recheck the project name and saved target before deploying again.
 
 ## Troubleshooting and next steps
 

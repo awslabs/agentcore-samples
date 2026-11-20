@@ -9,12 +9,9 @@ node_modules/
 agentcore/aws-targets.json
 agentcore/.env*
 agentcore/.cache/
-agentcore/.agentcore/
-agentcore/.deployed-state.json
-agentcore/deployed-state.json
+agentcore/.cli/
 agentcore/cdk/cdk.out/
 agentcore/cdk/dist/
-agentcore/support/
 *.zip
 # The repository-wide Python ignore otherwise hides this reviewed CDK source.
 !agentcore/cdk/lib/

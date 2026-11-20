@@ -38,13 +38,26 @@ def resolve(value):
     raise AssertionError(f"Unexpected policy intrinsic: {value}")
 
 
+def load_stack(output):
+    artifacts = json.loads((output / "manifest.json").read_text())["artifacts"]
+    (stack,) = [a for a in artifacts.values() if a["type"] == "aws:cloudformation:stack"]
+    region = stack["environment"].rsplit("/", 1)[1]
+    if region == "unknown-region":
+        region = resolve({"Ref": "AWS::Region"})
+    resources = json.loads((output / stack["properties"]["templateFile"]).read_text())["Resources"]
+    return resources, region
+
+
 @pytest.fixture
-def resources():
-    templates = list(OUTPUT.glob("*.template.json"))
-    if not templates:
+def stack():
+    if not OUTPUT.exists():
         pytest.skip("Run agentcore build to enable synthesized-infrastructure checks")
-    assert len(templates) == 1, "Use a clean synthesis directory for this single-target sample"
-    return json.loads(templates[0].read_text())["Resources"]
+    return load_stack(OUTPUT)
+
+
+@pytest.fixture
+def resources(stack):
+    return stack[0]
 
 
 def test_runtime_configuration(resources):
@@ -65,7 +78,8 @@ def test_runtime_configuration(resources):
     }
 
 
-def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
+def test_boundary_is_attached_and_scopes_model_asset_and_logs(stack):
+    resources, region = stack
     roles = [r["Properties"] for r in resources.values() if r["Type"] == "AWS::IAM::Role"]
     assert len(roles) == 1
     boundary_id = roles[0]["PermissionsBoundary"]["Ref"]
@@ -82,7 +96,7 @@ def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
         by_service[actions[0].split(":")[0]] = (set(actions), resolve(statement["Resource"]))
     assert by_service["bedrock"] == (
         {"bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"},
-        f"arn:aws:bedrock:us-west-2::foundation-model/{main.MODEL_ID}",
+        f"arn:aws:bedrock:{region}::foundation-model/{main.MODEL_ID}",
     )
     runtime = next(r["Properties"] for r in resources.values() if r["Type"] == "AWS::BedrockAgentCore::Runtime")
     source = runtime["AgentRuntimeArtifact"]["CodeConfiguration"]["Code"]["S3"]
@@ -95,7 +109,6 @@ def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
         "logs:CreateLogStream",
         "logs:DescribeLogStreams",
         "logs:PutLogEvents",
-        "logs:PutResourcePolicy",
     }
     assert by_service["logs"][1].endswith(f"/aws/bedrock-agentcore/runtimes/{runtime['AgentRuntimeName']}*")
     assert set(by_service) - {"kms"} == {"bedrock", "s3", "logs"}
@@ -104,7 +117,7 @@ def test_boundary_is_attached_and_scopes_model_asset_and_logs(resources):
         assert ":kms:" in by_service["kms"][1] and ":key/" in by_service["kms"][1]
         decrypt = next(s for s in statements if "kms:Decrypt" in s["Action"])
         conditions = decrypt["Condition"]["StringEquals"]
-        assert resolve(conditions["kms:ViaService"]) == "s3.us-west-2.amazonaws.com"
+        assert resolve(conditions["kms:ViaService"]) == f"s3.{region}.amazonaws.com"
         contexts = [resolve(v) for v in conditions["kms:EncryptionContext:aws:s3:arn"]]
         assert contexts == [by_service["s3"][1], f"arn:aws:s3:::{resolve(source['Bucket'])}"]
 

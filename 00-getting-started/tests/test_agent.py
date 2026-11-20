@@ -7,7 +7,7 @@ import json
 import httpx
 import main
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoCredentialsError
 from strands.models.model import Model
 from strands.types.exceptions import EventLoopException
 
@@ -35,7 +35,7 @@ class ScriptedModel(Model):
         self.requests.append(copy.deepcopy(messages))
         await asyncio.sleep(0)  # Let concurrent requests overlap in the isolation test.
         yield {"messageStart": {"role": "assistant"}}
-        if self.mode == "loop" or (self.mode == "tools" and turn < 2):
+        if self.mode == "loop" or (self.mode == "tools" and turn < 2) or (self.mode == "malformed" and turn == 0):
             name = "get_product_info" if turn == 0 or self.mode == "loop" else "get_return_policy"
             arguments = {"query": "PROD-002"} if name == "get_product_info" else {"product_category": "electronics"}
             yield {
@@ -50,7 +50,11 @@ class ScriptedModel(Model):
                 "contentBlockDelta": {
                     "contentBlockIndex": 0,
                     "delta": {
-                        "toolUse": {"input": json.dumps(arguments)},
+                        "toolUse": {
+                            "input": '{"query":"private-tool-marker'
+                            if self.mode == "malformed"
+                            else json.dumps(arguments)
+                        },
                     },
                 }
             }
@@ -223,6 +227,16 @@ async def test_real_agent_executes_both_tools(client, models, caplog):
     assert "Smart Watch" not in caplog.text
 
 
+async def test_truncated_tool_json_is_not_logged(client, monkeypatch, caplog):
+    model = ScriptedModel(mode="malformed")
+    monkeypatch.setattr(main, "BedrockModel", lambda **kwargs: model)
+    response = await client.post("/invocations", json={"prompt": "Look up a product"})
+    assert response.status_code == 200
+    assert len(model.requests) == 2
+    assert model.requests[1][1]["content"][0]["toolUse"]["input"] == {}
+    assert "private-tool-marker" not in caplog.text + response.text
+
+
 async def test_sequential_and_concurrent_requests_do_not_share_history(client, monkeypatch):
     models = []
 
@@ -279,6 +293,7 @@ async def test_timeout_cancels_the_task(client, monkeypatch):
             ),
             502,
         ),
+        (NoCredentialsError(), 502),
         (EventLoopException(RuntimeError("private-detail")), 502),
         (RuntimeError("private-detail"), 500),
     ],
@@ -291,5 +306,7 @@ async def test_error_details_are_not_exposed(client, monkeypatch, caplog, provid
     monkeypatch.setattr(main, "create_agent", FailingAgent)
     response = await client.post("/invocations", json={"prompt": "private-prompt"})
     assert response.status_code == status
+    if isinstance(provider_error, NoCredentialsError):
+        assert "credentials" in response.json()["error"]
     assert "private-detail" not in response.text + caplog.text
     assert "private-prompt" not in caplog.text
