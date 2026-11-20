@@ -70,7 +70,7 @@ export class BedrockKnowledgeBasePermissions extends Construct {
             // Titan embedding model for knowledge base
             `arn:aws:bedrock:${props.region}::foundation-model/amazon.titan-embed-text-v1`,
             // Claude Sonnet 4 model for agent responses
-            `arn:aws:bedrock:${props.region}::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0`,
+            `arn:aws:bedrock:${props.region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
           ],
         }),
       ],

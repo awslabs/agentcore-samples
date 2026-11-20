@@ -81,7 +81,7 @@ env_vars = {
     "DATABASE_SECRET_ARN": database_secret_arn,
     "OUTPUT_BUCKET": f"iso20022-output-bucket-{account_id}",
     "ISO20022_LAMBDA_ARN": f"arn:aws:lambda:us-east-1:{account_id}:function:rtp-overlay-invoice-processor",
-    "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 }
 
 print(f"Gateway URL: {gateway_url}")
