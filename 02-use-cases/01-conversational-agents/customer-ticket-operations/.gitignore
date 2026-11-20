@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+# The repository root ignores **/Dockerfile; this one is the agent image build.
+!src/ticket_agent/Dockerfile

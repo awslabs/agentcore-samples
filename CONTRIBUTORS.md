@@ -150,3 +150,4 @@
 - Luis Barros
 - Phelipe Fabres (phelipefabres)
 - Joshua M. Smith (joshuamarksmith)
+- Max Tybar (maxtybar)

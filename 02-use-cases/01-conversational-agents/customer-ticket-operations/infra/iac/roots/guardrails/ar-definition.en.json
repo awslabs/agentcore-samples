@@ -1,0 +1,103 @@
+{
+    "version": "1",
+    "types": [],
+    "rules": [
+        {
+            "id": "V964L515KEN0",
+            "expression": "(= isDisablingAllowed\n   changeTicketExists)",
+            "alternateExpression": "isDisablingAllowed is equal to changeTicketExists"
+        },
+        {
+            "id": "J2UVK1SNNLP2",
+            "expression": "(=> detectionRuleDisabled\n    isDisablingAllowed)",
+            "alternateExpression": "if detectionRuleDisabled is true, then isDisablingAllowed is true"
+        },
+        {
+            "id": "BUQDYGD6NFSH",
+            "expression": "(=> (and detectionRuleDisabled\n         (not changeTicketExists))\n    isSecurityIncident)",
+            "alternateExpression": "if detectionRuleDisabled is true and changeTicketExists is false, then isSecurityIncident is true"
+        },
+        {
+            "id": "FI9871B2JNOU",
+            "expression": "(=> reEnablingDisabledRule\n    isReEnablingAllowed)",
+            "alternateExpression": "if reEnablingDisabledRule is true, then isReEnablingAllowed is true"
+        },
+        {
+            "id": "B380XVTW6UZZ",
+            "expression": "isReEnablingAllowed",
+            "alternateExpression": "isReEnablingAllowed is true"
+        },
+        {
+            "id": "TD93MV50TKP9",
+            "expression": "(=> (and performedByAutomationAccount\n         changeTicketExists)\n    (not isSecurityIncident))",
+            "alternateExpression": "if performedByAutomationAccount is true and changeTicketExists is true, then isSecurityIncident is false"
+        },
+        {
+            "id": "AEJHVA4IZ4QV",
+            "expression": "(=> ruleChangeCompliant\n    engineerRecorded)",
+            "alternateExpression": "if ruleChangeCompliant is true, then engineerRecorded is true"
+        },
+        {
+            "id": "G2G7SDIQMXGH",
+            "expression": "(=> ruleChangeCompliant\n    timePerformedRecorded)",
+            "alternateExpression": "if ruleChangeCompliant is true, then timePerformedRecorded is true"
+        },
+        {
+            "id": "B2XKL073RPW4",
+            "expression": "(=> (not ruleChangeCompliant)\n    (or (not engineerRecorded)\n        (not timePerformedRecorded)))",
+            "alternateExpression": "if ruleChangeCompliant is false, then engineerRecorded is false or timePerformedRecorded is false"
+        }
+    ],
+    "variables": [
+        {
+            "name": "detectionRuleDisabled",
+            "type": "BOOL",
+            "description": "True if the detection rule is in a disabled state (has been turned off)."
+        },
+        {
+            "name": "changeTicketExists",
+            "type": "BOOL",
+            "description": "True if a change ticket exists for the change being performed on the detection rule."
+        },
+        {
+            "name": "isDisablingAllowed",
+            "type": "BOOL",
+            "description": "True if disabling the detection rule is permitted under the policy."
+        },
+        {
+            "name": "isSecurityIncident",
+            "type": "BOOL",
+            "description": "True if the event constitutes a security incident."
+        },
+        {
+            "name": "performedByAutomationAccount",
+            "type": "BOOL",
+            "description": "True if the rule change was performed by an automation account (rather than a human engineer)."
+        },
+        {
+            "name": "reEnablingDisabledRule",
+            "type": "BOOL",
+            "description": "True if the action being performed is re-enabling a previously disabled detection rule."
+        },
+        {
+            "name": "isReEnablingAllowed",
+            "type": "BOOL",
+            "description": "True if re-enabling a disabled detection rule is permitted under the policy."
+        },
+        {
+            "name": "engineerRecorded",
+            "type": "BOOL",
+            "description": "True if the identity of the engineer who performed the rule change has been recorded."
+        },
+        {
+            "name": "timePerformedRecorded",
+            "type": "BOOL",
+            "description": "True if the time at which the rule change was performed has been recorded."
+        },
+        {
+            "name": "ruleChangeCompliant",
+            "type": "BOOL",
+            "description": "True if the rule change complies with the recording requirements of the policy."
+        }
+    ]
+}
