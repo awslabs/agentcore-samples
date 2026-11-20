@@ -1,0 +1,30 @@
+{
+  "name": "CustomerSupport",
+  "version": 2,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "support",
+      "description": "Read-only product and return-policy sample; no conversation persistence",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/agent",
+      "runtimeVersion": "PYTHON_3_13",
+      "protocol": "HTTP",
+      "authorizerType": "AWS_IAM",
+      "networkMode": "PUBLIC",
+      "instrumentation": { "enableOtel": false },
+      "lifecycleConfiguration": {
+        "idleRuntimeSessionTimeout": 300,
+        "maxLifetime": 900
+      },
+      "envVars": [
+        { "name": "OTEL_SDK_DISABLED", "value": "true" }
+      ],
+      "tags": {
+        "sample": "customer-support",
+        "purpose": "tutorial"
+      }
+    }
+  ]
+}
