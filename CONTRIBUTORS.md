@@ -147,5 +147,6 @@
 - Srividya Ponnada (psrivi)
 - Gilbert Lepadatu (gilbertlep)
 - Santhosh Kuriakose (kuriaks1)
+- Luis Barros
 - Phelipe Fabres (phelipefabres)
 - Joshua M. Smith (joshuamarksmith)
