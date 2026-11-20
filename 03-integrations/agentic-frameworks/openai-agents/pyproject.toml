@@ -1,0 +1,16 @@
+[project]
+name = "openai-agents-handoff-example"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+    "bedrock-agentcore==1.27.0",
+    "openai-agents==0.25.0",
+    "openai==3.57.0",
+    "starlette==1.10.0",
+]
+
+[dependency-groups]
+dev = ["httpx2==2.16.2", "pytest>=9,<10"]
+
+[tool.agentcore]
+entrypoint = "openai_agents_handoff_example.py"

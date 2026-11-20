@@ -12,7 +12,7 @@ This folder contains framework and protocol integrations that demonstrate how to
 * **[LangChain](./agentic-frameworks/langchain/)**: Chain-based agent workflows and tool integration
 * **[LangGraph](./agentic-frameworks/langgraph/)**: Multi-agent workflows with web search capabilities — includes [observability examples](./agentic-frameworks/langgraph/observability/)
 * **[LlamaIndex](./agentic-frameworks/llamaindex/)**: Document processing and retrieval-augmented generation — includes [observability examples](./agentic-frameworks/llamaindex/observability/)
-* **[OpenAI Agents](./agentic-frameworks/openai-agents/)**: OpenAI Assistant API integration with handoff patterns
+* **[OpenAI Agents](./agentic-frameworks/openai-agents/)**: OpenAI Agents SDK specialist handoffs on Runtime, with AgentCore Identity for outbound credentials
 * **[PydanticAI](./agentic-frameworks/pydanticai-agents/)**: Type-safe agent development with Bedrock models
 * **[Strands Agents](./agentic-frameworks/strands-agents/)**: Native integration examples with streaming, file system, and OpenAI identity — includes [observability examples](./agentic-frameworks/strands-agents/observability/)
 

@@ -1,3 +1,0 @@
-openai-agents
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
