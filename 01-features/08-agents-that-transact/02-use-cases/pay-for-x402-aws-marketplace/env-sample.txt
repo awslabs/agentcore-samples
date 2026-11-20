@@ -1,0 +1,25 @@
+# Variables the sample reads from .env (git-ignored). setup_aws_billing.py and setup_gateway.py
+# write most of them for you, so copy this file to .env only if you set the values yourself.
+
+# Written by setup_aws_billing.py. PAYMENT_CONNECTOR_ID is written for reference only.
+AWS_REGION=us-east-1
+PAYMENT_MANAGER_ARN=
+PAYMENT_MANAGER_ID=
+PAYMENT_CONNECTOR_ID=
+SESSION_ROLE_ARN=
+AGENT_ROLE_ARN=
+
+# Written by setup_gateway.py (optional; enables Marketplace discovery)
+GATEWAY_URL=
+GATEWAY_REGION=us-east-1
+GATEWAY_ID=
+
+# Set by you if you skip the gateway: an x402-enabled AWS Marketplace seller API
+SELLER_URL=
+
+# Optional
+# MODEL_ID=us.anthropic.claude-sonnet-4-6
+# SESSION_BUDGET_USD=0.05
+# MAX_PRICE_PER_CALL_USD=0.02
+# GATEWAY_TARGET_NAME=marketplace
+# USER_ID=demo-user
