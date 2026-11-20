@@ -1,0 +1,1177 @@
+diff --git a/app/claimsagent/config.py b/app/claimsagent/config.py
+index fe34038..acb43b3 100644
+--- a/app/claimsagent/config.py
++++ b/app/claimsagent/config.py
+@@ -45,5 +45,9 @@ MEMORY_RETRIEVAL_RELEVANCE = float(os.getenv("MEMORY_RETRIEVAL_RELEVANCE", "0.5"
+ # value are approved automatically; below routes to human review.
+ AUTO_APPROVE_THRESHOLD = int(os.getenv("AUTO_APPROVE_THRESHOLD", "80"))
+ 
++# Accepted claims above this dollar amount are never auto-approved; they always
++# go to human review regardless of the validator's confidence (see routing.py).
++HIGH_VALUE_THRESHOLD = int(os.getenv("HIGH_VALUE_THRESHOLD", "25000"))
++
+ # ─── Logging ────────────────────────────────────────────────────────────────
+ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+diff --git a/app/claimsagent/gateway_tools.py b/app/claimsagent/gateway_tools.py
+new file mode 100644
+index 0000000..50eaf27
+--- /dev/null
++++ b/app/claimsagent/gateway_tools.py
+@@ -0,0 +1,106 @@
++"""Helpers for calling AgentCore Gateway tools directly from Phase 3 (no LLM).
++
++Two facts about the Gateway that Phase 3 must respect:
++
++1. Tool names. The Gateway exposes each Lambda tool as ``<target>___<tool>``
++   (e.g. ``policy-lookup___lookup_policy``), not by the bare schema name.
++   ``resolve_tool_name`` finds the real name in the client's tool list and falls
++   back to ``GATEWAY_TARGETS`` (which mirrors ``agentcore/agentcore.json``; a
++   unit test keeps the two in sync).
++
++2. Result shape. ``MCPClient.call_tool_async`` returns a plain dict
++   ``{"status", "toolUseId", "content": [{"text": ...}]}`` (Strands'
++   ``MCPToolResult``), and the text is often a JSON string that itself encodes
++   JSON, because the Lambda returns ``json.dumps(...)`` and the Gateway encodes
++   that string again. ``parse_tool_result`` handles the dict form, an object
++   with a ``.content`` attribute, and nested JSON encoding.
++"""
++
++import json
++
++# Bare tool name -> Gateway target name. Mirrors the targets in agentcore/agentcore.json.
++GATEWAY_TARGETS = {
++    "lookup_policy": "policy-lookup",
++    "create_claim": "create-claim",
++    "request_human_review": "human-review",
++    "send_notification": "notification",
++    "list_pending_claims": "list-pending-claims",
++    "resolve_claim": "resolve-claim",
++}
++
++TARGET_SEPARATOR = "___"
++
++# Lambda -> Gateway can stack JSON encodings; a small bound avoids looping on odd input.
++_MAX_JSON_DECODE_DEPTH = 3
++
++
++class GatewayToolError(RuntimeError):
++    """The Gateway reported that a tool call failed (status "error")."""
++
++
++def default_gateway_name(tool: str) -> str:
++    """Return ``<target>___<tool>`` from the static target map."""
++    target = GATEWAY_TARGETS.get(tool)
++    if target is None:
++        raise KeyError(f"No Gateway target configured for tool {tool!r}")
++    return f"{target}{TARGET_SEPARATOR}{tool}"
++
++
++def resolve_tool_name(tool: str, available_names: list[str] | None) -> str:
++    """Return the Gateway name for ``tool``.
++
++    Prefers a name the Gateway actually lists (exact match, or ``*___<tool>``);
++    falls back to the configured ``<target>___<tool>`` when the list is
++    unavailable or has no match.
++    """
++    for name in available_names or ():
++        if name == tool or name.endswith(f"{TARGET_SEPARATOR}{tool}"):
++            return name
++    return default_gateway_name(tool)
++
++
++def _decode_json(text):
++    """Decode ``text`` as JSON, unwrapping JSON strings that encode JSON."""
++    value = text
++    for _ in range(_MAX_JSON_DECODE_DEPTH):
++        if not isinstance(value, str):
++            return value
++        try:
++            value = json.loads(value)
++        except (json.JSONDecodeError, TypeError):
++            return value
++    return value
++
++
++def _field(result, name):
++    if isinstance(result, dict):
++        return result.get(name)
++    return getattr(result, name, None)
++
++
++def parse_tool_result(result) -> dict:
++    """Turn a Gateway tool result into the tool's JSON payload as a dict.
++
++    Raises ``GatewayToolError`` when the call itself failed (status "error",
++    e.g. "Unknown tool"). A tool's own error payload, such as
++    ``{"error": "Policy POL-1 not found"}``, is returned as a normal dict.
++    Text that is not a JSON object is returned as ``{"raw": text}``.
++    """
++    content = _field(result, "content") or []
++    texts = []
++    for block in content:
++        text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
++        if text is not None:
++            texts.append(text)
++
++    status = str(_field(result, "status") or "").lower()
++    if status == "error" or _field(result, "isError") is True:
++        raise GatewayToolError(" ".join(str(t) for t in texts) or "Gateway tool call failed")
++
++    for text in texts:
++        payload = _decode_json(text)
++        if isinstance(payload, dict):
++            return payload
++    if texts:
++        return {"raw": texts[0]}
++    return {"raw": str(result)}
+diff --git a/app/claimsagent/main.py b/app/claimsagent/main.py
+index 74c72ad..ad5c4e3 100644
+--- a/app/claimsagent/main.py
++++ b/app/claimsagent/main.py
+@@ -5,6 +5,7 @@ Agent 1 (Claims Processor): Evaluates claim, verifies policy, makes ACCEPT/REJEC
+ Agent 2 (Validation Agent): Reviews decision, assigns confidence score, routes accordingly
+ """
+ 
++import asyncio
+ import json
+ import uuid
+ 
+@@ -16,10 +17,12 @@ from config import (
+     GATEWAY_CREDENTIAL_PROVIDER,
+     GATEWAY_OAUTH_SCOPES,
+     GATEWAY_URL,
++    HIGH_VALUE_THRESHOLD,
+ )
++from gateway_tools import GatewayToolError, parse_tool_result, resolve_tool_name
+ from mcp.client.streamable_http import streamablehttp_client
+ from memory.session import get_memory_session_manager
+-from routing import decide_action, resolve_decision, resolve_routing
++from routing import ACCEPT, AUTO_APPROVE, auto_approve_blockers, decide_action, resolve_decision, resolve_routing
+ from strands import Agent
+ from strands.models.bedrock import BedrockModel
+ from strands.tools.mcp import MCPClient
+@@ -38,27 +41,52 @@ PROCESSOR_PROMPT = """You are a Claims Processor for SecureGuard Insurance.
+ 
+ Your job:
+ 1. Extract claim details from the submission (policy number, description, amount, category)
+-2. Attempt lookup_policy to verify coverage. If it fails or is unavailable, proceed immediately.
+-3. Evaluate the claim against policy terms
+-4. Make a decision: ACCEPT or REJECT with detailed reasoning
+-If lookup_policy is unavailable, ACCEPT plausible claims conditionally, noting manual verification is needed. Do not reject solely because lookup failed.
++2. Call lookup_policy to verify the policy exists and is active
++3. Verify the claimant is the policy holder
++4. Evaluate the claim against policy terms
++5. Make a decision: ACCEPT, REJECT, or REFER, with detailed reasoning, and call submit_decision
+ 
+ Output your decision in this EXACT format:
+-DECISION: [ACCEPT or REJECT]
++DECISION: [ACCEPT, REJECT, or REFER]
+ AMOUNT: [dollar amount as integer]
+ POLICY: [policy_number]
+-CATEGORY: [claim category]
++CATEGORY: [claim category, or unknown]
+ DESCRIPTION: [brief description]
+-REASONING: [detailed explanation of why you accepted or rejected]
++REASONING: [detailed explanation, including every concern you identified]
+ COVERAGE_CHECK: [whether amount is within limits, policy active, deductible noted]
+ 
+-Rules:
+-- Always attempt lookup_policy first to verify the policy exists and is active
+-- If lookup_policy fails or errors, REJECT the claim citing the lookup failure. Never ACCEPT without successful verification.
++Decisions:
++- ACCEPT only if the policy lookup succeeded, the policy is active, the amount is within limits, the claim
++  type is covered, the claimant is verified as the policy holder, and you have no unresolved concern.
++- REJECT if the policy is inactive, the amount exceeds the coverage limit, the claim type is not covered,
++  or lookup_policy returned error_code POLICY_NOT_FOUND.
++- REFER (a human adjuster decides) in every other case where you cannot ACCEPT or REJECT on verified facts.
++
++Policy lookup:
++- Pass the policy number trimmed and uppercased (e.g. "pol-12345" -> "POL-12345"). The tool also
++  normalizes input, so a POLICY_NOT_FOUND result is authoritative: do not retry variants; REJECT and tell
++  the claimant to check the policy number they supplied.
++- If lookup_policy returns INVALID_FORMAT, any other error, or is unavailable, decide REFER. Never ACCEPT
++  without a successful lookup, and never REJECT only because the tool failed.
+ - Never fabricate policy details from context or prior claims. Only trust actual lookup_policy results.
++
++Identity check (do this BEFORE deciding):
++- Compare the claimant email in the submission metadata with the policy holder email returned by
++  lookup_policy. If there is no claimant email, or the emails differ, you MUST NOT ACCEPT: decide REFER
++  and state the mismatch in REASONING. Do not record a decision and raise the concern afterwards.
++
++Category:
++- Assign a category only when the claimant's own words state what happened (e.g. "rear-ended" ->
++  auto_collision, "tree fell on my roof in a storm" -> natural_disaster). If the incident type is not
++  stated, use category "unknown" and decide REFER. Never infer a category the claimant did not state.
++
++Consistency between reasoning and decision:
++- Every concern, gap, or inconsistency you notice (vague description, missing incident type or date,
++  identity mismatch, lookup problem) must appear in REASONING, and your decision must reflect it. If you
++  would want something verified or clarified before paying, decide REFER, not ACCEPT.
++
++Other rules:
+ - Do NOT call create_claim — that happens later based on validation
+-- REJECT if policy is inactive, amount exceeds coverage limit, or claim type not covered
+-- ACCEPT if policy is active, amount within limits, and claim type is covered
+ - Always note the deductible amount in your reasoning
+ - After making your decision, you MUST call the submit_decision tool with all fields filled in.
+ - If a tool returns "Unknown tool", do not retry it — use only available tools.
+@@ -87,16 +115,29 @@ Output your validation in this EXACT format:
+ CONFIDENCE: [0-100]
+ ROUTING: [AUTO_APPROVE or HUMAN_REVIEW]
+ VALIDATION_NOTES: [your assessment of the processor's decision]
+-CONCERNS: [any red flags or issues, or "None" if clean]
++CONCERNS: [every red flag or issue, or "None" if clean]
+ 
+ Rules:
+ - If CONFIDENCE >= 80: set ROUTING to AUTO_APPROVE
+ - If CONFIDENCE < 80: set ROUTING to HUMAN_REVIEW
+-- Be skeptical of high-value claims (>$25k) — lower confidence unless clearly justified
+-- Flag if the description is vague or lacks detail
+-- Flag if the category seems mismatched with the description
++- ROUTING applies to REJECT decisions too: HUMAN_REVIEW on a REJECT sends it to a human instead of rejecting.
++- A REFER decision always goes to human review; score it and explain what the human must check.
++- High-value claims (> ${high_value}): an ACCEPT above this amount is always sent to human review by the
++  system. For such a claim, set CONFIDENCE below 80, set ROUTING to HUMAN_REVIEW, and name the high-value
++  rule in CONCERNS. Do not give it a 90-100 score.
++- Identity: if the claimant email in the submission is missing or differs from the policy holder email the
++  processor reported, list it in CONCERNS and set ROUTING to HUMAN_REVIEW for an ACCEPT.
++- Lookup failures: a lookup_policy POLICY_NOT_FOUND is authoritative (the tool normalizes case and
++  whitespace), so a REJECT on that basis can be confirmed. If a REJECT rests on any other lookup error, a
++  tool outage, or a policy number the processor itself suggests may be mistyped or in another format, list
++  it in CONCERNS and set CONFIDENCE below 80.
++- Flag if the description is vague or lacks detail (no incident type, date, or what happened). An ACCEPT of
++  a vague claim must get CONFIDENCE below 80.
++- Flag if the category seems mismatched with the description or was not stated by the claimant.
++- CONCERNS must list every issue you mention in VALIDATION_NOTES. Write "None" only when your notes raise no
++  issue at all. If CONCERNS is not "None", your CONFIDENCE must reflect it.
+ - After completing your validation, you MUST call the submit_validation tool with all fields.
+-"""
++""".format(high_value=f"{HIGH_VALUE_THRESHOLD:,}")
+ 
+ _processor = None
+ _validator = None
+@@ -188,38 +229,72 @@ def get_validator():
+     return _validator
+ 
+ 
+-async def _call_tool(mcp: MCPClient, tool_name: str, arguments: dict) -> dict:
++_gateway_tool_names: list[str] | None = None
++
++
++def _list_gateway_tool_names(mcp: MCPClient) -> list[str] | None:
++    """Return the tool names the Gateway exposes (cached), or None if listing fails."""
++    global _gateway_tool_names
++    if _gateway_tool_names is None:
++        try:
++            names, token = [], None
++            while True:
++                page = mcp.list_tools_sync(pagination_token=token)
++                names.extend(t.mcp_tool.name for t in page)
++                token = getattr(page, "pagination_token", None)
++                if not token:
++                    break
++            _gateway_tool_names = names
++        except Exception as exc:
++            log.warning("Could not list Gateway tools; using configured target names: %s", exc)
++            return None
++    return _gateway_tool_names
++
++
++async def _call_tool(mcp: MCPClient, tool: str, arguments: dict) -> dict:
+     """Call a Gateway tool directly via MCP (no LLM intermediary).
+ 
+-    Used by Phase 3 to execute deterministic actions without an additional
+-    LLM invocation. The routing decision is already made — we just need
+-    to call the tools with known parameters.
++    ``tool`` is the bare schema name (e.g. "create_claim"); it is resolved to the
++    Gateway name ("create-claim___create_claim") before the call. Returns the
++    tool's JSON payload as a dict; raises GatewayToolError if the call failed.
+ 
+     The MCPClient is already started by the Agent in Phase 1, so we can
+     call tools directly without re-initializing the connection.
+     """
++    names = await asyncio.to_thread(_list_gateway_tool_names, mcp)
+     tool_use_id = f"phase3-{uuid.uuid4().hex[:8]}"
+     result = await mcp.call_tool_async(
+         tool_use_id=tool_use_id,
+-        name=tool_name,
++        name=resolve_tool_name(tool, names),
+         arguments=arguments,
+     )
+-    # MCPToolResult has .content list; extract the text payload
+-    if result and hasattr(result, "content") and result.content:
+-        for content_block in result.content:
+-            if hasattr(content_block, "text"):
+-                try:
+-                    return json.loads(content_block.text)
+-                except (json.JSONDecodeError, TypeError):
+-                    return {"raw": content_block.text}
+-    return {"raw": str(result)}
++    return parse_tool_result(result)
++
++
++async def _fetch_policy(mcp: MCPClient | None, policy_number: str) -> dict | None:
++    """Re-fetch the policy record for the deterministic identity check.
++
++    Returns None on any failure; callers treat None as "identity unverified"
++    (fail closed), so an outage can only route a claim to human review.
++    """
++    if not mcp or not policy_number:
++        return None
++    try:
++        result = await _call_tool(mcp, "lookup_policy", {"policy_number": policy_number})
++    except Exception as exc:
++        log.warning("Policy re-verification failed: %s", exc)
++        return None
++    if not isinstance(result, dict) or "error" in result or "raw" in result:
++        log.warning("Policy re-verification returned no record: %.200s", result)
++        return None
++    return result
+ 
+ 
+ def _extract_claim_id(result: dict) -> str:
+-    """Extract claim_id from create_claim tool result."""
+-    if isinstance(result, dict):
+-        return result.get("claim_id", "unknown")
+-    return "unknown"
++    """Extract claim_id from a create_claim result; raise if the claim was not created."""
++    if isinstance(result, dict) and result.get("claim_id"):
++        return result["claim_id"]
++    raise GatewayToolError(f"create_claim returned no claim_id: {result}")
+ 
+ 
+ @app.entrypoint
+@@ -313,13 +388,23 @@ Please validate this decision and assign a confidence score."""
+ 
+     confidence, routing = resolve_routing(structured_validation, validator_response)
+     decision = resolve_decision(structured_decision, processor_response)
+-    action = decide_action(decision, routing)
+ 
+     # Phase 3 executes deterministically based on routing. No LLM call needed —
+     # we have all the data from structured output tools and can call Gateway
+     # tools directly via MCP, saving 6–16s and ~$0.01 per invocation.
+     mcp = get_mcp_client()
+ 
++    # Hard rules checked in code before any auto-approval (high value, unconfirmed
++    # category, claimant identity vs policy holder). The policy is re-fetched here
++    # rather than trusted from the processor's text, and a failed fetch blocks.
++    blockers: list[str] = []
++    if decision == ACCEPT and routing == AUTO_APPROVE:
++        policy = await _fetch_policy(mcp, structured_decision.get("policy_number", ""))
++        blockers = auto_approve_blockers(structured_decision, claimant_email, policy)
++        if blockers:
++            log.warning("Auto-approval blocked; routing to human review: %s", "; ".join(blockers))
++    action = decide_action(decision, routing, blockers)
++
+     if action == "REJECT":
+         yield f"**Claim rejected** (confidence: {confidence}/100)\n\n"
+         reasoning = structured_decision.get("reasoning", "Claim did not meet policy criteria.")
+@@ -393,6 +478,8 @@ Please validate this decision and assign a confidence score."""
+ 
+     else:  # HUMAN_REVIEW
+         yield f"**Routed to human review** (confidence: {confidence}/100)\n\n"
++        for blocker in blockers:
++            yield f"- Auto-approval blocked: {blocker}\n"
+ 
+         # Create the claim record in pending state
+         claim_id = None
+@@ -420,13 +507,16 @@ Please validate this decision and assign a confidence score."""
+         # Escalate to human review
+         if mcp and claim_id:
+             concerns = structured_validation.get("concerns", "Low confidence score")
++            reason = f"Processor decision: {decision}. Confidence: {confidence}/100. {concerns}"
++            if blockers:
++                reason += " Auto-approval blocked: " + "; ".join(blockers)
+             try:
+                 result = await _call_tool(
+                     mcp,
+                     "request_human_review",
+                     {
+                         "claim_id": claim_id,
+-                        "reason": f"Confidence: {confidence}/100. {concerns}",
++                        "reason": reason,
+                         "estimated_amount": structured_decision.get("amount", 0),
+                     },
+                 )
+diff --git a/app/claimsagent/routing.py b/app/claimsagent/routing.py
+index af9d96c..63899f7 100644
+--- a/app/claimsagent/routing.py
++++ b/app/claimsagent/routing.py
+@@ -1,35 +1,60 @@
+ """Pure routing logic for the dual-agent claims pipeline.
+ 
+-Routing matrix:
+-    decision == REJECT                  → REJECT       (notify only)
+-    routing  == AUTO_APPROVE            → AUTO_APPROVE (create + notify)
+-    routing  == HUMAN_REVIEW            → HUMAN_REVIEW (create + escalate + notify)
++Routing matrix (evaluated by ``decide_action``):
++    decision == REJECT, routing == AUTO_APPROVE   → REJECT       (notify only)
++    decision == REJECT, routing == HUMAN_REVIEW   → HUMAN_REVIEW (validator disputes the rejection)
++    decision == REFER                             → HUMAN_REVIEW (processor could not decide safely)
++    decision == ACCEPT, routing == AUTO_APPROVE   → AUTO_APPROVE (create + notify),
++                                                    unless an auto-approve blocker applies
++    otherwise                                     → HUMAN_REVIEW (create + escalate + notify)
++
++Auto-approve blockers (``auto_approve_blockers``) are hard rules checked in code
++rather than left to the agents: high-value amount, unconfirmed category, and
++claimant identity not matching the policy holder. Any blocker turns an
++AUTO_APPROVE into HUMAN_REVIEW. They can only add human oversight, never remove it.
+ 
+ Both agents MUST call their respective structured-output tools (submit_decision,
+-submit_validation). If they fail to do so, routing defaults to HUMAN_REVIEW —
+-the safe fallback that ensures no claim is auto-approved without proper validation.
++submit_validation). If they fail to do so, the decision defaults to REJECT and
++the routing to HUMAN_REVIEW, so no claim is auto-approved without validation.
+ """
+ 
+ import logging
++from email.utils import parseaddr
+ 
+-from config import AUTO_APPROVE_THRESHOLD
++from config import AUTO_APPROVE_THRESHOLD, HIGH_VALUE_THRESHOLD
+ 
+ log = logging.getLogger(__name__)
+ 
++# Processor decisions
++ACCEPT = "ACCEPT"
++REFER = "REFER"  # not enough verified information to decide; a human must decide
++VALID_DECISIONS = ("ACCEPT", "REJECT", "REFER")
++
+ # Routing outcomes
+ REJECT = "REJECT"
+ AUTO_APPROVE = "AUTO_APPROVE"
+ HUMAN_REVIEW = "HUMAN_REVIEW"
+ 
++# Claim categories the processor may assign. UNKNOWN_CATEGORY is used when the
++# claimant did not state what kind of incident occurred.
++CLAIM_CATEGORIES = ("auto_collision", "property_damage", "theft", "natural_disaster", "medical")
++UNKNOWN_CATEGORY = "unknown"
++
+ 
+ def resolve_decision(structured_decision: dict | None, processor_response: str) -> str:
+-    """Return the processor's ACCEPT/REJECT decision.
++    """Return the processor's ACCEPT/REJECT/REFER decision.
+ 
+     Requires the structured-output tool result. If the agent failed to call
+-    submit_decision, defaults to REJECT (safe: no unintended approvals).
++    submit_decision, defaults to REJECT (safe: no unintended approvals). An
++    unrecognized decision value is treated as REFER so it can never fall through
++    to auto-approval.
+     """
+     if structured_decision:
+-        return structured_decision["decision"].upper()
++        decision = str(structured_decision.get("decision", "")).strip().upper()
++        if decision in VALID_DECISIONS:
++            return decision
++        log.warning("Unrecognized processor decision %r; treating as REFER", decision)
++        return REFER
+ 
+     log.error(
+         "Claims Processor did not call submit_decision tool. Defaulting to REJECT. Agent response: %.200s",
+@@ -59,6 +84,9 @@ def resolve_routing(structured_validation: dict | None, validator_response: str)
+                 AUTO_APPROVE_THRESHOLD,
+             )
+             routing = HUMAN_REVIEW
++        if routing not in (AUTO_APPROVE, HUMAN_REVIEW):
++            log.warning("Unrecognized validator routing %r; overriding to HUMAN_REVIEW", routing)
++            routing = HUMAN_REVIEW
+         return confidence, routing
+ 
+     log.error(
+@@ -68,15 +96,72 @@ def resolve_routing(structured_validation: dict | None, validator_response: str)
+     return 0, HUMAN_REVIEW
+ 
+ 
+-def decide_action(decision: str, routing: str) -> str:
+-    """Combine decision + routing into the final action.
++def normalize_email(value: str | None) -> str:
++    """Return the bare, lowercased address from ``value`` ("Name <a@b.com>" → "a@b.com")."""
++    if not value:
++        return ""
++    _, address = parseaddr(str(value))
++    return address.strip().lower()
++
++
++def check_identity(claimant_email: str | None, policy: dict | None) -> str | None:
++    """Return a reason string if the claimant is not verified as the policy holder, else None.
++
++    Fails closed: a missing claimant email, a missing policy record, or a policy
++    without an email on file all count as unverified.
++    """
++    claimant = normalize_email(claimant_email)
++    if not claimant:
++        return "Claimant identity unverified: no claimant email on the submission"
++    if not policy or "error" in policy:
++        return "Claimant identity unverified: policy record could not be re-verified"
++    holder = normalize_email(policy.get("email") or policy.get("holder_email"))
++    if not holder:
++        return "Claimant identity unverified: policy has no holder email on file"
++    if claimant != holder:
++        return f"Claimant email {claimant} does not match the policy holder email on file"
++    return None
++
++
++def auto_approve_blockers(decision: dict, claimant_email: str | None, policy: dict | None) -> list[str]:
++    """Return the hard-rule reasons that prevent auto-approving an accepted claim.
++
++    ``decision`` is the processor's structured decision; ``policy`` is the policy
++    record re-fetched by the orchestrator (None if it could not be fetched).
++    An empty list means no blocker applies.
++    """
++    blockers = []
++
++    try:
++        amount = float(decision.get("amount") or 0)
++    except (TypeError, ValueError):
++        amount = None
++    if amount is None:
++        blockers.append("Claim amount is not a number")
++    elif amount > HIGH_VALUE_THRESHOLD:
++        blockers.append(f"High-value claim (${amount:,.0f} > ${HIGH_VALUE_THRESHOLD:,}) requires human review")
++
++    category = str(decision.get("category") or "").strip().lower()
++    if category not in CLAIM_CATEGORIES:
++        blockers.append(f"Incident category not confirmed by the claimant ({category or 'missing'})")
++
++    identity_issue = check_identity(claimant_email, policy)
++    if identity_issue:
++        blockers.append(identity_issue)
++
++    return blockers
++
++
++def decide_action(decision: str, routing: str, blockers: list[str] | None = None) -> str:
++    """Combine decision + routing (+ hard-rule blockers) into the final action.
+ 
+-    A REJECT decision always wins (the claim is denied regardless of validator
+-    routing). Otherwise the validator's routing determines auto-approve vs human
+-    review.
++    A REJECT is final only when the validator agrees (AUTO_APPROVE routing); if
++    the validator routes it to HUMAN_REVIEW, a human decides. REFER always goes
++    to human review. An ACCEPT is auto-approved only when the validator routes
++    AUTO_APPROVE and no blocker applies.
+     """
+     if decision == REJECT:
+-        return REJECT
+-    if routing == AUTO_APPROVE:
++        return REJECT if routing == AUTO_APPROVE else HUMAN_REVIEW
++    if decision == ACCEPT and routing == AUTO_APPROVE and not blockers:
+         return AUTO_APPROVE
+     return HUMAN_REVIEW
+diff --git a/app/claimsagent/tools/structured_output.py b/app/claimsagent/tools/structured_output.py
+index c0559bf..8800a51 100644
+--- a/app/claimsagent/tools/structured_output.py
++++ b/app/claimsagent/tools/structured_output.py
+@@ -13,6 +13,7 @@ request ``context`` instead of module globals.
+ 
+ import json
+ 
++from routing import CLAIM_CATEGORIES, UNKNOWN_CATEGORY, VALID_DECISIONS
+ from strands import tool
+ 
+ # Shared state for capturing structured outputs from agents (single-flight; see module docstring)
+@@ -50,27 +51,40 @@ def submit_decision(
+     """Submit your final claim decision with all required fields.
+ 
+     Call this tool ONCE after completing your evaluation to record your decision.
++    If it returns an "error", fix the named field and call it again.
+ 
+     Args:
+-        decision: Must be exactly ACCEPT or REJECT.
++        decision: Exactly ACCEPT, REJECT, or REFER. Use REFER when you cannot decide safely:
++            the policy lookup errored, the claimant's identity does not match the policy holder,
++            the incident type or other critical details are missing, or you have any unresolved
++            concern. REFER sends the claim to a human adjuster.
+         amount: Dollar amount of the claim as an integer.
+-        policy_number: The policy number being claimed against.
+-        category: Claim category (auto_collision, property_damage, theft, natural_disaster, medical).
++        policy_number: The policy number being claimed against (normalized to uppercase).
++        category: One of auto_collision, property_damage, theft, natural_disaster, medical, or
++            "unknown" when the claimant did not state what kind of incident occurred. Never guess.
+         description: Brief description of the claim.
+-        reasoning: Detailed explanation of why you accepted or rejected.
++        reasoning: Detailed explanation of the decision, including every concern you identified.
+         coverage_check: Summary of coverage verification (limits, active status, deductible).
+     """
+     global _last_decision
++    normalized_decision = str(decision).strip().upper()
++    normalized_category = str(category).strip().lower()
++    if normalized_decision not in VALID_DECISIONS:
++        return json.dumps({"error": f"decision must be one of {', '.join(VALID_DECISIONS)}; got {decision!r}"})
++    allowed_categories = (*CLAIM_CATEGORIES, UNKNOWN_CATEGORY)
++    if normalized_category not in allowed_categories:
++        return json.dumps({"error": f"category must be one of {', '.join(allowed_categories)}; got {category!r}"})
++
+     _last_decision = {
+-        "decision": decision.upper(),
++        "decision": normalized_decision,
+         "amount": amount,
+-        "policy_number": policy_number,
+-        "category": category,
++        "policy_number": str(policy_number).strip().upper(),
++        "category": normalized_category,
+         "description": description,
+         "reasoning": reasoning,
+         "coverage_check": coverage_check,
+     }
+-    return json.dumps({"status": "recorded", "decision": decision.upper()})
++    return json.dumps({"status": "recorded", "decision": normalized_decision})
+ 
+ 
+ @tool
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 53530c4..52397b1 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -174,6 +174,11 @@ Both agents MUST call their respective structured-output tools (`submit_decision
+ - Missing `submit_decision` → defaults to REJECT (no unintended approvals)
+ - Missing `submit_validation` → defaults to HUMAN_REVIEW (ensures human oversight)
+ 
++The processor decides ACCEPT, REJECT, or REFER (not enough verified information; a human decides). The final action:
++- REJECT is final only when the validator routes AUTO_APPROVE; a validator HUMAN_REVIEW sends it to a human instead
++- REFER always goes to HUMAN_REVIEW
++- ACCEPT auto-approves only when the validator routes AUTO_APPROVE **and** no hard-rule blocker applies. Blockers are checked in code: amount above `HIGH_VALUE_THRESHOLD` (default $25,000), category not confirmed by the claimant, or claimant email missing / not matching the policy holder email (the policy is re-fetched in Phase 3; a failed fetch blocks)
++
+ ### Phase 3: Deterministic Execution
+ 
+ Phase 3 does **not** use an LLM call. Once routing is resolved (REJECT / AUTO_APPROVE / HUMAN_REVIEW), the execution is deterministic — we have all required data from the structured output tools and call Gateway tools directly via `MCPClient.call_tool_async()`. This eliminates one Sonnet invocation (~6–16s and ~$0.01 per request).
+diff --git a/lambdas/policy_lookup/handler.py b/lambdas/policy_lookup/handler.py
+index fe7d983..e9bb9b3 100644
+--- a/lambdas/policy_lookup/handler.py
++++ b/lambdas/policy_lookup/handler.py
+@@ -1,20 +1,52 @@
+ import json
+ import os
++import re
+ 
+ import boto3
+ 
+ dynamodb = boto3.resource("dynamodb")
+ table = dynamodb.Table(os.environ.get("POLICIES_TABLE", "ClaimsAgent-Policies"))
+ 
++# Policy numbers are stored uppercase, e.g. POL-12345 or POL-2024-001.
++POLICY_NUMBER_PATTERN = re.compile(r"^POL-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
++
++
++def normalize_policy_number(raw: str) -> str:
++    """Normalize user-supplied input to the stored key format.
++
++    Trims, uppercases, and turns runs of whitespace/underscores/hyphens into a
++    single hyphen, so "pol-12345", " POL_12345 " and "pol 12345" all become "POL-12345".
++    """
++    value = re.sub(r"[\s_\-]+", "-", str(raw).strip().upper())
++    return value.strip("-")
++
+ 
+ def handler(event, context):
+-    policy_number = event.get("policy_number", "")
+-    if not policy_number:
+-        return json.dumps({"error": "policy_number is required"})
++    raw = event.get("policy_number", "")
++    if not raw or not str(raw).strip():
++        return json.dumps({"error": "policy_number is required", "error_code": "MISSING_POLICY_NUMBER"})
++
++    policy_number = normalize_policy_number(raw)
++    if not POLICY_NUMBER_PATTERN.match(policy_number):
++        return json.dumps(
++            {
++                "error": f"Policy number {raw!r} is not in a recognized format (expected e.g. POL-12345)",
++                "error_code": "INVALID_FORMAT",
++                "policy_number_received": raw,
++            }
++        )
+ 
+     resp = table.get_item(Key={"policy_number": policy_number})
+     item = resp.get("Item")
+     if not item:
+-        return json.dumps({"error": f"Policy {policy_number} not found"})
++        return json.dumps(
++            {
++                "error": f"Policy {policy_number} not found",
++                "error_code": "POLICY_NOT_FOUND",
++                "policy_number_received": raw,
++                "policy_number_searched": policy_number,
++                "note": "Lookup is already case- and whitespace-insensitive; retrying format variants will not help.",
++            }
++        )
+ 
+     return json.dumps(item, default=str)
+diff --git a/lambdas/schemas/policy_lookup.json b/lambdas/schemas/policy_lookup.json
+index 127cd7e..8d29777 100644
+--- a/lambdas/schemas/policy_lookup.json
++++ b/lambdas/schemas/policy_lookup.json
+@@ -1 +1 @@
+-[{"name": "lookup_policy", "description": "Look up insurance policy details by policy number", "inputSchema": {"type": "object", "properties": {"policy_number": {"type": "string", "description": "The policy identifier (e.g., POL-2024-001)"}}, "required": ["policy_number"]}}]
++[{"name": "lookup_policy", "description": "Look up insurance policy details by policy number. Input is normalized before lookup (trimmed, uppercased, spaces/underscores become hyphens), so 'pol-12345' finds POL-12345. On success returns the policy record (holder_name, email, policy_type, coverage_amount, deductible, status). On failure returns {\"error\", \"error_code\"}: POLICY_NOT_FOUND means the policy does not exist (authoritative; do not retry variants), INVALID_FORMAT means the number is malformed, MISSING_POLICY_NUMBER means none was given.", "inputSchema": {"type": "object", "properties": {"policy_number": {"type": "string", "description": "The policy identifier, e.g. POL-12345 or POL-2024-001 (case-insensitive)"}}, "required": ["policy_number"]}}]
+\ No newline at end of file
+diff --git a/tests/test_gateway_tools.py b/tests/test_gateway_tools.py
+new file mode 100644
+index 0000000..f2d3420
+--- /dev/null
++++ b/tests/test_gateway_tools.py
+@@ -0,0 +1,200 @@
++"""Unit tests for app/claimsagent/gateway_tools.py (Phase 3 direct Gateway calls).
++
++Payload shapes are copied from the production runtime log of the failed smoke test:
++``MCPClient.call_tool_async`` returns a plain dict, the text can be a JSON string
++that encodes JSON, and bare tool names come back as "Unknown tool".
++"""
++
++import asyncio
++import json
++import os
++import sys
++import unittest
++from types import SimpleNamespace
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app", "claimsagent"))
++
++from gateway_tools import (  # noqa: E402
++    GATEWAY_TARGETS,
++    GatewayToolError,
++    default_gateway_name,
++    parse_tool_result,
++    resolve_tool_name,
++)
++
++_ROOT = os.path.join(os.path.dirname(__file__), "..")
++
++POLICY = {"policy_number": "POL-12345", "holder_name": "John Smith", "email": "john.smith@example.com"}
++
++# Exact production shape: the Lambda's json.dumps() output encoded again as a JSON string.
++DOUBLE_ENCODED_SUCCESS = {
++    "status": "success",
++    "toolUseId": "phase3-e4b667ac",
++    "content": [{"text": json.dumps(json.dumps(POLICY))}],
++}
++UNKNOWN_TOOL_ERROR = {
++    "status": "error",
++    "toolUseId": "phase3-c804dba2",
++    "content": [{"text": "Tool execution failed: Unknown tool: create_claim"}],
++}
++
++
++class ParseToolResultTests(unittest.TestCase):
++    def test_production_double_encoded_dict_result(self):
++        self.assertEqual(parse_tool_result(DOUBLE_ENCODED_SUCCESS), POLICY)
++
++    def test_single_encoded_dict_result(self):
++        result = {"status": "success", "toolUseId": "t", "content": [{"text": json.dumps(POLICY)}]}
++        self.assertEqual(parse_tool_result(result), POLICY)
++
++    def test_object_form_with_content_attribute(self):
++        result = SimpleNamespace(status="success", content=[SimpleNamespace(text=json.dumps(json.dumps(POLICY)))])
++        self.assertEqual(parse_tool_result(result), POLICY)
++
++    def test_tool_error_payload_is_returned_not_raised(self):
++        # A Lambda-level "not found" is a successful call with an error payload.
++        body = {"error": "Policy POL-00000 not found", "error_code": "POLICY_NOT_FOUND"}
++        result = {"status": "success", "toolUseId": "t", "content": [{"text": json.dumps(json.dumps(body))}]}
++        self.assertEqual(parse_tool_result(result), body)
++
++    def test_unknown_tool_status_error_raises(self):
++        with self.assertRaises(GatewayToolError) as ctx:
++            parse_tool_result(UNKNOWN_TOOL_ERROR)
++        self.assertIn("Unknown tool: create_claim", str(ctx.exception))
++
++    def test_is_error_flag_raises(self):
++        with self.assertRaises(GatewayToolError):
++            parse_tool_result({"isError": True, "content": [{"text": "boom"}]})
++
++    def test_non_json_text_returned_raw(self):
++        result = {"status": "success", "content": [{"text": "plain text"}]}
++        self.assertEqual(parse_tool_result(result), {"raw": "plain text"})
++
++    def test_empty_content(self):
++        self.assertIn("raw", parse_tool_result({"status": "success", "content": []}))
++
++
++class ResolveToolNameTests(unittest.TestCase):
++    LISTED = [
++        "policy-lookup___lookup_policy",
++        "create-claim___create_claim",
++        "human-review___request_human_review",
++        "notification___send_notification",
++    ]
++
++    def test_resolves_from_gateway_tool_list(self):
++        self.assertEqual(resolve_tool_name("create_claim", self.LISTED), "create-claim___create_claim")
++        self.assertEqual(resolve_tool_name("request_human_review", self.LISTED), "human-review___request_human_review")
++        self.assertEqual(resolve_tool_name("send_notification", self.LISTED), "notification___send_notification")
++
++    def test_falls_back_to_configured_target_when_list_unavailable(self):
++        self.assertEqual(resolve_tool_name("send_notification", None), "notification___send_notification")
++        self.assertEqual(resolve_tool_name("lookup_policy", []), "policy-lookup___lookup_policy")
++
++    def test_never_returns_bare_name_from_fallback(self):
++        for tool in GATEWAY_TARGETS:
++            self.assertIn("___", resolve_tool_name(tool, None))
++
++    def test_unknown_tool_raises(self):
++        with self.assertRaises(KeyError):
++            default_gateway_name("no_such_tool")
++
++
++class TargetConfigConsistencyTests(unittest.TestCase):
++    """GATEWAY_TARGETS must match agentcore/agentcore.json and the tool schemas."""
++
++    def test_matches_agentcore_config(self):
++        with open(os.path.join(_ROOT, "agentcore", "agentcore.json")) as f:
++            config = json.load(f)
++        expected = {}
++        for gateway in config["agentCoreGateways"]:
++            for target in gateway["targets"]:
++                schema_file = target["lambdaFunctionArn"]["toolSchemaFile"]
++                with open(os.path.join(_ROOT, schema_file)) as f:
++                    for tool in json.load(f):
++                        expected[tool["name"]] = target["name"]
++        self.assertTrue(expected, "no gateway targets found in agentcore.json")
++        self.assertEqual(GATEWAY_TARGETS, expected)
++
++
++try:
++    import main  # noqa: E402
++
++    _MAIN_AVAILABLE = True
++except Exception:  # agent SDKs not installed
++    _MAIN_AVAILABLE = False
++
++
++class FakeMCP:
++    """Stands in for strands MCPClient with the production result shapes."""
++
++    def __init__(self, listed_names, responses):
++        self.listed_names = listed_names
++        self.responses = responses
++        self.calls = []
++
++    def list_tools_sync(self, pagination_token=None):
++        return [SimpleNamespace(mcp_tool=SimpleNamespace(name=n)) for n in self.listed_names]
++
++    async def call_tool_async(self, tool_use_id, name, arguments):
++        self.calls.append(name)
++        if name not in self.listed_names:
++            return {
++                "status": "error",
++                "toolUseId": tool_use_id,
++                "content": [{"text": f"Tool execution failed: Unknown tool: {name}"}],
++            }
++        return self.responses[name]
++
++
++@unittest.skipUnless(_MAIN_AVAILABLE, "agent SDKs not installed (run under agent venv)")
++class CallToolIntegrationTests(unittest.TestCase):
++    def setUp(self):
++        main._gateway_tool_names = None
++        self.mcp = FakeMCP(
++            ResolveToolNameTests.LISTED,
++            {
++                "policy-lookup___lookup_policy": DOUBLE_ENCODED_SUCCESS,
++                "create-claim___create_claim": {
++                    "status": "success",
++                    "toolUseId": "t",
++                    "content": [{"text": json.dumps(json.dumps({"claim_id": "CLM-ABC12345"}))}],
++                },
++            },
++        )
++
++    def tearDown(self):
++        main._gateway_tool_names = None
++
++    def test_fetch_policy_returns_record_for_production_shape(self):
++        policy = asyncio.run(main._fetch_policy(self.mcp, "POL-12345"))
++        self.assertEqual(policy, POLICY)
++        self.assertEqual(self.mcp.calls, ["policy-lookup___lookup_policy"])
++
++    def test_create_claim_called_by_gateway_name(self):
++        result = asyncio.run(main._call_tool(self.mcp, "create_claim", {"policy_number": "POL-12345"}))
++        self.assertEqual(main._extract_claim_id(result), "CLM-ABC12345")
++        self.assertEqual(self.mcp.calls, ["create-claim___create_claim"])
++
++    def test_gateway_error_raises(self):
++        self.mcp.listed_names = []  # list empty -> fallback name, but the fake rejects it
++        with self.assertRaises(GatewayToolError):
++            asyncio.run(main._call_tool(self.mcp, "send_notification", {}))
++
++    def test_missing_claim_id_raises(self):
++        with self.assertRaises(GatewayToolError):
++            main._extract_claim_id({"error": "policy_number and description are required"})
++
++    def test_clean_fender_bender_auto_approves(self):
++        # Smoke-test replay: $2,000 auto_collision, matching email, policy re-fetched successfully.
++        from routing import AUTO_APPROVE, auto_approve_blockers, decide_action
++
++        policy = asyncio.run(main._fetch_policy(self.mcp, "POL-12345"))
++        decision = {"decision": "ACCEPT", "amount": 2000, "category": "auto_collision", "policy_number": "POL-12345"}
++        blockers = auto_approve_blockers(decision, "john.smith@example.com", policy)
++        self.assertEqual(blockers, [])
++        self.assertEqual(decide_action("ACCEPT", AUTO_APPROVE, blockers), AUTO_APPROVE)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_lambda_handlers.py b/tests/test_lambda_handlers.py
+index b3c60ed..f4844ee 100644
+--- a/tests/test_lambda_handlers.py
++++ b/tests/test_lambda_handlers.py
+@@ -179,6 +179,45 @@ class PolicyLookupTests(unittest.TestCase):
+         self.assertEqual(result["policy_number"], "POL-12345")
+         self.assertEqual(result["status"], "active")
+ 
++    # Insight 9f7cbd70d3549bf6: user-supplied numbers are normalized before lookup.
++    def test_lowercase_policy_number_is_normalized(self):
++        self.mod.table.get_item.return_value = {"Item": {"policy_number": "POL-12345", "status": "active"}}
++        result = self._call({"policy_number": "pol-12345"})
++        self.mod.table.get_item.assert_called_once_with(Key={"policy_number": "POL-12345"})
++        self.assertEqual(result["policy_number"], "POL-12345")
++
++    def test_whitespace_and_separators_are_normalized(self):
++        self.mod.table.get_item.return_value = {"Item": {"policy_number": "POL-12345"}}
++        for raw in ("  POL-12345 ", "pol_12345", "pol 12345", "POL--12345"):
++            self.mod.table.get_item.reset_mock()
++            self._call({"policy_number": raw})
++            self.mod.table.get_item.assert_called_once_with(Key={"policy_number": "POL-12345"})
++
++    def test_multi_segment_policy_number_accepted(self):
++        self.mod.table.get_item.return_value = {"Item": {"policy_number": "POL-2024-001"}}
++        self._call({"policy_number": "pol-2024-001"})
++        self.mod.table.get_item.assert_called_once_with(Key={"policy_number": "POL-2024-001"})
++
++    # Insight 1dbb614eed7b7e47: not-found and malformed inputs are distinguishable.
++    def test_not_found_is_structured_and_authoritative(self):
++        self.mod.table.get_item.return_value = {}
++        result = self._call({"policy_number": "pol-00000"})
++        self.assertEqual(result["error_code"], "POLICY_NOT_FOUND")
++        self.assertEqual(result["policy_number_searched"], "POL-00000")
++        self.assertEqual(result["policy_number_received"], "pol-00000")
++        self.assertIn("Policy POL-00000 not found", result["error"])
++
++    def test_invalid_format_skips_lookup(self):
++        for raw in ("12345", "POLICY 12345", "POL-", "POL-12$45"):
++            result = self._call({"policy_number": raw})
++            self.assertEqual(result["error_code"], "INVALID_FORMAT", raw)
++        self.mod.table.get_item.assert_not_called()
++
++    def test_blank_policy_number_is_missing(self):
++        result = self._call({"policy_number": "   "})
++        self.assertEqual(result["error_code"], "MISSING_POLICY_NUMBER")
++        self.mod.table.get_item.assert_not_called()
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_routing.py b/tests/test_routing.py
+index 71d6353..4d8b135 100644
+--- a/tests/test_routing.py
++++ b/tests/test_routing.py
+@@ -17,8 +17,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app", "claimsa
+ from routing import (  # noqa: E402
+     AUTO_APPROVE,
+     HUMAN_REVIEW,
++    REFER,
+     REJECT,
++    auto_approve_blockers,
++    check_identity,
+     decide_action,
++    normalize_email,
+     resolve_decision,
+     resolve_routing,
+ )
+@@ -39,6 +43,14 @@ class ResolveDecisionTests(unittest.TestCase):
+         # If the agent fails to call submit_decision, safe default is REJECT.
+         self.assertEqual(resolve_decision(None, "some response text"), "REJECT")
+ 
++    def test_structured_refer(self):
++        self.assertEqual(resolve_decision({"decision": "refer"}, ""), REFER)
++
++    def test_unknown_decision_value_is_refer_not_approve(self):
++        # An unexpected value must never fall through to auto-approval.
++        self.assertEqual(resolve_decision({"decision": "PENDING"}, ""), REFER)
++        self.assertEqual(decide_action(resolve_decision({"decision": "PENDING"}, ""), AUTO_APPROVE), HUMAN_REVIEW)
++
+     def test_empty_dict_defaults_to_reject(self):
+         # An empty dict is falsy → agent didn't call the tool properly.
+         self.assertEqual(resolve_decision({}, "DECISION: ACCEPT"), "REJECT")
+@@ -73,13 +85,34 @@ class ResolveRoutingTests(unittest.TestCase):
+         self.assertEqual(routing, HUMAN_REVIEW)
+ 
+ 
++class ResolveRoutingUnknownValueTests(unittest.TestCase):
++    def test_unknown_routing_value_overridden_to_human_review(self):
++        _, routing = resolve_routing({"confidence": 95, "routing": "SHIP_IT"}, "")
++        self.assertEqual(routing, HUMAN_REVIEW)
++
++
+ class DecideActionTests(unittest.TestCase):
+     def test_reject_decision_always_wins(self):
+         # Even if the validator says auto-approve, a REJECT decision denies the claim.
+         self.assertEqual(decide_action(REJECT, AUTO_APPROVE), REJECT)
+ 
+-    def test_reject_decision_beats_human_review(self):
+-        self.assertEqual(decide_action(REJECT, HUMAN_REVIEW), REJECT)
++    def test_reject_disputed_by_validator_goes_to_human_review(self):
++        # Insight 0fee4b6e89d9dcb5: when the validator routes a REJECT to HUMAN_REVIEW
++        # (e.g. a possibly recoverable lookup error), a human decides instead of auto-rejecting.
++        self.assertEqual(decide_action(REJECT, HUMAN_REVIEW), HUMAN_REVIEW)
++
++    def test_refer_always_human_review(self):
++        self.assertEqual(decide_action(REFER, AUTO_APPROVE), HUMAN_REVIEW)
++        self.assertEqual(decide_action(REFER, HUMAN_REVIEW), HUMAN_REVIEW)
++
++    def test_blockers_prevent_auto_approve(self):
++        self.assertEqual(decide_action("ACCEPT", AUTO_APPROVE, ["High-value claim"]), HUMAN_REVIEW)
++
++    def test_no_blockers_allows_auto_approve(self):
++        self.assertEqual(decide_action("ACCEPT", AUTO_APPROVE, []), AUTO_APPROVE)
++
++    def test_blockers_do_not_turn_reject_into_approve(self):
++        self.assertEqual(decide_action(REJECT, AUTO_APPROVE, ["x"]), REJECT)
+ 
+     def test_accept_with_auto_approve(self):
+         self.assertEqual(decide_action("ACCEPT", AUTO_APPROVE), AUTO_APPROVE)
+@@ -102,6 +135,9 @@ class EndToEndRoutingMatrixTests(unittest.TestCase):
+     def test_low_confidence_escalates(self):
+         self.assertEqual(self._run("ACCEPT", 55, "HUMAN_REVIEW"), HUMAN_REVIEW)
+ 
++    def test_rejected_claim_disputed_by_validator_escalates(self):
++        self.assertEqual(self._run("REJECT", 60, "HUMAN_REVIEW"), HUMAN_REVIEW)
++
+     def test_rejected_claim_notifies_only(self):
+         self.assertEqual(self._run("REJECT", 90, "AUTO_APPROVE"), REJECT)
+ 
+@@ -114,5 +150,83 @@ class EndToEndRoutingMatrixTests(unittest.TestCase):
+         self.assertEqual(self._run("ACCEPT", 70, "AUTO_APPROVE"), HUMAN_REVIEW)
+ 
+ 
++POLICY = {"policy_number": "POL-12345", "holder_name": "John Smith", "email": "john.smith@example.com"}
++CLEAN_DECISION = {"decision": "ACCEPT", "amount": 2000, "category": "auto_collision", "policy_number": "POL-12345"}
++
++
++class IdentityCheckTests(unittest.TestCase):
++    """Insight 6448992357e86878: identity must be verified before an approval."""
++
++    def test_matching_email_passes(self):
++        self.assertIsNone(check_identity("john.smith@example.com", POLICY))
++
++    def test_match_ignores_case_and_display_name(self):
++        self.assertIsNone(check_identity("John Smith <John.Smith@Example.com>", POLICY))
++
++    def test_mismatch_blocks(self):
++        reason = check_identity("stranger@example.com", POLICY)
++        self.assertIn("does not match", reason)
++
++    def test_missing_claimant_email_blocks(self):
++        self.assertIn("no claimant email", check_identity("", POLICY))
++        self.assertIn("no claimant email", check_identity(None, POLICY))
++
++    def test_missing_policy_blocks(self):
++        self.assertIn("could not be re-verified", check_identity("john.smith@example.com", None))
++        self.assertIn("could not be re-verified", check_identity("john.smith@example.com", {"error": "x"}))
++
++    def test_policy_without_email_blocks(self):
++        self.assertIn("no holder email", check_identity("john.smith@example.com", {"policy_number": "POL-1"}))
++
++    def test_normalize_email(self):
++        self.assertEqual(normalize_email("Jane Doe <Jane.Doe@Example.com>"), "jane.doe@example.com")
++        self.assertEqual(normalize_email(None), "")
++
++
++class AutoApproveBlockerTests(unittest.TestCase):
++    def test_clean_claim_has_no_blockers(self):
++        self.assertEqual(auto_approve_blockers(CLEAN_DECISION, "john.smith@example.com", POLICY), [])
++
++    def test_high_value_blocks(self):
++        # Insight 77b4f99c001e4813: accepted claims above $25k never auto-approve.
++        blockers = auto_approve_blockers({**CLEAN_DECISION, "amount": 30000}, "john.smith@example.com", POLICY)
++        self.assertEqual(len(blockers), 1)
++        self.assertIn("High-value", blockers[0])
++
++    def test_threshold_amount_itself_is_not_high_value(self):
++        self.assertEqual(
++            auto_approve_blockers({**CLEAN_DECISION, "amount": 25000}, "john.smith@example.com", POLICY), []
++        )
++
++    def test_non_numeric_amount_blocks(self):
++        blockers = auto_approve_blockers({**CLEAN_DECISION, "amount": "lots"}, "john.smith@example.com", POLICY)
++        self.assertTrue(any("not a number" in b for b in blockers))
++
++    def test_unknown_category_blocks(self):
++        # Insight 79ec507ed6201827: an unconfirmed category cannot be auto-approved.
++        blockers = auto_approve_blockers({**CLEAN_DECISION, "category": "unknown"}, "john.smith@example.com", POLICY)
++        self.assertTrue(any("category" in b for b in blockers))
++
++    def test_missing_category_blocks(self):
++        decision = {k: v for k, v in CLEAN_DECISION.items() if k != "category"}
++        self.assertTrue(auto_approve_blockers(decision, "john.smith@example.com", POLICY))
++
++    def test_identity_mismatch_blocks(self):
++        blockers = auto_approve_blockers(CLEAN_DECISION, "stranger@example.com", POLICY)
++        self.assertTrue(any("does not match" in b for b in blockers))
++
++    def test_email_not_on_policy_session_routes_to_human_review(self):
++        # Replays ci-email-not-on-policy: processor ACCEPTs, validator AUTO_APPROVEs at 92.
++        blockers = auto_approve_blockers(CLEAN_DECISION, "stranger@example.com", POLICY)
++        _, routing = resolve_routing({"confidence": 92, "routing": "AUTO_APPROVE"}, "")
++        self.assertEqual(decide_action("ACCEPT", routing, blockers), HUMAN_REVIEW)
++
++    def test_large_house_fire_session_routes_to_human_review(self):
++        # Replays ci-large-house-fire: $30k ACCEPT, validator AUTO_APPROVEs at 92.
++        decision = {**CLEAN_DECISION, "amount": 30000, "category": "property_damage"}
++        blockers = auto_approve_blockers(decision, "john.smith@example.com", POLICY)
++        self.assertEqual(decide_action("ACCEPT", AUTO_APPROVE, blockers), HUMAN_REVIEW)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_structured_output.py b/tests/test_structured_output.py
+index 453ba3a..6d6e743 100644
+--- a/tests/test_structured_output.py
++++ b/tests/test_structured_output.py
+@@ -94,6 +94,47 @@ class SubmitDecisionTests(unittest.TestCase):
+         self.assertEqual(get_last_decision()["decision"], "ACCEPT")
+ 
+ 
++@unittest.skipUnless(_STRANDS_AVAILABLE, "Strands SDK not installed (run under agent venv)")
++class SubmitDecisionValidationTests(unittest.TestCase):
++    """Insights b36c0ebf225d435a / 79ec507ed6201827: REFER and "unknown" give the processor
++    an honest option when information is missing; invalid values are refused, not recorded."""
++
++    BASE = dict(amount=500, policy_number="POL-1", description="d", reasoning="r", coverage_check="c")
++
++    def setUp(self):
++        reset_state()
++
++    def test_refer_is_recorded(self):
++        result = json.loads(submit_decision(decision="refer", category="unknown", **self.BASE))
++        self.assertEqual(result["status"], "recorded")
++        self.assertEqual(get_last_decision()["decision"], "REFER")
++        self.assertEqual(get_last_decision()["category"], "unknown")
++
++    def test_invalid_decision_rejected_and_not_recorded(self):
++        result = json.loads(submit_decision(decision="PENDING", category="theft", **self.BASE))
++        self.assertIn("error", result)
++        self.assertEqual(get_last_decision(), {})
++
++    def test_invalid_category_rejected_and_not_recorded(self):
++        result = json.loads(submit_decision(decision="ACCEPT", category="car stuff", **self.BASE))
++        self.assertIn("error", result)
++        self.assertEqual(get_last_decision(), {})
++
++    def test_category_and_policy_number_normalized(self):
++        submit_decision(
++            decision="accept",
++            amount=500,
++            policy_number=" pol-12345 ",
++            category=" Auto_Collision ",
++            description="d",
++            reasoning="r",
++            coverage_check="c",
++        )
++        captured = get_last_decision()
++        self.assertEqual(captured["category"], "auto_collision")
++        self.assertEqual(captured["policy_number"], "POL-12345")
++
++
+ @unittest.skipUnless(_STRANDS_AVAILABLE, "Strands SDK not installed (run under agent venv)")
+ class SubmitValidationTests(unittest.TestCase):
+     def setUp(self):
