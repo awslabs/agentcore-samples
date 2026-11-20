@@ -6,7 +6,7 @@ dependencies = [
     "boto3",
     "botocore",
     "requests",
-    "mcp>=1.10.0",
+    "mcp>=1.30.0",
     "strands-agents",
     "fastapi",
     "uvicorn",
