@@ -3,6 +3,7 @@ import {
   type AgentCoreApplicationProps,
 } from "@aws/agentcore-cdk";
 import {
+  Annotations,
   ArnFormat,
   Fn,
   Stack,
@@ -31,11 +32,15 @@ export class AgentCoreStack extends Stack {
     if (!application.runtimes.has("support")) return;
     const runtime = application.runtime("support");
 
-    // Read the synthesized asset address, not a Runtime attribute: this introduces
-    // no Runtime -> role -> Runtime dependency cycle and limits reads to one ZIP.
-    const resource = runtime.resource.node.defaultChild as agentcore.CfnRuntime;
+    // This adapter couples node.defaultChild/agentRuntimeArtifact extraction to
+    // @aws/agentcore-cdk 1.0.3 internals. Fail closed; retest on every upgrade.
+    // Read the asset address, not a Runtime attribute: avoid a role dependency cycle.
+    const resource = runtime.resource.node.defaultChild;
+    if (!(resource instanceof agentcore.CfnRuntime)) {
+      throw new Error("The sample boundary requires the pinned CfnRuntime layout.");
+    }
     const artifact = this.resolve(resource.agentRuntimeArtifact);
-    const source = artifact.codeConfiguration?.code?.s3;
+    const source = artifact?.codeConfiguration?.code?.s3;
     if (!source?.bucket || !source.prefix) {
       throw new Error(
         "The sample permissions boundary requires a CodeZip artifact.",
@@ -82,7 +87,8 @@ export class AgentCoreStack extends Stack {
           actions: ["s3:GetObject", "s3:GetObjectVersion"],
           resources: [assetArn],
         }),
-        // Logging is limited to this sample's Runtime, including its streams.
+        // Runtime NAME PREFIX match, including streams; not an exact Runtime ID.
+        // Using the generated Runtime ID here would create a role dependency cycle.
         new iam.PolicyStatement({
           actions: [
             "logs:CreateLogGroup",
@@ -98,15 +104,30 @@ export class AgentCoreStack extends Stack {
     // Existing CDK bootstrap buckets may use a customer-managed KMS key.
     // This grants only S3-mediated decryption for this asset (or its bucket when
     // S3 Bucket Keys are enabled), without changing the key or bucket policy.
-    const assetKeyArn = process.env.AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN;
-    if (assetKeyArn) {
+    const contextKey = "agentcoreSampleAssetKmsKeyArn";
+    if (process.env.AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN !== undefined) {
+      throw new Error(
+        "AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN is obsolete. Move the key ARN to " +
+          `context.${contextKey} in agentcore/cdk/cdk.json, then unset the variable.`,
+      );
+    }
+    const assetKeyArn: unknown = this.node.tryGetContext(contextKey);
+    if (assetKeyArn === undefined || assetKeyArn === null) {
+      Annotations.of(this).addWarning(
+        "Asset encryption has NOT been detected: no customer-managed KMS key is configured. " +
+          "Before deployment, verify the bootstrap bucket encryption with its owner; " +
+          `set context.${contextKey} in agentcore/cdk/cdk.json if it uses a customer-managed key. ` +
+          "See DEPLOYMENT.md. No kms:Decrypt will be granted.",
+      );
+    } else {
       if (
-        !/^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:key\/[a-zA-Z0-9-]+$/.test(
+        typeof assetKeyArn !== "string" ||
+        !/^arn:[a-z0-9-]+:kms:[a-z]{2}(?:-[a-z]+)+-\d+:\d{12}:key\/(?:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|mrk-[a-f0-9]{32})$/.test(
           assetKeyArn,
         )
       ) {
         throw new Error(
-          "AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN must be a KMS key ARN.",
+          `context.${contextKey} in agentcore/cdk/cdk.json must be null or a KMS key ARN (not an alias).`,
         );
       }
       const decrypt = new iam.PolicyStatement({

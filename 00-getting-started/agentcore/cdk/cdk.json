@@ -1,6 +1,7 @@
 {
   "app": "node dist/bin/cdk.js",
   "context": {
+    "agentcoreSampleAssetKmsKeyArn": null,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
     "@aws-cdk/aws-iam:minimizePolicies": true,

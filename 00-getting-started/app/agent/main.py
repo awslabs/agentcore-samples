@@ -22,7 +22,8 @@ from strands.types.exceptions import (
 
 MODEL_ID = "amazon.nova-lite-v1:0"
 MAX_PROMPT_CHARS = 2_000
-MAX_MODEL_CALLS = 4
+MAX_MODEL_STEPS = 4
+MAX_TRANSPORT_ATTEMPTS = 2  # Initial attempt plus one botocore retry per logical model step.
 REQUEST_TIMEOUT_SECONDS = 60
 
 # Fictional, public data. Prices are strings so currency formatting is unambiguous.
@@ -132,18 +133,14 @@ async def terminal_requests_only(request, call_next):
     """Stop websites/forms from spending local AWS credentials through loopback."""
     if request.method == "POST":
         if "origin" in request.headers:
-            return JSONResponse(
-                {"error": "This sample accepts terminal clients only."}, status_code=403
-            )
+            return JSONResponse({"error": "This sample accepts terminal clients only."}, status_code=403)
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
             return JSONResponse({"error": "Use Content-Type: application/json."}, status_code=415)
     return await call_next(request)
 
 
-app = BedrockAgentCoreApp(
-    middleware=[Middleware(BaseHTTPMiddleware, dispatch=terminal_requests_only)]
-)
+app = BedrockAgentCoreApp(middleware=[Middleware(BaseHTTPMiddleware, dispatch=terminal_requests_only)])
 
 
 def create_agent() -> Agent:
@@ -156,7 +153,7 @@ def create_agent() -> Agent:
         boto_client_config=Config(
             connect_timeout=5,
             read_timeout=30,
-            retries={"total_max_attempts": 1},
+            retries={"mode": "standard", "total_max_attempts": MAX_TRANSPORT_ATTEMPTS},
         ),
     )
     agent = Agent(
@@ -164,16 +161,16 @@ def create_agent() -> Agent:
         system_prompt=SYSTEM_PROMPT,
         tools=[get_product_info, get_return_policy],
         callback_handler=None,  # Don't print prompts, tool results, or answers to stdout.
-        retry_strategy=None,
+        retry_strategy=None,  # No stacked Strands retries: at most 4 steps x 2 transport attempts.
     )
-    model_calls = 0
+    model_steps = 0
 
-    def limit_model_calls(event: BeforeModelCallEvent) -> None:
-        nonlocal model_calls
-        if model_calls >= MAX_MODEL_CALLS:
+    def limit_model_steps(event: BeforeModelCallEvent) -> None:
+        nonlocal model_steps
+        if model_steps >= MAX_MODEL_STEPS:
             event.cancel = "Too many reasoning steps. Try a more specific question."
             return
-        model_calls += 1
+        model_steps += 1
 
     def log_tool_completion(event: AfterToolCallEvent) -> None:
         # Fixed tool names only: never log arguments or results.
@@ -182,7 +179,7 @@ def create_agent() -> Agent:
             if isinstance(event.result, dict) and event.result.get("status") == "success":
                 app.logger.info("tool_completed=%s", name)
 
-    agent.add_hook(limit_model_calls, BeforeModelCallEvent)
+    agent.add_hook(limit_model_steps, BeforeModelCallEvent)
     agent.add_hook(log_tool_completion, AfterToolCallEvent)
     return agent
 
@@ -206,25 +203,19 @@ async def invoke(payload: object) -> dict:
     try:
         async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
             result = await create_agent().invoke_async(prompt)
-    except HTTPException:
-        raise
     except TimeoutError:
         raise HTTPException(504, "The model took too long. Try again later.") from None
     except (ClientError, EventLoopException, MaxTokensReachedException, ModelThrottledException):
         # Provider errors can contain request details; don't echo or log their text.
         app.logger.warning("Bedrock request failed; check model access, region, and quotas.")
-        raise HTTPException(
-            502, "Model request failed. Check model access, region, and quotas."
-        ) from None
+        raise HTTPException(502, "Model request failed. Check model access, region, and quotas.") from None
     except Exception as error:
         app.logger.error("Agent failed (%s).", type(error).__name__)
         raise HTTPException(500, "The agent could not complete the request.") from None
 
     # Nova may put a reasoning preamble in a text block, rather than a separate
     # reasoningContent block. Never return that provider-specific markup to customers.
-    response = re.sub(
-        r"<thinking>.*?</thinking>", "", str(result), flags=re.DOTALL | re.IGNORECASE
-    ).strip()
+    response = re.sub(r"<thinking>.*?</thinking>", "", str(result), flags=re.DOTALL | re.IGNORECASE).strip()
     if re.search(r"</?thinking\b", response, flags=re.IGNORECASE):
         raise HTTPException(502, "The model returned a malformed answer. Try again later.")
     if not response:

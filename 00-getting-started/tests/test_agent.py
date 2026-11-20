@@ -249,7 +249,7 @@ async def test_runaway_tool_loop_is_bounded(client, monkeypatch):
     response = await client.post("/invocations", json={"prompt": "Keep looking things up"})
     assert response.status_code == 200
     assert response.json() == {"response": "Too many reasoning steps. Try a more specific question."}
-    assert len(model.requests) == main.MAX_MODEL_CALLS
+    assert len(model.requests) == main.MAX_MODEL_STEPS
 
 
 async def test_timeout_cancels_the_task(client, monkeypatch):
