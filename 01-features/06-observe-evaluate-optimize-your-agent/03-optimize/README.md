@@ -69,8 +69,8 @@ python deploy.py --name HRAssistV1
 # Invoke the deployed agent
 python invoke.py --name HRAssistV1
 
-# [Optional] Run insights: generate traces then analyze with Builtin.FailureAnalysis
-python insights.py --name HRAssistV1 --generate-traces
+# [Optional] Run the batch Failure Insights evaluator
+python failure_insights_evaluator.py --name HRAssistV1 --generate-traces
 
 # Run the full optimization workflow
 python optimize.py --name HRAssistV1
@@ -322,7 +322,7 @@ State is saved to `agent_state_{name}.json` for use by subsequent scripts.
 
 The `--version v2` flag builds an enhanced version that adds an `escalate_to_hr_manager` tool and a more detailed system prompt baked into the code. This is the version used in the target-based A/B test.
 
-### Step 2: Insights (`insights.py`)
+### Step 2: Batch Failure Insights evaluator (`failure_insights_evaluator.py`)
 
 Sends a set of failure-mode and successful sessions to the agent, waits for traces to propagate to CloudWatch, then calls `start_batch_evaluation` with the `Builtin.FailureAnalysis` insight evaluator and `Builtin.GoalSuccessRate`. Polls until the job completes and prints the evaluator scores and the failure insights, each with its root causes, suggested fixes, and span-level findings.
 
@@ -396,7 +396,9 @@ The `--generate-traces` flag sends sessions across several failure categories:
 
 ### Reading the FailureAnalysis Output
 
-Example output from `python insights.py --generate-traces` (trimmed). The service generates insight names and grouping, so they can vary between runs over the same sessions.
+Example output from `python failure_insights_evaluator.py --generate-traces`
+(trimmed). The service generates insight names and grouping, so they can vary
+between runs over the same sessions.
 
 ```
 --- Evaluator scores (2 evaluators) ---
