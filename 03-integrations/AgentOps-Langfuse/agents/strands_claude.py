@@ -1,13 +1,12 @@
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
 import os
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from langfuse import get_client
+from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.models import BedrockModel
 from strands.telemetry import StrandsTelemetry
-
-from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp.mcp_client import MCPClient
-from langfuse import get_client
-
 
 streamable_http_mcp_client = MCPClient(lambda: streamablehttp_client("https://langfuse.com/api/mcp"))
 
@@ -58,7 +57,7 @@ def strands_agent_bedrock(payload):
                 name="strands-agent",
                 trace_context={
                     "trace_id": trace_id,
-                    "parent_observation_id": parent_obs_id,
+                    "parent_span_id": parent_obs_id,
                 },
             ):
                 response = agent(user_input)
