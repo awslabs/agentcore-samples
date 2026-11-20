@@ -2,8 +2,8 @@ uv
 ddgs
 boto3
 bedrock-agentcore
-bedrock-agentcore-starter-toolkit
 strands-agents[otel]
 strands-agents-tools
-mcp
-langfuse
+# strands_claude.py uses the MCP v1 streamablehttp_client API.
+mcp>=1.10.0,<2
+langfuse>=5.2.0,<6
