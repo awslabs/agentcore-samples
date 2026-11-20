@@ -1,0 +1,161 @@
+{
+  "source": "sanitized read-only V3 Gateway tools/list; authority fields are not model-owned",
+  "tools": [
+    {
+      "name": "TicketTools___add_note",
+      "description": "Gateway-owned raw tool description",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "actor",
+          "customer_id",
+          "note",
+          "ticket_id"
+        ],
+        "properties": {
+          "actor": {
+            "type": "object",
+            "required": [
+              "customer_id",
+              "user_sub"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "user_sub": {
+                "type": "string"
+              }
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "ticket_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "TicketTools___close_ticket",
+      "description": "Gateway-owned raw tool description",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "actor",
+          "customer_id",
+          "reason",
+          "ticket_id"
+        ],
+        "properties": {
+          "actor": {
+            "type": "object",
+            "required": [
+              "customer_id",
+              "user_sub"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "user_sub": {
+                "type": "string"
+              }
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "ticket_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "TicketTools___confirm_close",
+      "description": "Gateway-owned raw tool description",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "actor",
+          "customer_id",
+          "ticket_id"
+        ],
+        "properties": {
+          "actor": {
+            "type": "object",
+            "required": [
+              "customer_id",
+              "user_sub"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "user_sub": {
+                "type": "string"
+              }
+            }
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "ticket_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "TicketTools___list_tickets",
+      "description": "Gateway-owned raw tool description",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "actor",
+          "customer_id"
+        ],
+        "properties": {
+          "actor": {
+            "type": "object",
+            "required": [
+              "customer_id",
+              "user_sub"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "user_sub": {
+                "type": "string"
+              }
+            }
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

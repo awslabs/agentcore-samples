@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.DS_Store
+# The repo root ignores every build/ directory; this root is source, not output.
+!iac/roots/foundation/build/
+
+# Keep .terraform.lock.hcl: it must be committed for reproducible provider versions
+!.terraform.lock.hcl

@@ -1,0 +1,7 @@
+# Pinned together and checked with `pip check` (Oct 2026). Installed only inside the image build.
+strands-agents==1.62.0
+bedrock-agentcore==1.24.2
+mcp==2.1.1
+aws-opentelemetry-distro==0.21.0
+boto3==1.43.117
+pydantic==2.14.1

@@ -1,0 +1,1 @@
+boto3==1.43.101  # bedrock-agentcore Evaluate is newer than the Lambda runtime's boto3
