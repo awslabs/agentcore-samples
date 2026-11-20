@@ -3,12 +3,11 @@ name = "agent-core"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 dependencies = [
     "boto3",
     "bedrock-agentcore",
     "opentelemetry-exporter-otlp-proto-http",
-    "strands-agents-tools",
     "strands-agents",
     "opentelemetry-sdk",
 ]

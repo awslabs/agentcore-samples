@@ -1,8 +1,8 @@
 import os
-from strands import Agent, tool
-from strands_tools import calculator  # Import the calculator tool
-from strands.models import BedrockModel
+
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from strands import Agent, tool
+from strands.models import BedrockModel
 
 app = BedrockAgentCoreApp()
 
@@ -10,7 +10,7 @@ app = BedrockAgentCoreApp()
 # Create a custom tool
 @tool
 def weather():
-    """Get weather"""  # Dummy implementation
+    """Return a sample weather forecast (not live weather)."""
     return "sunny"
 
 
@@ -20,8 +20,8 @@ model = BedrockModel(
 )
 agent = Agent(
     model=model,
-    tools=[calculator, weather],
-    system_prompt="You're a helpful assistant. You can do simple math calculation, and tell the weather.",
+    tools=[weather],
+    system_prompt="You are a travel assistant. Use the weather tool when asked about the weather.",
 )
 
 

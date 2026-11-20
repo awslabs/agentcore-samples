@@ -1,10 +1,10 @@
 # Send AgentCore traces and metrics to Dynatrace
 
-Run a local Strands travel agent and see its activity in your Dynatrace tenant. The agent uses the AgentCore Runtime SDK and calls Amazon Bedrock. [dynatrace.py](./dynatrace.py) registers OpenTelemetry providers **before** the agent starts, so Strands can emit spans and metrics to the same service, `agent-core-samples`.
+Run a local Strands travel agent and trace its weather tool call in your Dynatrace tenant. The tool returns a fixed sample forecast; no weather service or API key is needed. The agent uses the AgentCore Runtime SDK and calls Amazon Bedrock. [dynatrace.py](./dynatrace.py) registers OpenTelemetry providers **before** the agent starts, so Strands can emit spans and metrics to the same service, `agent-core-samples`.
 
 ## Before you start
 
-- Install Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- Install Python 3.11.5+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 - Use a short-lived AWS session for a role permitted to invoke your selected [Bedrock model](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-permissions.html). Use the normal AWS credential chain; you do not need permissions to deploy an AgentCore runtime.
 - In **your** Dynatrace tenant, create an [OTLP ingest token](https://docs.dynatrace.com/docs/shortlink/otel-getstarted-otlpexport) with **Ingest OpenTelemetry traces** (`openTelemetryTrace.ingest`) and **Ingest metrics** (`metrics.ingest`). This sample does not export logs or read tenant data.
 
