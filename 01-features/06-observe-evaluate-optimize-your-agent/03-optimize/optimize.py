@@ -21,7 +21,8 @@ Usage:
     python optimize.py --name HRAssistV1 --skip-deploy
 
     # Chain insights into the system prompt recommendation (Step 5a reads the
-    # FailureAnalysis batch evaluation produced by insights.py instead of raw traces):
+    # FailureAnalysis batch evaluation produced by
+    # failure_insights_evaluator.py instead of raw traces):
     python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
 
     # Cleanup only:
@@ -68,7 +69,8 @@ parser.add_argument(
     "--insights-eval-arn",
     default=None,
     help=(
-        "ARN of an insights batch evaluation (printed by insights.py). When set, the "
+        "ARN of an insights batch evaluation (printed by "
+        "failure_insights_evaluator.py). When set, the "
         "system prompt recommendation in Step 5a uses the sessions that batch evaluation "
         "analyzed as its traces, instead of the last 7 days of CloudWatch traces."
     ),
@@ -108,7 +110,8 @@ if INSIGHTS_EVAL_ARN:
         sys.exit(
             f"--insights-eval-arn is in region={_arn_parts[3]} account={_arn_parts[4]}, "
             f"but this run uses region={REGION} account={ACCOUNT_ID}. "
-            "Run insights.py against the same runtime, or pass --region to match."
+            "Run failure_insights_evaluator.py against the same runtime, "
+            "or pass --region to match."
         )
     print(f"INSIGHTS   = {INSIGHTS_EVAL_ARN}")
 
@@ -713,14 +716,16 @@ start_dt = now - timedelta(days=7)
 
 # Trace source for the system prompt recommendation:
 #   - Default: raw agent traces from CloudWatch for the last 7 days.
-#   - With --insights-eval-arn: the insights batch evaluation from insights.py.
+#   - With --insights-eval-arn: the insights batch evaluation from
+#     failure_insights_evaluator.py.
 #     The recommendation reads the same sessions Builtin.FailureAnalysis
-#     analyzed. insights.py sends mostly failure-mode sessions, so the
+#     analyzed. failure_insights_evaluator.py sends mostly failure-mode
+#     sessions, so the
 #     recommendation works from those failing sessions rather than from all
 #     recent traffic.
 if INSIGHTS_EVAL_ARN:
     sp_agent_traces = {"batchEvaluation": {"batchEvaluationArn": INSIGHTS_EVAL_ARN}}
-    print("Trace source: insights batch evaluation (chained from insights.py)")
+    print("Trace source: insights batch evaluation (chained from failure_insights_evaluator.py)")
     print(f"  {INSIGHTS_EVAL_ARN}")
 else:
     sp_agent_traces = {
@@ -732,7 +737,7 @@ else:
         }
     }
     print("Trace source: CloudWatch agent traces from the last 7 days")
-    print("  (pass --insights-eval-arn to use the sessions analyzed by insights.py instead)")
+    print("  (pass --insights-eval-arn to use the sessions analyzed by failure_insights_evaluator.py instead)")
 
 sp_rec_resp = dp.start_recommendation(
     name=f"HRSpRec{SUFFIX}",

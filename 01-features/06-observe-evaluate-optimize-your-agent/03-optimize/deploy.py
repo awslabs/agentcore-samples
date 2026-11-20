@@ -37,6 +37,9 @@ import zipfile
 from pathlib import Path
 
 import boto3
+from utils.prompt_override import apply_system_prompt_file
+
+SCRIPT_DIR = Path(__file__).parent
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 
@@ -49,11 +52,25 @@ parser.add_argument(
     choices=["v1", "v2"],
     help="Agent version: v1=baseline, v2=enhanced (extra tool + improved prompt)",
 )
+parser.add_argument(
+    "--system-prompt-file",
+    help=(
+        "Optional text file used to replace the embedded system prompt at "
+        "build time. Existing v1/v2 behavior is unchanged when omitted."
+    ),
+)
 args = parser.parse_args()
 
 RUNTIME_NAME = args.name
 REGION = args.region
 VERSION = args.version
+SYSTEM_PROMPT_PATH = None
+if args.system_prompt_file:
+    SYSTEM_PROMPT_PATH = Path(args.system_prompt_file)
+    if not SYSTEM_PROMPT_PATH.is_absolute():
+        SYSTEM_PROMPT_PATH = SCRIPT_DIR / SYSTEM_PROMPT_PATH
+    if not SYSTEM_PROMPT_PATH.is_file():
+        raise FileNotFoundError(f"System prompt file not found: {SYSTEM_PROMPT_PATH}")
 
 # ── AWS clients ───────────────────────────────────────────────────────────
 
@@ -85,10 +102,11 @@ S3_KEY = f"{RUNTIME_NAME}/deployment_package.zip"
 BUILD_DIR = Path(f"/tmp/{RUNTIME_NAME}_build")  # nosec B108
 STATE_FILE = Path(f"agent_state_{RUNTIME_NAME}.json")
 
-SCRIPT_DIR = Path(__file__).parent
 V1_CODE_PATH = SCRIPT_DIR / "utils" / "hr_assistant_agent.py"
 
 print(f"Deploying {RUNTIME_NAME} (version={VERSION}) to {REGION} (account={ACCOUNT_ID})")
+if SYSTEM_PROMPT_PATH:
+    print(f"System prompt override: {SYSTEM_PROMPT_PATH}")
 
 # ── IAM role ──────────────────────────────────────────────────────────────
 
@@ -307,6 +325,7 @@ if EXISTING_RUNTIME is None:
     )
 
     agent_code = build_v2_code() if VERSION == "v2" else build_v1_code()
+    agent_code = apply_system_prompt_file(agent_code, SYSTEM_PROMPT_PATH)
     (PKG_DIR / "main.py").write_text(agent_code)
     print(f"Agent code ({VERSION}) written to {PKG_DIR}/main.py")
 
@@ -391,6 +410,7 @@ state = {
     "s3_key": S3_KEY,
     "region": REGION,
     "version": VERSION,
+    "system_prompt_file": args.system_prompt_file,
     "account_id": ACCOUNT_ID,
 }
 STATE_FILE.write_text(json.dumps(state, indent=2))

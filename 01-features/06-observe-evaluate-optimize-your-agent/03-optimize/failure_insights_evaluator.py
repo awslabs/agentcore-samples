@@ -1,5 +1,5 @@
 """
-Run AgentCore Insights on the HR Assistant agent.
+Run the batch Failure Insights evaluator on the HR Assistant agent.
 
 Insights are produced by the Builtin.FailureAnalysis insight evaluator, which runs in a
 standard batch evaluation alongside other evaluators:
@@ -17,10 +17,10 @@ CloudWatch, so FailureAnalysis has real patterns to work with:
 
 Usage:
     # Generate failure traces then run insights:
-    python insights.py --name HRInsights849 --generate-traces
+    python failure_insights_evaluator.py --name HRInsights849 --generate-traces [--region us-west-2]
 
     # Run insights on existing traces from the last N days:
-    python insights.py --name HRInsights849 [--lookback-days 7]
+    python failure_insights_evaluator.py --name HRInsights849 [--lookback-days 7]
 
 Prerequisites:
     1. Deploy the HR Assistant agent:

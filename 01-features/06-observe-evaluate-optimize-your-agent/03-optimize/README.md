@@ -1,6 +1,18 @@
-# AgentCore optimization
+# Optimize an agent with Failure Insights and Continuous Insights
 
-End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock AgentCore runtime. Covers automated insights to detect agent failures, run baseline evaluation, get recommendations to improve the agent, and A/B testing via configuration bundles and target-based routing.
+This sample demonstrates two independent optimization workflows for an HR
+Assistant on Amazon Bedrock AgentCore.
+
+| Workflow | Best for | Optimization path |
+| --- | --- | --- |
+| Batch Failure Insights evaluator | Bounded historical analysis and controlled experiments | Batch Evaluation -> recommendations -> configuration bundles -> A/B test |
+| Continuous Insights | Always-on discovery of recurring failures in completed sessions | Online Evaluation -> durable Insights -> evidence export -> coding assistant -> fixed Runtime -> replay |
+
+The batch recommendation workflow uses configuration bundles and A/B testing
+to compare optimized configurations. Continuous Insights is a separate
+workflow that exports recurring failure evidence for a coding assistant to
+review and remediate; it does not use Harness Recommendation, configuration
+bundles, or A/B testing.
 
 ### What You Will Learn
 
@@ -40,14 +52,14 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
   - `iam:CreateRole`, `AttachRolePolicy`, `PassRole` to create the execution role for the A/B test
   - `bedrock:InvokeModel`, `s3:*`, `ecr:*`, `xray:*`
 - Python 3.10+
-- Optional, only for the [AgentCore CLI Examples](#agentcore-cli-examples): Node.js 20+ and AgentCore CLI v0.30.0 (`npm install -g @aws/agentcore@0.30.0`). The Python scripts do not use the CLI.
+- Node.js 20+ and AgentCore CLI 1.1.0 or later (`npm install -g @aws/agentcore`)
 - Access to Amazon Bedrock models (Nova Lite) in your region
 
 > **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. Budget ~45 minutes for the full workflow.
 
 ### Running This in Workshop Studio
 
-- **Region is fixed by the event, not by you.** `deploy.py`, `invoke.py`, `optimize.py`, `cleanup.py`, and `insights.py` all resolve their region from `$AWS_DEFAULT_REGION` (falling back to `us-east-1` if unset) the first time they create a runtime, and from the runtime's own recorded region on every call after that -- so once `deploy.py` has run once for a given `--name`, every other script follows it automatically. Confirm Amazon Bedrock Optimization is available in the event's region before starting; it is a **preview** feature at the time of writing.
+- **Region is fixed by the event, not by you.** `deploy.py`, `invoke.py`, `optimize.py`, `cleanup.py`, and `failure_insights_evaluator.py` all resolve their region from `$AWS_DEFAULT_REGION` (falling back to `us-east-1` if unset) the first time they create a runtime, and from the runtime's own recorded region on every call after that -- so once `deploy.py` has run once for a given `--name`, every other script follows it automatically. Confirm Amazon Bedrock Optimization is available in the event's region before starting.
 - **Pre-provisioned lab roles** may not include `iam:CreateRole`/`PassRole` (needed by `deploy.py` to create the per-agent execution role) or the permissions listed above for ConfigurationBundles, Recommendations, and ABTesting. If any script fails with `AccessDenied`, check the lab role's attached policies before assuming it's a code issue.
 - **Transaction Search must be enabled** for the agent's OTel spans to land in the `aws/spans` log group that Insights and Recommendations read from. If a workshop account doesn't have it pre-enabled, see [Enable transaction search](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html) in the CloudWatch User Guide.
 - **Amazon Nova Lite** is used by the built-in evaluators and recommendations; confirm it's enabled for the account/region before running `optimize.py`.
@@ -69,14 +81,14 @@ python deploy.py --name HRAssistV1
 # Invoke the deployed agent
 python invoke.py --name HRAssistV1
 
-# [Optional] Run insights: generate traces then analyze with Builtin.FailureAnalysis
-python insights.py --name HRAssistV1 --generate-traces
+# [Optional] Run the batch Failure Insights evaluator
+python failure_insights_evaluator.py --name HRAssistV1 --generate-traces
 
 # Run the full optimization workflow
 python optimize.py --name HRAssistV1
 
 # [Optional] Chain insights into the system prompt recommendation
-# (insights.py prints this command, with the ARN filled in, when it finishes)
+# (failure_insights_evaluator.py prints this command, with the ARN filled in)
 python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
 
 # Clean up all resources
@@ -100,21 +112,21 @@ Prompts you can send through `invoke.py --name HRAssistV1 --prompt "..."` (or vi
 **Expected Behavior**: Agent calls `lookup_hr_policy` and summarizes the policy.
 
 **Prompt**: `Employee ID: EMP-999. What is my current PTO balance?`
-**Expected Behavior**: Agent calls `get_pto_balance`, gets an "employee not found" tool error, and reports it clearly -- this is one of the failure modes `insights.py --generate-traces` sends deliberately so `FailureAnalysis` has something to cluster.
+**Expected Behavior**: Agent calls `get_pto_balance`, gets an "employee not found" tool error, and reports it clearly -- this is one of the failure modes `failure_insights_evaluator.py --generate-traces` sends deliberately so `FailureAnalysis` has something to cluster.
 
 ## AgentCore CLI Examples
 
-The following commands reproduce the full optimization workflow from the command line.
+The following commands demonstrate the batch recommendation, configuration
+bundle, and A/B testing workflow. The Python scripts provide the complete
+end-to-end workflow used by this sample.
 
 Install the AgentCore CLI:
 
 ```bash
-npm install -g @aws/agentcore@0.30.0
+npm install -g @aws/agentcore
 node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
   || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
-agentcore --version | grep -q '^0\.' \
-  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
-agentcore --version   # should print 0.30.0
+agentcore --version   # 1.1.0 or later
 ```
 
 ### Step 1: Deploy the HR Assistant
@@ -150,9 +162,9 @@ agentcore run batch-evaluation \
   --evaluator Builtin.GoalSuccessRate Builtin.Helpfulness Builtin.Correctness
 ```
 
-### Step 3: Run Insights
+### Step 3: Run Batch Failure Insights
 
-After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`. The CLI insights commands require an `agentcore` project with a deployed runtime (v0.30.0+).
+After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`. The CLI insights commands require an `agentcore` project with a deployed runtime and AgentCore CLI 1.1.0 or later.
 
 ```bash
 # Run FailureAnalysis together with GoalSuccessRate over the agent's sessions:
@@ -166,7 +178,9 @@ python -c "import boto3, json; r = boto3.client('bedrock-agentcore').get_batch_e
 ```
 
 Notes:
-- Insight evaluators are supported in batch evaluations only.
+- This section uses `Builtin.FailureAnalysis` as a batch evaluator. The
+  Continuous Insights workflow below uses the same evaluator in an Online
+  Evaluation to create durable Agent Insights.
 - Resource names must match `^[a-zA-Z][a-zA-Z0-9_]{0,47}$` (letters, numbers, underscores; no hyphens).
 
 ### Step 4: Get Recommendations
@@ -312,6 +326,287 @@ agentcore remove agent --name HRAssistantV2
 agentcore deploy -y
 ```
 
+## Continuous Insights workflow
+
+Use this workflow to continuously discover recurring failures, export the
+service evidence and suggested fixes, implement a reviewed source change, and
+replay the same prompts against a separate fixed Runtime.
+
+Continuous Insights is asynchronous. Sessions must become idle, telemetry must
+be ingested, Failure Analysis must run, and repeated evidence must form a stable
+group. Budget up to 90 minutes for the first Insight in a new account.
+
+### 1. Verify the AgentCore CLI
+
+```bash
+agentcore --version
+```
+
+The following commands require AgentCore CLI 1.1.0 or later. Global options
+precede the command group, as in `agentcore --region us-west-2 --json eval ...`.
+
+Set the common values:
+
+```bash
+export AWS_REGION=us-west-2
+export AWS_PROFILE=default
+export RUNTIME_NAME=HRAssistContinuous
+```
+
+Deploy and smoke-test the baseline:
+
+```bash
+python deploy.py --name "$RUNTIME_NAME" --region "$AWS_REGION"
+python invoke.py --name "$RUNTIME_NAME" --region "$AWS_REGION"
+```
+
+Confirm that CloudWatch Transaction Search is active:
+
+```bash
+aws xray get-trace-segment-destination \
+  --profile "$AWS_PROFILE" \
+  --region "$AWS_REGION"
+```
+
+The response must report `Destination=CloudWatchLogs` and `Status=ACTIVE`.
+If it does not, follow
+[Enable transaction search](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html)
+before creating the Online Evaluation.
+
+Read the generated Runtime identity:
+
+```bash
+export RUNTIME_ID=$(
+  python -c 'import json,sys; print(json.load(open(f"agent_state_{sys.argv[1]}.json"))["runtime_id"])' \
+    "$RUNTIME_NAME"
+)
+export APPLICATION_NAME=$(
+  python -c 'import json,sys; print(json.load(open(f"agent_state_{sys.argv[1]}.json"))["service_name"])' \
+    "$RUNTIME_NAME"
+)
+```
+
+### 2. Enable the Agent Insight Store
+
+List and inspect the account- and Region-scoped Store:
+
+```bash
+agentcore --region "$AWS_REGION" --json eval insight-store list
+
+agentcore --region "$AWS_REGION" --json eval insight-store get \
+  --id default-insight-store
+```
+
+If it is disabled, enable it and wait for `ACTIVE` and `ENABLED`:
+
+```bash
+agentcore --region "$AWS_REGION" --json eval insight-store update \
+  --id default-insight-store \
+  --enablement-status ENABLED
+```
+
+Do not disable the Store during ordinary cleanup. Disabling it removes its
+stored Insights.
+
+### 3. Create the Online Evaluation
+
+```bash
+export ONLINE_EVALUATION_CONFIG_NAME="continuous_insights_${RUNTIME_NAME}"
+
+agentcore --region "$AWS_REGION" --json eval online-eval create \
+  --name "$ONLINE_EVALUATION_CONFIG_NAME" \
+  --description "Continuous failure analysis for the HR Assistant sample" \
+  --agent "$RUNTIME_ID" \
+  --endpoint DEFAULT \
+  --evaluators Builtin.FailureAnalysis \
+  --sampling-rate 100 \
+  --session-timeout-minutes 2 \
+  --enable-on-create true
+```
+
+The CLI derives the telemetry source from the Runtime ID and auto-provisions
+the Online Evaluation execution role. Save the returned ID:
+
+```bash
+export ONLINE_EVALUATION_CONFIG_ID="<online-evaluation-config-id>"
+
+agentcore --region "$AWS_REGION" --json eval online-eval get \
+  --id "$ONLINE_EVALUATION_CONFIG_ID"
+```
+
+Continue when the configuration is `ACTIVE` and `ENABLED`.
+
+### 4. Generate baseline failure evidence
+
+```bash
+python continuous_insights.py \
+  --name "$RUNTIME_NAME" \
+  --region "$AWS_REGION" \
+  generate \
+  --preset insights \
+  --output continuous-insights-output/baseline-sessions.jsonl
+```
+
+The deterministic preset creates 54 independent sessions: four successful PTO
+lookups and repeated unknown-employee, missing-pay-stub, unsupported-policy,
+and unsupported-benefit scenarios.
+
+Inspect evaluation activity and list active Insights:
+
+```bash
+agentcore --region "$AWS_REGION" eval online-eval logs \
+  --id "$ONLINE_EVALUATION_CONFIG_ID" \
+  --since 2h
+
+agentcore --region "$AWS_REGION" --json eval insight list \
+  --application-name "$APPLICATION_NAME" \
+  --archive-status ACTIVE \
+  --max-results 50
+```
+
+An empty list is normal while the service accumulates repeated evidence.
+
+### 5. Inspect, archive, and restore an Insight
+
+```bash
+export AGENT_INSIGHT_ID="<id-from-the-list>"
+
+agentcore --region "$AWS_REGION" --json eval insight get \
+  --application-name "$APPLICATION_NAME" \
+  --id "$AGENT_INSIGHT_ID"
+
+agentcore --region "$AWS_REGION" --json eval insight update \
+  --application-name "$APPLICATION_NAME" \
+  --id "$AGENT_INSIGHT_ID" \
+  --archive-status ARCHIVED
+
+agentcore --region "$AWS_REGION" --json eval insight update \
+  --application-name "$APPLICATION_NAME" \
+  --id "$AGENT_INSIGHT_ID" \
+  --archive-status ACTIVE
+```
+
+Archiving hides the Insight from the active list without deleting its generated
+content.
+
+### 6. Export evidence for a coding assistant
+
+```bash
+python continuous_insights.py \
+  --name "$RUNTIME_NAME" \
+  --region "$AWS_REGION" \
+  export \
+  --insight-id "$AGENT_INSIGHT_ID"
+```
+
+The command writes the complete service response and a vendor-neutral task:
+
+```text
+continuous-insights-output/
+├── insight_<INSIGHT_ID>.json
+└── coding-assistant-task.md
+```
+
+Review the Insight classification, root causes, suggested fixes, and findings.
+Treat each suggested fix as an evidence-backed hypothesis rather than an
+instruction to apply blindly.
+
+Ask a coding assistant to validate the evidence against the implementation,
+make the smallest supported change, add regression tests, and leave deployment
+to the user.
+
+### 7. Deploy and replay a separate fixed Runtime
+
+This repository includes an example prompt remediation. It preserves the
+original agent and tool code and changes only the system prompt:
+
+```bash
+export FIXED_RUNTIME_NAME=HRAssistContinuousFixed
+
+python deploy.py \
+  --name "$FIXED_RUNTIME_NAME" \
+  --region "$AWS_REGION" \
+  --system-prompt-file utils/continuous_insights_fixed_prompt.txt
+```
+
+Create a separate Online Evaluation for the fixed Runtime:
+
+```bash
+export FIXED_RUNTIME_ID=$(
+  python -c 'import json,sys; print(json.load(open(f"agent_state_{sys.argv[1]}.json"))["runtime_id"])' \
+    "$FIXED_RUNTIME_NAME"
+)
+export FIXED_APPLICATION_NAME=$(
+  python -c 'import json,sys; print(json.load(open(f"agent_state_{sys.argv[1]}.json"))["service_name"])' \
+    "$FIXED_RUNTIME_NAME"
+)
+
+agentcore --region "$AWS_REGION" --json eval online-eval create \
+  --name "continuous_insights_${FIXED_RUNTIME_NAME}" \
+  --description "Continuous failure analysis for the fixed HR Assistant" \
+  --agent "$FIXED_RUNTIME_ID" \
+  --endpoint DEFAULT \
+  --evaluators Builtin.FailureAnalysis \
+  --sampling-rate 100 \
+  --session-timeout-minutes 2 \
+  --enable-on-create true
+
+export FIXED_ONLINE_EVALUATION_CONFIG_ID="<fixed-online-evaluation-config-id>"
+```
+
+Replay the same workload:
+
+```bash
+python continuous_insights.py \
+  --name "$FIXED_RUNTIME_NAME" \
+  --region "$AWS_REGION" \
+  generate \
+  --preset insights \
+  --output continuous-insights-output/fixed-sessions.jsonl
+```
+
+Run the local gate only for scenarios represented by the exported Insight:
+
+```bash
+python quality_gate.py \
+  continuous-insights-output/fixed-sessions.jsonl \
+  --scenario unknown_employee \
+  --scenario unknown_pay_stub
+```
+
+Finally, list Insights for the fixed Runtime's distinct application identity:
+
+```bash
+agentcore --region "$AWS_REGION" --json eval insight list \
+  --application-name "$FIXED_APPLICATION_NAME" \
+  --archive-status ACTIVE \
+  --max-results 50
+```
+
+Other deliberate failure groups can remain; success means the selected failure
+mode no longer recurs in responses or in a new stable Insight.
+
+### 8. Continuous Insights cleanup
+
+Pause and delete each Continuous Insights Online Evaluation:
+
+```bash
+agentcore --region "$AWS_REGION" eval online-eval pause \
+  --id "$ONLINE_EVALUATION_CONFIG_ID"
+
+agentcore --region "$AWS_REGION" eval online-eval delete \
+  --id "$ONLINE_EVALUATION_CONFIG_ID"
+
+agentcore --region "$AWS_REGION" eval online-eval pause \
+  --id "$FIXED_ONLINE_EVALUATION_CONFIG_ID"
+
+agentcore --region "$AWS_REGION" eval online-eval delete \
+  --id "$FIXED_ONLINE_EVALUATION_CONFIG_ID"
+```
+
+Then run `cleanup.py` once for each Runtime name. Preserve the account-level
+Agent Insight Store.
+
 ## How It Works
 
 ### Step 1: Deploy HR Assistant v1 (`deploy.py`)
@@ -322,7 +617,7 @@ State is saved to `agent_state_{name}.json` for use by subsequent scripts.
 
 The `--version v2` flag builds an enhanced version that adds an `escalate_to_hr_manager` tool and a more detailed system prompt baked into the code. This is the version used in the target-based A/B test.
 
-### Step 2: Insights (`insights.py`)
+### Step 2: Batch Failure Insights evaluator (`failure_insights_evaluator.py`)
 
 Sends a set of failure-mode and successful sessions to the agent, waits for traces to propagate to CloudWatch, then calls `start_batch_evaluation` with the `Builtin.FailureAnalysis` insight evaluator and `Builtin.GoalSuccessRate`. Polls until the job completes and prints the evaluator scores and the failure insights, each with its root causes, suggested fixes, and span-level findings.
 
@@ -396,7 +691,9 @@ The `--generate-traces` flag sends sessions across several failure categories:
 
 ### Reading the FailureAnalysis Output
 
-Example output from `python insights.py --generate-traces` (trimmed). The service generates insight names and grouping, so they can vary between runs over the same sessions.
+Example output from `python failure_insights_evaluator.py --generate-traces`
+(trimmed). The service generates insight names and grouping, so they can vary
+between runs over the same sessions.
 
 ```
 --- Evaluator scores (2 evaluators) ---
@@ -433,10 +730,10 @@ Example output from `python insights.py --generate-traces` (trimmed). The servic
 
 Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures.
 
-With the Python scripts, run `insights.py` first. It ends by printing the `optimize.py` command with its batch evaluation ARN. Passing `--insights-eval-arn` makes Step 5a read that batch evaluation instead of the last 7 days of raw CloudWatch traces. The rest of the workflow (tool description recommendation, bundles, A/B tests) is unchanged.
+With the Python scripts, run `failure_insights_evaluator.py` first. It ends by printing the `optimize.py` command with its batch evaluation ARN. Passing `--insights-eval-arn` makes Step 5a read that batch evaluation instead of the last 7 days of raw CloudWatch traces. The rest of the workflow (tool description recommendation, bundles, A/B tests) is unchanged.
 
 ```bash
-python insights.py --name HRAssistV1 --generate-traces
+python failure_insights_evaluator.py --name HRAssistV1 --generate-traces
 python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
 ```
 
@@ -596,6 +893,7 @@ The agent reads its system prompt and tool descriptions from the bundle on every
 from bedrock_agentcore.runtime import BedrockAgentCoreContext
 from strands.hooks.events import BeforeModelCallEvent
 
+
 def _config_bundle_hook(event: BeforeModelCallEvent) -> None:
     bundle = BedrockAgentCoreContext.get_config_bundle()
     system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -609,6 +907,7 @@ def _config_bundle_hook(event: BeforeModelCallEvent) -> None:
         for t in event.agent.tools:
             if t.tool_name in tool_descs:
                 t.tool_spec["description"] = tool_descs[t.tool_name]
+
 
 agent.hooks.add_callback(BeforeModelCallEvent, _config_bundle_hook)
 ```
