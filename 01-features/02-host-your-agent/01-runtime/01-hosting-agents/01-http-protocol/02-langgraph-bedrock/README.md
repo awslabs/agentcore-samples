@@ -109,7 +109,7 @@ Note that this sample's entrypoint passes a single `HumanMessage` per call and c
 
 The IAM role uses the official [AgentCore direct deploy execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) policy. This includes permissions for CloudWatch Logs, X-Ray tracing, CloudWatch Metrics, and Bedrock model invocation. Without all of these, the runtime fails to initialize.
 
-`platformVersion` introduces no new IAM actions or resource types. The deploy script creates the role automatically — see `create_execution_role()` in `deploy.py`.
+`platformVersion` introduces no new IAM actions or resource types. The deploy script creates a fresh role and records the IAM `RoleId` in `runtime_config.json`. It never adopts an existing role or overwrites a previous deployment receipt. Use one working directory per deployment and keep the receipt for cleanup.
 
 ## Step 3: Build Deployment Package and Upload to S3 (`deploy.py`)
 
@@ -157,7 +157,7 @@ control.create_agent_runtime(
 )
 ```
 
-The runtime name must use **alphanumeric characters and underscores only** (no hyphens). The deploy script appends a timestamp for uniqueness.
+The runtime name must use **alphanumeric characters and underscores only** (no hyphens). The deploy script appends a random suffix for uniqueness.
 
 Then poll `get_agent_runtime` until the status is `READY` — **minutes on New Runtime**, because the snapshot is prepared during create — and read `platformVersion` back from that same response to confirm it took effect. From boto3 1.43.95 the response models `platformVersion`, so an absent field means the service returned none rather than your SDK having dropped it — either way it means "unknown" rather than a specific version. `deploy.py` treats confirmed, mismatched and unconfirmable as three distinct outcomes and only fails on a genuine mismatch.
 
@@ -188,7 +188,9 @@ If you pass `runtimeSessionId` explicitly, note it must be **33–256 characters
 
 ## Step 7: Clean Up (`cleanup.py`)
 
-Delete in reverse order: endpoints → runtime → S3 artifact → IAM role. There is no snapshot to tear down separately; deleting the runtime disposes of it.
+Run `python cleanup.py` with the original account and receipt. It removes the recorded endpoint, Runtime, ZIP and execution role in that order. The bucket is retained; deleting the Runtime also disposes of its snapshot. The caller needs `iam:GetRole` to verify identity and, for a versioned ZIP, `s3:DeleteObjectVersion`. Deployment checks the code bucket with `HeadBucket` (requires `s3:ListBucket` on an existing bucket).
+
+If a deletion fails, keep `runtime_config.json` and retry after resolving the error. Cleanup stops on a replaced role or unexpected inline policies; it does not detach unrelated policies. Do not modify or reuse these resources concurrently. For an older receipt without a role ID or an interrupted create marked `pending`, verify what was actually created against your deployment and CloudTrail records and reconcile manually. Do not fill in a missing ID from a same-name role. After a hard process interruption, remove `runtime_config.lock` only after confirming no deploy or cleanup is running.
 
 ## What's Different from the Strands Example
 
