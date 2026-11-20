@@ -1,93 +1,38 @@
-# Amazon Bedrock Agent Integration with Dynatrace
+# Send AgentCore traces and metrics to Dynatrace
 
-This example contains a demo of a Personal Assistant Agent built on top of [Bedrock AgentCore Agents](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html).
+Run a local Strands travel agent and see its activity in your Dynatrace tenant. The agent uses the AgentCore Runtime SDK and calls Amazon Bedrock. [dynatrace.py](./dynatrace.py) registers OpenTelemetry providers **before** the agent starts, so Strands can emit spans and metrics to the same service, `agent-core-samples`.
 
+## Before you start
 
-## Prerequisites
+- Install Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- Use a short-lived AWS session for a role permitted to invoke your selected [Bedrock model](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-permissions.html). Use the normal AWS credential chain; you do not need permissions to deploy an AgentCore runtime.
+- In **your** Dynatrace tenant, create an [OTLP ingest token](https://docs.dynatrace.com/docs/shortlink/otel-getstarted-otlpexport) with **Ingest OpenTelemetry traces** (`openTelemetryTrace.ingest`) and **Ingest metrics** (`metrics.ingest`). This sample does not export logs or read tenant data.
 
-- Python 3.9 or higher
-- Dynatrace Account
-- AWS Account with appropriate permissions
-- Access to the following AWS services:
-   - Amazon Bedrock
+## Run locally
 
-
-## Dynatrace Instrumentation
-
-> [!TIP]
-> For detailed setup instructions, configuration options, and advanced use cases, please refer to the [Get Started Docs](https://docs.dynatrace.com/docs/shortlink/ai-ml-get-started).
-
-Bedrock AgentCore comes with [Observability](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability.html) support out-of-the-box.
-Hence, we just need to register an [OpenTelemetry SDK](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/overview.md#sdk) to send the data to Dynatrace AI Observability.
-
-We simplified this process, hiding all the complexity inside [dynatrace.py](./dynatrace.py).
-For sending data to your Dynatrace tenant, you can configure the `OTEL_ENDPOINT` env var with your Dynatrace URL for ingesting [OTLP](https://docs.dynatrace.com/docs/shortlink/otel-getstarted-otlpexport), for example: `https://wkf10640.live.dynatrace.com/api/v2/otlp`.
-
-The API access token will be read from your filesystem under `/etc/secrets/dynatrace_otel` or from the environment variable `DT_TOKEN`. 
-
-
-## How to use
-
-### Setting your AWS keys
-
-Follow the [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) to configure your AWS Role with the correct policies.
-Afterwards, you can set your AWS keys in your environment variables by running the following command in your terminal:
-
+From this directory, in Bash, replace the region, model and OTLP URL with your own values. Use the base ingest URL, not the `/v1/traces` or `/v1/metrics` URL. Both exporters send the token to that destination; only use a trusted endpoint. Use non-sensitive prompts and tool inputs: telemetry can contain conversation content.
 
 ```bash
-export AWS_ACCESS_KEY_ID==your_api_key
-export AWS_SECRET_ACCESS_KEY==your_secret_key
-export AWS_REGION=your_region
+export AWS_DEFAULT_REGION='<your-bedrock-region>'
+export BEDROCK_MODEL_ID='<model-or-inference-profile-id-enabled-in-that-region>'
+export OTEL_ENDPOINT='https://<your-environment-id>.live.dynatrace.com/api/v2/otlp'
+read -rs -p 'Dynatrace ingest token: ' DT_TOKEN; printf '\n'
+export DT_TOKEN
+uv run --locked main.py
 ```
 
-Ensure your account has access to the model `eu.anthropic.claude-3-7-sonnet-20250219-v1:0` used in this example. Please, refer to the
-[Amazon Bedrock documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-permissions.html) to see how to enable access to the model.
-You can change the model used by configuring the environment variable `BEDROCK_MODEL_ID`.
+If your environment mounts the token at `/etc/secrets/dynatrace_otel`, omit the token prompt and export. The file takes precedence. No AgentCore CLI or Starter Toolkit is needed.
 
-### Setting your Dynatrace Token
-
-Create a [Free Dynatrace Trial](https://www.dynatrace.com/signup/) for 15 days.
-After a few minutes, you will get redirected to your tenant. The URL will look like `https://wkf10640.apps.dynatrace.com/`.
-The value `wkf10640` is your environment id which will be needed later.
-
-After that, you can create an Access Token:
-
-1. In Dynatrace, go to **Access Tokens**. To find **Access Tokens**, press **Ctrl/Cmd+K** to search for and select **Access Tokens**.
-2. In **Access Tokens**, select **Generate new token**.
-3. Enter a **Token name** for your new token.
-4. Give your new token the following permissions:
-5. Search for and select all of the following scopes.
-    * **Ingest OpenTelemetry traces** (`openTelemetryTrace.ingest`)
-    * **Ingest logs** (`logs.ingest`)
-    * **Read metrics** (`metrics.read`)
-6. Select **Generate token**.
-7. Copy the generated token to the clipboard. Store the token in a password manager for future use.
-
-
-Afterwards, you can set your Dynatrace information in your environment variables by running the following command in your terminal:
+In a second terminal, send a request (this invokes Bedrock and can incur charges):
 
 ```bash
-export DT_TOKEN==your_access_token
-export OTEL_ENDPOINT==https://{your-environment-id}.live.dynatrace.com/api/v2/otlp
+curl --fail-with-body http://127.0.0.1:8080/invocations \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"What is the weather now?"}'
 ```
 
+Look for `agent-core-samples` in Dynatrace. Spans export after completion; metrics export periodically. If nothing appears, check the endpoint and token scopes without printing the token.
 
-### Run the app
+![Example Dynatrace trace](./dynatrace.png)
 
-You can start the example with the following command: `uv run main.py`
-This will create an HTTP server that listens on the port `8080` that implements the required `/invocations` endpoint for processing the agent's requirements.
-
-The Agent is now ready to be deployed. The best practice is to package code as container and push to ECR using CI/CD pipelines and IaC. 
-You can follow the guide 
-[here](../../../01-features/02-host-your-agent/01-runtime/01-hosting-agents/01-http-protocol/01-strands-bedrock/) 
-to have a full step-by-step tutorial.
-
-You can interact with your agent with the following command:
-
-```bash
-curl -X POST http://127.0.0.1:8080/invocations --data '{"prompt": "What is the weather now?"}'
-```
-
-Now you have full observability of your Bedrock AgentCore Agents in Dynatrace 🚀
-
-![Tracing](./dynatrace.png)
+Press **Ctrl-C** to stop the local server, then `unset DT_TOKEN` in that shell. Revoke any token created solely for the tutorial. This walkthrough does not create or delete AWS infrastructure.
