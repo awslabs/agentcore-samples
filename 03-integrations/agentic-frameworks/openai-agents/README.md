@@ -54,7 +54,10 @@ assert not spec['credentials'] and len(spec['runtimes']) == 1
 spec['runtimes'][0]['instrumentation'] = {'enableOtel': False}
 p.write_text(json.dumps(spec, indent=2) + '\n')
 PY
-npm install --prefix agentcore/cdk --ignore-scripts
+# Pair the patched CDK library with a CDK CLI that reads its cloud assembly.
+# These are project-local build tools; AgentCore CLI and @aws/agentcore-cdk stay at 1.0.3.
+npm pkg set --prefix agentcore/cdk 'devDependencies.aws-cdk=2.1149.0'
+npm install --prefix agentcore/cdk --ignore-scripts --save-exact aws-cdk-lib@2.278.0
 agentcore build --json
 ```
 
