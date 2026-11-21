@@ -158,6 +158,27 @@ before deciding whether to try again. A budget rejection reports `payment_made: 
 The OpenAI SDK's default trace exporter is disabled because this example authenticates only to
 Bedrock. AgentCore's separately configured CloudWatch/OpenTelemetry observability remains available.
 
+#### Optional: check the quote before paying
+
+Budgets limit how much an agent can lose, but they don't check whether a specific 402 quote looks right:
+a payout wallet that changed (a hijacked endpoint or DNS record), a price that suddenly jumped, or a seller
+that takes payment and doesn't deliver. `build_x402_fetch` accepts an optional `pre_payment_check`. It runs
+after the 402 and before any payment proof is generated, receives the URL and the quote's first payment
+requirement (`payTo`, `amount`, `network`, `asset`), and returns `(allow, reason)`. On deny, or if the check
+raises, the tool returns `payment_made: false` and the payment session is never touched.
+
+```python
+from openai_x402_tool import allowlist_check, build_x402_fetch
+
+fetch = build_x402_fetch(
+    ...,
+    pre_payment_check=allowlist_check({"0xMerchantPayoutWallet"}, max_amount=10_000),  # $0.01 in USDC
+)
+```
+
+The default is no check, so existing behavior is unchanged. A check can also call a hosted service, for
+example an x402 reputation API that compares the quote with the endpoint's observed payout wallet and price.
+
 ## Try different budgets (payment limits)
 
 Budget enforcement lives on the session. Change the budget by editing the constant near the top of
