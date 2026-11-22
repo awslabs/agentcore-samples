@@ -1,0 +1,4 @@
+{
+  "source": "sanitized exact trusted Ask after own read and Guardrail NONE; text/end_turn, no native close",
+  "text": "print(\"Customer-a has 2 open tickets: A-41 (Package arrived late) and A-42 (Correct billing address).\")"
+}
