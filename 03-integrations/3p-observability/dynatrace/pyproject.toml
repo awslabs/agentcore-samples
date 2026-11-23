@@ -9,5 +9,6 @@ dependencies = [
     "bedrock-agentcore",
     "opentelemetry-exporter-otlp-proto-http",
     "strands-agents",
+    "starlette",
     "opentelemetry-sdk",
 ]

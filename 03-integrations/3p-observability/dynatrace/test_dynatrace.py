@@ -5,6 +5,29 @@ from unittest.mock import patch
 from dynatrace import export_config
 
 
+class AgentIsolationTest(unittest.TestCase):
+    def test_requests_do_not_reuse_agent_history(self):
+        with patch.dict(os.environ, AWS_DEFAULT_REGION="us-east-1", AWS_EC2_METADATA_DISABLED="true"):
+            import travel_agent
+            from starlette.exceptions import HTTPException
+
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        first = Mock(return_value=SimpleNamespace(message={"content": [{"text": "first answer"}]}))
+        second = Mock(return_value=SimpleNamespace(message={"content": [{"text": "second answer"}]}))
+        with patch.object(travel_agent, "Agent", side_effect=[first, second]) as factory:
+            with self.assertRaises(HTTPException) as err:
+                travel_agent.strands_agent_bedrock({"prompt": " "})
+            self.assertEqual(err.exception.status_code, 400)
+            factory.assert_not_called()
+            self.assertEqual(travel_agent.strands_agent_bedrock({"prompt": "first"}), "first answer")
+            self.assertEqual(travel_agent.strands_agent_bedrock({"prompt": "second"}), "second answer")
+            self.assertEqual(factory.call_count, 2)
+        first.assert_called_once_with("first")
+        second.assert_called_once_with("second")
+
+
 class ExportConfigTest(unittest.TestCase):
     def test_reject_endpoint_before_reading_token(self):
         for url in (
