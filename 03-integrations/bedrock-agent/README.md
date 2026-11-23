@@ -85,6 +85,7 @@ Traditionally, connecting AI agents to existing backend systems requires complex
 * AWS CLI 2.x configured with credentials
 * Jupyter Notebook or JupyterLab
 * Internet connection for AWS API calls
+* Access to the anthropic.claude-3-sonnet-20240229-v1:0 Bedrock model.
 * Access to the following AWS services:
   * Amazon Bedrock
   * AWS Lambda
