@@ -4,61 +4,19 @@ A bidirectional voice agent using the "sandwich" pattern: **STT → Agent → TT
 
 ## Deploy to AgentCore
 
-```bash
-# Navigate to the bidirectional streaming tutorial root
-cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
-
-# Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\Scripts\activate         # Windows
-
-# Install deployment dependencies
-pip install -r utils/requirements.txt
-
-# Set your AWS account ID
-export ACCOUNT_ID=123456789012
-
-# Set AWS credentials (Option A: environment variables)
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
-export AWS_REGION=us-east-1
-
-# Set AWS credentials (Option B: named profile)
-export AWS_PROFILE=your-profile
-export AWS_REGION=us-east-1
-
-# Deploy
-python utils/deploy.py 03-langchain-transcribe-polly-ws
-
-# Start the web client
-./utils/start_client.sh 03-langchain-transcribe-polly-ws
-```
-
-The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. This sample also provisions MCP Gateways before the runtime. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
-
-### Cleanup
-
-```bash
-python utils/cleanup.py 03-langchain-transcribe-polly-ws
-```
+Follow the [shared WebSocket deployment and cleanup guide](../WEBSOCKET_DEPLOYMENT.md) with `SAMPLE=03-langchain-transcribe-polly-ws`. It creates one Runtime V2 from a prepared image and role.
 
 ## Local Testing
 
-The LangChain agent requires MCP Gateways for tool access (same as the Strands agent). To run locally, you need deployed gateways and AWS credentials.
+The LangChain agent uses three synthetic local tools and an in-process checkpointer. Transcription, model inference and speech synthesis require AWS credentials; no Gateway is used.
 
 ```bash
 # 1. Install server dependencies
 pip install -r 03-langchain-transcribe-polly-ws/websocket/requirements.txt
 
 # 2. Set AWS credentials
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_PROFILE=my-sandbox
 export AWS_REGION=us-east-1
-
-# 3. Set MCP gateway config (from a prior `python utils/deploy.py 03-langchain-transcribe-polly-ws` run)
-export MCP_GATEWAY_ARNS='["arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/gw-1", ...]'
-export MCP_GATEWAY_URLS='["https://gateway-1.endpoint.example.com", ...]'
 
 # 4. Start the server (port 8080)
 cd 03-langchain-transcribe-polly-ws/websocket
@@ -82,7 +40,7 @@ Unlike the Strands agent which uses Nova Sonic's native bidirectional audio mode
 
 | File | Purpose |
 |------|---------|
-| `websocket/server.py` | FastAPI server, IMDS credentials, WebSocket endpoint |
+| `websocket/server.py` | FastAPI server, session-scoped SDK credentials, WebSocket endpoint |
 | `websocket/agent.py` | Session handler, LangChain agent, STT/TTS pipeline, VAD |
 | `client/client.py` | HTTP server that serves the HTML client |
 | `client/langchain-client.html` | Browser-based voice/text client |
@@ -147,7 +105,7 @@ Messages sent over the WebSocket as JSON:
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `config` | `voice`, `region`, `input_sample_rate`, `output_sample_rate`, `system_prompt`, `gateway_arns` | Initial session configuration (must be first message) |
+| `config` | `voice`, `region`, `input_sample_rate`, `output_sample_rate`, `system_prompt` | Initial session configuration (must be first message) |
 | `text_input` | `text` | Text message to send to the agent |
 | `audio_input` | `audio` (base64), `format`, `sample_rate`, `channels` | PCM audio chunk from the microphone |
 

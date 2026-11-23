@@ -7,21 +7,21 @@ Follows the same pattern as the Strands client.
 """
 
 import argparse
-import os
-import sys
-import webbrowser
 import json
+import os
 import secrets
 import string
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import sys
+import webbrowser
+from http.server import HTTPServer
 from urllib.parse import urlparse
 
 # Import from utils folder websocket_helpers
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../utils"))
-from websocket_helpers import create_presigned_url
+from websocket_helpers import LocalHandler, create_presigned_url
 
 
-class LangChainClientHandler(BaseHTTPRequestHandler):
+class LangChainClientHandler(LocalHandler):
     """HTTP request handler that serves the LangChain voice agent client."""
 
     websocket_url = None
@@ -34,9 +34,6 @@ class LangChainClientHandler(BaseHTTPRequestHandler):
     service = None
     expires = None
     qualifier = None
-
-    def log_message(self, format, *args):
-        sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
     def do_GET(self):
         parsed_path = urlparse(self.path)
@@ -76,7 +73,7 @@ class LangChainClientHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(404, "langchain-client.html not found")
         except Exception as e:
-            self.send_error(500, f"Internal server error: {str(e)}")
+            self.send_error(500, f"Internal server error: {e!s}")
 
     def serve_connection_info(self):
         response = {
@@ -111,7 +108,7 @@ class LangChainClientHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(empty.encode())
         except Exception as e:
-            self.send_error(500, f"Internal server error: {str(e)}")
+            self.send_error(500, f"Internal server error: {e!s}")
 
     def regenerate_url(self):
         try:
@@ -238,7 +235,7 @@ Examples:
             print("✅ Pre-signed URL generated successfully!")
         else:
             websocket_url = args.ws_url
-            print(f"🔗 WebSocket URL: {websocket_url}")
+            print("Using supplied local WebSocket URL")
             print("💡 Using local WebSocket connection (no authentication)")
 
         print(f"🌐 Web Server Port: {args.port}")
@@ -255,7 +252,7 @@ Examples:
             LangChainClientHandler.expires = args.expires
             LangChainClientHandler.qualifier = args.qualifier
 
-        server_address = ("", args.port)
+        server_address = ("127.0.0.1", args.port)
         httpd = HTTPServer(server_address, LangChainClientHandler)
         server_url = f"http://localhost:{args.port}"
 

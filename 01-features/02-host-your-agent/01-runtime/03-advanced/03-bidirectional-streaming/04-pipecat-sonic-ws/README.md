@@ -4,44 +4,7 @@ A bidirectional voice agent using the [Pipecat](https://github.com/pipecat-ai/pi
 
 ## Deploy to AgentCore
 
-```bash
-# Navigate to the bidirectional streaming tutorial root
-cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
-
-# Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\Scripts\activate         # Windows
-
-# Install deployment dependencies
-pip install -r utils/requirements.txt
-
-# Set your AWS account ID
-export ACCOUNT_ID=123456789012
-
-# Set AWS credentials (Option A: environment variables)
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
-export AWS_REGION=us-east-1
-
-# Set AWS credentials (Option B: named profile)
-export AWS_PROFILE=your-profile
-export AWS_REGION=us-east-1
-
-# Deploy to AgentCore
-python utils/deploy.py 04-pipecat-sonic-ws
-
-# Start the web client
-./utils/start_client.sh 04-pipecat-sonic-ws
-```
-
-The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
-
-### Cleanup
-
-```bash
-python utils/cleanup.py 04-pipecat-sonic-ws
-```
+Follow the [shared WebSocket deployment and cleanup guide](../WEBSOCKET_DEPLOYMENT.md) with `SAMPLE=04-pipecat-sonic-ws`. It creates one Runtime V2 from a prepared image and role.
 
 ## Local Testing
 
@@ -52,8 +15,7 @@ No MCP Gateways required — Pipecat tools are defined inline in the server code
 pip install -r 04-pipecat-sonic-ws/websocket/requirements.txt
 
 # 2. Set AWS credentials
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_PROFILE=my-sandbox
 export AWS_REGION=us-east-1
 
 # 3. Start the server (port 8081)
@@ -78,7 +40,7 @@ Unlike the sandwich architecture (STT → LLM → TTS), Nova Sonic handles audio
 
 | File | Purpose |
 |------|---------|
-| `websocket/server.py` | Pipecat pipeline with `AWSNovaSonicLLMService`, FastAPI + IMDS credentials |
+| `websocket/server.py` | Pipecat pipeline with `AWSNovaSonicLLMService`, FastAPI + session-scoped SDK credentials |
 | `client/index.html` | Vite app entry point |
 | `client/src/app.js` | Browser client using `@pipecat-ai/client-js` + `WebSocketTransport` |
 | `client/client.py` | Lightweight signing server — generates SigV4 presigned URLs for AgentCore |

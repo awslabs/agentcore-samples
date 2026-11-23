@@ -1,12 +1,12 @@
 """
 Pipecat Voice Agent WebSocket Server (Nova Sonic)
 
-FastAPI server with IMDS credential management and WebSocket endpoint.
+FastAPI server with per-session SDK credentials and WebSocket endpoint.
 Uses Amazon Nova Sonic for native speech-to-speech via Pipecat's
 AWSNovaSonicLLMService — no separate STT or TTS needed.
 
 Follows the same server pattern as 01-bedrock-sonic-ws/02-strands-ws/03-langchain-transcribe-polly-ws agents
-(FastAPI + IMDS credentials + /ws endpoint) so it works with the
+(FastAPI + per-session SDK credentials + /ws endpoint) so it works with the
 standard HTML client and AgentCore deployment.
 
 Based on:
@@ -18,14 +18,13 @@ import asyncio
 import logging
 import os
 
-import requests
+import boto3
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pipecat.adapters.schemas.function_schema import FunctionSchema
-from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
+from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -33,12 +32,9 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
-    AssistantTurnStoppedMessage,
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
-    UserTurnStoppedMessage,
 )
-from pipecat.runner.types import RunnerArguments
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.aws.nova_sonic.llm import AWSNovaSonicLLMService
 from pipecat.services.llm_service import FunctionCallParams
@@ -47,119 +43,8 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 
-load_dotenv(override=True)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# IMDS credential helpers (same pattern as other sample servers)
-# ---------------------------------------------------------------------------
-
-_credential_refresh_task = None
-
-
-def get_imdsv2_token():
-    """Get IMDSv2 token for secure metadata access."""
-    try:
-        resp = requests.put(
-            "http://169.254.169.254/latest/api/token",
-            headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
-            timeout=2,
-        )
-        if resp.status_code == 200:
-            return resp.text
-    except Exception as e:
-        logger.debug(f"IMDSv2 token request failed: {e}")
-    return None
-
-
-def get_credentials_from_imds():
-    """Retrieve IAM role credentials from EC2 IMDS."""
-    result = {
-        "success": False,
-        "credentials": None,
-        "role_name": None,
-        "method_used": None,
-        "error": None,
-    }
-    try:
-        token = get_imdsv2_token()
-        headers = {"X-aws-ec2-metadata-token": token} if token else {}
-        result["method_used"] = "IMDSv2" if token else "IMDSv1"
-
-        role_resp = requests.get(
-            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-            headers=headers,
-            timeout=2,
-        )
-        if role_resp.status_code != 200:
-            result["error"] = f"Failed to retrieve IAM role: HTTP {role_resp.status_code}"
-            return result
-
-        role_name = role_resp.text.strip()
-        result["role_name"] = role_name
-
-        creds_resp = requests.get(
-            f"http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}",
-            headers=headers,
-            timeout=2,
-        )
-        if creds_resp.status_code != 200:
-            result["error"] = f"Failed to retrieve credentials: HTTP {creds_resp.status_code}"
-            return result
-
-        creds = creds_resp.json()
-        result["success"] = True
-        result["credentials"] = {
-            "access_key": creds["AccessKeyId"],
-            "secret_key": creds["SecretAccessKey"],
-            "token": creds["Token"],
-            "expiration": creds["Expiration"],
-        }
-    except Exception as e:
-        result["error"] = str(e)
-    return result
-
-
-def refresh_credentials_now():
-    """Re-fetch IMDS credentials before starting a session.
-
-    AgentCore Runtime V2 snapshots the container at deploy time and restores that
-    snapshot for later sessions, so credentials captured at application startup are
-    frozen and will have expired. Without this, Bedrock returns 403
-    ExpiredTokenException on the first call of a restored session.
-    """
-    result = get_credentials_from_imds()
-    if not result["success"]:
-        logger.error("Could not refresh credentials from IMDS")
-        return False
-
-    creds = result["credentials"]
-    os.environ["AWS_ACCESS_KEY_ID"] = creds["access_key"]
-    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["secret_key"]
-    os.environ["AWS_SESSION_TOKEN"] = creds["token"]
-    logger.info("Credentials refreshed for session")
-    return True
-
-
-async def refresh_credentials_periodically():
-    """Background task to refresh IMDS credentials before expiry."""
-    while True:
-        try:
-            result = get_credentials_from_imds()
-            if result["success"]:
-                creds = result["credentials"]
-                os.environ["AWS_ACCESS_KEY_ID"] = creds["access_key"]
-                os.environ["AWS_SECRET_ACCESS_KEY"] = creds["secret_key"]
-                os.environ["AWS_SESSION_TOKEN"] = creds["token"]
-                logger.info("Credentials refreshed successfully")
-            else:
-                logger.warning("Credential refresh failed")
-        except Exception:
-            logger.warning("Credential refresh error")
-        await asyncio.sleep(300)  # Refresh every 5 minutes
-
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -264,27 +149,7 @@ tools = ToolsSchema(
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-from contextlib import asynccontextmanager
-
-
-@asynccontextmanager
-async def lifespan(app_instance):
-    global _credential_refresh_task
-    # Try IMDS credentials (AgentCore environment)
-    result = get_credentials_from_imds()
-    if result["success"]:
-        creds = result["credentials"]
-        os.environ["AWS_ACCESS_KEY_ID"] = creds["access_key"]
-        os.environ["AWS_SECRET_ACCESS_KEY"] = creds["secret_key"]
-        os.environ["AWS_SESSION_TOKEN"] = creds["token"]
-        logger.info(f"Initial credentials loaded via {result['method_used']}")
-        _credential_refresh_task = asyncio.create_task(refresh_credentials_periodically())
-    else:
-        logger.info("IMDS not available — using environment variable credentials")
-    yield
-
-
-app = FastAPI(title="Pipecat Nova Sonic Agent", lifespan=lifespan)
+app = FastAPI(title="Pipecat Nova Sonic Agent")
 
 # Set ALLOWED_ORIGINS env var (comma-separated) to restrict in production
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
@@ -331,7 +196,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Under Runtime V2 the container may have been restored from a deploy-time
     # snapshot, so refresh credentials before doing any AWS work in this session.
-    refresh_credentials_now()
+    # Resolve a new SDK session for this connection, never cache secrets in the process environment.
 
     try:
         transport = FastAPIWebsocketTransport(
@@ -346,12 +211,14 @@ async def websocket_endpoint(websocket: WebSocket):
             ),
         )
 
+        credentials = await asyncio.to_thread(lambda: boto3.Session().get_credentials().get_frozen_credentials())
         llm = AWSNovaSonicLLMService(
-            secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            secret_access_key=credentials.secret_key,
+            access_key_id=credentials.access_key,
             region=os.getenv("AWS_REGION", "us-east-1"),
-            session_token=os.getenv("AWS_SESSION_TOKEN"),
+            session_token=credentials.token,
             settings=AWSNovaSonicLLMService.Settings(
+                model="amazon.nova-2-sonic-v1:0",
                 voice="tiffany",
                 system_instruction=SYSTEM_INSTRUCTION,
             ),
@@ -404,16 +271,6 @@ async def websocket_endpoint(websocket: WebSocket):
         async def on_client_disconnected(transport, client):
             logger.info("Pipecat client disconnected")
             await task.cancel()
-
-        @user_aggregator.event_handler("on_user_turn_stopped")
-        async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
-            timestamp = f"[{message.timestamp}] " if message.timestamp else ""
-            logger.info(f"Transcript: {timestamp}user: {message.content}")
-
-        @assistant_aggregator.event_handler("on_assistant_turn_stopped")
-        async def on_assistant_turn_stopped(aggregator, message: AssistantTurnStoppedMessage):
-            timestamp = f"[{message.timestamp}] " if message.timestamp else ""
-            logger.info(f"Transcript: {timestamp}assistant: {message.content}")
 
         runner = PipelineRunner(handle_sigint=False)
         await runner.run(task)

@@ -226,7 +226,6 @@
         let agentConfig = {
             voice: 'Joanna',
             region: 'us-east-1',
-            gatewayArns: [],
             systemPrompt: 'You are a helpful customer service assistant.',
             inputSampleRate: 16000,
             outputSampleRate: 16000
@@ -272,7 +271,6 @@
             agentConfig = {
                 voice: profile.voice || 'Joanna',
                 region: profile.region || 'us-east-1',
-                gatewayArns: profile.gateway_arns || [],
                 systemPrompt: profile.system_prompt || '',
                 inputSampleRate: 16000,
                 outputSampleRate: 16000
@@ -303,7 +301,6 @@
             agentConfig = {
                 voice: voice,
                 region: region,
-                gatewayArns: agentConfig.gatewayArns,
                 systemPrompt: systemPrompt,
                 inputSampleRate: 16000,
                 outputSampleRate: 16000
@@ -484,7 +481,6 @@
                         type: "config",
                         voice: agentConfig.voice,
                         region: agentConfig.region,
-                        gateway_arns: agentConfig.gatewayArns,
                         system_prompt: agentConfig.systemPrompt,
                         input_sample_rate: agentConfig.inputSampleRate,
                         output_sample_rate: agentConfig.outputSampleRate

@@ -11,7 +11,7 @@ Five complete, self-contained voice agents. Each includes server code, a Dockerf
 | Sample | Architecture | Framework | Key Feature |
 |:-------|:-------------|:----------|:------------|
 | **01-bedrock-sonic-ws** | Native Speech-to-Speech | Raw Bedrock SDK | Full protocol control over Nova Sonic |
-| **02-strands-ws** | Native S2S (multi-model) | Strands BidiAgent | MCP Gateways, Nova Sonic / Gemini / OpenAI |
+| **02-strands-ws** | Native S2S (multi-model) | Strands BidiAgent | Nova Sonic / Gemini / OpenAI |
 | **03-langchain-transcribe-polly-ws** | STT to LLM to TTS | LangChain + Transcribe + Polly | Text LLM with voice I/O pipeline |
 | **04-pipecat-sonic-ws** | Native S2S | Pipecat pipeline | Open-source framework, RTVI/Protobuf |
 | **05-bidirectional-streaming-webrtc** | WebRTC to Native S2S | aiortc + KVS | Browser WebRTC instead of WebSockets |
@@ -27,7 +27,7 @@ Bidirectional streaming agents are more involved than the request/response examp
 - **Browser-based clients** in HTML/JS for audio capture and playback
 - **Additional AWS services** such as Amazon Transcribe, Amazon Polly, and Kinesis Video Streams
 
-Samples `01` through `04` share the deploy tooling in `utils/`. Sample `05` has its own `deploy.py`, because WebRTC needs VPC network mode for outbound UDP to reach the KVS TURN servers.
+Samples `01` through `04` use the [shared WebSocket deployment guide](WEBSOCKET_DEPLOYMENT.md). Sample `05` has its own `deploy.py`, because WebRTC needs VPC network mode for outbound UDP to reach the KVS TURN servers.
 
 ## Running on AgentCore Runtime V2
 
@@ -35,7 +35,7 @@ All five samples deploy to **AgentCore Runtime V2**, selected through the `platf
 
 On a cold start, an execution environment has to load your agent's code and dependencies before it can serve requests -- pulling the container image, or preparing a direct code deployment -- and how long that takes varies from one start to the next. V2 prepares the environment once when you create or update the runtime and snapshots it, so new environments resume from that snapshot instead of loading your code again. Startup is faster, and because every environment starts from the same snapshot, more consistent. Consistency is the part that matters for a voice agent, where a slow start is immediately audible to whoever is talking.
 
-Creating or updating a runtime includes preparing that snapshot, so expect it to take longer. The deploy scripts poll and print status, so a `CREATING` phase is expected rather than a hang.
+Creating or updating a runtime includes preparing that snapshot, so expect it to take longer. The deploy scripts poll for READY, so a `CREATING` phase is expected rather than a hang.
 
 One thing to watch for in your own agents: **anything captured at startup is frozen into the snapshot.** Whatever the container does while being snapshotted is restored with it, possibly hours later. That is why these samples resolve AWS credentials per session rather than at startup, which would otherwise return `403 ExpiredTokenException`, and why sample `05` builds its audio resampler per session rather than at import, which would otherwise produce silent audio. The rule: do not cache credentials, timers, or native library handles at import or during startup.
 
@@ -53,5 +53,5 @@ Audio is transcribed to text (Amazon Transcribe), processed by a text LLM (any m
 
 - **WebSocket proxy with SigV4 authentication** so clients connect through AgentCore's authenticated endpoint
 - **Container deployment via ECR** to package your streaming server as a Docker container
-- **IAM role management** so AgentCore provisions execution roles with model access
+- **Imported execution roles** scoped to the chosen agent and image
 - **Auto-scaling and lifecycle management** handled by AgentCore

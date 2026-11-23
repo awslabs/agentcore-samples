@@ -2,14 +2,11 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime
 
-import requests
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from requests.exceptions import RequestException
 from s2s_session_manager import S2sSessionManager
 
 # Configure logging
@@ -19,188 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 # Global variable to track credential refresh task
-credential_refresh_task = None
-
-
-def get_imdsv2_token():
-    """
-    Get IMDSv2 token for secure metadata access.
-
-    Returns:
-        str: The IMDSv2 token, or None if IMDSv2 is not available
-    """
-    try:
-        response = requests.put(
-            "http://169.254.169.254/latest/api/token",
-            headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
-            timeout=2,
-        )
-        if response.status_code == 200:
-            return response.text
-    except Exception as e:
-        logger.debug(f"IMDSv2 token request failed: {e}")
-    return None
-
-
-def get_credentials_from_imds():
-    """
-    Manually retrieve IAM role credentials from envrionment Metadata Service.
-
-    This utility method fetches credentials directly from IMDS without using boto3.
-    It tries both IMDSv1 and IMDSv2 methods.
-
-    Returns:
-        dict: A dictionary containing the credentials or error information
-    """
-    result = {
-        "success": False,
-        "credentials": None,
-        "role_name": None,
-        "method_used": None,
-        "error": None,
-    }
-
-    try:
-        # Try IMDSv2 first
-        token = get_imdsv2_token()
-        headers = {}
-
-        if token:
-            headers["X-aws-ec2-metadata-token"] = token
-            result["method_used"] = "IMDSv2"
-        else:
-            result["method_used"] = "IMDSv1"
-
-        # Get the IAM role name
-        role_response = requests.get(
-            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-            headers=headers,
-            timeout=2,
-        )
-
-        if role_response.status_code != 200:
-            result["error"] = f"Failed to retrieve IAM role name: HTTP {role_response.status_code}"
-            return result
-
-        role_name = role_response.text.strip()
-        result["role_name"] = role_name
-
-        # Get the credentials for the role
-        creds_response = requests.get(
-            f"http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}",
-            headers=headers,
-            timeout=2,
-        )
-
-        if creds_response.status_code != 200:
-            result["error"] = f"Failed to retrieve credentials for role {role_name}: HTTP {creds_response.status_code}"
-            return result
-
-        # Parse the credentials
-        credentials = creds_response.json()
-
-        result["success"] = True
-        result["credentials"] = {
-            "AccessKeyId": credentials.get("AccessKeyId"),
-            "SecretAccessKey": credentials.get("SecretAccessKey"),
-            "Token": credentials.get("Token"),
-            "Expiration": credentials.get("Expiration"),
-            "Code": credentials.get("Code"),
-            "Type": credentials.get("Type"),
-            "LastUpdated": credentials.get("LastUpdated"),
-        }
-
-    except RequestException as e:
-        result["error"] = f"Request exception: {e!s}"
-    except Exception as e:
-        result["error"] = f"Unexpected error: {e!s}"
-
-    return result
-
-
-def refresh_credentials_now():
-    """Re-fetch IMDS credentials into the environment before starting a session.
-
-    Credentials must not be relied on from application startup. AgentCore Runtime
-    V2 snapshots the container during deployment and restores that snapshot for
-    later sessions, so anything captured at startup -- including credentials and
-    the refresh timer -- is frozen at deploy time. A session restored hours later
-    would otherwise sign requests with expired credentials and Bedrock returns
-    403 ExpiredTokenException.
-
-    Called at the start of every session so each one begins with valid credentials.
-    """
-    # Static credentials supplied by the operator take precedence (local mode).
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SESSION_TOKEN") is None:
-        logger.info("Using static credentials from environment, skipping IMDS refresh")
-        return True
-
-    imds_result = get_credentials_from_imds()
-    if not imds_result["success"]:
-        logger.error(f"Could not refresh credentials from IMDS: {imds_result['error']}")
-        return False
-
-    creds = imds_result["credentials"]
-    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
-    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
-    os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
-    logger.info(f"Credentials refreshed for session (expire {creds.get('Expiration')})")
-    return True
-
-
-async def refresh_credentials_from_imds():
-    """
-    Background task to periodically refresh credentials from IMDS and update environment variables.
-    This ensures the EnvironmentCredentialsResolver always has fresh credentials.
-    """
-    logger.info("Starting credential refresh background task")
-
-    while True:
-        try:
-            # Fetch credentials from IMDS
-            imds_result = get_credentials_from_imds()
-
-            if imds_result["success"]:
-                creds = imds_result["credentials"]
-
-                # Update environment variables
-                os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
-                os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
-                os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
-
-                logger.info("✅ Credentials refreshed from IMD.")
-
-                # Parse expiration time and calculate refresh interval
-                # Refresh 5 minutes before expiration
-                try:
-                    expiration = datetime.fromisoformat(creds["Expiration"].replace("Z", "+00:00"))
-                    now = datetime.now(expiration.tzinfo)
-                    time_until_expiration = (expiration - now).total_seconds()
-
-                    # Refresh 5 minutes (300 seconds) before expiration, or in 1 hour if expiration is far away
-                    refresh_interval = min(max(time_until_expiration - 300, 60), 3600)
-                    logger.info(f"   Next refresh in {refresh_interval:.0f} seconds")
-                except Exception as e:
-                    logger.warning(f"Could not parse expiration time, using default 1 hour refresh: {e}")
-                    refresh_interval = 3600
-
-                # Wait until next refresh
-                await asyncio.sleep(refresh_interval)
-            else:
-                logger.error(f"Failed to refresh credentials from IMDS: {imds_result['error']}")
-                # Retry in 5 minutes on failure
-                await asyncio.sleep(300)
-
-        except asyncio.CancelledError:
-            logger.info("Credential refresh task cancelled")
-            break
-        except Exception as e:
-            logger.exception("Error in credential refresh task")
-            # Retry in 5 minutes on error
-            await asyncio.sleep(300)
-
-
-# Create FastAPI app
 app = FastAPI(title="Nova Sonic S2S WebSocket Server")
 
 # Add CORS middleware — set ALLOWED_ORIGINS env var (comma-separated) to restrict in production
@@ -212,57 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    global credential_refresh_task
-
-    logger.info("🚀 Application starting up...")
-    logger.info(f"📍 AWS Region: {os.getenv('AWS_DEFAULT_REGION', 'us-east-1')}")
-
-    # Check if credentials are already in environment (local mode)
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
-        logger.info("✅ Using credentials from environment variables (local mode)")
-        logger.info("   Credential refresh task will not be started")
-    else:
-        # Try to fetch credentials from IMDS and start refresh task
-        logger.info("🔄 Attempting to fetch credentials from ENV IMDS...")
-
-        imds_result = get_credentials_from_imds()
-
-        if imds_result["success"]:
-            creds = imds_result["credentials"]
-
-            # Set initial credentials in environment
-            os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
-            os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
-            os.environ["AWS_SESSION_TOKEN"] = creds["Token"]
-
-            logger.info("✅ Initial credentials loaded from IMDS.")
-
-            # Start background task to refresh credentials
-            credential_refresh_task = asyncio.create_task(refresh_credentials_from_imds())
-            logger.info("🔄 Credential refresh background task started")
-        else:
-            logger.error(f"❌ Failed to fetch credentials from IMDS: {imds_result['error']}")
-            logger.error("   Application may not function correctly without credentials")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-
-    logger.info("🛑 Application shutting down...")
-
-    # Cancel credential refresh task if running
-    if credential_refresh_task and not credential_refresh_task.done():
-        logger.info("Stopping credential refresh task...")
-        credential_refresh_task.cancel()
-        try:
-            await credential_refresh_task
-        except asyncio.CancelledError:
-            pass
-        logger.info("Credential refresh task stopped")
 
 
 @app.get("/health")
@@ -278,34 +42,9 @@ async def ping():
     return JSONResponse({"status": "ok"})
 
 
-@app.get("/credentials/info")
-async def credential_info():
-    """Get information about credential configuration (for debugging)"""
-    # Determine credential source
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
-        credential_source = "Environment Variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN)"
-        mode = "local"
-        note = "Using static credentials from environment variables"
-    else:
-        credential_source = "ENV IMDS (IMDSv2 preferred, falls back to IMDSv1)"
-        mode = "ec2"
-        note = "Credentials are automatically refreshed from IMDS by background task"
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "mode": mode,
-            "credential_source": credential_source,
-            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-            "note": note,
-        }
-    )
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"WebSocket connection attempt from: {websocket.client}")
-    logger.debug(f"Headers: {websocket.headers}")
 
     # Accept the WebSocket connection
     await websocket.accept()
@@ -353,7 +92,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         # Refresh credentials before each session. Under Runtime V2
                         # the container may have been restored from a snapshot taken
                         # at deploy time, so startup credentials are likely expired.
-                        refresh_credentials_now()
 
                         # Create a new stream manager for this connection
                         stream_manager = S2sSessionManager(model_id="amazon.nova-2-sonic-v1:0", region=aws_region)

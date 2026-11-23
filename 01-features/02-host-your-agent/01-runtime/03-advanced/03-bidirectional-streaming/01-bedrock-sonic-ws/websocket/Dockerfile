@@ -1,26 +1,10 @@
-FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.12-slim
-
+FROM public.ecr.aws/docker/library/python:3.12-slim
 WORKDIR /app
-
-# Copy requirements and install dependencies
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
-
-# Copy agent file
-COPY s2s_events.py ./
-COPY s2s_session_manager.py ./
-COPY server.py ./
-
-# Expose port
+RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2,<27' && python -m pip install --no-cache-dir -r requirements.txt
+COPY server.py s2s_events.py s2s_session_manager.py ./
+ENV HOST=0.0.0.0 PORT=8080
 EXPOSE 8080
-EXPOSE 8081
-
-ENV PORT=8080
-ENV LOGLEVEL=INFO
-
-# Create non-root user and transfer ownership
-RUN useradd -r -m -u 1001 appuser && chown -R appuser /app
+RUN useradd -r -m -u 1001 appuser
 USER appuser
-
-# Run application directly
 CMD ["python", "server.py"]

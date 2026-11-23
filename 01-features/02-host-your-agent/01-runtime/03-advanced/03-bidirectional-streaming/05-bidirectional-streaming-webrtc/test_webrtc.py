@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timezone
 from unittest.mock import Mock
 
 import boto3
-import deploy
 import pytest
 from botocore.stub import Stubber
+from deploy import runtime_v2 as deploy
 from fastapi.testclient import TestClient
 from server.server import application
 
@@ -87,6 +87,14 @@ def test_create_and_cleanup(tmp_path):
         deploy.cleanup(client, REGION, ACCOUNT, receipt)
         stub.assert_no_pending_responses()
     assert not receipt.exists()
+
+
+def test_websocket_plans_import_only_image_and_role():
+    for sample in deploy.SAMPLES:
+        req = deploy.plan(REGION, ACCOUNT, "bidi_" + sample.replace("-", "_"), IMAGE, ROLE, None, None, None, TOKEN)
+        assert req["networkConfiguration"] == {"networkMode": "PUBLIC"}
+        assert req["environmentVariables"] == {"AWS_REGION": REGION, "AWS_DEFAULT_REGION": REGION}
+        assert req["protocolConfiguration"] == {"serverProtocol": "HTTP"} and req["platformVersion"] == "V2"
 
 
 def test_ambiguous_create_does_not_cleanup_by_name(tmp_path):
