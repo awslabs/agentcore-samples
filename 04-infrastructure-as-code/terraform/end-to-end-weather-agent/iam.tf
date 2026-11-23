@@ -36,12 +36,6 @@ resource "aws_iam_role" "agent_execution" {
   }
 }
 
-# Attach AWS managed policy for AgentCore
-resource "aws_iam_role_policy_attachment" "agent_execution_managed" {
-  role       = aws_iam_role.agent_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess"
-}
-
 # Inline policy for agent execution
 resource "aws_iam_role_policy" "agent_execution" {
   name = "AgentCoreExecutionPolicy"
@@ -112,7 +106,12 @@ resource "aws_iam_role_policy" "agent_execution" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:bedrock:${data.aws_region.current.id}:${data.aws_caller_identity.current.id}:inference-profile/global.anthropic.claude-sonnet-4-6",
+          "arn:aws:bedrock:${data.aws_region.current.id}:${data.aws_caller_identity.current.id}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+        ]
       },
       # Workload Access Tokens
       {
@@ -128,10 +127,39 @@ resource "aws_iam_role_policy" "agent_execution" {
           "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.id}:workload-identity-directory/default/workload-identity/*"
         ]
       },
-      # S3 Access for Results Bucket
+      # Access only the tools, preferences and result object used by the planner.
       {
-        Sid    = "S3ResultsAccess"
-        Effect = "Allow"
+        Sid      = "WeatherBrowserSessions"
+        Effect   = "Allow"
+        Action   = ["bedrock-agentcore:StartBrowserSession", "bedrock-agentcore:StopBrowserSession"]
+        Resource = aws_bedrockagentcore_browser.browser.browser_arn
+      },
+      {
+        Sid       = "BrowserWebSocket"
+        Effect    = "Allow"
+        Action    = "bedrock-agentcore:ConnectBrowserAutomationStream"
+        Resource  = "*" # No IAM resource type for the signed WebSocket handshake.
+        Condition = { StringEquals = { "aws:RequestedRegion" = data.aws_region.current.id } }
+      },
+      {
+        Sid      = "WeatherAnalysis"
+        Effect   = "Allow"
+        Action   = ["bedrock-agentcore:StartCodeInterpreterSession", "bedrock-agentcore:InvokeCodeInterpreter", "bedrock-agentcore:StopCodeInterpreterSession"]
+        Resource = aws_bedrockagentcore_code_interpreter.code_interpreter.code_interpreter_arn
+      },
+      {
+        Sid      = "ReadDemoPreferences"
+        Effect   = "Allow"
+        Action   = "bedrock-agentcore:ListEvents"
+        Resource = aws_bedrockagentcore_memory.memory.arn
+        Condition = { StringEquals = {
+          "bedrock-agentcore:actorId"   = "user123"
+          "bedrock-agentcore:sessionId" = "session456"
+        } }
+      },
+      {
+        Sid      = "S3ResultsAccess"
+        Effect   = "Allow"
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.results.arn}/results.md"
       }

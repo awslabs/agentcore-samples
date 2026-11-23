@@ -1,116 +1,205 @@
-"""Offline contracts for the CDK and Terraform weather runtimes (no service calls)."""
+"""Same offline contracts for all three weather-agent packaging paths.
+
+Requires PyYAML and the generated runtime requirements. No buildspec commands run.
+"""
 
 import asyncio
 import importlib.util
 import os
+import tempfile
 import unittest
-from contextlib import ExitStack, closing
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import boto3
-from botocore.exceptions import ClientError
+import yaml
 from botocore.stub import Stubber
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = {
-    "AWS_REGION": "us-west-2",
-    "BROWSER_ID": "example-browser",
-    "CODE_INTERPRETER_ID": "example-code",
-    "MEMORY_ID": "example-memory",
-    "RESULTS_BUCKET": "example-results",
-    "AWS_EC2_METADATA_DISABLED": "true",
-    "ANONYMIZED_TELEMETRY": "false",
-    "BROWSER_USE_CLOUD_SYNC": "false",
-}
+IAC = Path(__file__).resolve().parents[1]
+TEMPLATE = IAC / "cloudformation/end-to-end-weather-agent/end-to-end-weather-agent.yaml"
 
 
-def load_apps():
-    for directory in ("cdk/python", "terraform"):
-        path = ROOT / directory / "end-to-end-weather-agent/agent-code/weather_agent.py"
-        spec = importlib.util.spec_from_file_location(f"weather_{path.parts[-4]}", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        yield module
+def runtime_files():
+    # BaseLoader treats CloudFormation intrinsics as data. Only read literal file bodies;
+    # in particular do not execute the ECR login, build or push phases in a unit test.
+    template = yaml.load(TEMPLATE.read_text(), Loader=yaml.BaseLoader)
+    source = template["Resources"]["AgentImageBuildProject"]["Properties"]["Source"]
+    commands = yaml.safe_load(source["BuildSpec"])["phases"]["build"]["commands"]
+    for name in ("requirements.txt", "my_agent.py", "Dockerfile"):
+        prefix = f"cat > {name} << 'EOF'\n"
+        (command,) = [c for c in commands if c.startswith(prefix)]
+        body, end, tail = command[len(prefix) :].partition("\nEOF")
+        if not end or tail.strip():
+            raise ValueError(f"Unexpected buildspec command for {name}")
+        yield name, body + "\n"
 
 
-class WeatherToolTests(unittest.TestCase):
+class WeatherContracts:
+    variant: str
+
     @classmethod
     def setUpClass(cls):
-        cls.env = patch.dict(os.environ, CONFIG)
-        cls.env.start()
-        cls.addClassCleanup(cls.env.stop)
-        cls.apps = list(load_apps())
-
-    def test_only_scenario_tools_registered(self):
-        for app in self.apps:
-            self.assertEqual(
-                set(app.create_weather_agent().tool_names),
+        if cls.variant == "cloudformation":
+            root = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+            for name, content in runtime_files():
+                (root / name).write_text(content)
+            source = root / "my_agent.py"
+        else:
+            source = IAC / cls.variant / "end-to-end-weather-agent/agent-code/weather_agent.py"
+        cls.enterClassContext(
+            patch.dict(
+                os.environ,
                 {
-                    "get_weather_data",
-                    "generate_analysis_code",
-                    "execute_code",
-                    "get_activity_preferences",
-                    "save_activity_plan",
+                    "AWS_REGION": "us-west-2",
+                    "AWS_EC2_METADATA_DISABLED": "true",
+                    "BROWSER_ID": "fixture-browser",
+                    "CODE_INTERPRETER_ID": "fixture-interpreter",
+                    "MEMORY_ID": "fixture-memory",
+                    "RESULTS_BUCKET": "fixture-results",
+                    "ANONYMIZED_TELEMETRY": "false",
+                    "BROWSER_USE_CLOUD_SYNC": "false",
                 },
             )
+        )
+        spec = importlib.util.spec_from_file_location("weather_fixture", source)
+        cls.app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.app)
 
-    def test_save_uses_only_the_deployed_result_object(self):
-        for app in self.apps:
-            with (
-                self.subTest(module=app.__name__),
-                closing(boto3.Session(region_name=app.AWS_REGION).client("s3")) as client,
-            ):
-                params = {
-                    "Bucket": "example-results",
-                    "Key": "results.md",
-                    "Body": "Walk at 20°C".encode(),
-                    "ContentType": "text/markdown; charset=utf-8",
-                }
-                with Stubber(client) as stub, patch.object(app.boto3, "client", return_value=client):
-                    stub.add_response("put_object", {}, params)
-                    stub.add_client_error("put_object", "AccessDenied", "private fixture", expected_params=params)
-                    self.assertEqual(app.save_activity_plan("Walk at 20°C")["status"], "success")
-                    failure = app.save_activity_plan("Walk at 20°C")
-                    self.assertEqual(failure["status"], "error")
-                    self.assertNotIn("private fixture", str(failure))
-                    stub.assert_no_pending_responses()
-                with patch.object(app.boto3, "client", side_effect=AssertionError("unexpected client")):
-                    self.assertEqual(app.save_activity_plan(" ")["status"], "error")
+    def test_tool_registration(self):
+        self.assertEqual(
+            set(self.app.create_weather_agent().tool_names),
+            {
+                "get_weather_data",
+                "generate_analysis_code",
+                "execute_code",
+                "get_activity_preferences",
+                "save_activity_plan",
+            },
+        )
 
-    def test_browser_releases_owned_session_on_success_and_failure(self):
-        for app in self.apps:
-            for failure in (False, True):
-                with self.subTest(module=app.__name__, failure=failure), ExitStack() as stack:
-                    service = stack.enter_context(patch.object(app, "BrowserClient")).return_value
-                    service.generate_ws_headers.return_value = ("wss://example.invalid", {"Authorization": "fixture"})
-                    stop = stack.enter_context(patch.object(app.BrowserSession, "stop", new_callable=AsyncMock))
-                    session = stack.enter_context(patch.object(app, "BrowserSession", wraps=app.BrowserSession))
-                    agent = stack.enter_context(patch.object(app, "BrowserAgent"))
-                    hist = Mock()
-                    hist.is_successful.return_value = True
-                    hist.final_result.return_value = "forecast"
-                    agent.return_value.run = AsyncMock(
-                        return_value=hist, side_effect=ValueError("private fixture") if failure else None
-                    )
-                    result = asyncio.run(app.get_weather_data("Richmond"))
-                    self.assertEqual(result["status"], "error" if failure else "success")
-                    self.assertNotIn("private fixture", str(result))
-                    self.assertEqual(session.call_args.kwargs["headers"], {"Authorization": "fixture"})
-                    stop.assert_awaited_once()
-                    service.stop.assert_called_once_with()
+    def test_results_destination_and_failure(self):
+        client = boto3.Session(region_name="us-west-2").client("s3")
+        expected = {
+            "Bucket": "fixture-results",
+            "Key": "results.md",
+            "Body": b"Walk",
+            "ContentType": "text/markdown; charset=utf-8",
+        }
+        with Stubber(client) as stub, patch.object(self.app.boto3, "client", return_value=client):
+            stub.add_response("put_object", {}, expected)
+            stub.add_client_error("put_object", "AccessDenied", "private-detail", expected_params=expected)
+            self.assertEqual(self.app.save_activity_plan("Walk")["status"], "success")
+            failure = self.app.save_activity_plan("Walk")
+            self.assertEqual(failure["status"], "error")
+            self.assertNotIn("private-detail", str(failure))
+            stub.assert_no_pending_responses()
 
-    def test_interpreter_stops_after_empty_or_failed_stream(self):
-        for app in self.apps:
-            with patch.object(app, "CodeInterpreter") as factory:
-                service = factory.return_value
-                service.invoke.return_value = {"stream": []}
-                self.assertEqual(app.execute_code("pass")["status"], "error")
-                service.stop.assert_called_once_with()
-                service.invoke.side_effect = ClientError({"Error": {"Code": "AccessDenied"}}, "InvokeCodeInterpreter")
-                self.assertEqual(app.execute_code("pass")["status"], "error")
-                self.assertEqual(service.stop.call_count, 2)
+    def test_browser_success_closes_session(self):
+        with (
+            patch.object(self.app, "BrowserClient") as service,
+            patch.object(self.app.BrowserSession, "stop", new_callable=AsyncMock) as stop,
+            patch.object(self.app, "BrowserAgent") as agent,
+        ):
+            service.return_value.generate_ws_headers.return_value = (
+                "wss://fixture.invalid",
+                {"Authorization": "fixture"},
+            )
+            history = agent.return_value.run = AsyncMock()
+            history.return_value.is_successful = lambda: True
+            history.return_value.final_result = lambda: "forecast"
+            result = asyncio.run(self.app.get_weather_data("Richmond"))
+            self.assertEqual(result, {"status": "success", "content": [{"text": "forecast"}]})
+            stop.assert_awaited_once()
+            service.return_value.stop.assert_called_once_with()
+
+    def test_browser_failure_closes_session(self):
+        with (
+            patch.object(self.app, "BrowserClient") as service,
+            patch.object(self.app, "BrowserSession") as session,
+            patch.object(self.app, "BrowserAgent") as agent,
+        ):
+            service.return_value.generate_ws_headers.return_value = (
+                "wss://fixture.invalid",
+                {"Authorization": "fixture"},
+            )
+            session.return_value.stop = AsyncMock()
+            agent.return_value.run = AsyncMock(side_effect=ValueError("private-detail"))
+            result = asyncio.run(self.app.get_weather_data("Richmond"))
+            self.assertEqual(result["status"], "error")
+            self.assertNotIn("private-detail", str(result))
+            self.assertEqual(session.call_args.kwargs["headers"], {"Authorization": "fixture"})
+            session.return_value.stop.assert_awaited_once()
+            service.return_value.stop.assert_called_once_with()
+
+    def test_signed_headers_reach_real_websocket_handshake(self):
+        # Stop at the CDP protocol boundary: the local server isn't a Chromium browser.
+        import websockets
+        from browser_use.browser.session_manager import SessionManager
+
+        async def run():
+            captured = []
+
+            async def accept(connection):
+                captured.append(connection.request.headers)
+                await connection.wait_closed()
+
+            async with websockets.serve(accept, "127.0.0.1", 0) as server:
+                port = server.sockets[0].getsockname()[1]
+                endpoint = f"ws://127.0.0.1:{port}"
+                with patch.dict(
+                    os.environ,
+                    AWS_ACCESS_KEY_ID="fixture",
+                    AWS_SECRET_ACCESS_KEY="fixture",
+                    AWS_SESSION_TOKEN="temporary-fixture",
+                ):
+                    signer = self.app.BrowserClient("us-west-2")
+                    signer.identifier, signer.session_id = "fixture-browser", "fixture-session"
+                    _, signed = signer.generate_ws_headers()
+
+                with (
+                    patch.object(self.app, "BrowserClient") as service,
+                    patch.object(self.app, "BrowserAgent") as agent,
+                    patch.object(
+                        SessionManager, "start_monitoring", new=AsyncMock(side_effect=RuntimeError("end of fixture"))
+                    ),
+                    patch.object(self.app.BrowserSession, "stop", new_callable=AsyncMock),
+                ):
+                    service.return_value.generate_ws_headers.return_value = endpoint, signed
+
+                    def build(*, browser, **_):
+                        async def handshake(**_):
+                            await browser.connect()
+
+                        agent.return_value.run = AsyncMock(side_effect=handshake)
+                        return agent.return_value
+
+                    agent.side_effect = build
+                    result = await self.app.get_weather_data("Richmond")
+                    self.assertEqual(result["status"], "error")
+                    service.return_value.stop.assert_called_once_with()
+                (headers,) = captured
+                self.assertEqual(headers["Authorization"], signed["Authorization"])
+                self.assertEqual(headers["X-Amz-Security-Token"], "temporary-fixture")
+                self.assertEqual(headers["X-Amz-Date"], signed["X-Amz-Date"])
+                for name in ("Host", "Connection", "Upgrade", "Sec-WebSocket-Key", "Sec-WebSocket-Version"):
+                    self.assertEqual(len(headers.get_all(name)), 1)
+
+        asyncio.run(run())
+
+    def test_interpreter_releases_session_on_empty_stream(self):
+        with patch.object(self.app, "CodeInterpreter") as factory:
+            factory.return_value.invoke.return_value = {"stream": []}
+            self.assertEqual(self.app.execute_code("pass")["status"], "error")
+            factory.return_value.stop.assert_called_once_with()
 
 
-if __name__ == "__main__":
-    unittest.main()
+class CDKWeatherTests(WeatherContracts, unittest.TestCase):
+    variant = "cdk/python"
+
+
+class TerraformWeatherTests(WeatherContracts, unittest.TestCase):
+    variant = "terraform"
+
+
+class CloudFormationWeatherTests(WeatherContracts, unittest.TestCase):
+    variant = "cloudformation"

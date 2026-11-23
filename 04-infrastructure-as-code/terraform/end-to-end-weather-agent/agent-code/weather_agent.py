@@ -27,6 +27,7 @@ CODE_INTERPRETER_ID = os.environ["CODE_INTERPRETER_ID"]
 MEMORY_ID = os.environ["MEMORY_ID"]
 RESULTS_BUCKET = os.environ["RESULTS_BUCKET"]
 AWS_REGION = os.getenv("AWS_REGION") or os.environ["AWS_DEFAULT_REGION"]
+PLANNER_MODEL = "global.anthropic.claude-sonnet-4-6"
 BROWSER_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 
@@ -38,7 +39,11 @@ async def run_browser_task(task: str) -> str:
         client.start(identifier=BROWSER_ID)
         cleanup.callback(client.stop)
         url, headers = client.generate_ws_headers()
-        browser = BrowserSession(cdp_url=url, headers=headers, allowed_domains=["weather.gov", "*.weather.gov"])
+        # CDP supplies its own Host and WebSocket upgrade headers. Forward only SigV4 fields.
+        auth_headers = {
+            k: v for k, v in headers.items() if k.lower() == "authorization" or k.lower().startswith("x-amz-")
+        }
+        browser = BrowserSession(cdp_url=url, headers=auth_headers, allowed_domains=["weather.gov", "*.weather.gov"])
         cleanup.push_async_callback(browser.stop)
         model = ChatAWSBedrock(model=BROWSER_MODEL, session=boto3.Session(region_name=AWS_REGION))
         history = await BrowserAgent(task=task, llm=model, browser=browser, use_judge=False).run(max_steps=20)
@@ -123,7 +128,7 @@ def generate_analysis_code(weather_data: str) -> dict[str, Any]:
 
         Return code that outputs list of tuples: [('2025-09-16', 'GOOD'), ('2025-09-17', 'OK'), ...]"""
 
-        agent = Agent()
+        agent = Agent(model=PLANNER_MODEL)
         result = agent(query)
 
         pattern = r"```(?:json|python)\n(.*?)\n```"
@@ -214,6 +219,7 @@ def create_weather_agent() -> Agent:
     IMPORTANT: Provide complete recommendations and end your response. Do NOT ask follow-up questions or wait for additional input."""
 
     return Agent(
+        model=PLANNER_MODEL,
         tools=[
             get_weather_data,
             generate_analysis_code,

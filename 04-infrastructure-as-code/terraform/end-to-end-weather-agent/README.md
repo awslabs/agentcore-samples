@@ -107,6 +107,8 @@ This Terraform configuration creates:
 
 ## Prerequisites
 
+The planner uses the global Claude Sonnet 4.6 inference profile and the Browser uses global Claude Haiku 4.5. Use an account and Region with model access and organization policies that allow their inference destinations.
+
 ### Required Tools
 
 1. **Terraform** (>= 1.6)

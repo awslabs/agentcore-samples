@@ -98,7 +98,7 @@ The architecture demonstrates a complete AgentCore deployment with multiple inte
 
 4. **CDK version 2.218.0 or later** (for BedrockAgentCore support)
 
-5. **Bedrock Model Access**: Enable access to Amazon Bedrock models in your AWS region
+5. **Bedrock Model Access**: Enable the global Claude Sonnet 4.6 and Claude Haiku 4.5 inference profiles. The execution role permits these profiles and their destination models; your organization's Region policies must also allow them.
    - [Bedrock Model Access Guide](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)
 
 6. **Required Permissions**: Your AWS user/role needs permissions for:
