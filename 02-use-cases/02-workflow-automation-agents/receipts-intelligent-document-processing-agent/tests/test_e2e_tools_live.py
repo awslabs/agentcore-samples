@@ -1,4 +1,4 @@
-"""Phase 2 end-to-end tests against REAL AWS — the five Gateway tool Lambdas.
+"""End-to-end tests against REAL AWS — the five Gateway tool Lambdas.
 
 Invokes each tool Lambda directly (real DynamoDB round-trip, no mocks) and checks
 the Gateway exists with its five targets. Requires a deployed stack (run via
@@ -60,7 +60,7 @@ def test_save_then_get_recent_round_trips():
 
 
 def test_save_expense_is_idempotent():
-    """Same receipt content -> same expenseId -> no duplicate row (spec §8)."""
+    """Same receipt content -> same expenseId -> no duplicate row."""
     expense = {"user_id": "user-001", "merchant": "Idem Cafe", "transaction_date": "2026-06-23", "total": 4.00}
     a = _invoke("ReceiptsAgent-SaveExpense", expense)
     b = _invoke("ReceiptsAgent-SaveExpense", expense)

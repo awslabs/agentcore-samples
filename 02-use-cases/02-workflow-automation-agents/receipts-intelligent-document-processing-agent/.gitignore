@@ -7,6 +7,8 @@ agentcore/aws-targets.json
 .agentcore/
 
 # CDK
+agentcore/.cache/
+cdk-outputs.json
 agentcore/cdk/node_modules/
 agentcore/cdk/dist/
 agentcore/cdk/cdk.out/
@@ -17,5 +19,14 @@ __pycache__/
 .venv/
 uv.lock
 
+# Evaluation run output
+evals/out/
+
 # OS
 .DS_Store
+# The repository root ignores every lib/ directory, every Dockerfile and .env.*; this
+# sample commits its CDK stack, the Runtime's Dockerfile and the env template.
+!agentcore/cdk/lib/
+!agentcore/cdk/lib/**
+!app/receiptsagent/Dockerfile
+!.env.example
