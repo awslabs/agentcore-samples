@@ -34,7 +34,7 @@ Amazon Bedrock AgentCore is both framework-agnostic and model-agnostic, giving y
 
 This collection provides examples and tutorials to help you understand, implement, and integrate Amazon Bedrock AgentCore capabilities into your applications.
 
-> **Migrating from the Starter Toolkit?** This repository is transitioning from the [Bedrock AgentCore Starter Toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit) to the new [AgentCore CLI](https://github.com/aws/agentcore-cli). Samples that still depend on the Starter Toolkit are in [`legacy/`](./legacy/) and will be updated over the coming weeks. See [`MIGRATION.md`](./MIGRATION.md) for the full old-path to new-path mapping.
+> **Starter Toolkit retirement:** For a new project, follow the [CLI v1 getting-started sample](./00-getting-started/). Some older examples still use Starter Toolkit; check the selected sample’s setup rather than installing it repository-wide. `bedrock-agentcore` is the supported Python Runtime SDK, distinct from both the deprecated Toolkit and the Node.js [AgentCore CLI](https://github.com/aws/agentcore-cli).
 
 ## 🎥 Video
 
@@ -97,104 +97,30 @@ Production-ready templates for provisioning AgentCore resources with CloudFormat
 
 Complete, deployment-ready agentic applications with integrated services, authentication, and business logic you can customize for your use case.
 
-## Quick Start with the AgentCore CLI
+## Quick start with the AgentCore CLI
 
-The [AgentCore CLI](https://github.com/aws/agentcore-cli) is the recommended way to create, develop, and deploy agents on Amazon Bedrock AgentCore. It replaces the previous Starter Toolkit with a streamlined project-based workflow.
+Follow [Build a customer-support agent](./00-getting-started/README.md) for one complete path: install the tested CLI version without replacing your global installation, run the offline tests, try the agent locally, deploy it in a sandbox, and clean up. Local model calls and deployed resources can incur charges. Check the sample’s prerequisites and verify the account before deployment; don’t grant broad administrator or model permissions just to follow an example.
 
-### Step 1: Prerequisites
+Already using CDK, CloudFormation, Terraform or direct service APIs? Use the setup that matches your chosen sample. A working infrastructure-as-code example does not need an additional CLI project.
 
-- An [AWS account](https://signin.aws.amazon.com/signin?redirect_uri=https%3A%2F%2Fportal.aws.amazon.com%2Fbilling%2Fsignup%2Fresume&client_id=signup) with credentials configured (`aws configure`)
-- [Node.js 20.x](https://nodejs.org/) or later
-- [`uv`](https://docs.astral.sh/uv/) (for Python agents) or Node.js (for TypeScript agents)
-- Model Access: Anthropic Claude 4.0 enabled in [Amazon Bedrock console](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html)
-- AWS Permissions:
-  - `BedrockAgentCoreFullAccess` managed policy
-  - `AmazonBedrockFullAccess` managed policy
+## Running a notebook
 
-### Step 2: Install the CLI and Create a Project
+Use a **separate environment per sample**. Start from the notebook’s README, not a repository-wide collection of frameworks. The root `requirements.txt` installs only JupyterLab and its Python kernel; it does not install the Runtime SDK, model providers or deployment tooling.
+
+For a sample that uses pip (Bash, from the repository root):
 
 ```bash
-# Install the AgentCore CLI
-npm install -g @aws/agentcore
-
-# Create a new project (interactive wizard)
-agentcore create
-cd my-agent
-```
-
-The `create` wizard scaffolds a ready-to-run project with your choice of framework (Strands Agents, LangGraph, Google ADK, OpenAI, and more) and language (Python or TypeScript).
-
-### Step 3: Develop Locally
-
-```bash
-# Start the local development server
-agentcore dev
-```
-
-Your agent is now running locally. The CLI watches for file changes and provides a local invocation endpoint for testing.
-
-### Step 4: Deploy to AWS
-
-```bash
-# Deploy to Amazon Bedrock AgentCore
-agentcore deploy
-
-# Test your deployed agent
-agentcore invoke
-```
-
-### Add More Capabilities
-
-```bash
-agentcore add memory           # Add managed memory
-agentcore add identity         # Add identity provider
-agentcore add evaluator        # Add LLM-as-a-Judge evaluation
-agentcore add online-eval      # Enable continuous evaluation
-agentcore deploy               # Sync changes to AWS
-```
-
-Congratulations! Your agent is now running on Amazon Bedrock AgentCore runtime.
-
-For the full CLI reference, see the [AgentCore CLI documentation](https://github.com/aws/agentcore-cli).
-
-## Running a Notebook
-
-Some samples in this repository are provided as Jupyter notebooks:
-
-1. Create and activate a virtual environment
-
-```bash
-python -m venv .venv
+repo=$PWD
+cd path/to/the/notebook-directory  # replace with the actual directory
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install -r "$repo/requirements.txt"  # optional notebook UI and kernel
+# Install the requirements specified by THIS sample, e.g. when it has a requirements.txt:
+python -m pip install -r requirements.txt
+jupyter lab
 ```
 
-2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Export/Activate required AWS Credentials for the notebook to run
-
-4. Register your virtual environment as a kernel for Jupyter notebook to use
-
-```bash
-python -m ipykernel install --user --name=notebook-venv --display-name="Python (notebook-venv)"
-```
-
-You can list your kernels using:
-
-```bash
-jupyter kernelspec list
-```
-
-5. Run the notebook and ensure the correct kernel is selected
-
-```bash
-jupyter notebook path/to/your/notebook.ipynb
-```
-
-**Important:** After opening the notebook in Jupyter, make sure to select the correct kernel by going to `Kernel` → `Change kernel` → select "Python (notebook-venv)" to ensure your virtual environment packages are available.
+If the example uses uv and a lockfile, follow its frozen install instructions instead. In Jupyter, select the kernel for that sample environment. Read setup, cost and cleanup steps before executing cells: some notebooks provision billable resources or contact external providers. Do not paste credentials or tokens into notebook cells or outputs.
 
 ## 🔗 Related Links
 

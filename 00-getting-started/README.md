@@ -41,8 +41,8 @@ uv run --project app/agent --frozen ruff check .
 uv run --project app/agent --frozen ruff format --check .
 ```
 
-Do **not** install the repository-root `requirements.txt`: other samples use the legacy Starter
-Toolkit's conflicting executable. The `bedrock-agentcore` Python runtime SDK is still required.
+The repository-root `requirements.txt` is for optional notebook tooling, not this app.
+Use the sample’s locked Python environment above. `bedrock-agentcore` is the supported Runtime SDK, not the deprecated Starter Toolkit.
 
 Tests exercise the actual Strands tool loop and AgentCore HTTP adapter with scripted responses,
 not live inference. Infra/ZIP checks skip without a build; native context tests are opt-in.
