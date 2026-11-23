@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Register a Databricks SQL MCP target on one owner-approved Gateway (M2M only)
+Parameters:
+  GatewayId:
+    Type: String
+    Description: Existing sandbox Gateway ID; get authorization to add this target before deploying
+  TargetName:
+    Type: String
+    AllowedPattern: '[a-z][a-z0-9-]{2,39}'
+  WorkspaceHost:
+    Type: String
+    Description: The exact approved AWS Databricks workspace host, without scheme, path or credentials
+    AllowedPattern: '[a-z0-9-]+(\.[a-z0-9-]+)*\.cloud\.databricks\.com'
+  ProviderArn:
+    Type: String
+    Description: Existing client-credentials provider for this exact workspace; never pass its secret
+    AllowedPattern: 'arn:aws:bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:token-vault/[A-Za-z0-9_.-]+/oauth2credentialprovider/[A-Za-z0-9_.-]+'
+Resources:
+  SqlTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      Name: !Ref TargetName
+      Description: Databricks SQL as the scoped service principal, not as the inbound user
+      GatewayIdentifier: !Ref GatewayId
+      TargetConfiguration:
+        Mcp:
+          McpServer:
+            Endpoint: !Sub 'https://${WorkspaceHost}/api/2.0/mcp/sql'
+      CredentialProviderConfigurations:
+        - CredentialProviderType: OAUTH
+          CredentialProvider:
+            OauthCredentialProvider:
+              ProviderArn: !Ref ProviderArn
+              GrantType: CLIENT_CREDENTIALS
+              Scopes: [all-apis]
+Outputs:
+  TargetId:
+    Value: !GetAtt SqlTarget.TargetId

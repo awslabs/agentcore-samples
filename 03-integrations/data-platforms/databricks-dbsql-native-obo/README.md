@@ -8,12 +8,12 @@ No Lambda interceptor is required.
 
 ## Relationship to the interceptor sample
 
-[`databricks-dbsql-per-user-delegation`](../databricks-dbsql-per-user-delegation) achieves the same
+[`databricks-dbsql-per-user-delegation`](../databricks-dbsql-per-user-delegation) describes the historical implementation of this
 outcome with a Gateway REQUEST interceptor, because it was written when Gateway supported only
 `CLIENT_CREDENTIALS` and `AUTHORIZATION_CODE` for outbound auth. Gateway now supports `TOKEN_EXCHANGE`
 natively, so the interceptor is no longer needed. The native path needs no account allowlisting once the
 credential provider sets `onBehalfOfAuthenticationConfig.clientAuthenticationMethod` to `NO_CLIENT`
-(see [Prerequisites](#prerequisites)); the interceptor sample remains an alternative.
+(see [Prerequisites](#prerequisites)); the historical implementation is linked for migration context, not recommended for new deployments.
 
 ## How it works
 
