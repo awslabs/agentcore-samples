@@ -127,13 +127,8 @@ class AgentCoreRole(iam.Role):
                 iam.PolicyStatement(
                     sid="S3BucketAccess",
                     effect=iam.Effect.ALLOW,
-                    actions=[
-                        "s3:GetObject",
-                        "s3:PutObject",
-                        "s3:DeleteObject",
-                        "s3:ListBucket",
-                    ],
-                    resources=[s3_bucket_arn, f"{s3_bucket_arn}/*"],
+                    actions=["s3:PutObject"],
+                    resources=[f"{s3_bucket_arn}/results.md"],
                 )
             )
 

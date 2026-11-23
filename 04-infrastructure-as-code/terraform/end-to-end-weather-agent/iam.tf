@@ -132,16 +132,8 @@ resource "aws_iam_role_policy" "agent_execution" {
       {
         Sid    = "S3ResultsAccess"
         Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.results.arn,
-          "${aws_s3_bucket.results.arn}/*"
-        ]
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.results.arn}/results.md"
       }
     ]
   })

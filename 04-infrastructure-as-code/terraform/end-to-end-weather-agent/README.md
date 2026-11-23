@@ -32,7 +32,7 @@ This pattern demonstrates deploying a full-featured weather agent with Amazon Be
 **Key Features:**
 - Integrated AgentCore tools (Browser, Code Interpreter, Memory)
 - Automated Docker image building via CodeBuild
-- S3-based artifact storage for analysis results
+- S3-based artifact storage for analysis results: `save_activity_plan` uses boto3 `PutObject` to write `results.md` in the stack-provided `RESULTS_BUCKET`. The tool cannot select other buckets, keys, or AWS operations, and reports empty input or upload failures as errors.
 - IAM-based security with tool-specific permissions
 - Weather data visualization and analysis capabilities
 
@@ -253,6 +253,18 @@ This pattern uses **IAM-based authentication with workload identity tokens**:
 **Note**: This is a backend infrastructure pattern with no user authentication layer. For user-facing applications, you would add Cognito or API Gateway authorizers separately.
 
 ## Testing
+
+### Offline results-storage contract tests
+
+From the repository root, with the sample's `agent-code/requirements.txt` installed in a Python 3.11 environment:
+
+```bash
+python -m unittest discover -s 04-infrastructure-as-code/tests -v
+```
+
+The tests check tool registration, browser and interpreter session cleanup, and fixed-destination S3 writes with controlled service responses. They do not deploy resources or call a model.
+
+The runtime image build checks the installed dependency graph and records package download URLs and hashes in `/tmp/runtime-dependencies.json` inside the image. Dependencies are still resolved at build time; this report is evidence of the selected graph, not a lockfile.
 
 The included `test_weather_agent.py` script is **infrastructure-agnostic** and works with any deployment method (Terraform, CDK, CloudFormation, or manual).
 
@@ -479,7 +491,7 @@ Monitor in AWS Console:
 **Agent Execution Role:**
 - Standard AgentCore permissions
 - ECR image pull access
-- S3 read/write for results bucket
+- S3 `PutObject` for `results.md` in the results bucket
 - CloudWatch Logs write access
 - Tool-specific permissions (Browser, Code Interpreter, Memory access)
 
