@@ -64,7 +64,12 @@ def create_execution_role(state) -> str:
                 "Effect": "Allow",
                 "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
                 "Action": "sts:AssumeRole",
-                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT_ID}},
+                "Condition": {
+                    "StringEquals": {"aws:SourceAccount": ACCOUNT_ID},
+                    "ArnLike": {
+                        "aws:SourceArn": f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT_ID}:runtime/{AGENT_NAME}-*"
+                    },
+                },
             }
         ],
     }
@@ -116,6 +121,12 @@ def create_execution_role(state) -> str:
                 "Condition": {"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
             },
             {
+                "Sid": "ReadDeploymentZip",
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+                "Resource": f"arn:aws:s3:::{state['bucket']}/{state['key']}",
+            },
+            {
                 "Sid": "BedrockModelInvocation",
                 "Effect": "Allow",
                 "Action": [
@@ -123,8 +134,8 @@ def create_execution_role(state) -> str:
                     "bedrock:InvokeModelWithResponseStream",
                 ],
                 "Resource": [
-                    "arn:aws:bedrock:*::foundation-model/*",
-                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:*",
+                    "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0",
                 ],
             },
         ],

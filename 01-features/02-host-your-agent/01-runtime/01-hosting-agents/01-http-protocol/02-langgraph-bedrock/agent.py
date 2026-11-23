@@ -1,143 +1,81 @@
-from langgraph.graph import StateGraph, MessagesState
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, SystemMessage
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-import operator
-import math
+"""A stateless Bedrock tool-routing loop on AgentCore Runtime."""
 
+import math
+import operator
+from typing import Literal
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from langchain_aws import ChatBedrockConverse
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from langgraph.graph import MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+from starlette.exceptions import HTTPException
+
+MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 app = BedrockAgentCoreApp()
 
 
-# Create calculator tool
 @tool
-def calculator(expression: str) -> str:
-    """
-    Calculate the result of a mathematical expression.
-
-    Args:
-        expression: A mathematical expression as a string (e.g., "2 + 3 * 4", "sqrt(16)", "sin(pi/2)")
-
-    Returns:
-        The result of the calculation as a string
-    """
+def calculator(
+    operation: Literal["add", "subtract", "multiply", "divide", "sqrt"], left: float, right: float | None = None
+) -> str:
+    """Apply one arithmetic operation to finite numbers. For sqrt, supply only left."""
+    operations = {"add": operator.add, "subtract": operator.sub, "multiply": operator.mul, "divide": operator.truediv}
+    if not math.isfinite(left) or (right is not None and not math.isfinite(right)):
+        return "Error: use finite numbers."
     try:
-        # Define safe functions that can be used in expressions
-        safe_dict = {
-            "__builtins__": {},
-            "abs": abs,
-            "round": round,
-            "min": min,
-            "max": max,
-            "sum": sum,
-            "pow": pow,
-            # Math functions
-            "sqrt": math.sqrt,
-            "sin": math.sin,
-            "cos": math.cos,
-            "tan": math.tan,
-            "log": math.log,
-            "log10": math.log10,
-            "exp": math.exp,
-            "pi": math.pi,
-            "e": math.e,
-            "ceil": math.ceil,
-            "floor": math.floor,
-            "degrees": math.degrees,
-            "radians": math.radians,
-            # Basic operators (for explicit use)
-            "add": operator.add,
-            "sub": operator.sub,
-            "mul": operator.mul,
-            "truediv": operator.truediv,
-        }
-
-        # Evaluate the expression safely
-        result = eval(expression, safe_dict)  # nosec B307
-        return str(result)
-
-    except ZeroDivisionError:
-        return "Error: Division by zero"
-    except ValueError as e:
-        return f"Error: Invalid value - {str(e)}"
-    except SyntaxError:
-        return "Error: Invalid mathematical expression"
-    except Exception as e:
-        return f"Error: {str(e)}"
+        if operation == "sqrt":
+            if right is not None:
+                return "Error: sqrt takes one number."
+            result = math.sqrt(left)
+        elif right is None:
+            return "Error: supply two numbers."
+        else:
+            result = operations[operation](left, right)
+    except (ValueError, ZeroDivisionError):
+        return "Error: the operation is undefined for those inputs."
+    return str(result) if math.isfinite(result) else "Error: result is not finite."
 
 
-# Create a custom weather tool
 @tool
-def weather():
-    """Get weather"""  # Dummy implementation
+def weather() -> str:
+    """Return fixture weather for the tool-routing demo, not a live forecast."""
     return "sunny"
 
 
-# Define the agent using manual LangGraph construction
-def create_agent():
-    """Create and configure the LangGraph agent"""
-    from langchain_aws import ChatBedrock
-
-    # Initialize your LLM (adjust model and parameters as needed)
-    llm = ChatBedrock(
-        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",  # or your preferred model
-        model_kwargs={"temperature": 0.1},
-    )
-
-    # Bind tools to the LLM
+def create_agent(model):
     tools = [calculator, weather]
-    llm_with_tools = llm.bind_tools(tools)
-
-    # System message
-    system_message = "You're a helpful assistant. You can do simple math calculation, and tell the weather."
-
-    # Define the chatbot node
-    def chatbot(state: MessagesState):
-        # Add system message if not already present
-        messages = state["messages"]
-        if not messages or not isinstance(messages[0], SystemMessage):
-            messages = [SystemMessage(content=system_message)] + messages
-
-        response = llm_with_tools.invoke(messages)
-        return {"messages": [response]}
-
-    # Create the graph
-    graph_builder = StateGraph(MessagesState)
-
-    # Add nodes
-    graph_builder.add_node("chatbot", chatbot)
-    graph_builder.add_node("tools", ToolNode(tools))
-
-    # Add edges
-    graph_builder.add_conditional_edges(
-        "chatbot",
-        tools_condition,
+    bound = model.bind_tools(tools)
+    system = SystemMessage(
+        content="Use the calculator for math (one operation per tool call). Weather is a fixed demo response, not a forecast."
     )
-    graph_builder.add_edge("tools", "chatbot")
 
-    # Set entry point
-    graph_builder.set_entry_point("chatbot")
+    def chatbot(state: MessagesState):
+        return {"messages": [bound.invoke([system, *state["messages"]])]}
 
-    # Compile the graph
-    return graph_builder.compile()
+    builder = StateGraph(MessagesState)
+    builder.add_node("chatbot", chatbot)
+    builder.add_node("tools", ToolNode(tools))
+    builder.set_entry_point("chatbot")
+    builder.add_conditional_edges("chatbot", tools_condition)
+    builder.add_edge("tools", "chatbot")
+    return builder.compile()
 
 
-# Initialize the agent
-agent = create_agent()
+agent = create_agent(ChatBedrockConverse(model=MODEL_ID, temperature=0.1))
 
 
 @app.entrypoint
 def langgraph_bedrock(payload):
-    """
-    Invoke the agent with a payload
-    """
-    user_input = payload.get("prompt")
-
-    # Create the input in the format expected by LangGraph
-    response = agent.invoke({"messages": [HumanMessage(content=user_input)]})
-
-    # Extract the final message content
-    return response["messages"][-1].content
+    prompt = payload.get("prompt") if isinstance(payload, dict) else None
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
+        raise HTTPException(400, "Send a nonempty prompt of at most 4000 characters.")
+    try:
+        response = agent.invoke({"messages": [HumanMessage(content=prompt)]}, config={"recursion_limit": 12})
+        return response["messages"][-1].text
+    except Exception:  # noqa: BLE001 - Model/tool exceptions may include request data.
+        raise HTTPException(502, "The agent could not complete the request.") from None
 
 
 if __name__ == "__main__":

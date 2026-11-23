@@ -46,17 +46,18 @@ LangGraph uses an explicit **state graph** to define the agent loop — unlike S
 ```python
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_aws import ChatBedrock
+from langchain_aws import ChatBedrockConverse
+from typing import Literal
 from langchain_core.tools import tool
 
 @tool
-def calculator(expression: str) -> str:
-    """Calculate the result of a mathematical expression."""
+def calculator(operation: Literal["add", "subtract", "multiply", "divide", "sqrt"], left: float, right: float | None = None) -> str:
+    """Apply a single operation to finite numbers; never evaluate a Python expression."""
     ...
 
-llm = ChatBedrock(
-    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-    model_kwargs={"temperature": 0.1},
+llm = ChatBedrockConverse(
+    model="global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    temperature=0.1,
 )
 llm_with_tools = llm.bind_tools([calculator, weather])
 
@@ -77,7 +78,7 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 def langgraph_bedrock(payload):
     response = agent.invoke({"messages": [HumanMessage(content=payload.get("prompt"))]})
-    return response["messages"][-1].content
+    return response["messages"][-1].text
 ```
 
 Test locally:
@@ -95,7 +96,7 @@ curl -X POST http://localhost:8080/invocations \
 
 ### Graph compilation and the snapshot
 
-`graph_builder.compile()` runs at **import time**, which on New Runtime is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is precisely the kind of startup cost New Runtime pre-pays. Note the dependency tree here is not the larger one: this sample's deployment zip measures 43.1 MB against 46.9 MB for the Strands example, so if anything there is slightly less import cost to move.
+`graph_builder.compile()` runs at **import time**, which on New Runtime is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is one of the startup costs New Runtime pre-pays. Package sizes depend on the resolved wheels.
 
 The graph in this sample is snapshot-safe because it is pure in-process state — nodes, edges and a bound LLM client, with no I/O until `invoke()` is called. Two things to watch if you extend it:
 
@@ -107,7 +108,7 @@ Note that this sample's entrypoint passes a single `HumanMessage` per call and c
 
 ## Step 2: Create an IAM Execution Role (`deploy.py`)
 
-The IAM role uses the official [AgentCore direct deploy execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) policy. This includes permissions for CloudWatch Logs, X-Ray tracing, CloudWatch Metrics, and Bedrock model invocation. Without all of these, the runtime fails to initialize.
+The IAM role uses the official [AgentCore direct deploy execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) guidance, with access to the sample’s exact S3 ZIP and selected Bedrock inference profile and destination model. CloudWatch Logs, X-Ray and CloudWatch Metrics support Runtime observability. This tutorial assumes the code object does not require a customer-managed KMS grant. If you use such a key, have its owner review an exact-key, S3-mediated grant and the key policy before deploying; do not grant unrestricted decryption.
 
 `platformVersion` introduces no new IAM actions or resource types. The deploy script creates a fresh role and records the IAM `RoleId` in `runtime_config.json`. It never adopts an existing role or overwrites a previous deployment receipt. Use one working directory per deployment and keep the receipt for cleanup.
 
@@ -199,7 +200,7 @@ The **deployment and invocation code is identical**, including the `platformVers
 | Aspect | Strands Example | This Example |
 |:-------|:----------------|:-------------|
 | Framework | `strands.Agent` | `langgraph.StateGraph` |
-| Model | `strands.models.BedrockModel` | `langchain_aws.ChatBedrock` |
+| Model | `strands.models.BedrockModel` | `langchain_aws.ChatBedrockConverse` |
 | Tool definition | `@tool` (Strands) | `@tool` (LangChain) |
 | Agent loop | Automatic | Explicit graph with nodes and edges |
 | Dependencies | `strands-agents` | `langgraph`, `langchain-aws`, `langchain-core` |
