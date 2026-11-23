@@ -1,0 +1,11 @@
+strands-agents>=0.3.0
+strands-agents-bedrock>=0.1.0
+bedrock-agentcore>=0.1.0
+httpx>=0.27.0
+python-dotenv>=1.0.0
+boto3>=1.35.0
+
+# Development
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+moto>=5.0.0
