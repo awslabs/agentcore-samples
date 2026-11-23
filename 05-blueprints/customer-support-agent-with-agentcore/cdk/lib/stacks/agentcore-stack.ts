@@ -42,8 +42,11 @@ export class AgentCoreStack extends cdk.Stack {
             code: lambda.AssetCode.fromAsset(path.join(__dirname, '../../../mcp/lambda'))
         });
 
+        const engine = new bedrockagentcore.CfnPolicyEngine(this, 'RefundPolicyEngine', {
+            name: 'SupportRefundPolicy', description: 'Default-deny policies for synthetic refund requests'
+        });
         const agentCoreGatewayRole = new iam.Role(this, `${props.appName}-AgentCoreGatewayRole`, {
-            assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
+            assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com', {conditions: {StringEquals: {'aws:SourceAccount': accountId}, ArnLike: {'aws:SourceArn': `arn:aws:bedrock-agentcore:${region}:${accountId}:gateway/*`}}}),
             description: 'IAM role for Bedrock AgentCore Gateway',
         });
 
@@ -63,7 +66,7 @@ export class AgentCoreStack extends cdk.Stack {
                 'bedrock-agentcore:PartiallyAuthorizeActions',
             ],
             resources: [
-                `arn:aws:bedrock-agentcore:${region}:${accountId}:policy-engine/*`,
+                engine.attrPolicyEngineArn,
                 `arn:aws:bedrock-agentcore:${region}:${accountId}:gateway/*`,
             ],
         }));
@@ -71,12 +74,7 @@ export class AgentCoreStack extends cdk.Stack {
         // Create gateway resource
         // Cognito resources
         const cognitoUserPool = new cognito.UserPool(this, `${props.appName}-CognitoUserPool`, {
-            customAttributes: {
-                'refund_tier': new cognito.StringAttribute({
-                    mutable: true,
-                    // Values: "standard" (max $100), "premium" (max $1000), "vip" (unlimited)
-                }),
-            },
+            selfSignUpEnabled: false,
         });
 
         // Cognito Groups for tier-based authorization
@@ -86,20 +84,6 @@ export class AgentCoreStack extends cdk.Stack {
             groupName: 'standard',
             description: 'Standard tier - max $100 refund',
             precedence: 3,
-        });
-
-        new cognito.CfnUserPoolGroup(this, `${props.appName}-PremiumGroup`, {
-            userPoolId: cognitoUserPool.userPoolId,
-            groupName: 'premium',
-            description: 'Premium tier - max $1000 refund',
-            precedence: 2,
-        });
-
-        new cognito.CfnUserPoolGroup(this, `${props.appName}-VIPGroup`, {
-            userPoolId: cognitoUserPool.userPoolId,
-            groupName: 'vip',
-            description: 'VIP tier - max $10000 refund',
-            precedence: 1,
         });
 
         // Define granular scopes for Runtime and Gateway
@@ -146,8 +130,7 @@ export class AgentCoreStack extends cdk.Stack {
             idTokenValidity: cdk.Duration.hours(1),
             refreshTokenValidity: cdk.Duration.days(30),
             readAttributes: new cognito.ClientAttributes()
-                .withStandardAttributes({ email: true, emailVerified: true })
-                .withCustomAttributes('refund_tier'),
+                .withStandardAttributes({ email: true, emailVerified: true }),
         });
 
         cognitoUserPool.addDomain(`${props.appName}-CognitoDomain`, {
@@ -160,6 +143,7 @@ export class AgentCoreStack extends cdk.Stack {
             name: `${props.appName}-Gateway`,
             protocolType: "MCP",
             roleArn: agentCoreGatewayRole.roleArn,
+            policyEngineConfiguration: { arn: engine.attrPolicyEngineArn, mode: "ENFORCE" },
             authorizerType: "CUSTOM_JWT",
             authorizerConfiguration: {
                 customJwtAuthorizer: {
@@ -263,10 +247,10 @@ export class AgentCoreStack extends cdk.Stack {
                                         type: "object",
                                         properties: {
                                             order_id: { type: 'string', description: 'The order ID to refund (e.g., ORD-12345)' },
-                                            amount: { type: 'number', description: 'The refund amount in dollars (must include decimal point, e.g., 50.0, 100.0)' },
+                                            amount_cents: { type: 'integer', description: 'Positive integer US cents (10000 = $100)' },
                                             reason: { type: 'string', description: 'The reason for the refund (e.g., damaged_item, wrong_item, customer_request)' }
                                         },
-                                        required: ['order_id', 'amount', 'reason']
+                                        required: ['order_id', 'amount_cents', 'reason']
                                     }
                                 }
                             ]
@@ -279,6 +263,21 @@ export class AgentCoreStack extends cdk.Stack {
         // Ensure GatewayTargets wait for the IAM policy (created by grantInvoke) to be attached to the role
         customerTarget.node.addDependency(agentCoreGatewayRole);
         orderTarget.node.addDependency(agentCoreGatewayRole);
+
+        // The Gateway is ENFORCE from creation. Until validated permits exist, access is denied.
+        const resource = `AgentCore::Gateway::"${this.agentCoreGateway.attrGatewayArn}"`;
+        const readActions = ['CustomerTarget___get_customer','CustomerTarget___list_customers','OrderTarget___get_order','OrderTarget___list_orders']
+            .map(action => `AgentCore::Action::"${props.appName}-${action}"`).join(', ');
+        const readPolicy = new bedrockagentcore.CfnPolicy(this, 'ReadDemoRecords', {
+            name: 'ReadDemoRecords', policyEngineId: engine.attrPolicyEngineId,
+            definition: { cedar: { statement: `permit(principal, action in [${readActions}], resource == ${resource});` } }
+        });
+        const refundPolicy = new bedrockagentcore.CfnPolicy(this, 'BoundedRefund', {
+            name: 'BoundedRefund', policyEngineId: engine.attrPolicyEngineId,
+            definition: { cedar: { statement: `permit(principal, action == AgentCore::Action::"${props.appName}-OrderTarget___process_refund", resource == ${resource}) when { principal.hasTag("cognito:groups") && principal.getTag("cognito:groups") == "[\\\"standard\\\"]" && context.input.amount_cents > 0 && context.input.amount_cents <= 10000 };` } }
+        });
+        for (const policy of [readPolicy, refundPolicy]) { policy.addDependency(customerTarget); policy.addDependency(orderTarget); }
+
         
         /*****************************
         * AgentCore Memory
@@ -331,7 +330,7 @@ export class AgentCoreStack extends cdk.Stack {
                     effect: iam.Effect.ALLOW,
                     actions: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
                     resources: [
-                        `arn:aws:ecr:${region}:${accountId}:repository/*`,
+                        `arn:aws:ecr:${region}:${accountId}:repository/cdk-hnb659fds-container-assets-${accountId}-${region}`,
                     ],
                 }),
                 new iam.PolicyStatement({
@@ -397,8 +396,8 @@ export class AgentCoreStack extends cdk.Stack {
                     effect: iam.Effect.ALLOW,
                     actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
                     resources: [
-                        `arn:aws:bedrock:*::foundation-model/*`,
-                        `arn:aws:bedrock:${region}:${accountId}:*`,
+                        `arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
+                        `arn:aws:bedrock:${region}:${accountId}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
                     ],
                 }),
                 new iam.PolicyStatement({
@@ -418,7 +417,7 @@ export class AgentCoreStack extends cdk.Stack {
         });
 
         const runtimeRole = new iam.Role(this, `${props.appName}-AgentCoreRuntimeRole`, {
-            assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
+            assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com', {conditions: {StringEquals: {'aws:SourceAccount': accountId}, ArnLike: {'aws:SourceArn': `arn:aws:bedrock-agentcore:${region}:${accountId}:runtime/*`}}}),
             description: 'IAM role for Bedrock AgentCore Runtime',
             inlinePolicies: {
                 RuntimeAccessPolicy: runtimePolicy
@@ -445,9 +444,8 @@ export class AgentCoreStack extends cdk.Stack {
             authorizerConfiguration: {
                 customJwtAuthorizer: {
                     discoveryUrl: `https://cognito-idp.${region}.amazonaws.com/${cognitoUserPool.userPoolId}/.well-known/openid-configuration`,
-                    allowedClients: [
-                        cognitoUserAppClient.userPoolClientId,  // User-facing client
-                    ],
+                    allowedClients: [cognitoUserAppClient.userPoolClientId],
+                    allowedScopes: [`${props.appName}-api/${runtimeInvokeScope.scopeName}`],
                 },
             },
 

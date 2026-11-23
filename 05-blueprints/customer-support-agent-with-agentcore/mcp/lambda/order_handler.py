@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 # Mock Data Stores
 CUSTOMERS = {
@@ -147,16 +147,16 @@ def lambda_handler(event, context):
         else:
             return _response(400, {"error": f"Unknown tool '{tool_name}'"})
 
-    except Exception as e:
-        return _response(500, {"system_error": str(e)})
+    except (KeyError, TypeError, ValueError):
+        return _response(400, {"error": "Invalid order request"})
 
 
-def _response(status_code: int, body: Dict[str, Any]):
+def _response(status_code: int, body: dict[str, Any]):
     """Consistent JSON response wrapper."""
     return {"statusCode": status_code, "body": json.dumps(body)}
 
 
-def get_order(event: Dict[str, Any]):
+def get_order(event: dict[str, Any]):
     """Look up order details by order ID."""
     order_id = event.get("order_id")
 
@@ -185,7 +185,7 @@ def get_order(event: Dict[str, Any]):
     return _response(200, order)
 
 
-def list_orders(event: Dict[str, Any]):
+def list_orders(event: dict[str, Any]):
     """List orders for a customer."""
     customer_id = event.get("customer_id")
     limit = event.get("limit", 10)
@@ -227,10 +227,13 @@ def list_orders(event: Dict[str, Any]):
     return _response(200, {"customer_id": customer_id, "orders": customer_orders})
 
 
-def process_refund(event: Dict[str, Any]):
+def process_refund(event: dict[str, Any]):
     """Process a refund for an order."""
     order_id = event.get("order_id")
-    amount = event.get("amount")
+    cents = event.get("amount_cents")
+    if type(cents) is not int or not 1 <= cents <= 10000:
+        return _response(400, {"error": "Expected 1 to 10000 integer cents"})
+    amount = cents / 100
     reason = event.get("reason")
 
     if not order_id:
@@ -239,16 +242,6 @@ def process_refund(event: Dict[str, Any]):
             {
                 "success": False,
                 "error": "order_id is required",
-                "error_code": "MISSING_PARAMETER",
-            },
-        )
-
-    if amount is None:
-        return _response(
-            400,
-            {
-                "success": False,
-                "error": "amount is required",
                 "error_code": "MISSING_PARAMETER",
             },
         )
@@ -271,16 +264,6 @@ def process_refund(event: Dict[str, Any]):
                 "success": False,
                 "error": f"Order {order_id} not found",
                 "error_code": "ORDER_NOT_FOUND",
-            },
-        )
-
-    if amount <= 0:
-        return _response(
-            400,
-            {
-                "success": False,
-                "error": "Refund amount must be positive",
-                "error_code": "INVALID_AMOUNT",
             },
         )
 

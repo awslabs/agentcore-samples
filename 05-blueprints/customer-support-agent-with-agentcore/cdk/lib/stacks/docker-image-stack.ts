@@ -13,6 +13,7 @@ export class DockerImageStack extends cdk.Stack {
         super(scope, id, props);
 
         const asset = new ecr_assets.DockerImageAsset(this, `${props.appName}-AppImage`, {
+            platform: ecr_assets.Platform.LINUX_ARM64,
             directory: path.join(__dirname, "../../../"), // path to root of the project
         });
 
