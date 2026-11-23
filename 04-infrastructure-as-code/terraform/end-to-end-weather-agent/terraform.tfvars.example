@@ -10,7 +10,7 @@ memory_name = "WeatherAgentMemory"
 stack_name  = "agentcore-weather"
 
 # Network Configuration
-network_mode = "PUBLIC" # PUBLIC or PRIVATE
+network_mode = "PUBLIC" # This example doesn't provision VPC subnets or security groups.
 
 # Container Configuration
 ecr_repository_name = "weather-agent"

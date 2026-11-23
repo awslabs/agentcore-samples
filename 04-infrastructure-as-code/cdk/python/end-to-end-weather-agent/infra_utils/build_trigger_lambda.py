@@ -1,7 +1,8 @@
-import boto3
 import json
 import logging
 import time
+
+import boto3
 import urllib3
 
 # Note: cfnresponse is only available for inline Lambda code in CloudFormation.
@@ -24,11 +25,10 @@ class cfnresponse:
         reason=None,
     ):
         responseUrl = event["ResponseURL"]
-        print(responseUrl)
 
         responseBody = {
             "Status": responseStatus,
-            "Reason": reason or "See the details in CloudWatch Log Stream: {}".format(context.log_stream_name),
+            "Reason": reason or f"See the details in CloudWatch Log Stream: {context.log_stream_name}",
             "PhysicalResourceId": physicalResourceId or context.log_stream_name,
             "StackId": event["StackId"],
             "RequestId": event["RequestId"],
@@ -38,17 +38,18 @@ class cfnresponse:
         }
 
         json_responseBody = json.dumps(responseBody)
-        print("Response body:")
-        print(json_responseBody)
 
         headers = {"content-type": "", "content-length": str(len(json_responseBody))}
 
         try:
             http = urllib3.PoolManager()
-            response = http.request("PUT", responseUrl, headers=headers, body=json_responseBody)
-            print("Status code:", response.status)
-        except Exception as e:
-            print("send(..) failed executing http.request(..):", e)
+            response = http.request(
+                "PUT", responseUrl, headers=headers, body=json_responseBody, redirect=False, retries=False, timeout=10
+            )
+        except urllib3.exceptions.HTTPError:
+            raise RuntimeError("CloudFormation response delivery failed") from None
+        if not 200 <= response.status < 300:
+            raise RuntimeError(f"CloudFormation response delivery returned HTTP {response.status}")
 
 
 logger = logging.getLogger()
@@ -56,7 +57,7 @@ logger.setLevel(logging.INFO)
 
 
 def handler(event, context):
-    logger.info("Received event: %s", json.dumps(event))
+    logger.info("Build trigger request: %s", event["RequestType"])
 
     try:
         if event["RequestType"] == "Delete":
@@ -101,6 +102,6 @@ def handler(event, context):
             logger.info(f"Build {build_id} status: {build_status}")
             time.sleep(30)
 
-    except Exception as e:
-        logger.error("Error: %s", str(e))
-        cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": str(e)})
+    except Exception as e:  # noqa: BLE001 - Report failure to CloudFormation without logging its signed callback URL.
+        logger.error("Build trigger failed (%s)", type(e).__name__)
+        cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Build trigger failed"})

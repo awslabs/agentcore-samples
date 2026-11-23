@@ -63,7 +63,7 @@ class WeatherAgentStack(Stack):
             type="String",
             default="PUBLIC",
             description="Network mode for AgentCore resources",
-            allowed_values=["PUBLIC", "PRIVATE"],
+            allowed_values=["PUBLIC"],
         )
 
         memory_name = CfnParameter(
@@ -200,10 +200,10 @@ class WeatherAgentStack(Stack):
         build_trigger_function = lambda_.Function(
             self,
             "BuildTriggerFunction",
-            runtime=lambda_.Runtime.PYTHON_3_9,
-            handler="infra_utils.build_trigger_lambda.handler",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="build_trigger_lambda.handler",
             timeout=Duration.minutes(15),
-            code=lambda_.Code.from_asset(".", exclude=["*.pyc", "__pycache__", "cdk.out"]),
+            code=lambda_.Code.from_asset("infra_utils", exclude=["*.pyc", "__pycache__", "agentcore_role.py"]),
             initial_policy=[
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -256,19 +256,17 @@ class WeatherAgentStack(Stack):
         memory_initializer_function = lambda_.Function(
             self,
             "MemoryInitializerFunction",
-            runtime=lambda_.Runtime.PYTHON_3_9,
-            handler="infra_utils.memory_initializer_lambda.handler",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="memory_initializer_lambda.handler",
             timeout=Duration.minutes(5),
-            code=lambda_.Code.from_asset(".", exclude=["*.pyc", "__pycache__", "cdk.out"]),
+            code=lambda_.Code.from_asset("infra_utils", exclude=["*.pyc", "__pycache__", "agentcore_role.py"]),
             initial_policy=[
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
                     actions=[
                         "bedrock-agentcore:CreateEvent",
-                        "bedrock-agentcore:ListEvents",
-                        "bedrock-agentcore:GetMemory",
                     ],
-                    resources=["*"],
+                    resources=[memory.attr_memory_arn],
                 )
             ],
         )
@@ -280,7 +278,6 @@ class WeatherAgentStack(Stack):
             service_token=memory_initializer_function.function_arn,
             properties={"MemoryId": memory.attr_memory_id, "Region": self.region},
         )
-        initialize_memory.node.add_dependency(memory)
 
         # Bind execution permissions to the actual resources created by this stack.
         agent_role = AgentCoreRole(
@@ -318,7 +315,6 @@ class WeatherAgentStack(Stack):
         )
 
         agent_runtime.node.add_dependency(trigger_build)
-        agent_runtime.node.add_dependency(browser_tool)
         agent_runtime.node.add_dependency(code_interpreter_tool)
         agent_runtime.node.add_dependency(initialize_memory)
 

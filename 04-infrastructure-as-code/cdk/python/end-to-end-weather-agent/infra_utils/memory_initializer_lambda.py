@@ -1,9 +1,10 @@
 import json
-import boto3
 import logging
+from datetime import UTC, datetime
+from typing import Any
+
+import boto3
 import urllib3
-from datetime import datetime
-from typing import Dict, Any
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -38,18 +39,27 @@ def send_response(
 
     try:
         http = urllib3.PoolManager()
-        response = http.request("PUT", event["ResponseURL"], body=json_response_body, headers=headers)
-        logger.info(f"CloudFormation response sent: {response.status}")
-    except Exception as e:
-        logger.error(f"Failed to send CloudFormation response: {e}")
+        response = http.request(
+            "PUT",
+            event["ResponseURL"],
+            body=json_response_body,
+            headers=headers,
+            redirect=False,
+            retries=False,
+            timeout=10,
+        )
+    except urllib3.exceptions.HTTPError:
+        raise RuntimeError("CloudFormation response delivery failed") from None
+    if not 200 <= response.status < 300:
+        raise RuntimeError(f"CloudFormation response delivery returned HTTP {response.status}")
 
 
-def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda function to initialize AgentCore Memory with user preferences
     """
     try:
-        logger.info(f"Memory initializer event: {json.dumps(event)}")
+        logger.info("Memory initializer request: %s", event["RequestType"])
 
         request_type = event.get("RequestType")
         memory_id = event["ResourceProperties"]["MemoryId"]
@@ -87,12 +97,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             activity_preferences_json = json.dumps(activity_preferences)
 
             # Get current timestamp
-            timestamp = datetime.utcnow().isoformat() + "Z"
+            timestamp = datetime.now(UTC)
 
             # Initialize the bedrock-agentcore client
             client = boto3.client("bedrock-agentcore", region_name=region)
 
-            response = client.create_event(
+            client.create_event(
                 memoryId=memory_id,
                 actorId="user123",
                 sessionId="session456",
@@ -104,7 +114,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 ],
             )
 
-            logger.info(f"Successfully created memory event: {response}")
+            logger.info("Created sample preferences event")
 
             send_response(
                 event,
@@ -124,13 +134,13 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 event.get("PhysicalResourceId", f"memory-init-{memory_id}"),
             )
 
-    except Exception as e:
-        logger.error(f"Error initializing memory: {str(e)}")
+    except Exception as e:  # noqa: BLE001 - Return a fixed CloudFormation failure without leaking request details.
+        logger.error("Memory initializer failed (%s)", type(e).__name__)
         send_response(
             event,
             context,
             "FAILED",
             {},
             event.get("PhysicalResourceId", "memory-init-failed"),
-            str(e),
+            "Memory initializer failed",
         )

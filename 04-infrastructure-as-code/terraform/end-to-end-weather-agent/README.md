@@ -160,7 +160,7 @@ Edit `terraform.tfvars` with your preferred values:
 - `memory_name`: Name for memory resource (default: "WeatherAgentMemory")
 - `stack_name`: Stack identifier (default: "agentcore-weather")
 - `aws_region`: AWS region for deployment (default: "us-west-2")
-- `network_mode`: PUBLIC or PRIVATE networking
+- `network_mode`: PUBLIC (the example does not create VPC resources)
 
 ### 2. Initialize Terraform
 
@@ -393,14 +393,7 @@ To add more tools:
 
 ### Modify Network Configuration
 
-Change from PUBLIC to PRIVATE networking:
-
-```hcl
-# terraform.tfvars
-network_mode = "PRIVATE"
-```
-
-Requires VPC configuration (not included in this module).
+This module provisions `PUBLIC` network mode. Private connectivity requires a separate VPC design, including subnet and security group configuration; changing only `network_mode` is not sufficient.
 
 ### Customize Memory Settings
 
@@ -504,7 +497,7 @@ Monitor in AWS Console:
 
 ### Network Security
 
-- Agent runs in specified network mode (PUBLIC/PRIVATE)
+- The agent runs in PUBLIC network mode; this does not disable inbound IAM authorization.
 - ECR repository has account-level access controls
 - S3 buckets block public access
 - IAM policies follow least-privilege principle
