@@ -4,6 +4,8 @@ Expose an [AWS Knowledge MCP](https://github.com/awslabs/mcp/tree/main/src/aws-k
 
 ![Gateway architecture](images/claude_code_agentcore_gateway_architecture_new.png)
 
+The default target is AWS Knowledge. For a protected target with a separate outbound Identity provider, see [Dynatrace MCP through Gateway](../../../03-integrations/gateway/dynatrace/) before running `create`.
+
 ## Before you start
 
 Use Python 3.12+, Bash, an approved short-lived AWS profile and a sandbox in a commercial Region supporting Gateway. The caller needs permission to create, get and delete the sample Gateway and target, list targets, and pass **one** Gateway service role. Claude Code requires its own authenticated subscription or model access; do not use its credentials to provision AWS resources. Gateway usage, Cognito machine-to-machine authentication and Claude Code can incur charges.

@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import ExitStack, closing, redirect_stdout
@@ -148,6 +149,50 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             gateway.create(self.session, ROLE, POOL, "fixtureclient", SCOPE)
         self.stub.assert_no_pending_responses()
+
+    def test_dynatrace_uses_only_the_approved_tenant_provider_and_scopes(self):
+        provider = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:token-vault/default/oauth2credentialprovider/fixture"
+        with patch.dict(os.environ, DYNATRACE_TENANT_ID="example", DYNATRACE_PROVIDER_ARN=provider):
+            options = gateway.target_config("dynatrace", REGION, ACCOUNT)
+            self.assertEqual(
+                options["targetConfiguration"]["mcp"]["mcpServer"]["endpoint"],
+                "https://example.apps.dynatrace.com/platform-reserved/mcp-gateway/v0.1/servers/dynatrace-mcp/mcp",
+            )
+            auth = options["credentialProviderConfigurations"]
+            self.assertEqual(
+                auth,
+                [
+                    {
+                        "credentialProviderType": "OAUTH",
+                        "credentialProvider": {
+                            "oauthCredentialProvider": {
+                                "providerArn": provider,
+                                "grantType": "CLIENT_CREDENTIALS",
+                                "scopes": ["mcp-gateway:servers:read", "mcp-gateway:servers:invoke"],
+                            }
+                        },
+                    }
+                ],
+            )
+            # Exercise the real botocore serializer for this separate target shape.
+            response = dict(
+                T,
+                name=options["name"],
+                targetConfiguration=options["targetConfiguration"],
+                credentialProviderConfigurations=auth,
+            )
+            params = dict(gatewayIdentifier=GID, **options)
+            self.stub.add_response("create_gateway_target", response, params)
+            self.session.client("bedrock-agentcore-control").create_gateway_target(**params)
+            self.stub.assert_no_pending_responses()
+            with self.assertRaises(ValueError):
+                gateway.target_config("dynatrace", "us-west-2", ACCOUNT)
+            with self.assertRaises(ValueError):
+                gateway.target_config("dynatrace", REGION, "222233334444")
+            for invalid in ("https://other.invalid", "foo.bar", "a/b", "foo@other"):
+                with patch.dict(os.environ, DYNATRACE_TENANT_ID=invalid), self.assertRaises(ValueError):
+                    gateway.create(self.session, ROLE, POOL, "fixtureclient", SCOPE, "dynatrace")
+                self.assertFalse(gateway.STATE.exists())
 
     def test_url_validation(self):
         for url in [

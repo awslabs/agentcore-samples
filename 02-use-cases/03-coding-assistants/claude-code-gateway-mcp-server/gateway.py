@@ -69,7 +69,39 @@ def checked_url(url, region, gateway_id):
     return url
 
 
-def create(session, role_arn, pool, client, scope):
+def target_config(kind, region, account):
+    """Bind outbound credentials to the operator-selected target, never to user input."""
+    if kind == "knowledge":
+        return {"name": "aws-knowledge", "targetConfiguration": {"mcp": {"mcpServer": {"endpoint": KB_URL}}}}
+    if kind != "dynatrace":
+        raise ValueError("Unsupported target")
+    tenant = os.environ["DYNATRACE_TENANT_ID"]
+    provider = os.environ["DYNATRACE_PROVIDER_ARN"]
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", tenant):
+        raise ValueError("Enter a Dynatrace .apps.dynatrace.com tenant label, not a URL.")
+    prefix = f"arn:aws:bedrock-agentcore:{region}:{account}:token-vault/"
+    if not re.fullmatch(re.escape(prefix) + r"[A-Za-z0-9_.-]+/oauth2credentialprovider/[A-Za-z0-9_.-]+", provider):
+        raise ValueError("Use an approved Identity OAuth provider in this account and Region.")
+    endpoint = f"https://{tenant}.apps.dynatrace.com/platform-reserved/mcp-gateway/v0.1/servers/dynatrace-mcp/mcp"
+    return {
+        "name": "dynatrace-tools",
+        "targetConfiguration": {"mcp": {"mcpServer": {"endpoint": endpoint}}},
+        "credentialProviderConfigurations": [
+            {
+                "credentialProviderType": "OAUTH",
+                "credentialProvider": {
+                    "oauthCredentialProvider": {
+                        "providerArn": provider,
+                        "grantType": "CLIENT_CREDENTIALS",
+                        "scopes": ["mcp-gateway:servers:read", "mcp-gateway:servers:invoke"],
+                    }
+                },
+            }
+        ],
+    }
+
+
+def create(session, role_arn, pool, client, scope, kind="knowledge"):
     region = session.region_name
     account = session.client("sts").get_caller_identity()["Account"]
     if not re.fullmatch(r"[a-z]{2}-[a-z0-9-]+-\d+", region or "") or not re.fullmatch(
@@ -81,7 +113,8 @@ def create(session, role_arn, pool, client, scope):
     if MCP_CONFIG.exists():
         raise FileExistsError("Use a fresh directory; .mcp.json already exists.")
     control = session.client("bedrock-agentcore-control")
-    name = "claude-knowledge-" + secrets.token_hex(6)
+    target_options = target_config(kind, region, account)
+    name = f"claude-{kind}-" + secrets.token_hex(6)
     state = {"account": account, "region": region, "name": name, "pending": "gateway"}
     with STATE.open("x") as f:
         json.dump(state, f, indent=2)
@@ -107,9 +140,7 @@ def create(session, role_arn, pool, client, scope):
     url = checked_url(ready["gatewayUrl"], region, gid)
     state["pending"] = "target"
     save(state)
-    target = control.create_gateway_target(
-        gatewayIdentifier=gid, name="aws-knowledge", targetConfiguration={"mcp": {"mcpServer": {"endpoint": KB_URL}}}
-    )
+    target = control.create_gateway_target(gatewayIdentifier=gid, **target_options)
     state["target_id"] = target["targetId"]
     del state["pending"]
     save(state)
@@ -180,6 +211,9 @@ def cleanup(state, session):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["create", "token", "cleanup"])
+    parser.add_argument(
+        "--target", choices=["knowledge", "dynatrace"], default="knowledge", help="MCP server for a fresh create"
+    )
     args = parser.parse_args()
     if args.action == "token":
         print(
@@ -199,6 +233,7 @@ def main():
                 os.environ["COGNITO_POOL_ID"],
                 os.environ["COGNITO_CLIENT_ID"],
                 os.environ["COGNITO_SCOPE"],
+                args.target,
             )
         else:
             state = json.loads(STATE.read_text())
