@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: JWT-authenticated budget agents with an owner-managed Bedrock guardrail
+Parameters:
+  RuntimeName:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+  RepositoryName:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9._/-]+'
+  ImageDigest:
+    Type: String
+    AllowedPattern: 'sha256:[0-9a-f]{64}'
+  UserPoolId:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+_[A-Za-z0-9]+'
+  AppClientId:
+    Type: String
+    AllowedPattern: '[a-z0-9]{1,128}'
+  GuardrailId:
+    Type: String
+    MinLength: 1
+  GuardrailVersion:
+    Type: String
+    AllowedPattern: '[1-9][0-9]*'
+  RolePathAndName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9_+=,.@/-]+'
+  BedrockModelId:
+    Type: String
+    MinLength: 1
+Resources:
+  Runtime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref RuntimeName
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${RepositoryName}@${ImageDigest}'
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePathAndName}'
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      ProtocolConfiguration: HTTP
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPoolId}/.well-known/openid-configuration'
+          AllowedClients: [!Ref AppClientId]
+      EnvironmentVariables:
+        GUARDRAIL_ID: !Ref GuardrailId
+        GUARDRAIL_VERSION: !Ref GuardrailVersion
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+Outputs:
+  RuntimeArn:
+    Value: !GetAtt Runtime.AgentRuntimeArn

@@ -1,71 +1,45 @@
-# Use agent strategies to streamline complex business tasks
+# Use a budget specialist as a tool on AgentCore Runtime
 
-The [workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/57f577e3-9a24-45e2-9937-e48b2cdf6986/en-US) is a hands-on training program designed to empower developers and AI enthusiasts to build sophisticated, context-aware AI agents using cutting-edge technologies like [Amazon Bedrock](https://aws.amazon.com/bedrock), [Strands Agents](https://strandsagents.com/latest/), and [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/).
+A Strands coordinator delegates a synthetic budget question to a second Strands agent. The specialist can call one deterministic tool, `split_budget`, which splits integer US cents into 50% needs, 30% wants and the remainder in savings. The split is an illustration, not individualized advice. No stock prices, private finances, external market feeds or arbitrary calculators are needed. Each request gets two fresh agents and both use the same approved model and published Bedrock guardrail.
 
-![architecture](./images/architecture.png)
+## Run the offline example
 
-We're creating a **Multi-Agent Financial Advisory System** that combines specialized expertise areas through intelligent orchestration. The system mimics how professional financial advisory firms operate, with specialists collaborating under a coordinator to provide comprehensive guidance.
+Use Python 3.12 and a fresh environment here:
 
-Our multi-agent system consists of three core components:
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true python -m unittest -v test_budget
+```
 
-1. **Budget Agent (from [Lab 1](./lab1-develop_a_personal_budget_assistant_strands_agent.ipynb))**
+The models in the test speak the Strands event protocol: the coordinator calls the specialist, the specialist calls the real arithmetic tool, and both return text. This does not invoke Bedrock or test guardrail enforcement. To try actual inference locally, supply `BEDROCK_MODEL_ID`, `GUARDRAIL_ID` and a numeric `GUARDRAIL_VERSION`, set a temporary AWS profile/Region and run `python budget_agent.py`. POST `{"prompt":"Illustrate a 50/30/20 split for 10001 cents."}` to `/invocations` on localhost:8080. Never expose the local server publicly. Real invocations can incur multiple model calls.
 
-    *Specializes in personal budgeting, spending analysis, and financial discipline*
+## Deploy a JWT-protected Runtime
 
-    | Tool | Description | Example Use Case |
-    |------|-------------|------------------|
-    | **calculate_budget_breakdown** | 50/30/20 budget calculations for any income level | "Create a budget for my $6000 monthly income" |
-    | **analyze_spending_pattern** | Spending pattern analysis with personalized recommendations | "Analyze my $800 dining expenses against $5000 income" |
-    | **calculator** | Financial calculations and mathematical operations | "Calculate 20% savings target for my budget" |
+Bring a dedicated sandbox Cognito user pool/app client in the same Region, two reviewed Bedrock resources (model or profile, and **published** guardrail version), a private ECR repo and an execution role. The role needs trusted Runtime access to its image/logs, inference on the selected model or profile and destination models as needed, and permission to apply the selected guardrail. Provisioning/management of guardrails or Cognito is not required on this role. No role, pool, guardrail or image repository is adopted or modified by the template.
 
-2. **Financial Analysis Agent (from [Lab 2](./lab2-build_multi_agent_workflows_with_strands.ipynb))**
+In Bash, set `AWS_REGION`, `REPO`, `STACK`, `RUNTIME_NAME`, `ROLE_PATH_AND_NAME`, `USER_POOL_ID`, `APP_CLIENT_ID`, `BEDROCK_MODEL_ID`, `GUARDRAIL_ID` and `GUARDRAIL_VERSION` to approved values. Verify the account and Region. Use a new stack/runtime name and immutable image tag:
 
-    *Focuses on investment research, portfolio management, and market analysis*
+```bash
+set -euo pipefail
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+TAG="budget-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+docker buildx build --platform linux/arm64 --provenance=false --push -t "$REGISTRY/$REPO:$TAG" .
+DIGEST=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$REPO" --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
+STACK_ID=$(aws cloudformation create-stack --region "$AWS_REGION" --stack-name "$STACK" --template-body file://runtime.yaml --parameters \
+  ParameterKey=RuntimeName,ParameterValue="$RUNTIME_NAME" ParameterKey=RepositoryName,ParameterValue="$REPO" \
+  ParameterKey=ImageDigest,ParameterValue="$DIGEST" ParameterKey=RolePathAndName,ParameterValue="$ROLE_PATH_AND_NAME" \
+  ParameterKey=UserPoolId,ParameterValue="$USER_POOL_ID" ParameterKey=AppClientId,ParameterValue="$APP_CLIENT_ID" \
+  ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" ParameterKey=GuardrailId,ParameterValue="$GUARDRAIL_ID" \
+  ParameterKey=GuardrailVersion,ParameterValue="$GUARDRAIL_VERSION" --query StackId --output text)
+aws cloudformation wait stack-create-complete --region "$AWS_REGION" --stack-name "$STACK_ID"
+```
 
-    | Tool | Description | Example Use Case |
-    |------|-------------|------------------|
-    | **get_stock_analysis** | Real-time stock data and comprehensive analysis | "Analyze Apple stock performance and metrics" |
-    | **create_diversified_portfolio** | Risk-based portfolio recommendations with allocations | "Create a moderate risk portfolio for $10,000" |
-    | **compare_stock_performance** | Multi-stock performance comparison over time periods | "Compare Tesla, Apple, and Google over 6 months" |
+Use the `RuntimeArn` stack output and your approved Cognito-authenticated client to send the same JSON request to the Runtime; the result is `{"response":"..."}`. Never share user JWTs on command lines or log them. Review policy and model behavior in your sandbox; a successful response is not proof that every guardrail rule worked.
 
-3. **Orchestrator Agent (from [Lab 2](./lab2-build_multi_agent_workflows_with_strands.ipynb))**
+## Cleanup and historical workshop
 
-    *Coordinates specialized agents and synthesizes comprehensive responses*
-
-    | Capability | Description | Example Use Case |
-    |------------|-------------|------------------|
-    | **Agent Routing** | Intelligently determines which specialist(s) to consult | Routes budget questions to Budget Agent, investment queries to Financial Agent |
-    | **Multi-Agent Coordination** | Combines insights from multiple agents for complex queries | "Help me budget and invest" uses both agents together |
-    | **Response Synthesis** | Creates coherent responses from multiple agent outputs | Combines budget analysis with investment recommendations |
-    | **Context Management** | Maintains conversation flow across agent interactions | Remembers previous advice when making follow-up recommendations |
-
-## Workshop Structure
-
-| Lab | Focus | Duration | What You'll Learn |
-|-----|-------|----------|-------------------|
-| Prerequisites | Environment Setup | 5 minutes | AWS account setup, SageMaker Studio configuration |
-| [Lab 1](./lab1-develop_a_personal_budget_assistant_strands_agent.ipynb) | Personal Finance Assistant | 20 minutes | Build your first Strands agent, understand core concepts, create custom tools |
-| [Lab 2](./lab2-build_multi_agent_workflows_with_strands.ipynb)| Multi-Agent Workflows | 20 minutes | Implement multi-agent workflows |
-| [Lab 3](./lab3-deploy_agents_on_amazon_bedrock_agentcore.ipynb) | Production Deployment | 15 minutes | Deploy agents using Amazon Bedrock AgentCore, scaling and monitoring |
-
-**Total Duration:** 1 hour
-
-## Prerequisites
-
-Participants should have:
-
-- AWS credentials configured for Amazon Bedrock access
-- Python 3.8+ installed on their development machine
-- AWS account with Amazon Bedrock access. In an AWS-conducted event, you will have a provisioned account
-- Enable [Model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Claude Haiku 4.5 on Amazon Bedrock.
-- Jupyter Notebook or compatible IDE
-
-## Sample Queries
-
-- "I make $6000/month and want to start investing $500/month. Help me create a budget and suggest an investment portfolio."
-- "I spend too much on dining out ($800/month) and want to invest the savings. What should I do?"
-- "Compare Tesla and Apple stocks, and tell me if I can afford to invest $2000 with my $4000 monthly income."
-
-## Clean-up
-
-Each lab consists of cleanup steps at the end of Jupyter notebooks. By default, these cleanup steps are commented out. Please uncomment them and run them to clean up resources at the end of the workshop.
+Verify the account and full stack ID, then delete **only** that stack and wait for `stack-delete-complete`. Separately reconcile dedicated image versions and logs. Shared roles, guardrails, Cognito and ECR stay with their owners. The [historical three-notebook workshop](https://github.com/awslabs/agentcore-samples/tree/5cca7e89f8109115766b9f7df3f0b7e98ca9eab1/02-use-cases/01-conversational-agents/finance-personal-assistant) also generated chart and market-analysis code, fetched market data, created a guardrail and provisioned authentication. Those are not part of this narrower example. Never delete a pre-existing guardrail just because the old workshop found it by name.
