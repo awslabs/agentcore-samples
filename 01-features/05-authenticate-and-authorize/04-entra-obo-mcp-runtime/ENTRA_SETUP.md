@@ -1,10 +1,6 @@
 # Entra ID setup
 
-This document walks you through registering the two Microsoft Entra ID apps required by this sample. It is longer than the Prerequisites section in the notebook because it explains **why** each step is needed - not just what to click.
-
-If you only want the short version, the notebook's Prerequisites cell has everything in one page. Use this doc if something doesn't work, or if you want to understand what each setting does.
-
----
+This guide describes the two Entra application registrations used in [the Runtime example](README.md). An identity administrator owns them and the associated provider. Never put the confidential app's secret in source, a notebook or CloudFormation parameters.
 
 ## The big picture
 
@@ -21,7 +17,7 @@ The Agent app handles sign-in, OBO token exchange, and M2M authentication to the
 
 - Sign in at [https://entra.microsoft.com](https://entra.microsoft.com) with **tenant admin** or **Application Administrator + Cloud Application Administrator**. You will grant admin consent twice during this walkthrough.
 - If the Authentication blade shows the Preview UI, switch to the classic UI first: look for the banner link *"To switch to the old experience, please click here"* near the top.
-- From the Entra admin center **Overview** page, note your **Tenant ID**. This is `ENTRA_TENANT_ID` in the notebook.
+- From the Entra admin center **Overview** page, note your **Tenant ID**. This is the `TenantId` stack parameter.
 
 Total time: 10-20 minutes.
 
@@ -43,7 +39,7 @@ On the Overview page that loads, copy **Application (client) ID**. This is `ENTR
 
 ### 1.2 Authentication - enable device code flow
 
-**Why**: our notebook authenticates users via MSAL's device code flow (the "go to aka.ms/devicelogin and enter code XXXXX" pattern). Microsoft classifies device code flow as a **public client** flow, and it needs a specific redirect URI (`https://login.microsoftonline.com/common/oauth2/nativeclient`) registered on the app. We also need to toggle "Allow public client flows" so the app registration advertises itself as a valid target for this flow.
+**Optional**: only enable device code flow if your approved test client requires it. The Runtime deployment does not need a public client flow. Use your organization’s standard sign-in client when available.
 
 1. Left nav of the app: **Authentication**
 2. Under **Platform configurations**, click **+ Add a platform**
@@ -56,7 +52,7 @@ On the Overview page that loads, copy **Application (client) ID**. This is `ENTR
 
 ### 1.3 Certificates & secrets - create a client secret
 
-**Why**: even though this app allows public-client flows (for device code sign-in), it is *also* acting as a confidential client when it performs OBO. Confidential clients authenticate to Microsoft with a client secret (or certificate). We will configure the secret in the notebook's AgentCore Identity credential provider so AgentCore can do the OBO exchange on behalf of the agent.
+**Why**: even though this app allows public-client flows (for device code sign-in), it is *also* acting as a confidential client when it performs OBO. Confidential clients authenticate to Microsoft with a client secret (or certificate). We will configure the secret in the owner-managed AgentCore Identity credential provider so AgentCore can do the OBO exchange on behalf of the agent.
 
 1. Left nav: **Certificates & secrets**
 2. On the **Client secrets** tab, click **+ New client secret**
@@ -180,7 +176,7 @@ Both rows must show green check marks before you move on.
 | `ENTRA_AGENT_CLIENT_SECRET` | The secret value you copied in step 1.3 |
 | `ENTRA_MCP_CLIENT_ID` | MCP Server app → Overview → **Application (client) ID** |
 
-These four values go into the notebook's **Step 2** cell.
+Supply only the non-secret IDs to the stack. The secret belongs exclusively in the credential provider configuration maintained by its owner.
 
 ---
 
@@ -217,7 +213,7 @@ If anything fails at runtime, open each app's **Manifest** (left nav) and verify
 | Sign-in: `AADSTS65002: Resource for this token request is not a valid scope` | Application ID URI not set, or `user_delegation` scope missing/disabled | Redo step 1.4 |
 | Sign-in: `AADSTS500011: resource principal does not exist` | Application ID URI not set, or user belongs to a different tenant | Verify step 1.4 saved; confirm `ENTRA_TENANT_ID` |
 | Sign-in: hangs on device code, never progresses | "Allow public client flows" is **No**, or `nativeclient` URI missing | Redo step 1.2 |
-| Agent returns 401 from the authorizer | Agent app's `allowedAudience` must be the bare GUID `<ENTRA_AGENT_CLIENT_ID>`, no `api://` prefix | Check the agent's `configure()` call in the notebook |
+| Agent returns 401 from the authorizer | Agent app's `allowedAudience` must be the bare GUID `<ENTRA_AGENT_CLIENT_ID>`, no `api://` prefix | Check `AgentRuntime.AuthorizerConfiguration` in `runtimes.yaml` |
 | OBO: `AADSTS500131: Assertion audience does not match the Client app` | MSAL scope must produce a JWT with `aud = <ENTRA_AGENT_CLIENT_ID>` | Check the MSAL sign-in cell |
 | Sign-in: `AADSTS90009: Application is requesting a token for itself. This scenario is supported only if resource is specified using the GUID based App Identifier.` | MSAL scope must use the bare-GUID form `<ENTRA_AGENT_CLIENT_ID>/.default`, not `api://` | Check the MSAL sign-in cell |
 | OBO: `AADSTS65001: user or administrator has not consented` | Graph delegated permissions exist but admin consent wasn't granted | Redo admin consent in step 1.5 |

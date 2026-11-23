@@ -8,7 +8,7 @@ can reach your agents.
 | Folder | identity Provider | What's inside |
 |:-------|:-----------------|:--------------|
 | `01-inbound-auth-cognito/` | Amazon Cognito | runtime protected by Cognito JWT; tests unauthenticated rejection + authenticated invocation |
-| `02-inbound-auth-EntraID/` | Microsoft Entra ID | Three patterns: runtime inbound auth, gateway M2M, gateway with 3LO Auth Code (OneNote) |
+| `02-inbound-auth-EntraID/` | Microsoft Entra ID | Check Entra issuer/audience on an existing Runtime; compare unauthorized and authorized invocation |
 | `03-inbound-auth-okta/` | Okta | Two patterns: runtime inbound auth with scope validation, gateway with full OAuth flow |
 | `04-inbound-auth-pingfederate/` | PingFederate | Full CDK deployment: VPC, VPN, PingFederate on EC2, AgentCore gateway with custom JWT |
 | `05-inbound-auth-keycloak/` | Keycloak | CDK deployment: Keycloak with a private CA certificate, reached over VPC Lattice |
@@ -54,19 +54,7 @@ python inbound_auth_runtime.py --cleanup
 
 ### 02-inbound-auth-EntraID
 
-```bash
-cd 02-inbound-auth-EntraID/
-pip install -r requirements.txt
-
-# Tutorial 1 — runtime inbound auth
-python entra_id_inbound_auth.py
-
-# Tutorial 2 — gateway M2M
-python entra_gateway_m2m.py
-
-# Tutorial 3 — gateway Auth Code Flow (OneNote)
-python entra_gateway_auth_code.py
-```
+Follow [the inbound check](02-inbound-auth-EntraID/) with an approved sandbox Runtime. No roles, pools or runtimes are created or deleted.
 
 ### 03-inbound-auth-okta
 

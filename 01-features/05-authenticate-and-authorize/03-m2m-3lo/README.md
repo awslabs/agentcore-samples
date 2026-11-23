@@ -252,7 +252,7 @@ Log in, select a flow (M2M / GitHub 3LO / Google 3LO), and use the chat interfac
 |:--------|:--------|
 | **M2M (client credentials)** | `auth_flow="M2M"` — AgentCore identity calls the token endpoint with client ID + secret. No user interaction. Token cached per agent instance. |
 | **Auth Code / 3LO** | `auth_flow="USER_FEDERATION"` — First call returns a consent URL. After consent, AgentCore identity stores and refreshes tokens automatically. |
-| **Session binding** | `oauth2_callback_server.py` verifies the OAuth callback came from the same user who invoked the agent, preventing CSRF/session fixation attacks. |
+| **Session binding** | This legacy helper stores one current user identifier for the process. It does **not** establish per-browser session binding or CSRF protection. Do not expose it to other users. For a single-user consent check with state/session correlation, see [delegated consent](../02-outbound-auth/DELEGATED_CONSENT.md); for a hosted multi-user flow, see [managed consent](../07-consent-portal-auth-code-flow-targets/). |
 | **Token storage** | All tokens stored in AgentCore identity (backed by Secrets Manager). Agent code only receives tokens in-memory via decorators. |
 
 ## Clean Up
