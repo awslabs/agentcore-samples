@@ -95,7 +95,7 @@ markdown-it-py==4.0.0
     # via rich
 markdownify==1.2.0
     # via strands-agents-tools
-mcp==1.23.0
+mcp==1.30.0
     # via
     #   customer-support-assistant (pyproject.toml)
     #   strands-agents
