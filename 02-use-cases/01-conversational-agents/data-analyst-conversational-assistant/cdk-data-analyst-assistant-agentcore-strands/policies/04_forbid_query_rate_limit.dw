@@ -1,0 +1,19 @@
+// Temporal forbid (session rate limit).
+// Deny once more than 20 execute_sql_query calls have been permitted in the
+// session within 5 minutes. `count` includes the current request, so `> 20`
+// allows exactly 20 and blocks the 21st. Guards against runaway agent loops.
+forbid(
+  principal,
+  action == AgentCore::Action::"DatabaseToolsTarget___execute_sql_query",
+  resource == AgentCore::Gateway::"{{GATEWAY_ARN}}"
+)
+when temporal {
+  exists (n: Long).
+    (count for (t: Timepoint).
+      where (formerly within 5m (
+        AgentCore::Action::"DatabaseToolsTarget___execute_sql_query"::request{
+          eventResource: resource
+        } && tp(t)
+      ))) == n
+    && n > 20
+};

@@ -4,11 +4,13 @@ Data Analyst Conversational Assistant - Main Application
 This application provides an intelligent conversational data analyst assistant.
 It leverages Anthropic Claude models on Amazon Bedrock for natural language processing,
 Amazon Bedrock AgentCore Gateway for centralized tool access, AgentCore Policy Engine for
-guardrail enforcement, and AgentCore Memory for conversation context management.
+Dogwood policy enforcement, and AgentCore Memory for conversation context management.
 
 Key Features:
 - Natural language to SQL query conversion via Gateway-hosted MCP tools
-- Guardrails-in-Policy via Cedar (prompt attack, content filtering, PII suppression)
+- AgentCore Policy in Dogwood at the Gateway: temporal rules (schema lookup before querying,
+  per-session rate limit, re-grounding after a denial), sensitive-column blocking, and
+  guardrails (prompt attack, content filtering, PII output suppression)
 - Short-term memory (conversation persistence) and long-term semantic memory (facts across sessions)
 - Real-time streaming responses
 - OpenTelemetry tracing via ADOT (agent invocations, tool calls, memory operations)
@@ -90,11 +92,23 @@ def load_system_prompt():
 DATA_ANALYST_SYSTEM_PROMPT = load_system_prompt()
 
 
-def get_mcp_client():
-    """Create an MCP client connected to the AgentCore Gateway."""
+# Header that groups Gateway tool calls into one AgentCore Policy session. Dogwood
+# temporal policies (e.g. "query only after a schema lookup", "at most 20 queries in
+# 5 minutes") evaluate the history of the calls that share this ID, and the Gateway
+# rejects tool calls without it once temporal policies are attached.
+POLICY_SESSION_HEADER = "x-amzn-bedrock-agentcore-policy-session-id"
+
+
+def get_mcp_client(policy_session_id: str):
+    """Create an MCP client connected to the AgentCore Gateway.
+
+    Args:
+        policy_session_id: AgentCore Policy session ID sent on every Gateway request.
+    """
     if not gateway_url:
         raise RuntimeError("GATEWAY_URL environment variable not set")
-    return MCPClient(lambda: streamablehttp_client(gateway_url))
+    headers = {POLICY_SESSION_HEADER: policy_session_id}
+    return MCPClient(lambda: streamablehttp_client(gateway_url, headers=headers))
 
 
 @app.entrypoint
@@ -178,8 +192,13 @@ async def agent_invocation(payload):
             )
 
             try:
-                # Connect to AgentCore Gateway for centralized MCP tools
-                mcp_client = get_mcp_client()
+                # Connect to AgentCore Gateway for centralized MCP tools.
+                # The policy session is scoped to this invocation (one user turn): the
+                # temporal policies govern the tool calls the agent makes while answering
+                # it. A per-turn ID also means a policy update (which invalidates open
+                # policy sessions) never strands a long-running conversation.
+                policy_session_id = f"{session_id}-{prompt_uuid}"
+                mcp_client = get_mcp_client(policy_session_id)
                 with mcp_client:
                     gateway_tools = mcp_client.list_tools_sync()
                     print(f"Gateway tools loaded: {len(gateway_tools)}")
