@@ -1,0 +1,883 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Base elements, app frame, and shared components.
+
+   Everything here is reused across more than one view. View-specific rules live
+   in login.css / architecture.css.
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--ink-900);
+  color: var(--text-hi);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  /*
+   * Faint 48px grid: the only tiling layer, and it tiles seamlessly because a
+   * 1px line on a 48px cell repeats without a visible join.
+   *
+   * The vignette used to live here as a third layer at `100% 100%`. Since
+   * background-repeat defaults to `repeat`, on any page taller than the
+   * viewport it tiled — so its bright top edge reappeared partway down as a
+   * hard horizontal seam. It now lives on a fixed pseudo-element (below),
+   * which cannot repeat at all.
+   */
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-repeat: repeat;
+  /* Anchor the grid to the viewport so it does not drift against fixed chrome. */
+  background-attachment: fixed;
+}
+
+/*
+ * The vignette: one fixed, non-repeating wash behind all content. Being
+ * position: fixed it is painted once relative to the viewport, so it can never
+ * seam regardless of document height.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    ellipse 90% 60% at 50% -10%,
+    var(--vignette) 0%,
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+  transition: background-image 0.2s ease;
+}
+
+/* Every figure and identifier is tabular mono — a risk desk reads columns. */
+.mono,
+code,
+pre {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}
+
+/* ---------- App frame ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  padding: 18px 28px 14px;
+  border-bottom: var(--rule);
+  background: linear-gradient(180deg, var(--masthead-from), var(--masthead-to));
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-size: 25px;
+  letter-spacing: -0.015em;
+  line-height: 1;
+}
+
+.wordmark em {
+  color: var(--amber);
+  font-style: italic;
+}
+
+.masthead-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--ink-700), transparent);
+}
+
+.masthead-meta {
+  display: flex;
+  gap: 22px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+}
+
+.masthead-meta b {
+  display: block;
+  color: var(--text-mid);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 11.5px;
+}
+
+/* ---------- Service tabs ---------- */
+
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 28px;
+  border-bottom: var(--rule);
+  background: var(--ink-850);
+  position: sticky;
+  top: 61px;
+  z-index: 19;
+  overflow-x: auto;
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 15px 20px 13px;
+  transition: color 0.16s, border-color 0.16s, background 0.16s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.tab:hover {
+  color: var(--text-mid);
+  background: var(--hover-tint);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+  background: var(--amber-glow);
+}
+
+.tab-index {
+  color: var(--ink-600);
+  font-size: 10px;
+}
+
+.tab[aria-selected="true"] .tab-index {
+  color: var(--amber-dim);
+}
+
+main {
+  flex: 1;
+  padding: 26px 28px 60px;
+  max-width: 1560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ---------- Section headers ---------- */
+
+.section-head {
+  margin-bottom: 20px;
+}
+
+.section-head h2 {
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.section-head p {
+  color: var(--text-mid);
+  margin-top: 7px;
+  max-width: 74ch;
+  font-size: 13.5px;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber-dim), transparent);
+  max-width: 180px;
+}
+
+/* ---------- Panels ---------- */
+
+.panel {
+  background: linear-gradient(180deg, var(--ink-800), var(--ink-850));
+  border: var(--rule);
+  border-radius: 3px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 17px;
+  border-bottom: var(--rule);
+}
+
+.panel-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+}
+
+.panel-body {
+  padding: 17px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Customer selector ---------- */
+
+.customer {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--ink-750);
+  border: var(--rule);
+  border-left: 2px solid var(--ink-600);
+  border-radius: 2px;
+  color: inherit;
+  cursor: pointer;
+  padding: 13px 15px;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+
+.customer + .customer {
+  margin-top: 9px;
+}
+
+.customer:hover {
+  background: var(--ink-700);
+  transform: translateX(2px);
+}
+
+.customer[aria-pressed="true"] {
+  border-left-color: var(--amber);
+  background: var(--ink-700);
+}
+
+.customer-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--amber);
+}
+
+.customer-name {
+  font-size: 14.5px;
+  font-weight: 500;
+  margin: 3px 0 2px;
+}
+
+.customer-note {
+  color: var(--text-lo);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ---------- Controls ---------- */
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  margin-bottom: 6px;
+}
+
+/* Match every text-like input, not just type="text" — email and password
+   fields would otherwise fall back to the browser's light default styling. */
+select,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+textarea {
+  width: 100%;
+  background: var(--ink-900);
+  border: var(--rule);
+  border-radius: 2px;
+  color: var(--text-hi);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 9px 11px;
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+  box-shadow: 0 0 0 3px var(--amber-glow);
+}
+
+textarea {
+  font-family: var(--sans);
+  resize: vertical;
+  min-height: 62px;
+}
+
+.btn {
+  appearance: none;
+  background: var(--amber);
+  border: none;
+  border-radius: 2px;
+  color: var(--amber-ink);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 11px 18px;
+  transition: filter 0.16s, transform 0.1s;
+  width: 100%;
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  background: var(--ink-700);
+  color: var(--text-lo);
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: none;
+  border: var(--rule);
+  color: var(--text-mid);
+  width: auto;
+  padding: 7px 13px;
+  font-size: 10.5px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+  filter: none;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Verdict ---------- */
+
+.verdict {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 22px;
+  border: var(--rule);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.verdict::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+}
+
+.verdict[data-v="APPROVE"] {
+  background: var(--approve-bg);
+  border-color: var(--approve-line);
+}
+.verdict[data-v="APPROVE"]::before {
+  background: var(--approve);
+}
+.verdict[data-v="ESCALATE"] {
+  background: var(--escalate-bg);
+  border-color: var(--escalate-line);
+}
+.verdict[data-v="ESCALATE"]::before {
+  background: var(--escalate);
+}
+.verdict[data-v="REJECT"] {
+  background: var(--reject-bg);
+  border-color: var(--reject-line);
+}
+.verdict[data-v="REJECT"]::before {
+  background: var(--reject);
+}
+
+.score-dial {
+  text-align: center;
+  min-width: 108px;
+}
+
+.score-value {
+  font-family: var(--mono);
+  font-size: 46px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-scale {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  margin-top: 6px;
+}
+
+.verdict-label {
+  font-family: var(--serif);
+  font-size: 31px;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+
+.verdict[data-v="APPROVE"] .verdict-label {
+  color: var(--approve);
+}
+.verdict[data-v="ESCALATE"] .verdict-label {
+  color: var(--escalate);
+}
+.verdict[data-v="REJECT"] .verdict-label {
+  color: var(--reject);
+}
+
+.verdict-summary {
+  color: var(--text-mid);
+  margin-top: 8px;
+  font-size: 13.5px;
+  max-width: 78ch;
+}
+
+/* ---------- Findings ---------- */
+
+.finding-list {
+  list-style: none;
+}
+
+.finding-list li {
+  padding: 8px 0 8px 17px;
+  border-bottom: 1px solid var(--ink-750);
+  position: relative;
+  font-size: 13px;
+  color: var(--text-mid);
+}
+
+.finding-list li:last-child {
+  border-bottom: none;
+}
+
+.finding-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 15px;
+  width: 6px;
+  height: 1px;
+  background: var(--amber-dim);
+}
+
+.finding-list.risk li::before {
+  background: var(--reject);
+}
+
+/* ---------- Specialist columns ---------- */
+
+.specialists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 16px;
+}
+
+.spec-score {
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Status log ---------- */
+
+.log {
+  font-family: var(--mono);
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.log-line {
+  padding: 5px 0;
+  color: var(--text-mid);
+  display: flex;
+  gap: 10px;
+  animation: slip 0.26s ease-out;
+}
+
+.log-stage {
+  color: var(--amber);
+  flex-shrink: 0;
+  min-width: 92px;
+}
+
+@keyframes slip {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Chips / badges ---------- */
+
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: var(--rule);
+  border-radius: 2px;
+  color: var(--text-mid);
+}
+
+.chip-amber {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+  background: var(--amber-glow);
+}
+
+.chip-tool {
+  border-color: var(--approve-line);
+  color: var(--approve);
+  background: var(--approve-bg);
+}
+
+.chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.status-APPROVED {
+  border-color: var(--approve-line);
+  color: var(--approve);
+  background: var(--approve-bg);
+}
+.status-DRAFT {
+  border-color: var(--ink-600);
+  color: var(--text-lo);
+}
+.status-PENDING_APPROVAL {
+  border-color: var(--escalate-line);
+  color: var(--escalate);
+  background: var(--escalate-bg);
+}
+.status-REJECTED,
+.status-CREATE_FAILED {
+  border-color: var(--reject-line);
+  color: var(--reject);
+  background: var(--reject-bg);
+}
+
+/* ---------- Records ---------- */
+
+.record {
+  border: var(--rule);
+  border-radius: 2px;
+  background: var(--ink-750);
+  padding: 14px 16px;
+  transition: border-color 0.16s;
+}
+
+.record + .record {
+  margin-top: 10px;
+}
+
+.record:hover {
+  border-color: var(--ink-600);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.record-name {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-hi);
+}
+
+.record-desc {
+  color: var(--text-mid);
+  font-size: 12.5px;
+  margin-top: 6px;
+  max-width: 90ch;
+}
+
+/* ---------- Tool inspector ---------- */
+
+.tool {
+  border: var(--rule);
+  border-left: 2px solid var(--ink-600);
+  border-radius: 2px;
+  background: var(--ink-750);
+  padding: 13px 15px;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s;
+}
+
+.tool + .tool {
+  margin-top: 8px;
+}
+
+.tool:hover {
+  background: var(--ink-700);
+}
+
+.tool[aria-pressed="true"] {
+  border-left-color: var(--amber);
+  background: var(--ink-700);
+}
+
+.tool-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--amber);
+}
+
+.tool-desc {
+  color: var(--text-lo);
+  font-size: 12px;
+  margin-top: 5px;
+  line-height: 1.45;
+}
+
+pre.json {
+  background: var(--ink-900);
+  border: var(--rule);
+  border-radius: 2px;
+  padding: 14px;
+  overflow-x: auto;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-mid);
+  max-height: 520px;
+}
+
+/* ---------- Timeline ---------- */
+
+.timeline {
+  position: relative;
+  padding-left: 22px;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--ink-700);
+}
+
+.tl-item {
+  position: relative;
+  padding-bottom: 18px;
+}
+
+.tl-item::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-850);
+  border: 2px solid var(--amber-dim);
+}
+
+.tl-item:first-child::before {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 4px var(--amber-glow);
+}
+
+.tl-time {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-lo);
+}
+
+.tl-body {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-mid);
+}
+
+/* ---------- Utility ---------- */
+
+.stack > * + * {
+  margin-top: 15px;
+}
+
+.muted {
+  color: var(--text-lo);
+  font-size: 12.5px;
+}
+
+.empty {
+  text-align: center;
+  padding: 44px 20px;
+  color: var(--text-lo);
+}
+
+.empty-mark {
+  font-family: var(--serif);
+  font-size: 34px;
+  color: var(--ink-600);
+  margin-bottom: 10px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--amber-dim);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error {
+  border: 1px solid var(--reject-edge);
+  background: var(--reject-bg);
+  color: var(--reject-text);
+  border-radius: 2px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-size: 12.5px;
+}
+
+.kv dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  white-space: nowrap;
+}
+
+.kv dd {
+  font-family: var(--mono);
+  color: var(--text-mid);
+  word-break: break-all;
+}
+
+/* Tool-scope evidence on a specialist panel. A withheld tool is struck through
+   to make the negative visible: the point is what the skill did NOT grant. */
+.scope-skill {
+  font-size: 11px;
+  color: var(--amber);
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+
+.chip-withheld {
+  border-color: var(--ink-600);
+  color: var(--text-lo);
+  text-decoration: line-through;
+  opacity: 0.75;
+}

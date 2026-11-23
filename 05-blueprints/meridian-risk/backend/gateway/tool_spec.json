@@ -1,0 +1,77 @@
+[
+  {
+    "name": "get_customer_profile",
+    "description": "Retrieve the corporate customer's legal identity, incorporation details, industry, annual revenue, directors, beneficial owners, and any standing risk flags. Use this first to establish who the entity is before running credit or compliance checks.",
+    "inputSchema": {
+      "type": "object",
+      "description": "Customer lookup parameters",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Corporate customer identifier, e.g. CUST001"
+        }
+      },
+      "required": ["customer_id"]
+    }
+  },
+  {
+    "name": "credit_bureau_report",
+    "description": "Retrieve the credit bureau report: credit score and letter rating, existing credit facilities and utilization, payment history (on-time/late/defaults), audited financial statements, and key ratios (debt-to-equity, current ratio, net income). Use this to assess creditworthiness and repayment capacity.",
+    "inputSchema": {
+      "type": "object",
+      "description": "Customer lookup parameters",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Corporate customer identifier, e.g. CUST001"
+        }
+      },
+      "required": ["customer_id"]
+    }
+  },
+  {
+    "name": "sanctions_screen",
+    "description": "Screen the entity, its directors, and its beneficial owners against OFAC, UN, EU, and UK HMT sanctions lists plus PEP (politically exposed person) databases. Returns match details, KYC document verification status, AML risk rating, and whether enhanced due diligence is required. A non-clear result blocks straight-through approval.",
+    "inputSchema": {
+      "type": "object",
+      "description": "Customer lookup parameters",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Corporate customer identifier, e.g. CUST001"
+        }
+      },
+      "required": ["customer_id"]
+    }
+  },
+  {
+    "name": "transaction_history",
+    "description": "Retrieve 12-month transaction analytics: total inflow/outflow, average monthly volume, top counterparties with countries, domestic vs international split, exposure to high-risk jurisdictions, and detected suspicious patterns such as structuring or round-amount transactions. Use this for AML transaction-monitoring analysis.",
+    "inputSchema": {
+      "type": "object",
+      "description": "Customer lookup parameters",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Corporate customer identifier, e.g. CUST001"
+        }
+      },
+      "required": ["customer_id"]
+    }
+  },
+  {
+    "name": "adverse_media_scan",
+    "description": "Scan negative news and adverse media sources for the entity and its principals. Returns findings with severity and the date of the most recent check. Use this to surface reputational and regulatory risk not captured by sanctions screening.",
+    "inputSchema": {
+      "type": "object",
+      "description": "Customer lookup parameters",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Corporate customer identifier, e.g. CUST001"
+        }
+      },
+      "required": ["customer_id"]
+    }
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "customer_id": "CUST002",
+  "summary": {
+    "period": "last_12_months",
+    "total_inflow": 12000000,
+    "total_outflow": 13500000,
+    "average_monthly_volume": 1125000,
+    "transaction_count": 850
+  },
+  "top_counterparties": [
+    { "name": "Cloud Provider X", "country": "USA", "volume": 3000000, "type": "outflow" },
+    { "name": "Enterprise Client A", "country": "USA", "volume": 5000000, "type": "inflow" },
+    { "name": "Software Vendor B", "country": "Ireland", "volume": 1500000, "type": "outflow" }
+  ],
+  "geographic_distribution": {
+    "domestic": 85,
+    "international": 15
+  },
+  "high_risk_jurisdictions": [],
+  "suspicious_patterns": [],
+  "large_transactions_over_100k": 12
+}

@@ -1,0 +1,22 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Meridian Risk — KYC Onboarding Desk
+
+   Aesthetic: institutional risk terminal. Deep slate ground (or warm stone in
+   the light theme), amber/copper signal, editorial serif for headline moments,
+   mono for every number and identifier. Numbers are data: always mono, always
+   tabular.
+
+   This file is an index. Import order matters — tokens must be defined before
+   any rule references them.
+   ========================================================================== */
+
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/login.css";
+@import "./styles/architecture.css";
+@import "./styles/toggle.css";

@@ -1,0 +1,209 @@
+/*
+ * Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: MIT-0
+ */
+
+/* ==========================================================================
+   Candidate light palettes — PREVIEW ONLY, not part of the app bundle.
+
+   Each block overrides the light theme's tokens. The selector
+   [data-theme][data-palette] outranks the plain [data-theme="light"] block in
+   styles.css on specificity, so no !important is needed.
+
+   Token roles are identical in every theme:
+     ink-900  page ground
+     ink-850  panel surface / tab strip
+     ink-800  panel gradient start, grid line
+     ink-750  cards nested inside panels
+     ink-700  standard border
+     ink-600  stronger edge
+   In a light theme the panel tokens must be LIGHTER than the ground, so panels
+   read as paper resting on a surface.
+
+   Warm Stone & Copper was chosen and now lives in src/styles.css as the real
+   light theme, so it is deliberately NOT duplicated here — the preview's
+   "Shipped" option just omits data-palette. The blocks below are the
+   alternatives that were considered, kept so future palette work can be judged
+   on the real UI instead of on swatches.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   B. Slate Blueprint & Brass
+   Cool grey-blue ground with a warm brass accent — drafting paper, or a printed
+   prospectus. Crisper and more corporate; the warm/cool tension carries it.
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"][data-palette="slate"] {
+  --ink-900: #dde3e9;
+  --ink-850: #f1f5f8;
+  --ink-800: #e6ecf1;
+  --ink-750: #eaf0f4;
+  --ink-700: #b6c2ce;
+  --ink-600: #8f9fae;
+  --ink-500: #6b7c8b80;
+
+  --text-hi: #0e1a24;
+  --text-mid: #445666;
+  --text-lo: #74848f;
+
+  --grid-line: #d2dae2;
+  --vignette: #ffffff;
+  --masthead-from: #f1f5f8f2;
+  --masthead-to: #dde3e9d9;
+  --hover-tint: #0000000d;
+  --plate-glow: #ffffff;
+  --plate-base: #d5dde5;
+  --plate-line: #bcc8d4;
+
+  --amber: #8f6018;
+  --amber-dim: #b99a5f;
+  --amber-glow: #8f601814;
+  --amber-ink: #fffaf0;
+
+  --approve: #10614a;
+  --approve-bg: #10614a16;
+  --approve-line: #10614a45;
+  --escalate: #8a5510;
+  --escalate-bg: #8a551016;
+  --escalate-line: #8a551045;
+  --reject: #8e2333;
+  --reject-bg: #8e233314;
+  --reject-line: #8e233340;
+  --reject-edge: #8e23335c;
+  --reject-text: #74192a;
+  --neutral: #74848f;
+}
+
+/* --------------------------------------------------------------------------
+   C. Ledger Cream & Oxblood
+   Aged accounting stock. Oxblood and ledger-green carry the verdicts; antique
+   gold is reserved for accents and never for semantics.
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"][data-palette="ledger"] {
+  --ink-900: #e7e3d3;
+  --ink-850: #f6f3e8;
+  --ink-800: #ede9d9;
+  --ink-750: #f0ecdc;
+  --ink-700: #c7bfa4;
+  --ink-600: #a2977a;
+  --ink-500: #857a5e80;
+
+  --text-hi: #171a14;
+  --text-mid: #4f5244;
+  --text-lo: #7d7b64;
+
+  --grid-line: #dcd6c2;
+  --vignette: #fffef8;
+  --masthead-from: #f6f3e8f2;
+  --masthead-to: #e7e3d3d9;
+  --hover-tint: #0000000d;
+  --plate-glow: #fffef8;
+  --plate-base: #e0dbc7;
+  --plate-line: #cac2a7;
+
+  --amber: #8a6a14;
+  --amber-dim: #c0a862;
+  --amber-glow: #8a6a1414;
+  --amber-ink: #fffdf2;
+
+  --approve: #1c5c3a;
+  --approve-bg: #1c5c3a16;
+  --approve-line: #1c5c3a45;
+  --escalate: #96601a;
+  --escalate-bg: #96601a16;
+  --escalate-line: #96601a45;
+  --reject: #8b2224;
+  --reject-bg: #8b222414;
+  --reject-line: #8b222440;
+  --reject-edge: #8b22245c;
+  --reject-text: #71191c;
+  --neutral: #7d7b64;
+}
+
+/* ==========================================================================
+   Preview harness chrome — deliberately dark and neutral in every palette, so
+   it never contaminates the colours being judged.
+   ========================================================================== */
+
+.pv-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 20px;
+  background: #14161aeb;
+  backdrop-filter: blur(14px);
+  border-top: 1px solid #ffffff1f;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #d6d9de;
+  flex-wrap: wrap;
+}
+
+.pv-bar strong {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: #8c93a0;
+  font-weight: 500;
+}
+
+.pv-group {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.pv-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid #ffffff2b;
+  background: #ffffff0f;
+  color: #d6d9de;
+  border-radius: 2px;
+  padding: 6px 11px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.pv-btn:hover {
+  background: #ffffff1f;
+  color: #fff;
+}
+
+.pv-btn[aria-pressed="true"] {
+  background: #e8a33d;
+  border-color: #e8a33d;
+  color: #17130a;
+  font-weight: 600;
+}
+
+.pv-swatches {
+  display: flex;
+  margin-left: 4px;
+}
+
+.pv-swatch {
+  width: 15px;
+  height: 15px;
+  border: 1px solid #00000038;
+}
+
+.pv-note {
+  margin-left: auto;
+  color: #8c93a0;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+/* Keep the fixed bar from covering the last row of content. */
+body {
+  padding-bottom: 54px;
+}
