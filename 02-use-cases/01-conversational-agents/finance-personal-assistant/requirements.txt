@@ -137,7 +137,7 @@ markupsafe==3.0.2
     # via jinja2
 matplotlib==3.10.6
     # via finance-assistant (pyproject.toml)
-mcp==1.23.0
+mcp==1.30.0
     # via strands-agents
 mdurl==0.1.2
     # via markdown-it-py
