@@ -127,10 +127,8 @@ python 03-web-search/02-strands-agent/web_search_strands.py
 
 # Amazon Bedrock Managed Knowledge Base
 pip install -r 04-fmkb-managed-kb/requirements.txt
-python 04-fmkb-managed-kb/01-raw-mcp/setup_gateway.py \
-  --kb-id "<YOUR_KB_ID>" \
-  --name-prefix fmkb-sample
-source 04-fmkb-managed-kb/.env.fmkb-gateway
+# Create connector.yaml and export its Gateway URL as described in 04-fmkb-managed-kb/README.md
+export REGION="$AWS_REGION" TARGET_NAME=knowledge
 python 04-fmkb-managed-kb/01-raw-mcp/raw_mcp_call.py \
   "What does the knowledge base say about X?"
 

@@ -1,53 +1,7 @@
-# Auto-Register Bedrock Knowledge Bases on AgentCore Gateway
+# Bedrock KB registration on Gateway
 
-## Overview
+For a working example, use the [single-KB Gateway connector](../../../01-features/03-connect-your-agent-to-anything/04-fmkb-managed-kb/). It binds an owner-selected managed knowledge base to the built-in Retrieve target with scoped permissions. Both raw MCP retrieval and optional Strands Runtime hosting are covered there.
 
-This tutorial demonstrates how to build a self-registering Knowledge Base gateway using Amazon Bedrock AgentCore Gateway. When a new Bedrock Knowledge Base is created anywhere in the account, it is automatically discovered and exposed as an MCP tool on the gateway — no manual configuration needed.
+The [historical notebook](https://github.com/awslabs/agentcore-samples/tree/5cca7e89f8109115766b9f7df3f0b7e98ca9eab1/03-integrations/gateway/bedrock-kb-auto-register) installed Starter Toolkit, created a Cognito/Gateway/Lambda router and used Lambda + EventBridge for KB lifecycle events. It also required a manual tool-schema synchronization step. **The replacement does not automatically discover or register newly created KBs, provide its old OAuth caller contract or retain the custom router.** Explicit registration avoids exposing a newly created knowledge base simply because it appeared in the account. For each additional KB, obtain owner approval and review its data boundary before exposing a target.
 
-The system uses EventBridge to detect Knowledge Base lifecycle events (create/delete) via CloudTrail, and a Lambda function to update the gateway's tool schema in real time.
-
-![Architecture](images/architecture.png)
-
-## Tutorial Details
-
-| Information          | Details                                                                  |
-|:---------------------|:-------------------------------------------------------------------------|
-| Tutorial type        | Interactive                                                              |
-| AgentCore components | AgentCore Gateway                                                        |
-| Agentic Framework    | Strands Agents                                                           |
-| Gateway Target type  | Lambda                                                                   |
-| Agent                | Strands                                                                  |
-| Inbound Auth IdP     | Amazon Cognito                                                           |
-| Outbound Auth        | N/A (Lambda target uses IAM)                                             |
-| LLM model            | Anthropic Claude Sonnet 4                                                |
-| Tutorial components  | Creating AgentCore Gateway, Lambda targets, EventBridge auto-registration |
-| Tutorial vertical    | Knowledge Management                                                     |
-| Example complexity   | Intermediate                                                             |
-| SDK used             | boto3                                                                    |
-
-## Key Features
-
-* Deploy a Lambda-backed AgentCore Gateway that routes queries to multiple Bedrock Knowledge Bases
-* Automatically register new Knowledge Bases as gateway tools via EventBridge + CloudTrail
-* Automatically unregister deleted Knowledge Bases
-* Query Knowledge Bases through a Strands Agent connected to the gateway
-* Create test Knowledge Bases with S3 Vectors storage
-
-## Prerequisites
-
-1. AWS credentials configured (`aws configure`) with permissions to create AgentCore resources, Lambda functions, IAM roles, EventBridge rules, and Cognito user pools
-2. CloudTrail enabled in the account (required for EventBridge to detect KB lifecycle events)
-3. Bedrock model access enabled (Claude Sonnet 4, Titan Embeddings v2)
-4. Python 3.10+
-
-## Tutorial
-
-- [Auto-Register Bedrock Knowledge Bases on AgentCore Gateway](bedrock_kb_auto_register_gateway.ipynb)
-
-## Resources
-
-- [Amazon Bedrock Knowledge Bases](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base.html)
-- [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
-- [Amazon EventBridge](https://docs.aws.amazon.com/eventbridge/latest/userguide/what-is-amazon-eventbridge.html)
-- [AgentCore Gateway tutorials](../../../01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/)
-- [Strands Agents](https://strandsagents.com/)
+If you ran the old automation, reconcile its EventBridge rule/targets, router and registration functions, IAM roles, Gateway targets, Cognito resources and test KB against the recorded account, Region and IDs. Disable the owned event rule before decommissioning; do not delete a shared KB or role by name. No resources are removed by this documentation change.

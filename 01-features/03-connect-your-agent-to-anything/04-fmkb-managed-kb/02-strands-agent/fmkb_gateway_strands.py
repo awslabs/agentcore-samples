@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from contextlib import aclosing
 
 from bedrock_agentcore import BedrockAgentCoreApp
 from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
@@ -35,6 +37,10 @@ app = BedrockAgentCoreApp()
 
 
 def _build_mcp_client() -> MCPClient:
+    if not re.fullmatch(
+        rf"https://[A-Za-z0-9-]+\.gateway\.bedrock-agentcore\.{re.escape(REGION)}\.amazonaws\.com/mcp", GATEWAY_URL
+    ):
+        raise ValueError("Use the regional Gateway URL from the stack")
     return MCPClient(
         lambda: aws_iam_streamablehttp_client(
             endpoint=GATEWAY_URL,
@@ -52,18 +58,22 @@ async def handler(payload):
         return
 
     with _build_mcp_client() as mcp_client:
-        tools = list(mcp_client.list_tools_sync())
+        tools = [t for t in mcp_client.list_tools_sync() if t.tool_name == "knowledge___Retrieve"]
+        if len(tools) != 1:
+            raise RuntimeError("Expected the knowledge___Retrieve tool")
         logger.info("discovered %d MCP tool(s) from gateway", len(tools))
 
         agent = Agent(
             model=MODEL_ID,
             system_prompt=SYSTEM_PROMPT,
             tools=tools,
+            callback_handler=None,
         )
 
-        async for event in agent.stream_async(prompt):
-            if "data" in event:
-                yield event["data"]
+        async with aclosing(agent.stream_async(prompt)) as events:
+            async for event in events:
+                if isinstance(event.get("data"), str) and event["data"]:
+                    yield event["data"]
 
 
 if __name__ == "__main__":
