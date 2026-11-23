@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A JWT-authenticated MCP Gateway exposing one read-only Elasticsearch policy search
+Parameters:
+  ArtifactBucket:
+    Type: String
+  ArtifactKey:
+    Type: String
+  ArtifactVersion:
+    Type: String
+    MinLength: 1
+  GatewayName:
+    Type: String
+    AllowedPattern: '[a-z][a-z0-9-]{2,39}'
+  UserPoolId:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+_[A-Za-z0-9]+'
+  AppClientId:
+    Type: String
+    AllowedPattern: '[a-z0-9]{1,128}'
+  SearchScope:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9._/-]+/[A-Za-z0-9._-]+'
+  ElasticOrigin:
+    Type: String
+    AllowedPattern: 'https://[a-zA-Z0-9.-]+(:443)?/?'
+  ElasticIndex:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9._-]{0,127}'
+  KeySecretArn:
+    Type: String
+    Description: Full ARN of the same-account, same-region Secrets Manager secret (encoded API key as plain SecretString)
+    AllowedPattern: 'arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+'
+Resources:
+  FunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: {RetentionInDays: 7}
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadSearchKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref KeySecretArn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt FunctionLogs.Arn
+  Search:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref ArtifactKey
+        S3ObjectVersion: !Ref ArtifactVersion
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Timeout: 15
+      Role: !GetAtt FunctionRole.Arn
+      LoggingConfig: {LogGroup: !Ref FunctionLogs}
+      Environment:
+        Variables:
+          ELASTIC_ORIGIN: !Ref ElasticOrigin
+          ELASTIC_INDEX: !Ref ElasticIndex
+          KEY_SECRET_ARN: !Ref KeySecretArn
+  GatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {'aws:SourceAccount': !Ref 'AWS::AccountId'}
+              ArnLike: {'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*'}
+      Policies:
+        - PolicyName: InvokeSearch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Search.Arn
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Ref GatewayName
+      ProtocolType: MCP
+      AuthorizerType: CUSTOM_JWT
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPoolId}/.well-known/openid-configuration'
+          AllowedClients: [!Ref AppClientId]
+          AllowedScopes: [!Ref SearchScope]
+      RoleArn: !GetAtt GatewayRole.Arn
+  Target:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      Name: policies
+      GatewayIdentifier: !GetAtt Gateway.GatewayIdentifier
+      CredentialProviderConfigurations: [{CredentialProviderType: GATEWAY_IAM_ROLE}]
+      TargetConfiguration:
+        Mcp:
+          Lambda:
+            LambdaArn: !GetAtt Search.Arn
+            ToolSchema:
+              InlinePayload:
+                - Name: search
+                  Description: Find excerpts in the approved synthetic support-policy index.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      query: {Type: string, Description: A short text query}
+                    Required: [query]
+Outputs:
+  GatewayUrl:
+    Value: !GetAtt Gateway.GatewayUrl
