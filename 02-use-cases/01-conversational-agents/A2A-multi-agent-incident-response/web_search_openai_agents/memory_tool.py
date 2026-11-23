@@ -70,7 +70,7 @@ class AgentMemoryTools:
                     # We will retrieve memories for the given namespaces if any
                     memories = client.retrieve_memories(
                         memory_id=memory_id,
-                        namespace=namespace.format(actorId=actor_id),
+                        namespace=namespace.format(actorId=actor_id, sessionId=session_id),
                         query=query,
                         top_k=top_k,
                     )
@@ -208,7 +208,7 @@ class AgentMemoryTools:
                 namespace = namespaces[namespace_type]
                 memories = client.retrieve_memories(
                     memory_id=memory_id,
-                    namespace=namespace.format(actorId=actor_id),
+                    namespace=namespace.format(actorId=actor_id, sessionId=session_id),
                     query=query,
                     top_k=top_k,
                 )

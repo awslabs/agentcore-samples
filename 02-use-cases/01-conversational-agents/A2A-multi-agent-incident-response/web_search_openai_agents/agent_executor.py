@@ -25,17 +25,12 @@ class WebSearchAgentExecutor(AgentExecutor):
 
     def __init__(self):
         """Initialize the executor"""
-        self._agent = None
         self._active_tasks = {}
         logger.info("WebSearchAgentExecutor initialized")
 
     async def _get_agent(self, session_id: str, actor_id: str):
-        """Lazily initialize and return the agent"""
-        if self._agent is None:
-            logger.info("Creating web search agent...")
-            self._agent = create_agent(session_id=session_id, actor_id=actor_id)
-            logger.info("Web search agent created successfully")
-        return self._agent
+        """Each request needs its own actor- and session-bound Memory tools."""
+        return create_agent(session_id=session_id, actor_id=actor_id)
 
     async def _execute_streaming(self, agent, user_message: str, updater: TaskUpdater, task_id: str) -> None:
         """Execute agent with streaming and update task status incrementally."""
@@ -102,18 +97,13 @@ class WebSearchAgentExecutor(AgentExecutor):
         Execute the agent's logic for a given request context.
         """
         # Extract session and actor IDs from headers
-        session_id = None
+        session_id = actor_id = None
 
         if context.call_context:
             headers = context.call_context.state.get("headers", {})
             session_id = headers.get("x-amzn-bedrock-agentcore-runtime-session-id")
             actor_id = headers.get("x-amzn-bedrock-agentcore-runtime-custom-actorid")
-        if not actor_id:
-            logger.error("Session ID is not set")
-            raise Exception(error=InvalidParamsError())
-
-        if not session_id:
-            logger.error("Actor ID is not set")
+        if not actor_id or not session_id:
             raise ServerError(error=InvalidParamsError())
 
         # Get or create task
