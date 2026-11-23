@@ -118,6 +118,7 @@
 - Renya Kujirada (ren8k)
 - Cristiano Scandura (scandura)
 - palbiren
+- Vivek Dalal (vivdalal)
 - Gui Ruggiero (guiruggiero)
 - Julia Furst Morgado (juliafmorgado)
 - Visakh Madathil (vmmadathil)
@@ -149,4 +150,3 @@
 - Santhosh Kuriakose (kuriaks1)
 - Phelipe Fabres (phelipefabres)
 - Joshua M. Smith (joshuamarksmith)
-- Vivek Dalal (vivdalal)
