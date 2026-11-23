@@ -23,7 +23,6 @@ ADOT then exports those spans to CloudWatch.
 - AWS credentials configured
 - Amazon Bedrock model access (Claude Haiku 4.5)
 - **CloudWatch Transaction Search enabled** — required before traces appear:
-  - IaC: [`05-infrastructure-as-code/01-enable-transaction-search/`](../../../../05-infrastructure-as-code/01-enable-transaction-search/)
   - Console: [CloudWatch > X-Ray settings > Transaction Search](https://console.aws.amazon.com/cloudwatch/home#xray:settings/transaction-search)
 
 ## Quick Start
