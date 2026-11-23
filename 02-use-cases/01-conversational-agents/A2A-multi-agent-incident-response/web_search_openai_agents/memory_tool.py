@@ -3,9 +3,10 @@
 
 import logging
 import time
-from typing import Dict, Optional
-from bedrock_agentcore.memory import MemoryClient
+
 from agents import function_tool
+from bedrock_agentcore.memory import MemoryClient
+from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class AgentMemoryTools:
         self.session_id = session_id
         self.namespaces = self._get_namespaces()
 
-    def _get_namespaces(self) -> Dict:
+    def _get_namespaces(self) -> dict:
         """Get namespace mapping for memory strategies.
         In this, we get the mapping strategies based on the
         different namespaces in memory
@@ -30,8 +31,8 @@ class AgentMemoryTools:
         try:
             strategies = self.client.get_memory_strategies(self.memory_id)
             return {i["type"]: i["namespaces"][0] for i in strategies}
-        except Exception as e:
-            logger.error(f"Failed to get namespaces: {e}")
+        except (BotoCoreError, ClientError, KeyError, IndexError, ValueError):
+            logger.warning("Memory namespaces unavailable")
             return {}
 
     def create_memory_tools(self):
@@ -45,7 +46,7 @@ class AgentMemoryTools:
         namespaces = self.namespaces
 
         @function_tool
-        def retrieve_monitoring_context(query: str, context_type: Optional[str] = None, top_k: int = 3) -> str:
+        def retrieve_monitoring_context(query: str, context_type: str | None = None, top_k: int = 3) -> str:
             """Retrieve monitoring context from memory using semantic search.
 
             Args:
@@ -90,9 +91,8 @@ class AgentMemoryTools:
                 else:
                     return "No relevant context found for the query."
 
-            except Exception as e:
-                logger.error(f"Failed to retrieve monitoring context: {e}")
-                return f"Error retrieving context: {str(e)}"
+            except (BotoCoreError, ClientError, KeyError, ValueError):
+                return "Memory context unavailable"
 
         @function_tool
         def save_interaction_to_memory(user_message: str, assistant_response: str) -> str:
@@ -120,9 +120,8 @@ class AgentMemoryTools:
                 logger.info("Successfully saved interaction to memory")
                 return "Interaction saved to memory successfully."
 
-            except Exception as e:
-                logger.error(f"Failed to save interaction to memory: {e}")
-                return f"Error saving interaction: {str(e)}"
+            except (BotoCoreError, ClientError, ValueError):
+                return "Unable to save interaction"
 
         @function_tool
         def get_recent_conversation_history(k_turns: int = 5) -> str:
@@ -158,9 +157,8 @@ class AgentMemoryTools:
                 else:
                     return "No recent conversation history found."
 
-            except Exception as e:
-                logger.error(f"Failed to retrieve conversation history: {e}")
-                return f"Error retrieving history: {str(e)}"
+            except (BotoCoreError, ClientError, ValueError):
+                return "Conversation history unavailable"
 
         @function_tool
         def save_custom_memory(content: str, memory_type: str = "SemanticMemory") -> str:
@@ -184,9 +182,8 @@ class AgentMemoryTools:
                 logger.info(f"Successfully saved custom content to {memory_type}")
                 return f"Custom content saved to {memory_type} successfully."
 
-            except Exception as e:
-                logger.error(f"Failed to save custom content: {e}")
-                return f"Error saving custom content: {str(e)}"
+            except (BotoCoreError, ClientError, ValueError):
+                return "Unable to save custom content"
 
         @function_tool
         def search_memory_by_namespace(query: str, namespace_type: str, top_k: int = 5) -> str:
@@ -227,9 +224,8 @@ class AgentMemoryTools:
                 else:
                     return f"No results found in {namespace_type} for query: {query}"
 
-            except Exception as e:
-                logger.error(f"Failed to search memory: {e}")
-                return f"Error searching memory: {str(e)}"
+            except (BotoCoreError, ClientError, KeyError, ValueError):
+                return "Memory search unavailable"
 
         # Return all the tools
         return [

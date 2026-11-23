@@ -1,3 +1,5 @@
+import logging
+
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -12,7 +14,6 @@ from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 from agent import _call_agent_stream, create_agent
 from openai.types.responses import ResponseTextDeltaEvent
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,7 @@ class WebSearchAgentExecutor(AgentExecutor):
 
                 # Handle error events
                 if "error" in stream_event:
-                    error_msg = stream_event["error"]
-                    logger.error(f"Error in stream: {error_msg}")
-                    raise Exception(error_msg)
+                    raise RuntimeError("Search stream failed")
 
                 # Handle streaming events
                 if "event" in stream_event:
@@ -85,7 +84,7 @@ class WebSearchAgentExecutor(AgentExecutor):
             await updater.complete()
 
         except Exception as e:
-            logger.error(f"Error in streaming execution: {e}", exc_info=True)
+            logger.warning("Streaming failed (%s)", type(e).__name__)
             raise
 
     async def execute(
@@ -125,8 +124,6 @@ class WebSearchAgentExecutor(AgentExecutor):
                 logger.error("No user message found in context")
                 raise ServerError(error=InvalidParamsError())
 
-            logger.info(f"User message: '{user_message}'")
-
             # Get the agent instance
             agent = await self._get_agent(session_id=session_id, actor_id=actor_id)
 
@@ -143,7 +140,7 @@ class WebSearchAgentExecutor(AgentExecutor):
             # Re-raise ServerError as-is
             raise
         except Exception as e:
-            logger.error(f"Error executing task {task_id}: {e}", exc_info=True)
+            logger.warning("Task execution failed (%s)", type(e).__name__)
             raise ServerError(error=InternalError()) from e
         finally:
             # Clean up task from active tasks
@@ -173,5 +170,5 @@ class WebSearchAgentExecutor(AgentExecutor):
                 logger.warning(f"No task found for task_id {task_id}")
 
         except Exception as e:
-            logger.error(f"Error cancelling task {task_id}: {e}", exc_info=True)
+            logger.warning("Task cancellation failed (%s)", type(e).__name__)
             raise ServerError(error=InternalError()) from e
