@@ -11,7 +11,6 @@ Agents that interact with users in real time. Users authenticate through an iden
 | Sample | Description | Vertical | Key Features |
 |--------|-------------|----------|--------------|
 | [A2A-multi-agent-incident-response](./01-conversational-agents/A2A-multi-agent-incident-response/) | Multi-agent incident response implemented with three A2A frameworks | IT / DevOps | Runtime, Gateway, Memory, A2A (3 frameworks) |
-| [AWS-operations-agent](./01-conversational-agents/AWS-operations-agent/) | Intelligent AWS operations assistant with Okta authentication and comprehensive monitoring capabilities | Cloud Operations | Runtime, Gateway, Memory, Policy, Observability |
 | [customer-support-assistant-vpc](./01-conversational-agents/customer-support-assistant-vpc/) | Production-ready customer service agent with memory, knowledge base integration, and Google OAuth | Retail / E-commerce | Runtime, Gateway (VPC) |
 | [customer-ticket-operations](./01-conversational-agents/customer-ticket-operations/) | Support-ticket agent with guardrails, human approval for ticket closures, and an evaluation release gate | Customer Support | Runtime, Gateway, Policy, Identity (Cognito), Evaluations, Observability |
 | [data-analyst-conversational-assistant](./01-conversational-agents/data-analyst-conversational-assistant/) | Data analysis assistant with Amplify frontend and CDK deployment | Data and Analytics | Runtime, Gateway, Memory, Policy, Identity, Evaluations, Observability |
