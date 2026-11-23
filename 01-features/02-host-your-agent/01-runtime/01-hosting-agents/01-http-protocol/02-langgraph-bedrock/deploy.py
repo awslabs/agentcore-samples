@@ -269,12 +269,15 @@ def create_runtime(role_arn: str, state) -> dict:
     control = boto3.client("bedrock-agentcore-control", region_name=state["region"])
 
     print(f"\n  Creating AgentCore Runtime '{AGENT_NAME}'...")
+    artifact = {"bucket": state["bucket"], "prefix": state["key"]}
+    if "version_id" in state:
+        artifact["versionId"] = state["version_id"]
     with creating(state, "Runtime"):
         response = control.create_agent_runtime(
             agentRuntimeName=AGENT_NAME,
             agentRuntimeArtifact={
                 "codeConfiguration": {
-                    "code": {"s3": {"bucket": state["bucket"], "prefix": state["key"]}},
+                    "code": {"s3": artifact},
                     "runtime": PYTHON_RUNTIME,
                     "entryPoint": [ENTRY_POINT],
                 }

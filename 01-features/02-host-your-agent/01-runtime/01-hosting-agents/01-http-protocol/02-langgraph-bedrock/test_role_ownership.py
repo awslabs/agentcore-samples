@@ -198,7 +198,10 @@ def test_happy_path_and_retry_after_s3_failure(state, aws):
     runtime = {"agentRuntimeId": "example-runtime", "agentRuntimeArn": "example-arn"}
     control.create_agent_runtime.return_value = runtime
     control.get_agent_runtime.return_value = {"status": "READY", "platformVersion": "V2"}
+    state.update(etag='"test"', version_id="test-version")
     deploy.create_runtime(ROLE_DATA["Arn"], state)
+    code = control.create_agent_runtime.call_args.kwargs["agentRuntimeArtifact"]["codeConfiguration"]["code"]
+    assert code == {"s3": {"bucket": "example", "prefix": "example/code.zip", "versionId": "test-version"}}
     timestamp = ROLE_DATA["CreateDate"]
     control.create_agent_runtime_endpoint.return_value = {
         "agentRuntimeEndpointArn": "example-ep",
@@ -206,8 +209,6 @@ def test_happy_path_and_retry_after_s3_failure(state, aws):
     }
     control.list_agent_runtime_endpoints.return_value = {"runtimeEndpoints": [{"name": "default", "status": "READY"}]}
     deploy.create_endpoint(runtime["agentRuntimeId"], state)
-    state.update(etag='"test"', version_id="test-version")
-    receipt.save(state)
     control.get_agent_runtime_endpoint.side_effect = [{"status": "READY", "createdAt": timestamp}, missing()]
     control.get_agent_runtime.side_effect = [{"status": "READY"}, missing()]
     s3 = clients["s3"]
