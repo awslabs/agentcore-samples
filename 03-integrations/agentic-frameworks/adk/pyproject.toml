@@ -1,0 +1,16 @@
+[project]
+name = "agentcore-google-adk"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+    "google-adk==2.15.0",
+    "google-genai==2.34.0",
+    "bedrock-agentcore==1.27.0",
+    "starlette==1.10.0",
+]
+
+[dependency-groups]
+dev = ["httpx==0.28.1"]
+
+[tool.agentcore]
+entrypoint = "adk_agent_google_search.py"
