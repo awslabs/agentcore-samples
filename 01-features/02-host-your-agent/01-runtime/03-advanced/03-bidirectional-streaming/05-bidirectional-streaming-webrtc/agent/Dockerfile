@@ -3,9 +3,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2,<27' \
+    && python -m pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY bot.py audio.py kvs.py nova_sonic.py ./
 
 EXPOSE 8080
 

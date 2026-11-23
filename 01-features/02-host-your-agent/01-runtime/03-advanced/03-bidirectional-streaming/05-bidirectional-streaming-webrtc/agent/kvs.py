@@ -1,6 +1,6 @@
 """KVS signaling channel management.
 
-Handles creating/finding a KVS signaling channel and fetching
+Handles looking up a separately owned KVS signaling channel and fetching
 TURN/ICE server credentials for WebRTC connections.
 """
 
@@ -13,17 +13,12 @@ _https_endpoint = None
 
 
 def init(channel_name, region):
-    """Initialize KVS: find or create signaling channel, resolve HTTPS endpoint."""
+    """Resolve an existing signaling channel and its HTTPS endpoint."""
     global channel_arn, _https_endpoint
     client = boto3.client("kinesisvideo", region_name=region)
 
-    # Find existing channel or create a new one
-    try:
-        resp = client.describe_signaling_channel(ChannelName=channel_name)
-        channel_arn = resp["ChannelInfo"]["ChannelARN"]
-    except client.exceptions.ResourceNotFoundException:
-        resp = client.create_signaling_channel(ChannelName=channel_name, ChannelType="SINGLE_MASTER")
-        channel_arn = resp["ChannelARN"]
+    resp = client.describe_signaling_channel(ChannelName=channel_name)
+    channel_arn = resp["ChannelInfo"]["ChannelARN"]
     logger.info(f"Signaling channel: {channel_arn}")
 
     # Resolve the HTTPS endpoint for ICE server requests

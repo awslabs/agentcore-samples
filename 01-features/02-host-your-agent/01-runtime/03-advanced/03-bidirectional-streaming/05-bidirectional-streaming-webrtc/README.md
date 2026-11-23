@@ -1,212 +1,65 @@
-# Minimal WebRTC Voice Agent with KVS
+# WebRTC voice agent with Kinesis Video Streams and Nova Sonic
 
-Minimal example demonstrating WebRTC audio streaming with AWS Nova Sonic.
+Speak into a browser microphone and receive audio back over WebRTC. FastAPI handles signaling; `aiortc` and `av` convert incoming audio to 16 kHz PCM and return 24 kHz audio from Nova Sonic. Kinesis Video Streams (KVS) supplies ICE/TURN servers. The browser can signal a local Python process or an IAM-authenticated AgentCore Runtime V2. The media path is the same.
 
-## Project Structure
+## Prerequisites
 
-```
-agent/
-  bot.py              - FastAPI server, WebRTC offer/answer, ICE handling
-  kvs.py              - KVS signaling channel and TURN server helpers
-  audio.py            - Audio resampling (av) and WebRTC output track (av.AudioFifo)
-  nova_sonic.py       - Nova Sonic bidirectional streaming session
-  requirements.txt
-  Dockerfile
-  .env.example
-server/
-  index.html          - Browser client (WebRTC + optional AgentCore runtime)
-  server.py           - Static file server
-  requirements.txt
-deploy.py               - Builds the image and deploys to AgentCore Runtime V2 (VPC mode)
-kvs-iam-policy.json     - Minimal IAM policy for KVS
-bedrock-iam-policy.json - Minimal IAM policy for Nova Sonic
-```
+Use a sandbox account and a Region supporting Nova Sonic and Runtime V2. Bedrock inference, KVS, ECR, Runtime, NAT gateways and network traffic can incur charges. Create a dedicated `SINGLE_MASTER` KVS signaling channel in that Region, or get permission from the owner of an existing channel. The agent describes the named channel; it never creates or deletes one.
 
-## Requirements
-
-- **Python 3.12+** (required for aws-sdk-bedrock-runtime)
-- AWS credentials configured
-- **VPC with internet egress** for AgentCore runtime deployment (see setup below)
-
-## VPC Setup for AgentCore runtime
-
-The agent needs internet egress to reach KVS TURN servers for WebRTC connectivity. If you already have a VPC with a private subnet that has NAT gateway access, skip to [Deploying to AgentCore runtime](#deploying-to-agentcore-runtime).
-
-### 1. Create a VPC with public and private subnets
-
-1. Open the [VPC console](https://console.aws.amazon.com/vpc/)
-2. Click **Create VPC**
-3. Select **VPC and more**
-4. Set a name (e.g. `webrtc-bot-example`)
-5. Keep the default CIDR (`10.0.0.0/16`)
-6. Set **Number of Availability Zones** to **1**
-7. Set **Number of public subnets** to **1**
-8. Set **Number of private subnets** to **1**
-9. Set **NAT gateways** to **In 1 AZ**
-10. Click **Create VPC**
-
-### 2. Note the IDs
-
-From the VPC console, copy:
-- **Private subnet ID** (e.g. `subnet-0123456789abcdef0`) — this is where the agent runs
-- **Security group ID** — the default security group created with the VPC (e.g. `sg-0123456789abcdef0`)
-
-You'll pass these to `deploy.py` as `--subnets` and `--security-groups` below.
-
-## Local Setup
-
-### 1. Agent
+Use Python 3.12, AWS CLI and a short-lived AWS profile. Don't put credentials in source, a Docker build context or the browser. Start from this directory:
 
 ```bash
-cd agent
-python3.12 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # Edit with your AWS credentials
-python bot.py          # http://localhost:8080
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r server/requirements.txt
+export AWS_PROFILE=my-sandbox AWS_REGION=us-west-2
+export KVS_CHANNEL_NAME=my-webrtc-channel
+aws sts get-caller-identity
 ```
 
-### 2. Server
+## Run locally
+
+Install `agent/requirements.txt` in the active environment. In one terminal run `python agent/bot.py`; in another run `python server/server.py`. Open **http://localhost:7860**, allow microphone access, and click **Connect**. The agent uses your AWS credential chain for the selected KVS channel and model. Local tests with real speech still make billable AWS calls.
+
+## Run on AgentCore Runtime V2
+
+The deploy script creates **one** Runtime. Bring an execution role, private ECR repository and image, signaling channel, private subnets and security group; none of them is modified by the deployer. This replaces automatic CodeBuild, ECR and role provisioning. An existing build pipeline can supply the image instead of local Docker.
+
+1. Prepare the role to [run an AgentCore container](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html), scoped to the image repository and runtime. The trust principal is `bedrock-agentcore.amazonaws.com`; constrain its source account and Runtime ARN. Add the channel actions in [kvs-iam-policy.json](kvs-iam-policy.json) and the model action in [bedrock-iam-policy.json](bedrock-iam-policy.json), replacing the uppercase placeholders with the actual values. The foundation-model ARN has an empty account field. Apply permissions **before** creation: the container looks up KVS at startup. Use a profile authorized to pass only this role and to create, tag, read and delete the sample Runtime. The browser server's profile only needs invocation of the chosen Runtime for the hosted demo.
+2. Select **private subnets with NAT egress** and a security group allowing outbound traffic to KVS TURN servers. PUBLIC mode does not provide the outbound UDP needed here. Reuse operator-approved networking rather than changing routes or security groups in the helper.
+3. Build the `agent/` Dockerfile for Linux ARM64. Example from this directory, with `ECR_REPO` set to an existing repository name. Choose a fresh tag in an immutable repository. The documented example assumes commercial AWS.
 
 ```bash
-cd server
-pip install -r requirements.txt
-python server.py       # http://localhost:7860
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+TAG="webrtc-$(date -u +%Y%m%dT%H%M%SZ)"
+aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+docker buildx build --platform linux/arm64 --provenance=false --push -t "$REGISTRY/$ECR_REPO:$TAG" agent/
+DIGEST=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$ECR_REPO" --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
 ```
 
-### 3. Test
-
-Open `http://localhost:7860` and click "Connect".
-
-## Deploying to AgentCore Runtime
-
-The agent runs on **AgentCore Runtime V2**. `deploy.py` builds the ARM64 container with CodeBuild (no local Docker needed), creates the execution role with the KVS and Bedrock permissions already attached, and then creates the runtime with `platformVersion="V2"`.
-
-### 1. Install the deployment dependencies
+4. Set `ROLE_ARN`, `SUBNET_ID` and `SG_ID` to your prepared resources. Use boto3 1.43.95 or newer for the `platformVersion` field. The script checks the caller's account, requests VPC/HTTP/V2 and polls until the service reports V2 and READY. It does not update a same-name Runtime.
 
 ```bash
-pip install "boto3>=1.43.95" bedrock-agentcore-starter-toolkit PyYAML
+python deploy.py --region "$AWS_REGION" --account "$ACCOUNT" create \
+  --image "$REGISTRY/$ECR_REPO@$DIGEST" --role "$ROLE_ARN" --channel "$KVS_CHANNEL_NAME" \
+  --subnets "$SUBNET_ID" --security-groups "$SG_ID"
 ```
 
-`boto3>=1.43.95` is required to pass `platformVersion` on `CreateAgentRuntime`. An older version fails with `ParamValidationError`.
+5. Start `python server/server.py --runtime-arn <ARN-from-create>` and open **http://localhost:7860**. Keep this single-user server on loopback; don't expose it through a tunnel or reverse proxy. It signs signaling requests for the one ARN selected at launch. The browser never needs AWS keys. Click **Force TURN only** to exercise the relay rather than a direct media connection.
 
-### 2. Deploy
-
-From this directory, using the private subnet and security group from the VPC setup above:
+## Cleanup and recovery
 
 ```bash
-export ACCOUNT_ID=123456789012
-
-python deploy.py \
-  --region us-west-2 \
-  --subnets subnet-0123456789abcdef0 \
-  --security-groups sg-0123456789abcdef0
+python deploy.py --region "$AWS_REGION" --account "$ACCOUNT" cleanup
 ```
 
-The account ID must match the credentials you are deploying with -- it is substituted into the IAM policy resource ARNs, so a mismatch produces a runtime that starts but is denied access to KVS and Bedrock. `deploy.py` prints the account it is using before creating anything.
+Keep `webrtc-runtime.json` until deletion completes. Cleanup verifies caller account, Region, exact Runtime ARN, name and deployment tag, requests deletion by ID and waits for absence. A timeout or tag mismatch retains the receipt. If create ended without a response, the incomplete receipt contains a unique tag value: inspect the service in the recorded account and Region, reconcile by tag and creation history, and remove the receipt only after confirming no owned resource remains. Do not delete or update a resource just because the name matches. For an older deployment, use its original ID and ownership records instead; this helper will not adopt it.
 
-**VPC network mode is required.** PUBLIC network mode does not support outbound UDP, which WebRTC needs to reach the KVS TURN servers. The subnet must be private with internet egress through a NAT gateway.
-
-**Expect this to take a while.** VPC mode adds network interface provisioning on top of the snapshot preparation, and how long that takes varies between runs. The script polls and prints status, so a long `CREATING` phase is normal rather than a hang.
-
-The Agent ARN is printed at the end and saved to `setup_config.json`.
-
-> **Note on IAM ordering.** `deploy.py` attaches the policies from `kvs-iam-policy.json` and `bedrock-iam-policy.json` to the execution role *before* creating the runtime. This ordering is required: Runtime V2 starts the container during creation, and `bot.py` calls `kvs.init()` at FastAPI startup, so a runtime created before those permissions exist fails with `AccessDeniedException` on `kinesisvideo:DescribeSignalingChannel`.
-
-### 3. Test
-
-Start the browser client:
-
-```bash
-cd server
-pip install -r requirements.txt
-python server.py       # http://localhost:7860
-```
-
-Open `http://localhost:7860`, paste the Agent ARN from the deploy output, then click Connect. Allow microphone access and speak -- the agent replies with spoken audio in real time.
-
-### 4. Cleanup
-
-Delete the runtime, then the VPC resources:
-
-```bash
-aws bedrock-agentcore-control delete-agent-runtime \
-  --agent-runtime-id <runtime-id-from-setup_config.json> \
-  --region us-west-2
-```
-
-Deleting a runtime is asynchronous and does not complete immediately. Wait for it to disappear before deleting the subnets -- a live runtime holds an elastic network interface in the subnet and the deletion will fail while it exists.
-
-If you created a VPC for this sample, remember to delete the **NAT gateway** as well. It bills hourly whether or not the agent is running.
-
-See [Troubleshooting](#troubleshooting) if the deployment does not reach `READY`.
-
-## How It Works
-
-### Audio Flow
-
-**Browser → Nova Sonic:**
-1. WebRTC captures microphone audio
-2. `aiortc` receives audio frames on the agent
-3. `av.AudioResampler` converts to 16kHz/16-bit/mono PCM
-4. Base64-encoded and streamed to Nova Sonic
-
-**Nova Sonic → Browser:**
-1. Agent receives audio chunks from Nova Sonic
-2. Raw PCM bytes buffered in `av.AudioFifo`
-3. `OutputTrack` serves fixed-size 20ms frames to WebRTC
-4. Browser plays audio via `<audio>` element
-
-### Audio Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| Input Sample Rate | 16kHz |
-| Output Sample Rate | 24kHz |
-| Format | 16-bit PCM mono |
-| Model | amazon.nova-2-sonic-v1:0 |
-| Voice | matthew |
-
-## Key Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `aws-sdk-bedrock-runtime` | Nova Sonic streaming (requires Python 3.12+) |
-| `aiortc` | WebRTC peer connections |
-| `av` | Audio resampling and frame buffering (FFmpeg) |
-| `boto3` | KVS signaling channel and TURN servers |
-| `fastapi` / `uvicorn` | HTTP server |
-
-## IAM Permissions
-
-The agent needs KVS permissions for TURN server access. See `kvs-iam-policy.json` for the minimal policy. Additionally, the agent needs `bedrock:InvokeModelWithBidirectionalStream` permission for the Nova Sonic model, in `bedrock-iam-policy.json`.
-
-`deploy.py` attaches both policies to the execution role, substituting the `ACCOUNT_ID` placeholder with the account ID you supply, so these files do not need to be edited.
+Stop the local UI and agent. Separately remove **only** images, roles, channels, log groups and networking you created exclusively for the demo. Wait for Runtime deletion before removing subnets, and remember that a dedicated NAT gateway bills even while idle. Keep shared resources intact.
 
 ## Troubleshooting
 
-**Python version error** (`Could not find aws-sdk-bedrock-runtime`):
-Use Python 3.12+.
-
-**Audio not working:**
-- Check microphone permissions in browser
-- Verify AWS credentials have Bedrock access
-- Run agent with `-v` for verbose logging
-
-**Connection fails:**
-- Ensure both agent and server are running
-- Check KVS IAM permissions
-- Verify TURN server connectivity
-
-**Deployment never reaches `READY`:**
-Check the runtime's log group `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`:
-- `build-logs-*` holds container output from when Runtime V2 created its snapshot
-- `runtime-logs-*` holds container output during invocation
-- **No container log stream at all** means provisioning failed before the container started -- check the execution role rather than the application code
-
-**Deployment fails with `ParamValidationError` on `platformVersion`:**
-Upgrade boto3. Runtime V2 requires `boto3>=1.43.95`.
-
-## Reference
-
-Based on: https://github.com/aws-samples/sample-nova-sonic-speech2speech-webrtc
+- **Runtime creation fails:** inspect `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`, the role trust and ECR pull permissions. Check KVS name, Region and channel permissions; missing startup dependencies prevent readiness.
+- **No audio:** check microphone permission, outbound UDP, model access and TURN reachability. Signaling success by itself does not prove media flowed.
+- **Local source:** [upstream WebRTC speech-to-speech example](https://github.com/aws-samples/sample-nova-sonic-speech2speech-webrtc).
