@@ -1,0 +1,153 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# =============================================================================
+# System Prompt Configuration — Text-to-SQL Agent
+# =============================================================================
+# INSTRUCTIONS:
+# 1. Update business_dictionary with your domain terms
+# 2. Update naming_conventions with your tables and columns
+# 3. Add relevant SQL query examples (few-shot learning)
+# 4. Adjust sql_guidelines if using Redshift instead of Athena
+
+sql_dialect: "athena"  # "athena" or "redshift"
+
+# Business dictionary: define terms your users commonly use.
+# The agent uses these to better understand queries.
+business_dictionary:
+  active_customer: "Customer who has made at least one purchase in the last 90 days"
+  average_ticket: "Average sale amount per transaction"
+  top_product: "Product with the highest sales volume in units"
+  profitable_category: "Category with the highest profit margin"
+  premium_customer: "Customer in the 'premium' segment with purchases over $100"
+  recent_sale: "Sale made in the last 30 days"
+  low_stock: "Product with fewer than 50 units in inventory"
+
+# Naming conventions: helps the agent map queries to tables
+naming_conventions:
+  tables:
+    - "customers: Registered customer information"
+    - "products: Product catalog"
+    - "sales: Sales transaction records"
+  columns:
+    - "IDs end with _id (customer_id, product_id, sale_id)"
+    - "Dates: registration_date, sale_date (YYYY-MM-DD format)"
+    - "Amounts: total_amount, price (in USD)"
+    - "Quantities: quantity, stock"
+  relationships:
+    - "sales.customer_id -> customers.customer_id"
+    - "sales.product_id -> products.product_id"
+
+# Query examples: the agent uses these as reference (few-shot learning).
+# Add at least 10-15 examples relevant to your business.
+examples:
+  - natural_query: "How many customers do we have?"
+    sql: "SELECT COUNT(*) as total_customers FROM customers"
+    explanation: "Counts all records in the customers table"
+
+  - natural_query: "How many products are in the catalog?"
+    sql: "SELECT COUNT(*) as total_products FROM products"
+    explanation: "Counts all available products"
+
+  - natural_query: "How many sales have been made?"
+    sql: "SELECT COUNT(*) as total_sales FROM sales"
+    explanation: "Counts all sales transactions"
+
+  - natural_query: "What are the top 10 best-selling products?"
+    sql: |
+      SELECT p.name, SUM(s.quantity) as total_sold
+      FROM sales s
+      JOIN products p ON s.product_id = p.product_id
+      GROUP BY p.name
+      ORDER BY total_sold DESC
+      LIMIT 10
+    explanation: "Groups sales by product and orders by total quantity"
+
+  - natural_query: "What is the average ticket by customer segment?"
+    sql: |
+      SELECT c.segment, ROUND(AVG(s.total_amount), 2) as avg_ticket
+      FROM sales s
+      JOIN customers c ON s.customer_id = c.customer_id
+      GROUP BY c.segment
+      ORDER BY avg_ticket DESC
+    explanation: "Calculates average total_amount grouped by segment"
+
+  - natural_query: "Which product category generates the most revenue?"
+    sql: |
+      SELECT p.category, ROUND(SUM(s.total_amount), 2) as total_revenue
+      FROM sales s
+      JOIN products p ON s.product_id = p.product_id
+      GROUP BY p.category
+      ORDER BY total_revenue DESC
+    explanation: "Sums sale amounts by category"
+
+  - natural_query: "Which products have low stock?"
+    sql: |
+      SELECT name, stock, category
+      FROM products
+      WHERE stock < 50
+      ORDER BY stock ASC
+    explanation: "Filters products with fewer than 50 units"
+
+  - natural_query: "What is the total sales amount?"
+    sql: "SELECT ROUND(SUM(total_amount), 2) as total_amount FROM sales"
+    explanation: "Sums all sale amounts"
+
+  - natural_query: "What is the most used payment method?"
+    sql: |
+      SELECT payment_method, COUNT(*) as num_transactions
+      FROM sales
+      GROUP BY payment_method
+      ORDER BY num_transactions DESC
+    explanation: "Counts transactions by payment method"
+
+  - natural_query: "How many customers do we have per country?"
+    sql: |
+      SELECT country, COUNT(*) as total_customers
+      FROM customers
+      GROUP BY country
+      ORDER BY total_customers DESC
+    explanation: "Counts customers grouped by country"
+
+  - natural_query: "Which suppliers have the most products?"
+    sql: |
+      SELECT supplier, COUNT(*) as num_products
+      FROM products
+      GROUP BY supplier
+      ORDER BY num_products DESC
+    explanation: "Counts products by supplier"
+
+# Agent workflow
+workflow:
+  steps:
+    - step: 1
+      action: "Analyze the user's question"
+    - step: 2
+      action: "Discover relevant schema (discover_schema)"
+    - step: 3
+      action: "Generate SQL with context"
+    - step: 4
+      action: "Validate SQL (PolicyValidator)"
+    - step: 5
+      action: "Execute query (execute_query)"
+    - step: 6
+      action: "Format and present results"
+
+# SQL rules the agent must follow
+sql_guidelines:
+  - "Always use SELECT, never modification commands"
+  - "Add LIMIT when appropriate"
+  - "Use explicit JOINs (not implicit joins)"
+  - "Use table aliases (e.g., FROM sales s)"
+  - "Order results when relevant"
+  - "Use ROUND() for decimals"
+  - "Dates are STRING in YYYY-MM-DD format (use date_parse in Athena)"
+
+# Response format
+response_format:
+  include_sql: true
+  include_explanation: true
+  max_rows_display: 50
+  date_format: "YYYY-MM-DD"
+  number_format: "1,000.00"
+  language: "english"
