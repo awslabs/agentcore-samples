@@ -32,7 +32,7 @@ Agents that interact with users in real time through a chat or query interface. 
 | [customer-ticket-operations](./customer-ticket-operations/) | Customer Support | Advanced | Runtime, Gateway, Policy, Identity (Cognito), Evaluations, Observability; Amazon Bedrock Guardrails and human approval |
 | [deep-research-agent](./deep-research-agent/) | Research / Q&A | Intermediate | Runtime, Gateway (Web Search); iterative Plan → Search → Reflect → Synthesize loop with auto-provisioning |
 | [device-management-agent](./device-management-agent/) | IoT / Smart Home | Intermediate | Runtime, Gateway, Policy, Identity (Cognito); React frontend |
-| [finance-personal-assistant](./finance-personal-assistant/) | Personal Finance | Beginner | Gateway, Policy; notebook-based |
+| [finance-personal-assistant](./finance-personal-assistant/) | Synthetic budget allocation | Beginner | Runtime, Strands agent-as-tool, Bedrock guardrails |
 | [healthcare-appointment-agent](./healthcare-appointment-agent/) | Healthcare | Intermediate | Runtime, Gateway, Policy, Observability; FHIR R4 via HealthLake |
 | [lakehouse-agent](./lakehouse-agent/) | Data and Analytics | Advanced | Runtime, Gateway, Memory, Policy; OAuth row-level security over S3 Tables and Athena |
 | [market-trends-agent](./market-trends-agent/) | Financial Services | Advanced | Runtime, Memory, Browser, Evaluations, Optimization; personalized broker investment assistant |
