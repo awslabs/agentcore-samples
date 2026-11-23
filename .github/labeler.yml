@@ -12,7 +12,7 @@ customer-support-assistant:
 DB-performance-analyzer:
   - "02-use-cases/DB-performance-analyzer/**"
 device-management-agent:
-  - "02-use-cases/device-management-agent/**"
+  - "02-use-cases/01-conversational-agents/device-management-agent/**"
 healthcare-appointment-agent:
   - "02-use-cases/healthcare-appointment-agent/**"
 local-prototype-to-agentcore:
