@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 node_modules/
+.tools/
 agentcore/aws-targets.json
 agentcore/.env*
 agentcore/.cache/

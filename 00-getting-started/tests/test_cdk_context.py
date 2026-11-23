@@ -6,8 +6,10 @@ Linux ARM64 wheels. Run in a denied-external-network environment; see DEPLOYMENT
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -135,6 +137,52 @@ def test_persisted_context_survives_fresh_native_builds(project):
             shutil.rmtree(sample / relative, ignore_errors=True)
         command("agentcore", "build", "--json")
         check_kms(built_stack(sample), ARN)
+
+
+def test_documented_cli_install_reaches_subprocesses(tmp_path):
+    """Run the README setup with a competing global CLI; do not inherit success."""
+    lines = (ROOT / "README.md").read_text().splitlines()
+    install = [line for line in lines if line.startswith("npm install --prefix .tools ")]
+    path_export = [line for line in lines if line.startswith('export PATH="$PWD/.tools/')]
+    assert install == ["npm install --prefix .tools --no-save --ignore-scripts @aws/agentcore@1.0.3"]
+    assert path_export == ['export PATH="$PWD/.tools/node_modules/.bin:$PATH"']
+    global_bin = tmp_path / "global-bin"
+    global_bin.mkdir()
+    global_cli = global_bin / "agentcore"
+    global_cli.write_text("#!/bin/sh\necho unexpected-global-cli\n")
+    global_cli.chmod(0o700)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = dict(
+        os.environ,
+        HOME=str(home),
+        PATH=str(global_bin) + os.pathsep + os.environ["PATH"],
+        NPM_CONFIG_OFFLINE="true",
+        AWS_CONFIG_FILE=os.devnull,
+        AWS_SHARED_CREDENTIALS_FILE=os.devnull,
+        AWS_EC2_METADATA_DISABLED="true",
+    )
+    verify = """import pathlib,shutil,subprocess
+expected = pathlib.Path.cwd() / ".tools/node_modules/.bin/agentcore"
+assert pathlib.Path(shutil.which("agentcore")) == expected
+result = subprocess.run(["agentcore", "--version"], capture_output=True, text=True, timeout=30, check=True)
+assert result.stdout.splitlines()[0].strip() == "1.0.3", result.stdout
+print("documented CLI subprocess: 1.0.3")
+"""
+    command = "\n".join([install[0], path_export[0], shlex.join([sys.executable, "-c", verify])])
+    bash = shutil.which("bash", path=env["PATH"])
+    assert bash is not None
+    result = subprocess.run(  # noqa: S603 -- reviewed README install, isolated HOME/cache/network
+        [bash, "--noprofile", "--norc", "-euc", command],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "documented CLI subprocess: 1.0.3" in result.stdout
 
 
 def test_documented_native_command_with_default_uv_locations(project, tmp_path):

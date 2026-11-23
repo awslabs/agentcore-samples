@@ -30,8 +30,10 @@ Read [cleanup](#cleanup) before deploying. Use fictional data only.
 ```bash
 git clone https://github.com/awslabs/agentcore-samples.git
 cd agentcore-samples/00-getting-started
-# In each tutorial shell, use the tested CLI without replacing your global version:
-agentcore() { npx --yes --package=@aws/agentcore@1.0.3 -- agentcore "$@"; }
+# Install the tested CLI locally; do not replace your global version.
+npm install --prefix .tools --no-save --ignore-scripts @aws/agentcore@1.0.3
+# Repeat this export in each tutorial shell so subprocesses use the same CLI.
+export PATH="$PWD/.tools/node_modules/.bin:$PATH"
 agentcore --version  # expect 1.0.3
 uv python install 3.13
 uv sync --project app/agent --frozen
@@ -40,6 +42,9 @@ uv run --project app/agent --frozen pytest
 uv run --project app/agent --frozen ruff check .
 uv run --project app/agent --frozen ruff format --check .
 ```
+
+An “Update available” notice is expected for this deliberately tested CLI version.
+Keep the local 1.0.3 executable for this walkthrough; revalidate the custom CDK adapter before upgrading.
 
 The repository-root `requirements.txt` is for optional notebook tooling, not this app.
 Use the sample’s locked Python environment above. `bedrock-agentcore` is the supported Runtime SDK, not the deprecated Starter Toolkit.

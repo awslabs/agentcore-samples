@@ -3,13 +3,16 @@
 import asyncio
 import copy
 import json
+import logging
+import logging.config
 
 import httpx
 import main
 import pytest
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError, NoCredentialsError
 from strands.models.model import Model
 from strands.types.exceptions import EventLoopException
+from uvicorn.config import LOGGING_CONFIG
 
 
 class ScriptedModel(Model):
@@ -227,14 +230,28 @@ async def test_real_agent_executes_both_tools(client, models, caplog):
     assert "Smart Watch" not in caplog.text
 
 
-async def test_truncated_tool_json_is_not_logged(client, monkeypatch, caplog):
-    model = ScriptedModel(mode="malformed")
-    monkeypatch.setattr(main, "BedrockModel", lambda **kwargs: model)
-    response = await client.post("/invocations", json={"prompt": "Look up a product"})
-    assert response.status_code == 200
-    assert len(model.requests) == 2
-    assert model.requests[1][1]["content"][0]["toolUse"]["input"] == {}
-    assert "private-tool-marker" not in caplog.text + response.text
+@pytest.mark.parametrize("configure_logging", [False, True], ids=["in_process", "uvicorn_startup"])
+async def test_truncated_tool_json_is_not_logged(client, monkeypatch, caplog, configure_logging):
+    parser_logger = logging.getLogger("strands.event_loop.streaming")
+    original_level, original_disabled = parser_logger.level, parser_logger.disabled
+    try:
+        if configure_logging:
+            # Deployed app.run() applies this configuration after importing main.
+            logging.config.dictConfig(copy.deepcopy(LOGGING_CONFIG))
+            assert parser_logger.disabled is False
+        caplog.set_level(logging.INFO)
+        logging.getLogger("pilot_capture_check").warning("Safe capture control")
+        assert "Safe capture control" in caplog.text, "Reconfiguration must not disable the test's capture"
+        model = ScriptedModel(mode="malformed")
+        monkeypatch.setattr(main, "BedrockModel", lambda **kwargs: model)
+        response = await client.post("/invocations", json={"prompt": "Look up a product"})
+        assert response.status_code == 200
+        assert len(model.requests) == 2
+        assert model.requests[1][1]["content"][0]["toolUse"]["input"] == {}
+        assert "private-tool-marker" not in caplog.text + response.text
+    finally:
+        parser_logger.setLevel(original_level)
+        parser_logger.disabled = original_disabled
 
 
 async def test_sequential_and_concurrent_requests_do_not_share_history(client, monkeypatch):
@@ -294,6 +311,7 @@ async def test_timeout_cancels_the_task(client, monkeypatch):
             502,
         ),
         (NoCredentialsError(), 502),
+        (EndpointConnectionError(endpoint_url="https://private-detail.invalid"), 502),
         (EventLoopException(RuntimeError("private-detail")), 502),
         (RuntimeError("private-detail"), 500),
     ],
@@ -308,5 +326,7 @@ async def test_error_details_are_not_exposed(client, monkeypatch, caplog, provid
     assert response.status_code == status
     if isinstance(provider_error, NoCredentialsError):
         assert "credentials" in response.json()["error"]
+    if isinstance(provider_error, BotoCoreError):
+        assert "Model connection failed; check AWS credentials, region, and connectivity." in caplog.text
     assert "private-detail" not in response.text + caplog.text
     assert "private-prompt" not in caplog.text

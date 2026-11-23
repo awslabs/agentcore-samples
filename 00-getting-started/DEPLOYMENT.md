@@ -74,13 +74,15 @@ After building, inspect both grants and conditions. Keep them together when cust
   account-wide quotas, ingress body limits, cost budgets or abuse controls.
 - **Effective IAM is an intersection:** CLI 1.0.3's generated role is broader than necessary.
   The boundary limits it to the regional Nova Lite model, the exact deployment ZIP, optional
-  S3-mediated KMS decryption and log delivery/write operations. It excludes configuration-bundle
+  S3-mediated KMS decryption and log write operations. It excludes configuration-bundle
   changes, other models/assets and S3 writes. A boundary alone does not grant permissions.
 - **Logs use a Runtime NAME PREFIX**, `/aws/bedrock-agentcore/runtimes/<runtime-name>*`, including
   streams—not the exact generated Runtime ID. Resources sharing that prefix also match. The
   generated ID cannot be used here without a Runtime → role → Runtime dependency cycle.
-- **Safe logs/output:** disable the Strands printing callback, streaming parser diagnostics and OTel export. Log only fixed
-  tool names on success, not arguments, results, prompts, answers or raw exception text. Strip
+- **Safe logs/output:** disable the Strands printing callback and OTel export. Suppress the
+  streaming parser's malformed-tool-input warning with a logger level that survives Uvicorn
+  startup. The application logs fixed tool names or failure categories, not arguments, results,
+  prompts, answers or raw exception text. Strip
   complete Nova `<thinking>` preambles and reject malformed/empty answers. Account-level Bedrock
   model invocation logging is separate; check its data-handling implications before use.
 - **Prompts are not authorization:** a model can still be wrong or manipulated. Production needs
@@ -120,8 +122,9 @@ RUN_CDK_TESTS=1 uv run --project app/agent --frozen pytest tests/test_cdk_contex
 
 Source-only pytest explicitly skips infra/ZIP checks until `agentcore build` produces artifacts.
 Native context tests are separately opt-in: they require CLI **1.0.3**, installed npm packages,
-uv and cached Linux ARM64 wheels from the build above. Keep `uv`, Node/npm and CLI 1.0.3 on
-`PATH`, and Python 3.13 installed (managed by uv or available on `PATH`). Before isolating HOME,
+uv and cached Linux ARM64 wheels from the build above. Use the README's local `.tools`
+installation and `PATH` export: a shell function alone is not visible to subprocesses.
+Keep `uv`, Node/npm and Python 3.13 available as well. Before isolating HOME,
 the fixture asks `uv cache dir` and `uv python dir` for the caller's actual cache and managed
 Python locations, then passes those paths explicitly. No `UV_CACHE_DIR` or
 `UV_PYTHON_INSTALL_DIR` export is required when using uv's normal defaults.
