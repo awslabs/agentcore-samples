@@ -60,7 +60,7 @@ class TraceContextTests(unittest.TestCase):
                     return SimpleNamespace(message={"content": [{"text": "offline answer"}]})
 
             mcp = MagicMock()
-            mcp.list_tools_sync.return_value = []
+            mcp.__enter__.return_value.list_tools_sync.return_value = []
             try:
                 for environment in ["DEV", "TST", "PROD"]:
                     with self.subTest(environment=environment):
@@ -69,7 +69,7 @@ class TraceContextTests(unittest.TestCase):
                         runtime.env = environment
                         with (
                             patch.object(runtime, "StrandsTelemetry") as telemetry,
-                            patch.object(runtime, "streamable_http_mcp_client", mcp),
+                            patch.object(runtime, "MCPClient", return_value=mcp) as create_mcp,
                             patch.object(runtime, "Agent", return_value=model_result),
                             patch.object(runtime, "get_client", return_value=client) as get_client,
                         ):
@@ -77,6 +77,7 @@ class TraceContextTests(unittest.TestCase):
                                 {"prompt": "offline question", "trace_id": trace_id, "parent_obs_id": parent_id}
                             )
                             self.assertEqual(result, "offline answer")
+                            create_mcp.assert_called_once_with(url="https://langfuse.com/api/mcp")
                             telemetry.return_value.setup_otlp_exporter.assert_called_once_with()
                             provider.force_flush()
                             spans = unfiltered.get_finished_spans()
