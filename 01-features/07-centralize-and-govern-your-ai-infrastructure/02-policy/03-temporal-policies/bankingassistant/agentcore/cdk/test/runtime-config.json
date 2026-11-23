@@ -1,0 +1,47 @@
+{
+  "name": "bankingassistant",
+  "version": 2,
+  "migratedFrom": "v1",
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "bankingassistant"
+  },
+  "runtimes": [
+    {
+      "name": "banking_assistant_tools",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/banking_assistant_tools",
+      "runtimeVersion": "PYTHON_3_14",
+      "protocol": "MCP",
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_FAKE/.well-known/openid-configuration",
+          "allowedClients": ["fake-client"],
+          "allowedScopes": ["api/mcp"]
+        }
+      }
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [
+    {
+      "authorizerType": "OAuthCredentialProvider",
+      "name": "banking_assistant_tools-oauth",
+      "vendor": "CustomOauth2",
+      "clientId": "fake-client",
+      "discoveryUrl": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_FAKE/.well-known/openid-configuration",
+      "scopes": ["api/mcp"]
+    }
+  ],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "harnesses": [],
+  "payments": []
+}

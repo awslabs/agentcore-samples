@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Banking Assistant MCP server.
 
@@ -11,7 +12,7 @@ fields to output.* for temporal policy evaluation (e.g. output.account_id).
 
 import random
 import string
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastmcp import FastMCP
 
@@ -28,7 +29,7 @@ def _generate_id(prefix: str) -> str:
 
 
 def _timestamp() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +468,9 @@ def get_market_price(symbol: str) -> dict:
             "action": {"type": "string"},
             "shares": {"type": "integer"},
             "price": {"type": "number"},
-            "cost": {"type": "integer"},
+            # Output is the actual shares * price, which can include cents.
+            # The caller's signed integer input.cost remains the policy test input.
+            "cost": {"type": "number"},
             "timestamp": {"type": "string"},
             "status": {"type": "string"},
         },
@@ -477,6 +480,10 @@ def execute_trade(
     portfolio_id: str, symbol: str, action: str, shares: int, cost: int
 ) -> dict:
     """Execute a buy or sell order against a portfolio."""
+    # The signed cost is an intentional temporal-policy input; share quantity is
+    # not. Reject it before mutating cash, holdings, or the trade log.
+    if shares <= 0:
+        return {"error": "Trade shares must be positive"}
     if portfolio_id not in PORTFOLIOS:
         return {"error": f"Portfolio {portfolio_id} not found"}
     symbol = symbol.upper()

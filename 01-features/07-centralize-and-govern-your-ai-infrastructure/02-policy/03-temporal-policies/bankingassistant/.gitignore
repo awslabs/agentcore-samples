@@ -1,3 +1,13 @@
 deploy_policies_gamma.py
 gamma_checkpoint.json
 setup_config.json
+setup_config.json.tmp
+oauth_provider_state.json
+oauth_provider_state.json.*
+runtime-status.json
+.tools/
+__pycache__/
+.control-venv/
+.sample-cli-home/
+.control-home/
+policy-status.json

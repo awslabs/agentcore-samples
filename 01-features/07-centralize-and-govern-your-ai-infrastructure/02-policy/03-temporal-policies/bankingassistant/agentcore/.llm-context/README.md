@@ -1,16 +1,12 @@
-# LLM Context Files
+# Schema guidance
 
-**DO NOT EDIT THESE FILES** - They are read-only reference for AI coding assistants.
+This sample locks AgentCore CLI and its CDK library to 1.2.0, with agentcore.json version 2.
+The old generated v0 type snapshots have been removed: do not use them to edit
+v1 configuration. Use the installed @aws/agentcore-cdk project reader and
+transformer, the v1 CLI command help, and the regression tests in cdk/test/.
 
-## Files
-
-| File             | JSON Config        | Purpose                                   |
-| ---------------- | ------------------ | ----------------------------------------- |
-| `agentcore.ts`   | `agentcore.json`   | Project, agent, memory, credential config |
-| `mcp.ts`         | `agentcore.json`   | Gateways, targets, MCP runtime tools      |
-| `aws-targets.ts` | `aws-targets.json` | Deployment targets (account + region)     |
-
-## Usage
-
-When editing schema JSON files, reference the corresponding `.ts` file here for type definitions and validation
-constraints (marked with `@regex`, `@min`, `@max`).
+Runtime v1 JSON uses `customJwtAuthorizer`; the Gateway boto3 API used by
+setup.py uses `customJWTAuthorizer`. These are different interfaces. Validate
+populated generated config as well as the intentionally empty checked-in spec.
+Schema validation does not prove AWS authorization, deployment or temporal
+policy enforcement. See ../../AGENTS.md and ../../README.md.

@@ -1,0 +1,10 @@
+{
+  "name": "agentcore-temporal-banking-lab",
+  "private": true,
+  "scripts": {
+    "agentcore": "node scripts/agentcore.mjs"
+  },
+  "devDependencies": {
+    "@aws/agentcore": "1.2.0"
+  }
+}

@@ -16,7 +16,7 @@ Amazon Bedrock AgentCore Policy already gives you two powerful protection layers
 
 > Reference: [Guardrails in policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-guardrails-in-policies.html)
 
-Both layers share the same authoring surface, the same LOG_ONLY to ENFORCE calibration workflow, and the same CloudWatch observability pipeline. If you haven't worked through Modules 1 and 2, it's worth doing so before continuing; temporal policies compose with everything already in place.
+Both layers share the same authoring surface, the same LOG_ONLY to ENFORCE calibration workflow, and the same CloudWatch observability pipeline. LOG_ONLY observes decisions but does **not** block traffic. Gateway attachment mode `ENFORCE`, an individual policy's `ACTIVE` enforcement mode, and policy/engine lifecycle status `ACTIVE` are separate settings/states; lifecycle readiness or a logged denial does not prove enforcement. The Banking lab pins and checks its SDK models and uses SDK-backed readiness reads because older AWS CLI parsers can omit policy enforcement fields. If you haven't worked through Modules 1 and 2, it's worth doing so before continuing; temporal policies compose with everything already in place.
 
 ## The Missing Layer: Why Temporal?
 
@@ -104,7 +104,7 @@ Temporal policies extend AgentCore Policy with exactly this trajectory-aware enf
 
 ## What Are Temporal Policies?
 
-A temporal policy is a `permit` or `forbid` rule that adds a `when temporal { }` block. The block contains conditions that match against events the policy engine has recorded earlier in the same session. The current request is allowed only when all applicable `permit` conditions are satisfied and no `forbid` overrides them.
+A temporal policy is a `permit` or `forbid` rule that adds a `when temporal { }` block. The block contains conditions that match against events the policy engine has recorded earlier in the same session. The current request is allowed only when at least one `permit` matches and no `forbid` overrides it.
 
 Key properties:
 

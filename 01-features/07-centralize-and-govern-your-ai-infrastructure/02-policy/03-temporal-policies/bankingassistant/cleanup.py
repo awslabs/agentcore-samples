@@ -1,324 +1,146 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["boto3"]
+# dependencies = ["boto3==1.43.36", "botocore==1.43.36", "jmespath==1.0.1", "s3transfer==0.19.0", "python-dateutil==2.9.0.post0", "six==1.17.0", "urllib3==2.5.0"]
 # ///
-"""
-Tear down everything setup.py created for the banking assistant temporal
-policies sample: all policies (base permits + temporal), the policy engine,
-the MCP server target, the gateway, and the gateway IAM role.
+"""Delete only the dedicated resources recorded by setup.py.
 
-Resource IDs are read from setup_config.json. The script is idempotent;
-resources that are already gone are skipped. Async deletions are polled
-to completion before moving to the next step.
-
-Usage:
-    uv run cleanup.py              # delete the sample's own resources
-    uv run cleanup.py --cognito    # also delete the shared Cognito stack
-
-Optional environment variables:
-    REGION               - AWS region (default: us-east-1)
-    COGNITO_STACK_NAME   - Cognito stack to delete with --cognito
-                           (default: agentcore-gateway-lab)
+Keep setup_config.json until every deletion is verified. Access errors and
+poll timeouts are failures, not evidence of deletion. This does not delete the
+CLI-managed Runtime or OAuth provider (see README Cleanup).
 """
 
 import argparse
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+from resource_state import OWNER_TAG, absent, require_equal, verify_resources
+from policy_contract import API_VERSION, verified_policy_session
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-REGION = os.environ.get("REGION", "us-east-1")
-GATEWAY_ROLE_NAME = "banking-gateway-role"
-GATEWAY_ROLE_POLICY = "GatewayExecutionPolicy"
 CONFIG_FILE = Path(__file__).parent / "setup_config.json"
 
 
-def load_config() -> dict:
-    if CONFIG_FILE.exists():
-        return json.loads(CONFIG_FILE.read_text())
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# Policies
-# ---------------------------------------------------------------------------
-
-
-def delete_all_policies(ctrl, engine_id: str) -> None:
-    """Delete every policy on the engine (base permits and temporal alike)."""
+def delete_if_present(delete, **params) -> None:
     try:
-        paginator_input = {"policyEngineId": engine_id, "maxResults": 50}
-        names: list[tuple[str, str]] = []
-        while True:
-            resp = ctrl.list_policies(**paginator_input)
-            for p in resp.get("policies", []):
-                names.append((p["policyId"], p.get("name", p["policyId"])))
-            token = resp.get("nextToken")
-            if not token:
-                break
-            paginator_input["nextToken"] = token
-    except ClientError as e:
-        print(f"  Could not list policies: {e}")
-        return
+        delete(**params)
+    except ClientError as error:
+        if not absent(error):
+            raise
 
-    if not names:
-        print("  No policies to delete.")
-        return
 
-    for policy_id, name in names:
+def wait_deleted(get_resource, label: str, attempts: int = 60) -> None:
+    for _ in range(attempts):
         try:
-            ctrl.delete_policy(policyEngineId=engine_id, policyId=policy_id)
-            print(f"  Deleted policy: {name}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] in ("ResourceNotFoundException", "NotFound"):
-                print(f"  Policy already gone: {name}")
-            else:
-                print(f"  FAILED to delete {name}: {e}")
-
-    # Wait for all policy deletions to complete before proceeding.
-    print("  Waiting for policy deletions to complete...", end="", flush=True)
-    for _ in range(30):
-        resp = ctrl.list_policies(policyEngineId=engine_id, maxResults=50)
-        remaining = [
-            p for p in resp.get("policies", []) if p.get("status") != "DELETING"
-        ]
-        deleting = [
-            p for p in resp.get("policies", []) if p.get("status") == "DELETING"
-        ]
-        if not deleting and not remaining:
-            print(" done")
-            return
-        if not deleting and remaining:
-            print(f" {len(remaining)} still active (may need another pass)")
-            return
-        print(".", end="", flush=True)
-        time.sleep(3)
-    print(" timed out (some policies may still be deleting)")
-
-
-def delete_engine(ctrl, engine_id: str) -> None:
-    try:
-        ctrl.delete_policy_engine(policyEngineId=engine_id)
-        print(f"  Delete initiated for policy engine: {engine_id}")
-    except ClientError as e:
-        if e.response["Error"]["Code"] in ("ResourceNotFoundException", "NotFound"):
-            print(f"  Policy engine already gone: {engine_id}")
-            return
-        else:
-            print(f"  FAILED to delete policy engine: {e}")
-            return
-
-    # Wait for engine deletion.
-    print("  Waiting for engine deletion...", end="", flush=True)
-    for _ in range(30):
-        try:
-            status = ctrl.get_policy_engine(policyEngineId=engine_id).get("status")
-            if status == "DELETING":
-                print(".", end="", flush=True)
-                time.sleep(5)
-            else:
-                print(f" status: {status}")
+            get_resource()
+        except ClientError as error:
+            if absent(error):
                 return
-        except ClientError:
-            print(" done")
-            return
-    print(" timed out")
+            raise
+        time.sleep(5)
+    raise TimeoutError(f"{label} deletion not verified; keep setup_config.json and retry")
 
 
-# ---------------------------------------------------------------------------
-# Gateway and targets
-# ---------------------------------------------------------------------------
-
-
-def delete_targets(ctrl, gateway_id: str, cfg: dict) -> None:
-    target_ids = [cfg[k] for k in cfg if k.startswith("target_id_") and cfg[k]]
-    if not target_ids:
+def list_all(list_resources, key: str, **params) -> list:
+    items = []
+    while True:
         try:
-            resp = ctrl.list_gateway_targets(
-                gatewayIdentifier=gateway_id, maxResults=50
-            )
-            target_ids = [t["targetId"] for t in resp.get("items", [])]
-        except ClientError as e:
-            print(f"  Could not list targets: {e}")
-            return
-
-    if not target_ids:
-        print("  No targets to delete.")
-        return
-
-    for target_id in target_ids:
-        try:
-            ctrl.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
-            print(f"  Deleted gateway target: {target_id}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] in (
-                "ResourceNotFoundException",
-                "NotFound",
-            ):
-                print(f"  Target already gone: {target_id}")
-            else:
-                print(f"  FAILED to delete target {target_id}: {e}")
-
-    # Wait for targets to finish deleting.
-    print("  Waiting for target deletions...", end="", flush=True)
-    for _ in range(20):
-        try:
-            resp = ctrl.list_gateway_targets(
-                gatewayIdentifier=gateway_id, maxResults=50
-            )
-            if not resp.get("items"):
-                print(" done")
-                return
-        except ClientError:
-            print(" done")
-            return
-        print(".", end="", flush=True)
-        time.sleep(3)
-    print(" timed out")
+            result = list_resources(**params)
+        except ClientError as error:
+            if absent(error):
+                return items
+            raise
+        items.extend(result.get(key, []))
+        token = result.get("nextToken")
+        if not token:
+            return items
+        params["nextToken"] = token
 
 
-def delete_gateway(ctrl, gateway_id: str) -> None:
-    try:
-        ctrl.delete_gateway(gatewayIdentifier=gateway_id)
-        print(f"  Delete initiated for gateway: {gateway_id}")
-    except ClientError as e:
-        if e.response["Error"]["Code"] in ("ResourceNotFoundException", "NotFound"):
-            print(f"  Gateway already gone: {gateway_id}")
-            return
-        else:
-            print(f"  FAILED to delete gateway: {e}")
-            return
+def cleanup(ctrl, iam, cfg: dict) -> None:
+    verify_resources(ctrl, iam, cfg)
+    engine_id = cfg.get("engine_id")
+    gateway_id = cfg.get("gateway_id")
+    # Inventory all children before the first deletion, not one page at a time.
+    policies = list_all(ctrl.list_policies, "policies", policyEngineId=engine_id,
+                        maxResults=50) if engine_id else []
+    targets = list_all(ctrl.list_gateway_targets, "items", gatewayIdentifier=gateway_id,
+                       maxResults=50) if gateway_id else []
+    # Engine and gateway must be dedicated to this lab: every policy/target is
+    # removed, including tutorial policies added after setup.py completed.
+    if engine_id:
+        for policy in policies:
+            params = {"policyEngineId": engine_id, "policyId": policy["policyId"]}
+            delete_if_present(ctrl.delete_policy, **params)
+            wait_deleted(lambda: ctrl.get_policy(**params), "Policy")
 
-    # Wait for gateway deletion.
-    print("  Waiting for gateway deletion...", end="", flush=True)
-    for _ in range(30):
-        try:
-            status = ctrl.get_gateway(gatewayIdentifier=gateway_id).get("status")
-            if status == "DELETING":
-                print(".", end="", flush=True)
-                time.sleep(5)
-            else:
-                print(f" status: {status}")
-                return
-        except ClientError:
-            print(" done")
-            return
-    print(" timed out")
+    if gateway_id:
+        for target in targets:
+            params = {"gatewayIdentifier": gateway_id, "targetId": target["targetId"]}
+            delete_if_present(ctrl.delete_gateway_target, **params)
+            wait_deleted(lambda: ctrl.get_gateway_target(**params), "Gateway target")
+        # Remove the gateway attachment before deleting its engine.
+        delete_if_present(ctrl.delete_gateway, gatewayIdentifier=gateway_id)
+        wait_deleted(lambda: ctrl.get_gateway(gatewayIdentifier=gateway_id), "Gateway")
 
+    if engine_id:
+        delete_if_present(ctrl.delete_policy_engine, policyEngineId=engine_id)
+        wait_deleted(lambda: ctrl.get_policy_engine(policyEngineId=engine_id), "Policy engine")
 
-# ---------------------------------------------------------------------------
-# IAM
-# ---------------------------------------------------------------------------
-
-
-def delete_gateway_role(iam) -> None:
-    try:
-        iam.delete_role_policy(
-            RoleName=GATEWAY_ROLE_NAME, PolicyName=GATEWAY_ROLE_POLICY
-        )
-        print(f"  Deleted inline policy: {GATEWAY_ROLE_POLICY}")
-    except ClientError as e:
-        if e.response["Error"]["Code"] != "NoSuchEntity":
-            print(f"  FAILED to delete inline policy: {e}")
-
-    try:
-        iam.delete_role(RoleName=GATEWAY_ROLE_NAME)
-        print(f"  Deleted gateway role: {GATEWAY_ROLE_NAME}")
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchEntity":
-            print(f"  Gateway role already gone: {GATEWAY_ROLE_NAME}")
-        else:
-            print(f"  FAILED to delete gateway role: {e}")
-
-
-def delete_cognito_stack(cfn, stack_name: str) -> None:
-    try:
-        cfn.delete_stack(StackName=stack_name)
-        print(f"  Delete initiated for Cognito stack: {stack_name}")
-    except ClientError as e:
-        print(f"  FAILED to delete Cognito stack: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    if cfg.get("role_arn"):
+        role_name = cfg["role_name"]
+        delete_if_present(iam.delete_role_policy, RoleName=role_name,
+                          PolicyName="GatewayExecutionPolicy")
+        delete_if_present(iam.delete_role, RoleName=role_name)
+        wait_deleted(lambda: iam.get_role(RoleName=role_name), "Gateway role")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Tear down the banking assistant sample"
-    )
-    parser.add_argument(
-        "--cognito",
-        action="store_true",
-        help="Also delete the shared Cognito stack (only if no other lab needs it)",
-    )
+    sdk = verified_policy_session()  # No clients/deletion with a divergent model selection.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cognito", action="store_true",
+                        help="Also delete COGNITO_STACK_NAME (must be dedicated to this lab)")
     args = parser.parse_args()
-
-    cfg = load_config()
-    if not cfg:
-        print(
-            "No setup_config.json found; nothing to clean up. "
-            "Run setup.py first, or delete resources manually.",
-            file=sys.stderr,
-        )
-        sys.exit(0)
-
-    session = boto3.Session(region_name=REGION)
-    ctrl = session.client("bedrock-agentcore-control", region_name=REGION)
-    iam = session.client("iam")
-
-    print("=== Banking Assistant — Cleanup ===\n")
-
-    engine_id = cfg.get("engine_id")
-    gateway_id = cfg.get("gateway_id")
-
-    print("Step 1: Policies")
-    if engine_id:
-        delete_all_policies(ctrl, engine_id)
-    else:
-        print("  No engine_id in config (skipped)")
-
-    print("\nStep 2: Gateway targets")
-    if gateway_id:
-        delete_targets(ctrl, gateway_id, cfg)
-    else:
-        print("  No gateway_id in config (skipped)")
-
-    print("\nStep 3: Policy engine")
-    if engine_id:
-        delete_engine(ctrl, engine_id)
-    else:
-        print("  No engine_id in config (skipped)")
-
-    print("\nStep 4: Gateway")
-    if gateway_id:
-        delete_gateway(ctrl, gateway_id)
-    else:
-        print("  No gateway_id in config (skipped)")
-
-    print("\nStep 5: Gateway IAM role")
-    delete_gateway_role(iam)
-
+    if not CONFIG_FILE.exists():
+        print("No setup_config.json; nothing recorded to clean up.")
+        return
+    cfg = json.loads(CONFIG_FILE.read_text())
+    region = os.environ.get("REGION", cfg.get("region", "us-east-1"))
+    if not cfg.get("account_id") or cfg.get("region") != region or not cfg.get("role_name"):
+        raise RuntimeError("Verify legacy state ownership/account/region before cleanup; see README")
+    stack_name = os.environ.get("COGNITO_STACK_NAME")
+    if args.cognito and not stack_name:
+        raise RuntimeError("--cognito requires an explicit COGNITO_STACK_NAME")
+    session = boto3.Session(botocore_session=sdk, region_name=region)
+    account_id = session.client("sts").get_caller_identity()["Account"]
+    if account_id != cfg["account_id"]:
+        raise RuntimeError("Refusing cleanup: AWS account does not match setup_config.json")
+    cfn = None
     if args.cognito:
-        stack_name = os.environ.get("COGNITO_STACK_NAME", "agentcore-gateway-lab")
-        print(f"\nStep 6: Cognito stack ({stack_name})")
-        cfn = session.client("cloudformation", region_name=REGION)
-        delete_cognito_stack(cfn, stack_name)
-
-    if CONFIG_FILE.exists():
-        CONFIG_FILE.unlink()
-        print(f"\nRemoved {CONFIG_FILE.name}")
-
-    print("\n=== Done ===")
+        # Optional convenience path requires a separately audited stack ledger.
+        # A caller-supplied same-account stack name is not ownership proof.
+        stack_id = cfg.get("cognito_stack_id")
+        if not stack_id:
+            raise RuntimeError("--cognito requires recorded cognito_stack_id and matching ownership tag")
+        expected = f"arn:aws:cloudformation:{region}:{account_id}:stack/{stack_name}/"
+        if not stack_id.startswith(expected) or not stack_id[len(expected):]:
+            raise RuntimeError("Cognito stack ARN/name/account/region mismatch")
+        cfn = session.client("cloudformation")
+        stack = cfn.describe_stacks(StackName=stack_id)["Stacks"][0]
+        require_equal(stack["StackId"], stack_id, "Cognito stack ID")
+        require_equal(stack["StackName"], stack_name, "Cognito stack name")
+        tags = {t["Key"]: t["Value"] for t in stack.get("Tags", [])}
+        require_equal(tags.get(OWNER_TAG), cfg.get("ownership_id"), "Cognito ownership")
+        if not cfg.get("ownership_id"):
+            raise RuntimeError("Missing ownership_id")
+    cleanup(session.client("bedrock-agentcore-control", api_version=API_VERSION), session.client("iam"), cfg)
+    if cfn:
+        cfn.delete_stack(StackName=stack_id)
+        cfn.get_waiter("stack_delete_complete").wait(StackName=stack_id)
+    CONFIG_FILE.unlink()
+    print("Recorded setup resources deleted. CLI resources still require README cleanup.")
 
 
 if __name__ == "__main__":

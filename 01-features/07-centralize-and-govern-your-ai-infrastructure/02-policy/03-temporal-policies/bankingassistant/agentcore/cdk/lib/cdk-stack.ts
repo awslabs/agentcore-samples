@@ -1,249 +1,130 @@
+import { AgentCoreApplication, type AgentCoreApplicationProps } from '@aws/agentcore-cdk';
 import {
-  AgentCoreApplication,
-  AgentCoreMcp,
-  AgentCorePaymentManager,
-  AgentCorePaymentConnector,
-  type AgentCoreProjectSpec,
-  type AgentCoreMcpSpec,
-  type CustomJWTAuthorizerConfig,
-  type HarnessDeploymentConfig,
-} from '@aws/agentcore-cdk';
-import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
-import * as iam from 'aws-cdk-lib/aws-iam';
+  ArnFormat,
+  CfnOutput,
+  Fn,
+  Stack,
+  Token,
+  type StackProps,
+  aws_iam as iam,
+  aws_bedrockagentcore as agentcore,
+} from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-/**
- * Harness deployment config: role-scoped fields (for IAM role + container build)
- * plus the full validated spec + its config directory so the L3 construct can
- * synthesize the AWS::BedrockAgentCore::Harness resource.
- */
-export type HarnessConfig = HarnessDeploymentConfig;
-
-export interface PaymentConnectorSpec {
-  name: string;
-  provider: 'CoinbaseCDP' | 'StripePrivy';
-  credentialProviderArn: string;
-}
-
-export interface PaymentSpec {
-  name: string;
-  description?: string;
-  authorizerType: 'AWS_IAM' | 'CUSTOM_JWT';
-  authorizerConfiguration?: { customJWTAuthorizer: CustomJWTAuthorizerConfig };
-  autoPayment?: boolean;
-  paymentToolAllowlist?: string[];
-  networkPreferences?: string[];
-  connectors: PaymentConnectorSpec[];
-}
-
 export interface AgentCoreStackProps extends StackProps {
-  /**
-   * The AgentCore project specification containing agents, memories, and credentials.
-   */
-  spec: AgentCoreProjectSpec;
-  /**
-   * The MCP specification containing gateways and servers.
-   */
-  mcpSpec?: AgentCoreMcpSpec;
-  /**
-   * Credential provider ARNs from deployed state, keyed by credential name.
-   */
-  credentials?: Record<string, { credentialProviderArn: string; clientSecretArn?: string }>;
-  /**
-   * Harness role configurations.
-   */
-  harnesses?: HarnessConfig[];
-  /**
-   * Parsed connectorParameters for non-S3 KB data sources, keyed by
-   * connectorConfigFile path. Forwarded to AgentCoreApplication.
-   */
-  connectorParametersByFile?: Record<string, Record<string, unknown>>;
-  /**
-   * Payment specifications with resolved credential provider ARNs.
-   */
-  paymentSpec?: PaymentSpec[];
-}
-
-function toCdkId(name: string): string {
-  return name.replace(/_/g, '');
+  application: AgentCoreApplicationProps;
 }
 
 /**
- * Decide whether a deployed runtime should receive payment env vars + IAM grants.
- * Payments today only ships a runtime shim for Python HTTP runtimes; injecting
- * AGENTCORE_PAYMENT_* env vars into TypeScript / MCP / A2A / AGUI runtimes
- * would surface env vars they cannot consume and would dilute least-privilege
- * IAM grants for runtimes that never call ProcessPayment.
- */
-function isPaymentEligibleAgent(agent: { entrypoint?: string; protocol?: string }): boolean {
-  if (agent.protocol && agent.protocol !== 'HTTP') {
-    return false;
-  }
-  const entrypoint = typeof agent.entrypoint === 'string' ? agent.entrypoint : '';
-  const entrypointFile = entrypoint.split(':')[0] ?? '';
-  return entrypointFile.endsWith('.py');
-}
-
-/**
- * CDK Stack that deploys AgentCore infrastructure.
- *
- * This is a thin wrapper that instantiates L3 constructs.
- * All resource logic and outputs are contained within the L3 constructs.
+ * v1 project resources. The temporal gateway, engine and policies remain owned
+ * by setup.py, not this stack. Do not duplicate them in agentcore.json.
  */
 export class AgentCoreStack extends Stack {
-  /** The AgentCore application containing all agent environments */
   public readonly application: AgentCoreApplication;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
-
-    const { spec, mcpSpec, credentials, harnesses, connectorParametersByFile, paymentSpec } = props;
-
-    // Create AgentCoreApplication with all agents and harness roles
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const appProps: Record<string, unknown> = { spec };
-    if (harnesses?.length) {
-      appProps.harnesses = harnesses;
-    }
-    if (connectorParametersByFile && Object.keys(connectorParametersByFile).length > 0) {
-      appProps.connectorParametersByFile = connectorParametersByFile;
-    }
-    if (credentials) {
-      appProps.credentials = credentials;
-    }
-    this.application = new AgentCoreApplication(this, 'Application', appProps as any);
-
-    // Create AgentCoreMcp if there are gateways configured
-    if (mcpSpec?.agentCoreGateways && mcpSpec.agentCoreGateways.length > 0) {
-      new AgentCoreMcp(this, 'Mcp', {
-        projectName: spec.name,
-        mcpSpec,
-        agentCoreApplication: this.application,
-        credentials,
-        projectTags: spec.tags,
-      });
-    }
-
-    // Create payment infrastructure via CFN constructs
-    if (paymentSpec && paymentSpec.length > 0) {
-      for (const payment of paymentSpec) {
-        const mgrId = toCdkId(payment.name);
-        const manager = new AgentCorePaymentManager(this, `Payment${mgrId}`, {
-          projectName: spec.name,
-          name: payment.name,
-          authorizerType: payment.authorizerType,
-          description: payment.description,
-          authorizerConfiguration: payment.authorizerConfiguration,
-          tags: spec.tags,
-        });
-
-        const prefix = `AGENTCORE_PAYMENT_${payment.name.toUpperCase().replace(/-/g, '_')}`;
-
-        // Wire env vars from construct output tokens into eligible agent environments only.
-        // See isPaymentEligibleAgent — non-Python or non-HTTP runtimes have no shim that
-        // can consume these env vars, and giving them sts:AssumeRole on the
-        // ProcessPaymentRole would broaden the privilege surface unnecessarily.
-        for (const env of this.application.environments.values()) {
-          if (!isPaymentEligibleAgent(env.agent)) {
-            continue;
-          }
-          env.runtime.addEnvironmentVariable(`${prefix}_MANAGER_ARN`, manager.paymentManagerArn);
-          env.runtime.addEnvironmentVariable(`${prefix}_PROCESS_PAYMENT_ROLE_ARN`, manager.processPaymentRoleArn);
-
-          // Grant runtime execution role permission to assume the ProcessPaymentRole.
-          // The ProcessPaymentRole's trust policy allows AccountRootPrincipal, but the
-          // caller still needs sts:AssumeRole on its own role to perform the assumption.
-          env.runtime.role.addToPrincipalPolicy(
-            new iam.PolicyStatement({
-              actions: ['sts:AssumeRole'],
-              resources: [manager.processPaymentRoleArn],
-            })
-          );
-
-          // Grant payment data-plane actions directly to the runtime role.
-          //
-          // NOTE: This deviates from the canonical role model in the AgentCore Payments
-          // beta guide, which assigns Get/List/Create instrument+session actions to a
-          // separate ManagementRole and limits the agent's role to ProcessPayment only.
-          // The current SDK plugin (AgentCorePaymentsPlugin.generate_payment_header)
-          // calls GetPaymentInstrument internally during the 402 auto-pay path, so the
-          // runtime role needs read access. CreatePaymentSession is included so
-          // `agentcore invoke --auto-session` works without a separate ManagementRole
-          // call. Tighten this if the SDK is updated to accept pre-fetched instrument
-          // details and split create-session into a backend-only flow.
-          env.runtime.role.addToPrincipalPolicy(
-            new iam.PolicyStatement({
-              actions: [
-                'bedrock-agentcore:GetPaymentInstrument',
-                'bedrock-agentcore:ListPaymentInstruments',
-                'bedrock-agentcore:GetPaymentInstrumentBalance',
-                'bedrock-agentcore:GetPaymentSession',
-                'bedrock-agentcore:ListPaymentSessions',
-                'bedrock-agentcore:CreatePaymentSession',
-                'bedrock-agentcore:ProcessPayment',
-              ],
-              resources: [manager.paymentManagerArn, `${manager.paymentManagerArn}/*`],
-            })
-          );
-
-          if (payment.autoPayment !== undefined) {
-            env.runtime.addEnvironmentVariable(`${prefix}_AUTO_PAYMENT`, String(payment.autoPayment));
-          }
-          if (payment.paymentToolAllowlist) {
-            env.runtime.addEnvironmentVariable(`${prefix}_TOOL_ALLOWLIST`, payment.paymentToolAllowlist.join(','));
-          }
-          if (payment.networkPreferences) {
-            env.runtime.addEnvironmentVariable(`${prefix}_NETWORK_PREFERENCES`, payment.networkPreferences.join(','));
-          }
-          if (payment.authorizerType === 'CUSTOM_JWT') {
-            env.runtime.addEnvironmentVariable(`${prefix}_AUTH_MODE`, 'bearer');
-          }
-        }
-
-        // Create connectors for this manager
-        for (const connector of payment.connectors) {
-          const connId = toCdkId(connector.name);
-          const conn = new AgentCorePaymentConnector(this, `Payment${mgrId}${connId}`, {
-            projectName: spec.name,
-            paymentManager: manager,
-            connectorName: connector.name,
-            connectorType: connector.provider,
-            credentialProviderArn: connector.credentialProviderArn,
-          });
-
-          // Wire first connector's ID as env var (eligible agents only)
-          if (connector === payment.connectors[0]) {
-            for (const env of this.application.environments.values()) {
-              if (!isPaymentEligibleAgent(env.agent)) continue;
-              env.runtime.addEnvironmentVariable(`${prefix}_CONNECTOR_ID`, conn.paymentConnectorId);
-            }
-          }
-
-          new CfnOutput(this, `Payment${mgrId}${connId}ConnectorId`, {
-            value: conn.paymentConnectorId,
-          });
-        }
-
-        // CFN Outputs for post-deploy state parsing
-        new CfnOutput(this, `Payment${mgrId}ManagerArn`, {
-          value: manager.paymentManagerArn,
-        });
-        new CfnOutput(this, `Payment${mgrId}ManagerId`, {
-          value: manager.paymentManagerId,
-        });
-        new CfnOutput(this, `Payment${mgrId}ProcessPaymentRoleArn`, {
-          value: manager.processPaymentRoleArn,
-        });
-        new CfnOutput(this, `Payment${mgrId}ResourceRetrievalRoleArn`, {
-          value: manager.resourceRetrievalRoleArn,
-        });
-      }
-    }
-
-    // Stack-level output
+    this.application = new AgentCoreApplication(this, 'Application', props.application);
     new CfnOutput(this, 'StackNameOutput', {
       description: 'Name of the CloudFormation Stack',
       value: this.stackName,
     });
+
+    // The MCP tools manipulate only simulated in-memory data. Bedrock is called
+    // by the separate Node client, not this Runtime. Limit v1's broad generated
+    // execution policy without rewriting the library or granting extra access.
+    // Do not leave the boundary behind when the Runtime declaration is removed.
+    if (!this.application.runtimes.has('banking_assistant_tools')) return;
+    const runtime = this.application.runtime('banking_assistant_tools');
+    const resource = runtime.resource.node.defaultChild as agentcore.CfnRuntime;
+    // OTel execs its first argument. Use the executable script's explicit
+    // relative path (no PATH assumption); CodeConfiguration permits two items.
+    resource.addPropertyOverride('AgentRuntimeArtifact.CodeConfiguration.EntryPoint', [
+      'opentelemetry-instrument',
+      './main.py',
+    ]);
+    const artifact = this.resolve(resource.agentRuntimeArtifact);
+    const source = artifact.codeConfiguration?.code?.s3;
+    if (!source?.bucket || !source.prefix) {
+      throw new Error('The banking Runtime boundary requires a CodeZip artifact.');
+    }
+    const assetArn = Fn.join('', ['arn:', this.partition, ':s3:::', Token.asString(source.bucket), '/', source.prefix]);
+    const logArn = this.formatArn({
+      service: 'logs',
+      resource: 'log-group',
+      resourceName: `/aws/bedrock-agentcore/runtimes/${runtime.runtimeName}-*`,
+      arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const boundary = new iam.ManagedPolicy(this, 'BankingRuntimeBoundary', {
+      description: 'Banking MCP: own artifact/log writes, regional telemetry only',
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['s3:GetObject', 's3:GetObjectVersion'],
+          resources: [assetArn],
+        }),
+        // Runtime IDs are <name>-<generated ID>; '_' extends a name, not an ID.
+        new iam.PolicyStatement({
+          actions: ['logs:CreateLogGroup', 'logs:DescribeLogStreams', 'logs:PutResourcePolicy'],
+          resources: [logArn, `${logArn}:*`],
+        }),
+        new iam.PolicyStatement({
+          actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+          resources: [`${logArn}:log-stream:*`],
+        }),
+        // X-Ray ingestion/sampling and metric publishing have no resource ARN
+        // scope. Keep only the pinned Runtime contract, bound to this region;
+        // metrics additionally require the bedrock-agentcore namespace.
+        new iam.PolicyStatement({
+          actions: [
+            'xray:PutTraceSegments',
+            'xray:PutTelemetryRecords',
+            'xray:GetSamplingRules',
+            'xray:GetSamplingTargets',
+          ],
+          resources: ['*'],
+          conditions: { StringEquals: { 'aws:RequestedRegion': this.region } },
+        }),
+        new iam.PolicyStatement({
+          actions: ['cloudwatch:PutMetricData'],
+          resources: ['*'],
+          conditions: {
+            StringEquals: { 'aws:RequestedRegion': this.region, 'cloudwatch:namespace': 'bedrock-agentcore' },
+          },
+        }),
+      ],
+    });
+    // Optional existing bootstrap asset key: S3-mediated decryption only, with
+    // the object/bucket encryption context. Never change shared key policies.
+    const assetKeyArn = process.env.AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN;
+    if (assetKeyArn) {
+      if (!/^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:key\/[a-zA-Z0-9-]+$/.test(assetKeyArn)) {
+        throw new Error('AGENTCORE_SAMPLE_ASSET_KMS_KEY_ARN must be a KMS key ARN.');
+      }
+      const decrypt = new iam.PolicyStatement({
+        actions: ['kms:Decrypt'],
+        resources: [assetKeyArn],
+        conditions: {
+          StringEquals: {
+            'kms:ViaService': `s3.${this.region}.${this.urlSuffix}`,
+            'kms:EncryptionContext:aws:s3:arn': [
+              assetArn,
+              Fn.join('', ['arn:', this.partition, ':s3:::', Token.asString(source.bucket)]),
+            ],
+          },
+        },
+      });
+      runtime.addToRolePolicy(decrypt);
+      boundary.addStatements(decrypt);
+    }
+    // DescribeLogGroups is metadata-only and does not support resource-level
+    // permissions. It cannot authorize writes to other Runtime log groups.
+    const describeLogs = new iam.PolicyStatement({
+      actions: ['logs:DescribeLogGroups'],
+      resources: ['*'],
+      conditions: { StringEquals: { 'aws:RequestedRegion': this.region } },
+    });
+    runtime.addToRolePolicy(describeLogs);
+    boundary.addStatements(describeLogs);
+    iam.PermissionsBoundary.of(runtime.role).apply(boundary);
   }
 }

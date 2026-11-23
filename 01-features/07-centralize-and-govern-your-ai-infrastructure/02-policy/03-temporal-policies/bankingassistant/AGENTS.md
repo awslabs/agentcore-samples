@@ -1,219 +1,90 @@
-# AgentCore Project
+# Banking temporal-policy sample (CLI v1)
 
-This project contains configuration and infrastructure for an Amazon Bedrock AgentCore application.
+Read README.md and DEPLOYMENT.md before changing this sample. Use the pinned CLI
+through `npm run --silent agentcore -- --help` and command help for its syntax.
+The launcher confines CLI preferences to this project; do not bypass it with a
+global CLI or reuse commands from an old v0 checkout.
 
-The `agentcore/` directory is a declarative model of the project. The `agentcore/cdk/` subdirectory uses the
-`@aws/agentcore-cdk` L3 constructs to deploy the configuration to AWS.
+## Ownership and invariants
 
-## Mental Model
+- Scope is a fresh-checkout v1 port, not an existing-stack upgrade. Populated v0
+  migration and physical/logical-ID continuity are NOT RUN; preserve real state.
+- `agentcore/agentcore.json` is schema version 2. `migratedFrom: "v1"` means the
+  old schema version, not the current CLI: preserve it and all resource names.
+- This is intentionally an empty checked-in scaffold. DEPLOYMENT.md Step 2 registers
+  the existing Python MCP code with `agentcore add runtime` and separately adds
+  OAuth credentials using `agentcore add credentials oauth`. First reserve a
+  unique tagged provider with `oauth_provider.py`; verify `--reuse-owned` before
+  every credential-bearing deploy. Keep its durable ledger. Unowned/legacy
+  provider reuse and rotation are unsupported; CLI upsert by name is not an
+  ownership check. Do not replace
+  `app/banking_assistant_tools/main.py` with a generated agent template.
+- CDK uses `readAgentCoreProject`, `resolveTargetStacks`, and
+  `transformAgentCoreJson` from the locked @aws/agentcore-cdk 1.2.0. Custom CDK is owned source;
+  inspect it before regenerating. Preserve StackNameOutput and the MCP Runtime
+  permissions boundary (one code artifact, name-ID-delimited log writes,
+  regional telemetry; no model/identity grants). Keep the explicit instrumented
+  entrypoint `opentelemetry-instrument ./main.py`, executable Python shebang and
+  locked ADOT patch extra.
+  The optional existing bootstrap KMS key is constrained by S3 service/context.
+- setup.py owns a separate gateway, IAM role, policy engine, MCP target and ten
+  base permits. Do not duplicate those resources in CDK. Keep target
+  `banking-assistant-tools`, both MCP protocol versions, JWT authentication,
+  OAuth scope `api/mcp`, streaming and temporal sessions.
+- Never base-permit transfer_funds, load_portfolio, rebalance_portfolio or
+  execute_trade. Their temporal permits are the authorization path.
+- Gateway ENFORCE blocks denied requests; LOG_ONLY does not. Policy/engine
+  lifecycle status ACTIVE is readiness, not per-policy enforcementMode ACTIVE.
+  Keep both enforcement checks. Use requirements-control.txt and policy_contract.py
+  before provisioning: exact published SDK models, no HOME/AWS_DATA_PATH shadowing.
+  Check actual configured/default API selection, then bind control clients to the
+  same verified botocore session and explicit version; a fixed-directory check alone
+  is insufficient. Direct helpers also reject divergent real-client models.
+  Never inject models, bypass validation or alter global models to force a pass.
+  Use definition.cedar for portable plain statements; accept the published policy
+  wrapper on reads only when its exact statement matches. Older AWS CLI parsers
+  can drop enforcementMode: use the checked SDK get-policy read in DEPLOYMENT.md.
+  Tests must serialize requests and parse genuine wire responses, not echo input
+  dictionaries as service output. Do not claim a ready engine, logged denial,
+  mock response or local test proves enforcement.
+- The client prompt deliberately does not add prerequisite tool calls. Preserve
+  that behavior and the signed trade cost test input; do not redesign tool
+  workflows under the guise of migration. Human approval is simulated, not
+  authenticated. Tool errors are distinct from policy DENY.
+- Run one setup/cleanup process at a time. Never discard durable create intents
+  or regenerate their tokens on retry. IAM recovery requires the original intent
+  and unique ownership tag. Cleanup must finish read-only identity/ownership and
+  relationship checks before deleting anything, including in partial-create cases.
+  Unresolved parent AND target/base-policy intents block cleanup until recovered.
+- Setup's separate Gateway role uses exact engine/Gateway/provider/secret and
+  returned workload-identity ARNs, with only the pinned OAuth directory/vault root
+  exceptions. Include CheckAuthorizePermissions from the pinned v1 contract.
+  Reapply exact remote trust after immutable ownership validation on every retry;
+  trust_scoped is historical state, not remote proof.
+- Base policy IDs must be recorded, awaited and checked for exact definition and
+  ACTIVE enforcement on retry/conflict; READY targets must match endpoint/auth.
+- Keep CLI deployment state, setup_config.json and secrets out of source control.
+  Never clear state to bypass a migrator guard or hide failed cleanup. Existing
+  deployments need native migration/physical-ID review, not a fresh-state deploy.
 
-The project uses a **flat resource model**. Agents, memories, credentials, gateways, evaluators, and policies are
-independent top-level arrays in `agentcore.json`. There is no binding between resources in the schema — each resource is
-provisioned independently. Agents discover memories and credentials at runtime via environment variables or SDK calls.
-Tags defined in `agentcore.json` flow through to deployed CloudFormation resources.
-
-## Critical Invariants
-
-1. **Schema-First Authority:** The `.json` files are the source of truth. Do not modify agent behavior by editing
-   generated CDK code in `cdk/`.
-2. **Resource Identity:** The `name` field determines the CloudFormation Logical ID.
-   - **Renaming** a resource will **destroy and recreate** it.
-   - **Modifying** other fields will update the resource **in-place**.
-3. **Schema Validation:** If your JSON conforms to the types in `.llm-context/`, it will deploy successfully. Run
-   `agentcore validate` to check.
-4. **Resource Removal:** Use `agentcore remove` to remove resources. Run `agentcore deploy` after removal to tear down
-   deployed infrastructure.
-5. **Invocation Input:** Validate runtime payloads and require text prompts to be strings. If a Strands app accepts a
-   caller-supplied message history, normalize the history tail with `strip_trailing_tool_use()` before invocation.
-
-## Directory Structure
-
-```
-myProject/
-├── AGENTS.md               # This file — AI coding assistant context
-├── agentcore/
-│   ├── agentcore.json      # Main project config (AgentCoreProjectSpec)
-│   ├── aws-targets.json    # Deployment targets (account + region)
-│   ├── .env.local          # Secrets — API keys (gitignored)
-│   ├── .llm-context/       # TypeScript type definitions for AI assistants
-│   │   ├── README.md       # Guide to using schema files
-│   │   ├── agentcore.ts    # AgentCoreProjectSpec types
-│   │   ├── aws-targets.ts  # AWS deployment target types
-│   │   └── mcp.ts          # Gateway and MCP tool types
-│   └── cdk/                # AWS CDK project (@aws/agentcore-cdk L3 constructs)
-├── app/                    # Agent application code
-└── evaluators/             # Custom evaluator code (if any)
-```
-
-## Schema Reference
-
-The `agentcore/.llm-context/` directory contains TypeScript type definitions optimized for AI coding assistants. Each
-file maps to a JSON config file and includes validation constraints as comments (`@regex`, `@min`, `@max`).
-
-| JSON Config | Schema File | Root Type |
-| --- | --- | --- |
-| `agentcore/agentcore.json` | `agentcore/.llm-context/agentcore.ts` | `AgentCoreProjectSpec` |
-| `agentcore/agentcore.json` (gateways) | `agentcore/.llm-context/mcp.ts` | `AgentCoreMcpSpec` |
-| `agentcore/aws-targets.json` | `agentcore/.llm-context/aws-targets.ts` | `AwsDeploymentTarget[]` |
-
-### Key Types
-
-- **AgentCoreProjectSpec**: Root config with `runtimes`, `memories`, `credentials`, `agentCoreGateways`, `evaluators`, `onlineEvalConfigs`, `onlineInsightsConfigs`, `knowledgeBases`, `harnesses`, `policyEngines`, `policies`, `payments` (managers + connectors), `configBundles`, `datasets`, `runtimeEndpoints` arrays
-- **AgentEnvSpec**: Agent configuration (build type, entrypoint, code location, runtime version, network mode)
-- **Memory**: Memory resource with strategies (SEMANTIC, SUMMARIZATION, USER_PREFERENCE, EPISODIC) and expiry
-- **Credential**: API key or OAuth credential provider
-- **AgentCoreGateway**: MCP gateway with targets (Lambda, MCP server, OpenAPI, Smithy, API Gateway, web-search, knowledge-base)
-- **Evaluator**: LLM-as-a-Judge or code-based evaluator
-- **OnlineEvalConfig**: Continuous evaluation pipeline bound to an agent
-- **OnlineInsightsConfig** _[preview]_: Continuous failure-pattern analysis bound to an agent
-- **KnowledgeBase**: Managed Bedrock Knowledge Base auto-wired to a gateway
-- **Harness**: Declarative agent — runtime + tools + skills + memory + observability without writing agent code
-- **PolicyEngine** + **Policy**: Cedar policy engine with form-based guardrails (Bedrock content filters, prompt-attack, sensitive-info) or raw Cedar policies
-- **PaymentManager** + **PaymentConnector**: x402-protocol payment orchestration with provider credentials (CoinbaseCDP, StripePrivy)
-- **ConfigBundle**: Versioned runtime configuration as a separately-deployable resource
-- **Dataset**: Curated session dataset for batch evaluation and recommendation runs
-- **RuntimeEndpoint**: Named endpoint (e.g. `PROMPT_V1`) targeting a specific runtime version
-
-### Common Enum Values
-
-- **BuildType**: `'CodeZip'` | `'Container'`
-- **NetworkMode**: `'PUBLIC'` | `'VPC'`
-- **RuntimeVersion**: `'PYTHON_3_10'` | `'PYTHON_3_11'` | `'PYTHON_3_12'` | `'PYTHON_3_13'` | `'PYTHON_3_14'` | `'NODE_18'` | `'NODE_20'` | `'NODE_22'`
-- **MemoryStrategyType**: `'SEMANTIC'` | `'SUMMARIZATION'` | `'USER_PREFERENCE'` | `'EPISODIC'`
-- **GatewayTargetType**: `'lambda'` | `'mcpServer'` | `'openApiSchema'` | `'smithyModel'` | `'apiGateway'` | `'lambdaFunctionArn'` | `'connector'` (web-search, bedrock-knowledge-bases)
-- **ModelProvider**: `'Bedrock'` | `'Gemini'` | `'OpenAI'` | `'Anthropic'`
-- **PaymentProvider**: `'CoinbaseCDP'` | `'StripePrivy'`
-- **PolicyEnforcementMode**: `'ACTIVE'` | `'PASSIVE'`
-- **GuardrailContentFilter**: `'VIOLENCE'` | `'HATE'` | `'SEXUAL'` | `'MISCONDUCT'` | `'INSULTS'`
-
-### Build Types
-
-- **CodeZip**: Python source packaged as a zip and deployed directly to AgentCore Runtime.
-- **Container**: Docker image built in CodeBuild (ARM64), pushed to a per-agent ECR repository. Requires a `Dockerfile`
-  in the agent's `codeLocation` directory. For local development (`agentcore dev`), the container is built and run
-  locally with volume-mounted hot-reload.
-
-### Supported Frameworks (for template agents)
-
-- **Strands** — Bedrock, Anthropic, OpenAI, Gemini
-- **LangChain/LangGraph** — Bedrock, Anthropic, OpenAI, Gemini
-- **GoogleADK** — Gemini
-- **OpenAI Agents** — OpenAI
-- **Autogen** — Bedrock, Anthropic, OpenAI, Gemini
-
-### Protocols
-
-- **HTTP** — Standard HTTP agent endpoint
-- **MCP** — Model Context Protocol server
-- **A2A** — Agent-to-Agent protocol (Google A2A)
-
-## Deployment
-
-Deployments are orchestrated through the CLI:
+## Local checks
 
 ```bash
-agentcore deploy    # Synthesizes CDK and deploys to AWS
-agentcore status    # Shows deployment status
+npm ci --prefix agentcore/cdk
+npm test --prefix agentcore/cdk
+# First follow DEPLOYMENT.md's hash-locked control environment and model preflight.
+banking_control -m unittest discover -s tests -v
 ```
 
-Alternatively, deploy directly via CDK:
+Tests stub SDK calls and use fake credentials; never run setup.py or cleanup.py
+against AWS merely to test imports. `agentcore build` packages local Runtime
+artifacts but is not a substitute for schema, synthesis and negative tests.
+`agentcore status --target default --json` reports `resources` with resourceType,
+deploymentState and arn; use runtime_access.py rather than old invocationUrl or
+deployedState JSON paths.
 
-```bash
-cd agentcore/cdk
-npm install
-npx cdk synth
-npx cdk deploy
-```
-
-## Editing Schemas
-
-When modifying JSON config files:
-
-1. Read the corresponding `agentcore/.llm-context/*.ts` file for type definitions
-2. Check validation constraint comments (`@regex`, `@min`, `@max`)
-3. Use exact enum values as string literals
-4. Use CloudFormation-safe names (alphanumeric, start with letter)
-5. Run `agentcore validate` to verify changes
-
-## Harness Export
-
-`agentcore export harness` converts a harness configuration into a deployable Strands Python agent under `app/<agentName>/`.
-
-**After every export, you MUST read `app/<agentName>/EXPORT_NOTES.md` before proceeding.**
-
-This file lists any manual follow-up items required before the agent will deploy or run correctly — missing files to create, IAM policies to add, or configuration steps the exporter could not automate. A clean export produces "No manual steps required." Complete every item in the file before running `agentcore deploy`.
-
-```bash
-agentcore export harness --name <harnessName>   # generates app/<agentName>/EXPORT_NOTES.md
-cat app/<agentName>/EXPORT_NOTES.md             # read this before touching anything else
-```
-
-## CLI Commands
-
-Run `agentcore --help` or `agentcore <command> --help` for full flags. Commonly used:
-
-**Project lifecycle**
-
-| Command | Description |
-| --- | --- |
-| `agentcore create` | Create a new project |
-| `agentcore dev` | Run agent locally with hot-reload |
-| `agentcore deploy` | Deploy to AWS |
-| `agentcore invoke` | Invoke agent (local or deployed) |
-| `agentcore status` | Show deployment status |
-| `agentcore validate` | Validate configuration |
-| `agentcore package` | Package agent artifacts |
-| `agentcore import` | Import resources from a Bedrock AgentCore Starter Toolkit project |
-
-**Resources**
-
-| Command | Description |
-| --- | --- |
-| `agentcore add <resource>` | Add agent, memory, credential, gateway, gateway-target, evaluator, online-eval, online-insights, knowledge-base, harness, policy-engine, policy, payment-manager, payment-connector, config-bundle, dataset, runtime-endpoint |
-| `agentcore remove <resource>` | Remove any resource |
-| `agentcore export harness` | Export a harness to a Strands runtime agent under `app/<agentName>/` |
-
-**Jobs (run, view, archive, lifecycle)**
-
-| Command | Description |
-| --- | --- |
-| `agentcore run eval` | Run on-demand evaluation against agent traces |
-| `agentcore run batch-evaluation` | Run evaluators across all sessions at scale |
-| `agentcore run recommendation` | Optimize prompts or tool descriptions from real traces |
-| `agentcore run insights` _[preview]_ | Run failure-pattern analysis across sessions |
-| `agentcore run ab-test` | Start an A/B test (config-bundle or target-based) |
-| `agentcore run ingest` | Start a fresh ingestion job for every data source on a deployed knowledge base |
-| `agentcore view <type>` | List or view jobs (recommendation, batch-evaluation, ab-test, insights) |
-| `agentcore archive <type>` | Delete a job on the service + clear local history |
-| `agentcore stop <type>` | Stop a running batch-evaluation or ab-test |
-| `agentcore promote ab-test` | Apply the winning variant to `agentcore.json` |
-| `agentcore pause <type>` / `agentcore resume <type>` | Pause/resume a deployed online-eval, online-insights, or ab-test |
-
-**Config bundles & datasets**
-
-| Command | Description |
-| --- | --- |
-| `agentcore config-bundle versions` (alias `cb versions`) | List version history for a bundle |
-| `agentcore config-bundle diff` | Diff two versions of a bundle |
-| `agentcore config-bundle create-branch` | Create a new branch on an existing bundle |
-| `agentcore dataset download` | Download a dataset version locally |
-| `agentcore dataset publish-version` | Publish a new dataset version |
-| `agentcore dataset remove-version` | Remove a dataset version |
-
-**Observability & history**
-
-| Command | Description |
-| --- | --- |
-| `agentcore logs` | Stream/search agent runtime logs |
-| `agentcore logs evals` | Stream/search online-eval logs |
-| `agentcore traces list` / `agentcore traces get` | List recent traces or download one to JSON |
-| `agentcore evals history` | View past on-demand eval results |
-
-**Utilities**
-
-| Command | Description |
-| --- | --- |
-| `agentcore fetch access` | Fetch access info for deployed gateway or agent |
-| `agentcore feedback` | Send feedback (with optional screenshot) to the AgentCore team |
-| `agentcore update` | Check for and install CLI updates |
-| `agentcore telemetry` | View or change telemetry preferences |
+Deploy/remove/invoke require explicit cloud authorization. Follow DEPLOYMENT.md's
+separate setup-resource, CLI-resource, retained-provider and Cognito cleanup.
+Migrated OAuth providers may be shared and are not implicitly deleted by CLI
+resource removal. Never broaden IAM or reset shared bootstrap/observability to
+make a deployment pass.
