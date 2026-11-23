@@ -126,6 +126,27 @@ class SyncTests(unittest.TestCase):
                 sync.RECEIPT.unlink()
         self.stub.assert_no_pending_responses()
 
+    def test_inline_drafts_do_not_fetch_or_approve(self):
+        for kind, key in [("AGENT", "a2aAgentCard"), ("MCP", "mcpServer")]:
+            with self.subTest(kind=kind):
+                data = {"name": "reviewed fixture"}
+                args = {
+                    "registryId": REGISTRY,
+                    "name": ANY,
+                    "clientToken": ANY,
+                    "recordType": kind,
+                    "descriptors": {key: {"data": json.dumps(data)}},
+                }
+                self.stub.add_response("get_registry", REG)
+                self.stub.add_response("create_registry_record", {"recordArn": ARN, "status": "DRAFT"}, args)
+                state = sync.create(self.client, REGISTRY, ACCOUNT, REGION, inline=(kind, key, data))
+                self.stub.add_response(
+                    "get_registry_record", dict(RECORD, recordType=kind, descriptors=args["descriptors"])
+                )
+                sync.describe(self.client, state)
+                sync.RECEIPT.unlink()
+        self.stub.assert_no_pending_responses()
+
     def test_failed_or_empty_sync_never_reports_success(self):
         state = self.create(sync.source("public", REGION, ACCOUNT))
         for data in [dict(RECORD, status="CREATE_FAILED"), dict(RECORD, descriptors={})]:

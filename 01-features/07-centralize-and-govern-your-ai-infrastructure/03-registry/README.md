@@ -1,82 +1,22 @@
-# AWS Agent registry
+# AWS Agent Registry samples
 
-AWS Agent registry lets you discover and manage agents, tools, and resources across your organization. It provides a centralized catalog where teams can publish, search, and consume AI capabilities — enabling reuse and standardization across agent-based applications.
+Registry lets publishers describe capabilities, administrators govern approval, and consumers search discoverable records. Publishing metadata is not permission to invoke a tool. Choose an example for the part of the lifecycle you need:
 
-## Key Capabilities
+| Path | Lesson |
+|---|---|
+| [Registry end to end](01-registry-end-to-end/) | Publisher and administrator personas, records, approval and search |
+| [End to end with OAuth](02-registry-end-to-end-oauth/) | Cognito JWT authentication |
+| [Publish existing MCP and A2A capabilities](03-advanced/publish-agentcore-tools-in-registry/) | Create a draft from a reviewed descriptor, without deploying its source |
+| [Synchronize an MCP endpoint](03-advanced/registry-synchronize-mcpserver/) | Public endpoint or existing IAM/OAuth-protected source |
+| [Discover approved MCP and A2A records](03-advanced/discovery-and-invocation-at-runtime/) | Search from application code without sending credentials to discovered destinations |
+| [Consumer semantic search](03-advanced/consumer-discovery-semantic-search/) | Compare queries over an e-commerce catalog |
+| [Admin approval workflow](03-advanced/admin-approval-workflow/) | Event-driven approvals and notifications |
+| [Custom metadata](03-advanced/custom-metadata-in-registry/) | Schema validation, automated approval and filtered search |
+| [Push synchronization](03-advanced/registry-push-sync-lambda/) | Refresh records on Runtime updates |
+| [Dynamic skill discovery](03-advanced/registry-skills-dynamic-discovery/) | Discover agent skill records |
+| [Kiro publisher workflow](03-advanced/kiro/kiro-power-publisher-workflow/) | Manage records from Kiro |
+| [Kiro and Auth0](03-advanced/kiro-registry-dcr-auth0/) | Dynamic client registration |
+| [Strands MCP on ECS](03-advanced/strands-mcp-ecs-registry/) | Containerized MCP example |
+| [Namespace migration](04-migrate-to-new-namespace/) | Migrate preview records to the new namespace |
 
-- **Centralized catalog** — register and discover agents, tools, and resources in one place
-- **Discoverability** — search and browse available capabilities across teams and accounts
-- **Metadata management** — attach descriptions, schemas, and usage documentation to registered resources
-- **Governance integration** — works with AgentCore gateway and policy for end-to-end access control
-
-## Top-level Layout
-
-| Folder | What's Inside |
-|:---|:---|
-| `00-getting-started/step-by-step/` | Five focused scripts: personas, registry creation, publishing records, approval, search |
-| `00-getting-started/end-to-end/01-registry-end-to-end/` | Full end-to-end walkthrough: registry → records → approval → search |
-| `00-getting-started/end-to-end/02-registry-end-to-end-oauth/` | End-to-end with Cognito CUSTOM_JWT OAuth authentication |
-| `01-advanced/admin-approval-workflow/` | EventBridge + Lambda + DynamoDB approval pipeline with Slack notifications |
-| `01-advanced/consumer-discovery-semantic-search/` | 12 semantic search scenarios across 14 e-commerce capabilities |
-| `03-advanced/custom-metadata-in-registry/` | Custom metadata schema and validation, automated approval with EventBridge + Lambda, metadata-filtered search, and a Strands agent that searches through the registry MCP endpoint |
-| `01-advanced/discovery-and-invocation-at-runtime/` | Orchestrator agent that discovers and invokes tools from registry at runtime |
-| `01-advanced/kiro-registry-dcr-auth0/` | registry as an MCP server in Kiro IDE via Auth0 DCR (RFC 7591) |
-| `01-advanced/kiro/kiro-power-publisher-workflow/` | Manage registry records directly from Kiro IDE chat |
-| `01-advanced/publish-agentcore-tools-in-registry/` | Deploy MCP + A2A agents to AgentCore runtime and register them |
-| `01-advanced/registry-push-sync-lambda/` | Lambda + EventBridge pipeline to auto-sync registry on runtime updates |
-| `01-advanced/registry-skills-dynamic-discovery/` | AGENT_SKILLS record type: dynamic skill discovery with Strands agent |
-| [MCP server synchronization](03-advanced/registry-synchronize-mcpserver/) | Import a draft from a public MCP endpoint or an existing OAuth/IAM-protected Runtime |
-
-## How This Tree Is Organized
-
-The `00-getting-started` folder provides a linear path from registry basics to complete
-end-to-end demos. The `01-advanced` folder covers production-grade patterns organized
-by concern: authentication (OAuth, DCR), automation (Lambda sync), runtime integration
-(AgentCore runtime + gateway), and IDE-native discovery (Kiro).
-
-## Finding Things
-
-- **By pattern** → Authentication: `02-registry-end-to-end-oauth`, `kiro-registry-dcr-auth0`; Automation: `registry-push-sync-lambda`, `registry-synchronize-mcpserver`; runtime deployment: `publish-agentcore-tools-in-registry`, `discovery-and-invocation-at-runtime`; Skills: `registry-skills-dynamic-discovery`; Governance metadata: `custom-metadata-in-registry`
-- **By role** → Consumer: `consumer-discovery-semantic-search`, `kiro/*`; Publisher: `00-getting-started/step-by-step`, `publish-agentcore-tools-in-registry`; Admin: `admin-approval-workflow`
-- **By complexity** → Beginner: `00-getting-started/`; Intermediate: `consumer-discovery`, `admin-approval`, `registry-synchronize`; Advanced: `discovery-and-invocation-at-runtime`, `registry-push-sync-lambda`
-
-## Prerequisites
-
-- Python 3.10+
-- AWS account with Bedrock AgentCore access
-- AWS CLI configured with credentials
-- `boto3` installed (`pip install boto3`)
-- Some advanced examples also require `strands-agents`, `bedrock-agentcore-starter-toolkit`, or `python-dotenv` — see per-folder `requirements.txt`
-
-## Running the Python Scripts
-
-```bash
-# Getting started — step by step
-python 00-getting-started/step-by-step/01_create_user_personas_workflow.py
-python 00-getting-started/step-by-step/02_creating_registry_workflow.py
-python 00-getting-started/step-by-step/03_publishing_records_workflow.py
-python 00-getting-started/step-by-step/04_admin_approval_workflow.py
-python 00-getting-started/step-by-step/05_search_registry_workflow.py
-
-# Getting started — end to end
-python 00-getting-started/end-to-end/01-registry-end-to-end/getting_started_registry_end_to_end.py
-python 00-getting-started/end-to-end/02-registry-end-to-end-oauth/registry_end_to_end_oauth.py
-
-# Advanced
-python 01-advanced/consumer-discovery-semantic-search/consumer_discovery_semantic_search.py
-python 01-advanced/admin-approval-workflow/admin_approval_workflow.py
-python 01-advanced/registry-skills-dynamic-discovery/registry_skills_dynamic_discovery.py
-python 03-advanced/registry-synchronize-mcpserver/registry_synchronize_mcpserver.py --help
-python 01-advanced/registry-push-sync-lambda/deploy_lambda_push_sync.py
-python 01-advanced/publish-agentcore-tools-in-registry/publish_agentcore_a2a_mcp_in_registry.py
-python 01-advanced/discovery-and-invocation-at-runtime/discovery_and_invocation_at_runtime.py
-python 01-advanced/kiro-registry-dcr-auth0/dcr_registry_search_mcp_in_kiro.py
-
-# Custom metadata (each .sh runs the matching steps/*.py; see the folder README)
-cd 03-advanced/custom-metadata-in-registry && ./setup.sh && ./00_setup.sh && ./01_define_schema.sh && ./02_register.sh \
-  && ./03_enrich_and_submit.sh && ./04_discover.sh && ./05_agent_discover.sh && ./99_cleanup.sh
-```
-
-## Documentation
-
-- [AWS Agent registry Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/registry.html)
+Use the prerequisites and cleanup instructions in the selected sample. Control-plane and consumer operations use different clients: `agent-registry-control` manages records; `agent-registry` searches discoverable records. Don't install a repository-wide dependency bundle or assume approval makes an endpoint trusted for your credentials.

@@ -70,7 +70,17 @@ def save(state):
     os.replace(f.name, RECEIPT)
 
 
-def create(client, registry_id, account, region, from_url):
+def create(client, registry_id, account, region, from_url=None, *, inline=None):
+    if (from_url is None) == (inline is None):
+        raise ValueError("Choose exactly one descriptor source")
+    if inline:
+        kind, key, data = inline
+        if (kind, key) not in {("MCP", "mcpServer"), ("AGENT", "a2aAgentCard")} or not isinstance(data, dict):
+            raise ValueError("Use an MCP server descriptor or A2A agent card JSON object")
+        descriptors = {key: {"data": json.dumps(data)}}
+    else:
+        kind = "MCP"
+        descriptors = {"mcpServer": {"source": {"fromUrl": from_url}}}
     registry = client.get_registry(registryId=registry_id)
     registry_arn = f"arn:aws:agent-registry:{region}:{account}:registry/{registry_id}"
     if registry["registryArn"] != registry_arn or registry["status"] != "READY":
@@ -79,6 +89,7 @@ def create(client, registry_id, account, region, from_url):
         raise ValueError("Use a sandbox registry with no automatic approval rules.")
     name = "sync-demo-" + uuid.uuid4().hex[:16]
     state = {
+        "record_type": kind,
         "registry_id": registry_id,
         "registry_arn": registry_arn,
         "account": account,
@@ -92,8 +103,8 @@ def create(client, registry_id, account, region, from_url):
     result = client.create_registry_record(
         registryId=registry_id,
         name=name,
-        recordType="MCP",
-        descriptors={"mcpServer": {"source": {"fromUrl": from_url}}},
+        recordType=kind,
+        descriptors=descriptors,
         clientToken=state["client_token"],
     )
     arn = result["recordArn"]
@@ -111,7 +122,7 @@ def get_owned(client, state):
     if (record["registryArn"], record["recordArn"], record["recordType"]) != (
         state["registry_arn"],
         state["record_arn"],
-        "MCP",
+        state.get("record_type", "MCP"),
     ):
         raise RuntimeError("Record receipt mismatch; nothing changed.")
     return record
@@ -123,10 +134,11 @@ def describe(client, state):
         record = get_owned(client, state)
         status = record["status"]
         if status == "DRAFT":
-            descriptor = record.get("descriptors", {}).get("mcpServer", {}).get("data")
+            key = "a2aAgentCard" if record["recordType"] == "AGENT" else "mcpServer"
+            descriptor = record.get("descriptors", {}).get(key, {}).get("data")
             if not descriptor:
-                raise RuntimeError("Draft has no extracted MCP descriptor. Check the source and authorization.")
-            print(f"DRAFT: {state['record_arn']} ({len(descriptor.encode())} bytes of MCP metadata)")
+                raise RuntimeError("Draft has no descriptor data. Check the source and authorization.")
+            print(f"DRAFT: {state['record_arn']} ({len(descriptor.encode())} bytes of descriptor metadata)")
             return
         if status not in {"CREATING", "UPDATING"}:
             raise RuntimeError(f"Record reached {status}, not DRAFT. Check the record before continuing.")
@@ -162,11 +174,17 @@ def main():
     sync.add_argument("--role-arn")
     sync.add_argument("--provider-arn")
     sync.add_argument("--scope", action="append", default=[])
+    publish = commands.add_parser(
+        "draft", help="submit one operator-reviewed inline descriptor, without fetching its URL"
+    )
+    publish.add_argument("--registry-id", required=True)
+    publish.add_argument("--kind", choices=("mcp", "a2a"), required=True)
+    publish.add_argument("--descriptor", type=Path, required=True)
     commands.add_parser("status")
     commands.add_parser("cleanup")
     args = parser.parse_args()
     with exclusive():
-        state = {} if args.command == "sync" else json.loads(RECEIPT.read_text())
+        state = {} if args.command in {"sync", "draft"} else json.loads(RECEIPT.read_text())
         session = boto3.Session(region_name=state.get("region"))
         region = session.region_name
         if not region:
@@ -183,6 +201,10 @@ def main():
                 args.mode, region, account, args.runtime_arn, args.role_arn, args.provider_arn, args.scope
             )
             state = create(client, args.registry_id, account, region, from_url)
+        elif args.command == "draft":
+            kind, key = ("MCP", "mcpServer") if args.kind == "mcp" else ("AGENT", "a2aAgentCard")
+            data = json.loads(args.descriptor.read_text(encoding="utf-8"))
+            state = create(client, args.registry_id, account, region, inline=(kind, key, data))
         describe(client, state)
 
 

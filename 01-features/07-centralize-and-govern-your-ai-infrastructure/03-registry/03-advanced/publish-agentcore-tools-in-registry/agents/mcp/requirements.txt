@@ -1,5 +1,0 @@
-# The checked-in and publisher-generated servers use the MCP v1 FastMCP API.
-mcp>=1.10.0,<2
-boto3
-bedrock-agentcore
-starlette
