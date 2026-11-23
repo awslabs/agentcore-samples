@@ -26,11 +26,22 @@ echo "==========================================================================
 echo -e "${NC}"
 
 # ── Cleanup on exit ──────────────────────────────────────────────────────────
+# Only ever kill a positive integer: `kill 0` signals this whole process group,
+# so a pid file left empty or zeroed by a server that died early would take out
+# the script itself instead of the server.
+stop_server() {
+    local pidfile="$1" pid
+    [ -f "$pidfile" ] || return 0
+    pid="$(cat "$pidfile" 2>/dev/null)"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill "$pid" 2>/dev/null
+    rm -f "$pidfile"
+}
+
 cleanup() {
     echo ""
     echo -e "${YELLOW}Stopping servers...${NC}"
-    [ -f backend.pid ] && kill "$(cat backend.pid)" 2>/dev/null && rm -f backend.pid
-    [ -f frontend.pid ] && kill "$(cat frontend.pid)" 2>/dev/null && rm -f frontend.pid
+    stop_server backend.pid
+    stop_server frontend.pid
     lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true
     lsof -ti:5173 2>/dev/null | xargs kill -9 2>/dev/null || true
     echo -e "${GREEN}Stopped.${NC}"
@@ -70,7 +81,7 @@ CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text)
 echo -e "  ${GREEN}AWS Account:${NC} $ACCOUNT_ID"
 echo -e "  ${GREEN}Identity:${NC} ${CALLER_ARN##*/}"
 
-REGION="${AWS_DEFAULT_REGION:-$(aws configure get region 2>/dev/null || echo 'us-east-1')}"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-$(aws configure get region 2>/dev/null || echo 'us-east-1')}}"
 export AWS_DEFAULT_REGION="$REGION"
 echo -e "  ${GREEN}Region:${NC} $REGION"
 echo ""
@@ -110,9 +121,13 @@ echo -e "${YELLOW}[4/5] Starting backend (provisions AWS resources on first run)
 lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 1
 
+# `$!` after a pipeline is the PID of its LAST command — `tee`, not python. The
+# recorded PID was therefore the wrong process: Ctrl+C and cleanup.sh killed tee
+# and left the backend running, holding port 8000 and its AWS resources. Start
+# python directly with its output redirected, so $! is the server itself.
 (
     cd backend
-    python3 main.py 2>&1 | tee ../backend.log &
+    python3 main.py > ../backend.log 2>&1 &
     echo $! > ../backend.pid
 )
 
@@ -146,7 +161,7 @@ sleep 1
 
 (
     cd frontend
-    npm run dev 2>&1 | tee ../frontend.log &
+    npm run dev > ../frontend.log 2>&1 &
     echo $! > ../frontend.pid
 )
 
