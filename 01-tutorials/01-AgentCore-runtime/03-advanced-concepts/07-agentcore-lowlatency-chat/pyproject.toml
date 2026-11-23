@@ -1,0 +1,11 @@
+[project]
+name = "agentic-chatbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "bedrock-agentcore>=1.2.0",
+    "bedrock-models>=0.1.20",
+    "strands-agents>=1.23.0",
+]
