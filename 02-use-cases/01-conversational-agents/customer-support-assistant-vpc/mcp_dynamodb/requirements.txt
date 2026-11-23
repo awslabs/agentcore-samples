@@ -35,7 +35,7 @@ charset-normalizer==3.4.3
     # via requests
 click==8.3.0
     # via uvicorn
-cryptography==46.0.2
+cryptography==50.0.0
     # via authlib
 cyclopts==3.24.0
     # via fastmcp
