@@ -1,0 +1,9 @@
+strands-agents
+strands-agents-tools
+uv
+boto3
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+browser-use==0.3.2
+langchain-aws>=0.1.0
+rich

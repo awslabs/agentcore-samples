@@ -1,0 +1,7 @@
+name: basic-runtime
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    virtualenv: .venv
+description: Basic AgentCore Runtime - Pulumi Python
