@@ -238,7 +238,7 @@ urllib3==2.6.0
     #   bedrock-agentcore
     #   botocore
     #   requests
-uv==0.9.6
+uv==0.13.4
     # via customer-support-assistant (pyproject.toml)
 uvicorn==0.36.0
     # via
