@@ -12,12 +12,12 @@
   },
   "devDependencies": {
     "@types/node": "~24.13.3",
-    "aws-cdk": "2.1148.1",
+    "aws-cdk": "2.1149.0",
     "typescript": "~5.9.3"
   },
   "dependencies": {
     "@aws/agentcore-cdk": "1.0.3",
-    "aws-cdk-lib": "2.277.0",
+    "aws-cdk-lib": "2.278.0",
     "constructs": "~10.7.0"
   }
 }

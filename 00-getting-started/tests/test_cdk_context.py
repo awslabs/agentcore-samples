@@ -76,7 +76,7 @@ def project(tmp_path):
         NPM_CONFIG_OFFLINE="true",
         NPM_CONFIG_CACHE=str(tmp_path / "npm-cache"),
         AGENTCORE_DISABLE_KEYCHAIN="1",  # CLI 1.0.3 LocalSecrets guard, not global config routing.
-        CDK_DISABLE_CLI_TELEMETRY="1",  # CDK 2.1148.1 canCollectTelemetry guard.
+        CDK_DISABLE_CLI_TELEMETRY="1",  # CDK CLI telemetry opt-out.
         PYTHONDONTWRITEBYTECODE="1",
         NODE_OPTIONS="--max-old-space-size=2048",
     )
