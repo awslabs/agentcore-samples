@@ -1,6 +1,2 @@
-bedrock-agentcore
-botocore
-boto3
-python-dotenv
-# utils.py makes the Cognito token HTTP request directly.
-requests>=2.32.5
+boto3==1.44.9
+requests==2.34.2
