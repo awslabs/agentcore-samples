@@ -1,6 +1,6 @@
-# Deploy the Google ADK or OpenAI Agents example
+# Deploy an external-model agent on AgentCore Runtime
 
-Both examples run on AgentCore Runtime with **CLI 1.0.3**. Each project deploys **one** example. The deployment machine never needs a model API key. For local-only development, see the [ADK](adk/) or [OpenAI](openai-agents/) README instead.
+Use **CLI 1.0.3** to deploy **one** of three examples: [Google ADK search](adk/), [OpenAI Agents handoffs](openai-agents/), or [Strands streaming with OpenAI](strands-agents/). The deployment machine never needs a model API key. For local-only development, start with the example's README.
 
 ## Before you start
 
@@ -20,7 +20,8 @@ sample=$PWD
 case "${sample##*/}" in
   adk) runtime=adk; provider_var=GEMINI_PROVIDER_NAME; files=(adk_agent_google_search.py provider_credentials.py pyproject.toml) ;;
   openai-agents) runtime=handoff; provider_var=OPENAI_PROVIDER_NAME; files=(openai_agents_handoff_example.py runtime_app.py pyproject.toml) ;;
-  *) echo 'Start in the adk or openai-agents directory.' >&2; exit 1 ;;
+  strands-agents) runtime=stream; provider_var=OPENAI_PROVIDER_NAME; files=(strands_openai_identity.py pyproject.toml) ;;
+  *) echo 'Start in adk, openai-agents, or strands-agents.' >&2; exit 1 ;;
 esac
 account=$(aws sts get-caller-identity --query Account --output text)
 [[ "$ROLE_ARN" == arn:*:iam::"$account":role/* ]]
@@ -68,6 +69,9 @@ Use the command for **the example you deployed**:
 ```bash
 # ADK: ask for the answer and provider-supplied grounding metadata
 agentcore invoke --runtime adk --user-id demo-user --payload '{"prompt":"What was announced at Google I/O?","include_grounding":true}'
+
+# Strands: stream the answer text (the weather tool is a fixture)
+agentcore invoke --runtime stream --user-id demo-user --accept text/event-stream --payload '{"prompt":"What is the demo forecast for Seattle?"}'
 
 # OpenAI Agents: route a dining question to the food specialist
 agentcore invoke --runtime handoff --user-id demo-user --payload '{"prompt":"Where should I eat in Tokyo?"}'

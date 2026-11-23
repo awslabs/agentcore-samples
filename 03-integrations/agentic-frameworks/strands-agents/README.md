@@ -1,103 +1,39 @@
-# Strands Agent with Bedrock AgentCore Integration
+# Stream a Strands agent’s response on AgentCore Runtime
 
-| Information         | Details                                                                      |
-|---------------------|------------------------------------------------------------------------------|
-| Agent type          | Synchronous                                                                 |
-| Agentic Framework   | Strands                                                                    |
-| LLM model           | Anthropic Claude 3 Haiku                                                     |
-| Components          | AgentCore Runtime                                |
-| Example complexity  | Easy                                                                 |
-| SDK used            | Amazon BedrockAgentCore Python SDK                                           |
+Use Strands with an OpenAI model and a small, simulated weather tool. Each invocation gets its own client and agent. In a deployed Runtime, AgentCore Identity supplies the API key for that request. The key never enters the deploy command or a global SDK client.
 
-These example demonstrate how to integrate a Strands agents with AWS Bedrock AgentCore, enabling you to deploy your agent as a managed service. You can use the `agentcore` CLI to configure and launch these agents. 
+The endpoint accepts `{"prompt":"What is the demo forecast for Seattle?"}`. On success it returns **server-sent events**, not a single JSON response. Each `data:` line holds a JSON string containing a text delta. Tool arguments, raw framework events and request context are not streamed. Invalid input or missing credentials fail before streaming starts; if the model fails after text has started, the final event is a JSON object with an `error` field. Don't treat partial text as a completed answer. This replaces the old calculator stream and single-message Identity example; it is not their identical wire format.
 
-## Prerequisites
+## Try without credentials
 
-- Python 3.10+
-- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver
-- AWS account with Bedrock Agentcore access
-
-## Setup Instructions
-
-### 1. Create a Python Environment with uv
+With Python 3.13 and uv, from this directory:
 
 ```bash
-# Install uv if you don't have it already
-
-# Create and activate a virtual environment
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv sync --frozen
+uv run --frozen python -m unittest -v test_streaming
 ```
 
-### 2. Install Requirements
+The tests exercise the actual weather tool and streaming SDK with controlled provider events. To try **paid** local inference, use a private Bash terminal on a trusted host:
 
 ```bash
-uv pip install -r requirements.txt
+(read -rsp 'OpenAI key: ' OPENAI_API_KEY && echo && export OPENAI_API_KEY LOCAL_DEV=1 &&
+ uv run --frozen uvicorn strands_openai_identity:app --host 127.0.0.1 --port 8080)
 ```
 
-### 3. Configure API Key Provider (for OpenAI + strands example)
-
-If you're using OpenAI models with your Strands agent, you'll need to set up an API key provider:
-
-```python
-from bedrock_agentcore.services.identity import IdentityClient
-from boto3.session import Session
-import boto3
-
-boto_session = Session()
-region = boto_session.region_name
-
-# Configure API Key Provider
-identity_client = IdentityClient(region=region)
-api_key_provider = identity_client.create_api_key_credential_provider({
-    "name": "openai-apikey-provider",
-    "apiKey": "sk-..." # Replace it with the API key you obtain from OpenAI
-})
-print(api_key_provider)
-```
-
-### 4. Understanding the Agent Code
-
-The `strands_agent_file_system.py` file contains a simple Strands agent with file system capabilities, integrated with Bedrock AgentCore:
-
-```python
-import os
-os.environ["BYPASS_TOOL_CONSENT"]="true"
-
-from strands import Agent
-from strands_tools import file_read, file_write, editor
-
-# Initialize Strands agent with file system tools
-agent = Agent(tools=[file_read, file_write, editor])
-
-# Integrate with Bedrock AgentCore
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-app = BedrockAgentCoreApp()
-
-@app.entrypoint
-def agent_invocation(payload, context):
-    """Handler for agent invocation"""
-    user_message = payload.get("prompt", "No prompt found in input, please guide customer to create a json payload with prompt key")
-    result = agent(user_message)
-    return {"result": result.message}
-
-app.run()
-```
-
-### 5. Configure and Launch with Bedrock AgentCore Toolkit
+From a second terminal, use `curl -N` to avoid buffering the output:
 
 ```bash
-# Configure your agent for deployment
-agentcore configure -e strands_agent_file_system.py
-
-# Deploy your agent
-agentcore launch
+curl -N --fail-with-body http://127.0.0.1:8080/invocations -H 'Content-Type: application/json' \
+  -d '{"prompt":"Use the weather tool for Seattle"}'
 ```
 
-### 6. Testing Your Agent
+Stop the server with Ctrl-C. Local HTTP is unauthenticated; don't expose or tunnel it. Use fictional prompts and do not enable debug logging of provider requests.
 
-Once deployed, you can test your agent using:
+## Deploy, invoke and clean up
 
-```bash
-agentcore invoke '{"prompt":"hello"}'
-```
+Follow the [external-model Runtime walkthrough](../EXTERNAL_MODEL_RUNTIME.md) **starting in this directory**. It uses AgentCore CLI 1.0.3, an owner-approved execution role and an externally managed OpenAI API-key provider. Do not set `LOCAL_DEV` or supply the raw key when deploying.
+
+## Looking for file access or external tracing?
+
+- For user-scoped file access, see [the S3 mount data isolation example](../../../01-features/02-host-your-agent/01-runtime/03-advanced/18-s3-mount-rental-agencies/). It teaches an IAM-enforced boundary rather than letting a model edit arbitrary local paths with consent bypassed. It is not a replacement for a general editor.
+- For agents hosted **outside** Runtime, use the independent [observability example](observability/). It has its own dependencies and does not use the cloud deployment steps above.

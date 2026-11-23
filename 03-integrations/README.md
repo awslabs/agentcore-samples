@@ -14,7 +14,7 @@ This folder contains framework and protocol integrations that demonstrate how to
 * **[LlamaIndex](./agentic-frameworks/llamaindex/)**: Document processing and retrieval-augmented generation — includes [observability examples](./agentic-frameworks/llamaindex/observability/)
 * **[OpenAI Agents](./agentic-frameworks/openai-agents/)**: OpenAI Agents SDK specialist handoffs on Runtime, with AgentCore Identity for outbound credentials
 * **[PydanticAI](./agentic-frameworks/pydanticai-agents/)**: Type-safe agent development with Bedrock models
-* **[Strands Agents](./agentic-frameworks/strands-agents/)**: Native integration examples with streaming, file system, and OpenAI identity — includes [observability examples](./agentic-frameworks/strands-agents/observability/)
+* **[Strands Agents](./agentic-frameworks/strands-agents/)**: Stream text from a request-local Strands agent using OpenAI and AgentCore Identity; see a separate per-user filesystem example — includes [observability examples](./agentic-frameworks/strands-agents/observability/)
 
 ## ☁️ AWS Services
 

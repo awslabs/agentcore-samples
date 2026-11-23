@@ -1,5 +1,0 @@
-strands-agents[openai]
-strands-agents-tools
-aws-opentelemetry-distro~=0.10.1
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
