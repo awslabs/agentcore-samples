@@ -836,6 +836,22 @@ def validate_runtime_configuration(settings: dict[str, Any], mappings: list[dict
     ):
         if not isinstance(load.get(field, default), bool):
             raise ConfigurationError(f"load.{field} must be a boolean")
+    transform = settings.get("transform")
+    if isinstance(transform, dict):
+        # Imported here, not at module scope: the modes are owned by the guard that acts on them,
+        # and this module is the configuration layer, which nothing else in it makes depend on a
+        # control-plane client (or on boto3 being importable just to validate a config file).
+        from .registry_api import DUPLICATE_NAME_MODES
+
+        # Absent means the default, so a deployment made before this setting existed keeps working.
+        # An unrecognised value must not be tolerated: the claim guard treats anything that is not
+        # "suffix" as "fail", so a typo would silently give the stricter behaviour on a run whose
+        # whole purpose was to migrate colliding records.
+        duplicate_names = transform.get("duplicateNames", "fail")
+        if duplicate_names not in DUPLICATE_NAME_MODES:
+            raise ConfigurationError(
+                f"transform.duplicateNames must be one of {', '.join(DUPLICATE_NAME_MODES)}, got {duplicate_names!r}"
+            )
     replay_configuration_fingerprint(settings)
 
     seen: set[str] = set()
