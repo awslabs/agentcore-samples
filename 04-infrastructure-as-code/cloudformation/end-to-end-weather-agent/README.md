@@ -74,7 +74,7 @@ The architecture demonstrates a complete AgentCore deployment with multiple inte
 3. Agent generates Python code and uses Code Interpreter to classify weather
 4. Agent retrieves user preferences from Memory
 5. Agent generates personalized recommendations
-6. Agent stores results in S3 bucket using use_aws tool
+6. The `save_activity_plan` tool writes Markdown to `results.md` in the stack’s results bucket using boto3.
 
 ## Prerequisites
 
@@ -92,7 +92,7 @@ The architecture demonstrates a complete AgentCore deployment with multiple inte
    aws configure
    ```
 
-3. **Bedrock Model Access**: Enable access to Amazon Bedrock models in your AWS region
+3. **Bedrock Model Access**: Use a Region and account with access to the global Claude Sonnet 4.6 (planner and analysis) and Claude Haiku 4.5 (browser) inference profiles. Organization policies must allow their inference destinations.
    - Navigate to [Amazon Bedrock Console](https://console.aws.amazon.com/bedrock/)
    - [Bedrock Model Access Guide](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)
 
@@ -293,8 +293,8 @@ Try these queries to test the weather agent:
    - Creates day-by-day activity recommendations
    - Formats as Markdown document
 
-8. **Storage** (S3 via use_aws tool):
-   - Saves recommendations to S3 bucket as `results.md`
+8. **Storage** (`save_activity_plan`):
+   - Accepts Markdown, not an AWS operation or a destination. The Runtime role can write only `results.md` in the stack’s bucket. Each completed plan replaces the current object; this demo uses shared preferences and is not a per-user store.
    - User can download and review recommendations
 
 ### Asynchronous Processing
@@ -316,19 +316,21 @@ chmod +x cleanup.sh
 ./cleanup.sh
 ```
 
-**Note**: If cleanup fails due to active browser sessions, see the AWS CLI cleanup method below for manual session termination.
+Before deletion, verify the account, Region and stack ID against your creation records. The results bucket is versioned: download any plans you need, then remove the sample’s object versions and delete markers from that bucket. If browser sessions remain, stop only sessions belonging to this deployment.
 
 ### Using AWS CLI
 
 ```bash
-# Step 1: Empty the S3 bucket (required before deletion)
+# Step 1: Identify the versioned results bucket owned by this stack
 BUCKET_NAME=$(aws cloudformation describe-stacks \
   --stack-name weather-agent-demo \
   --region us-west-2 \
   --query 'Stacks[0].Outputs[?OutputKey==`ResultsBucket`].OutputValue' \
   --output text)
 
-aws s3 rm s3://$BUCKET_NAME --recursive
+# Review versions and delete markers. Use S3's Empty action only after verifying
+# this is the dedicated stack bucket and nothing in it needs to be retained.
+aws s3api list-object-versions --bucket "$BUCKET_NAME" --region us-west-2
 
 # Step 2: Terminate any active browser sessions
 # Get the Browser ID
@@ -340,13 +342,13 @@ BROWSER_ID=$(aws cloudformation describe-stacks \
 
 # List active sessions
 aws bedrock-agentcore list-browser-sessions \
-  --browser-id $BROWSER_ID \
+  --browser-identifier "$BROWSER_ID" \
   --region us-west-2
 
 # Terminate each active session (replace SESSION_ID with actual session ID from list command)
 # Repeat this command for each active session
-aws bedrock-agentcore terminate-browser-session \
-  --browser-id $BROWSER_ID \
+aws bedrock-agentcore stop-browser-session \
+  --browser-identifier "$BROWSER_ID" \
   --session-id SESSION_ID \
   --region us-west-2
 
