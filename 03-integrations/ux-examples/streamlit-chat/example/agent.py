@@ -1,52 +1,36 @@
-# Basic strands agent streaming example.
-# To test locally, run `uv run agent.py` and then
-# curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "Hello!"}'
+"""Optional streaming producer: one request-local agent and an explicitly simulated forecast."""
 
+import os
+from contextlib import aclosing
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent, tool
 from strands.models import BedrockModel
-from strands_tools import calculator
 
 app = BedrockAgentCoreApp()
 
 
 @tool
-def weather():
-    """Get weather"""
-    return "sunny"
-
-
-model_id = "us.amazon.nova-pro-v1:0"
-model = BedrockModel(
-    model_id=model_id,
-)
-agent = Agent(
-    model=model,
-    tools=[calculator, weather],
-    system_prompt="You're a helpful assistant. You can do simple math calculation, and tell the weather.",
-)
+def weather() -> str:
+    """Return the demo weather, not a live forecast."""
+    return "Sunny (simulated)"
 
 
 @app.entrypoint
 async def strands_agent_bedrock(payload):
-    """
-    Invoke the agent with a payload
-    """
-    user_input = payload.get("prompt")
-    agent_stream = agent.stream_async(user_input)
-    tool_name = None
-    try:
-        async for event in agent_stream:
-            if "current_tool_use" in event and event["current_tool_use"].get("name") != tool_name:
-                tool_name = event["current_tool_use"]["name"]
-                yield f"\n\n🔧 Using tool: {tool_name}\n\n"
-
-            if "data" in event:
-                tool_name = None
+    prompt = payload.get("prompt") if isinstance(payload, dict) else None
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
+        raise ValueError("Expected a nonempty prompt of up to 4000 characters")
+    agent = Agent(model=BedrockModel(model_id=os.environ["BEDROCK_MODEL_ID"]), tools=[weather], callback_handler=None)
+    async with aclosing(agent.stream_async(prompt)) as events:
+        last_tool = None
+        async for event in events:
+            current = event.get("current_tool_use", {})
+            if current.get("name") and current.get("toolUseId") != last_tool:
+                last_tool = current["toolUseId"]
+                yield f"\n\n🔧 Using tool: {current['name']}\n\n"
+            if isinstance(event.get("data"), str) and event["data"]:
                 yield event["data"]
-    except Exception as e:
-        yield f"Error: {str(e)}"
 
 
 if __name__ == "__main__":

@@ -1,0 +1,8 @@
+[project]
+name = "runtime-streamlit-producer"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = ["bedrock-agentcore==1.27.0", "strands-agents==1.66.0"]
+
+[tool.agentcore]
+entrypoint = "agent.py"
