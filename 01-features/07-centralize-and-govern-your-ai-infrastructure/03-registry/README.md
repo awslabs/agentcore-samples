@@ -25,7 +25,7 @@ AWS Agent registry lets you discover and manage agents, tools, and resources acr
 | `01-advanced/publish-agentcore-tools-in-registry/` | Deploy MCP + A2A agents to AgentCore runtime and register them |
 | `01-advanced/registry-push-sync-lambda/` | Lambda + EventBridge pipeline to auto-sync registry on runtime updates |
 | `01-advanced/registry-skills-dynamic-discovery/` | AGENT_SKILLS record type: dynamic skill discovery with Strands agent |
-| `01-advanced/registry-synchronize-mcpserver/` | URL-based sync: public MCP, OAuth-protected, and IAM-protected servers |
+| [MCP server synchronization](03-advanced/registry-synchronize-mcpserver/) | Import a draft from a public MCP endpoint or an existing OAuth/IAM-protected Runtime |
 
 ## How This Tree Is Organized
 
@@ -66,7 +66,7 @@ python 00-getting-started/end-to-end/02-registry-end-to-end-oauth/registry_end_t
 python 01-advanced/consumer-discovery-semantic-search/consumer_discovery_semantic_search.py
 python 01-advanced/admin-approval-workflow/admin_approval_workflow.py
 python 01-advanced/registry-skills-dynamic-discovery/registry_skills_dynamic_discovery.py
-python 01-advanced/registry-synchronize-mcpserver/registry_synchronize_mcpserver.py
+python 03-advanced/registry-synchronize-mcpserver/registry_synchronize_mcpserver.py --help
 python 01-advanced/registry-push-sync-lambda/deploy_lambda_push_sync.py
 python 01-advanced/publish-agentcore-tools-in-registry/publish_agentcore_a2a_mcp_in_registry.py
 python 01-advanced/discovery-and-invocation-at-runtime/discovery_and_invocation_at_runtime.py
