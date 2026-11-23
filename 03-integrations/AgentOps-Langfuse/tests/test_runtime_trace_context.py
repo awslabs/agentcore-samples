@@ -68,7 +68,6 @@ class TraceContextTests(unittest.TestCase):
                         unfiltered.clear()
                         runtime.env = environment
                         with (
-                            patch.object(runtime, "StrandsTelemetry") as telemetry,
                             patch.object(runtime, "MCPClient", return_value=mcp) as create_mcp,
                             patch.object(runtime, "Agent", return_value=model_result),
                             patch.object(runtime, "get_client", return_value=client) as get_client,
@@ -78,7 +77,6 @@ class TraceContextTests(unittest.TestCase):
                             )
                             self.assertEqual(result, "offline answer")
                             create_mcp.assert_called_once_with(url="https://langfuse.com/api/mcp")
-                            telemetry.return_value.setup_otlp_exporter.assert_called_once_with()
                             provider.force_flush()
                             spans = unfiltered.get_finished_spans()
                             observations = [span for span in spans if span.name == "strands-agent"]

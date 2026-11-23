@@ -4,7 +4,6 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from langfuse import get_client
 from strands import Agent
 from strands.models import BedrockModel
-from strands.telemetry import StrandsTelemetry
 from strands.tools.mcp import MCPClient
 
 DOCS_MCP_URL = "https://langfuse.com/api/mcp"
@@ -39,10 +38,8 @@ def strands_agent_bedrock(payload):
     trace_id = payload.get("trace_id")
     parent_obs_id = payload.get("parent_obs_id")
 
-    # Initialize Strands telemetry and setup OTLP exporter
-    strands_telemetry = StrandsTelemetry()
-    strands_telemetry.setup_otlp_exporter()
-
+    # Langfuse's process-level provider exports observations. Do not install an
+    # additional global OTLP provider/processor for every invocation.
     # Create an agent with MCP tools
     with MCPClient(url=DOCS_MCP_URL) as client:
         mcp_tools = client.list_tools_sync()
