@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Per-user isolation on an S3 bucket mount: the S3 bucket the agent mounts (datasets/market/ shared and
+  read-only, users/<session id>/ private to each user's session), the agent's ECR repository, and its
+  execution role. The AgentCore runtime itself is created by infra/deploy.py.
+
+Parameters:
+  Name:
+    Type: String
+  ModelId:
+    Type: String
+    Description: Bedrock inference profile, e.g. us.anthropic.claude-opus-5-5
+  FoundationModelId:
+    Type: String
+    Description: The model behind it, e.g. anthropic.claude-opus-5-5
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Name}-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  # The bucket policy holds every AgentCore session to its own data, whatever identity policies grant:
+  # a request carrying a session context key can only reach its own users/<id>/ prefix and the shared
+  # market data. Requests without the key (an administrator, deploy.py seeding a portfolio) aren't
+  # affected by those two statements. ${!...} is CloudFormation's escape for a literal ${...}.
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt DataBucket.Arn, !Sub "${DataBucket.Arn}/*"]
+            Condition:
+              Bool: { aws:SecureTransport: "false" }
+          - Sid: DenyOtherUsersObjects
+            Effect: Deny
+            Principal: "*"
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:AbortMultipartUpload]
+            NotResource:
+              - !Sub "${DataBucket.Arn}/users/${!aws:AgentCoreRuntimeSourceSid}/*"
+              - !Sub "${DataBucket.Arn}/datasets/market/*"
+            Condition:
+              "Null": { aws:AgentCoreRuntimeSourceSid: "false" }
+          - Sid: DenyOtherUsersListing
+            Effect: Deny
+            Principal: "*"
+            Action: s3:ListBucket
+            Resource: !GetAtt DataBucket.Arn
+            Condition:
+              "Null": { aws:AgentCoreRuntimeSourceSid: "false" }
+              StringNotLike:
+                s3:prefix:
+                  - datasets/market/*
+                  - "users/${aws:AgentCoreRuntimeSourceSid}/*"
+                  - "users/${aws:AgentCoreRuntimeSourceSid}"
+
+  AgentRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref Name
+      EmptyOnDelete: true
+      ImageTagMutability: IMMUTABLE  # tags are content hashes of agent/ (deploy.py)
+      ImageScanningConfiguration: { ScanOnPush: true }
+
+  AgentExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+              ArnLike: { aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*" }
+      Policies:
+        - PolicyName: agent
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource: !GetAtt AgentRepository.Arn
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:DescribeLogStreams]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+              - Effect: Allow
+                Action: [bedrock-agentcore:GetWorkloadAccessToken, bedrock-agentcore:GetWorkloadAccessTokenForJWT, bedrock-agentcore:GetWorkloadAccessTokenForUserId]
+                Resource:
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default"
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*"
+              # The model, through its cross-region inference profile.
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}"
+                  - !Sub "arn:aws:bedrock:*::foundation-model/${FoundationModelId}"
+              # Both s3BucketMount mounts, and any S3 call the agent makes, use these credentials. One
+              # policy serves every user: ${aws:AgentCoreRuntimeSourceSid} (a session context key) resolves,
+              # per request, to the runtimeSessionId of the session making it, so a session reaches
+              # users/<its own id>/ and nothing else. Its data/ is read-only (the backend writes it); the
+              # agent writes only to outputs/.
+              - Sid: ListMarketAndOwnPrefix
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - datasets/market/*
+                      - "users/${aws:AgentCoreRuntimeSourceSid}/*"
+                      - "users/${aws:AgentCoreRuntimeSourceSid}"
+              - Sid: ReadMarket
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${DataBucket.Arn}/datasets/market/*"
+              - Sid: ReadOwnPrefix
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${DataBucket.Arn}/users/${!aws:AgentCoreRuntimeSourceSid}/*"
+              - Sid: WriteOwnOutputs
+                Effect: Allow
+                Action: [s3:PutObject, s3:AbortMultipartUpload]
+                Resource: !Sub "${DataBucket.Arn}/users/${!aws:AgentCoreRuntimeSourceSid}/outputs/*"
+
+Outputs:
+  DataBucketName: { Value: !Ref DataBucket }
+  RepositoryUri: { Value: !GetAtt AgentRepository.RepositoryUri }
+  AgentExecutionRoleArn: { Value: !GetAtt AgentExecutionRole.Arn }

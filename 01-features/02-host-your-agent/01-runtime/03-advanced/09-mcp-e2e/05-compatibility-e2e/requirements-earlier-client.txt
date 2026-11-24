@@ -1,0 +1,5 @@
+# For invoke_earlier.py: an MCP 2025-11-25 client, in its own virtual environment.
+mcp>=1.30,<2
+# Imported directly by invoke_earlier.py; the MCP SDK pins the version.
+httpx
+boto3

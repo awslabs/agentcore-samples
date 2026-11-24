@@ -1,0 +1,6 @@
+# 1.44.7 is the first boto3/botocore release with the AWS Billing payment operations.
+boto3>=1.44.7
+botocore>=1.44.7
+requests>=2.31
+python-dotenv>=1.0
+strands-agents>=1.0

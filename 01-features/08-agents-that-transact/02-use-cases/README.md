@@ -63,6 +63,19 @@ AgentCore Payments enforces the session budget and expiry outside model context.
 - Three runnable Python scripts for session creation, research, and cleanup
 - Current GA AgentCore Payments APIs and SDK
 
+---
+
+### [Pay for x402 APIs on AWS Marketplace](pay-for-x402-aws-marketplace/)
+
+An AI agent built with **Strands Agents** finds an x402 API on AWS Marketplace through the AgentCore Gateway `aws-marketplace` connector, then pays for it per request with AgentCore payments and **AWS Billing**. There's no wallet or stablecoin: each payment is a real charge on your AWS bill, as an AWS Marketplace line item.
+
+**Highlights**
+- Discovery through the AgentCore Gateway `aws-marketplace` connector, or a seller URL you supply
+- `ProcessPayment` with `AWS_BILLING_X402`; AWS Marketplace creates the agreement on the first purchase
+- Two IAM roles keep budget-setting and spending apart; the session budget is enforced by AgentCore payments
+- The client only pays sellers that AWS Marketplace returned in the current run, with a per-request price cap
+- Setup and cleanup scripts for the payment manager, AWS Billing connector, roles and gateway
+
 ## Running the Use Cases
 
 Pay for Content (Browser Use):
@@ -114,6 +127,18 @@ python cleanup_payment_session.py
 
 Use the appropriate management or execution AWS profile for each command, as
 described in the [research sample walkthrough](pay-for-research-with-openai-agent/).
+
+Pay for x402 APIs on AWS Marketplace (real charges on your AWS bill):
+
+```bash
+cd pay-for-x402-aws-marketplace
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python setup_aws_billing.py --region us-east-1
+python setup_gateway.py --region us-east-1   # or set SELLER_URL in .env
+python strands_marketplace_agent.py
+python cleanup.py --gateway --roles
+```
 
 ---
 

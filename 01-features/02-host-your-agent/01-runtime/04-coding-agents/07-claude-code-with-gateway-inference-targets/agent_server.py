@@ -10,30 +10,28 @@ Implements the AgentCore Runtime HTTP contract:
     GET  /ping         -> {"status": "Healthy"} | {"status": "HealthyBusy"}
     POST /invocations  -> {"prompt": "..."} -> {"response": "...", "status": "success"}
 
-A token is minted per invocation and passed as ANTHROPIC_AUTH_TOKEN, never via
-apiKeyHelper, which sends the credential in both Authorization and x-api-key and is
-rejected by AgentCore Gateway. Since each invocation spawns a short-lived `claude -p`,
-a token per turn is enough; a turn that outlasts the token would need a refreshing
-proxy inside the container.
+A token is fetched per invocation from AgentCore Identity and passed as
+ANTHROPIC_AUTH_TOKEN, never via apiKeyHelper, which sends the credential in both
+Authorization and x-api-key and is rejected by AgentCore Gateway. Since each invocation
+spawns a short-lived `claude -p`, a token per turn is enough; a turn that outlasts the
+token would need a refreshing proxy inside the container.
 
 Required environment:
 
-    OAUTH_SECRET_ID      Secrets Manager id holding {client_id, client_secret,
-                         token_url, scope}. The secret value never travels through
+    OAUTH_PROVIDER_NAME  AgentCore Identity OAuth2 credential provider holding the
+                         client credentials. The secret value never travels through
                          the environment.
+    OAUTH_SCOPE          scope to request, e.g. bedrock-gateway/invoke
     ANTHROPIC_BASE_URL   gateway inference base, e.g. https://<id>...amazonaws.com/inference
     ANTHROPIC_MODEL      e.g. mantle/anthropic.claude-sonnet-5
 """
 
 import json
 import os
-import ssl
 import subprocess
 import sys
 import threading
 import time
-import urllib.parse
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import boto3
@@ -68,78 +66,34 @@ def _set_busy(delta: int) -> None:
 
 # ── OAuth ─────────────────────────────────────────────────────────────────────
 
-_TLS = ssl.create_default_context()
-_oauth_config: dict[str, str] | None = None
-_oauth_lock = threading.Lock()
 
-
-def oauth_config() -> dict[str, str]:
-    # The environment carries only the secret's id: runtime env vars are readable via
-    # GetAgentRuntime and surface in container metadata, so the value is fetched here
-    # with the execution role instead. Failures are logged in full to stderr and
-    # re-raised sanitized, because boto errors quote the SecretId.
-    global _oauth_config
-    with _oauth_lock:
-        if _oauth_config is not None:
-            return _oauth_config
-
-        secret_id = os.environ.get("OAUTH_SECRET_ID")
-        if not secret_id:
-            raise RuntimeError("credential configuration missing")
-
-        try:
-            raw = boto3.client("secretsmanager").get_secret_value(SecretId=secret_id)["SecretString"]
-        except Exception as exc:  # noqa: BLE001 - message is sanitised before re-raising
-            sys.stderr.write(f"[agent] secret fetch failed: {type(exc).__name__}: {exc}\n")
-            sys.stderr.flush()
-            raise RuntimeError("credential retrieval failed") from None
-
-        try:
-            cfg = json.loads(raw)
-            missing = [k for k in ("client_id", "client_secret", "token_url", "scope") if not cfg.get(k)]
-        except (json.JSONDecodeError, AttributeError) as exc:
-            sys.stderr.write(f"[agent] secret is not valid JSON: {type(exc).__name__}\n")
-            sys.stderr.flush()
-            raise RuntimeError("credential retrieval failed") from None
-
-        if missing:
-            # Key names are safe to log: they are the schema, not the values.
-            sys.stderr.write(f"[agent] secret missing required keys: {', '.join(missing)}\n")
-            sys.stderr.flush()
-            raise RuntimeError("credential retrieval failed")
-
-        _oauth_config = cfg
-        return _oauth_config
-
-
-def mint_token() -> str:
-    # Client-credentials exchange: the agent authenticates as itself, no user present.
-    cfg = oauth_config()
-    body = urllib.parse.urlencode(
-        {
-            "grant_type": "client_credentials",
-            "client_id": cfg["client_id"],
-            "client_secret": cfg["client_secret"],
-            "scope": cfg["scope"],
-        }
-    ).encode()
-    req = urllib.request.Request(
-        cfg["token_url"],
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    # Pinned verifying TLS context: the client secret crosses this connection.
-    with urllib.request.urlopen(req, timeout=30, context=_TLS) as resp:
-        return json.loads(resp.read())["access_token"]
+def mint_token(workload_token: str) -> str:
+    # Client-credentials exchange, run by AgentCore Identity: the agent authenticates
+    # as itself, no user present, and its code never handles the client secret. The
+    # workload token tells AgentCore Identity which agent is asking. Failures are
+    # logged in full to stderr and re-raised as a generic error, so the message the
+    # caller sees carries no resource identifiers.
+    try:
+        resp = boto3.client("bedrock-agentcore").get_resource_oauth2_token(
+            workloadIdentityToken=workload_token,
+            resourceCredentialProviderName=os.environ["OAUTH_PROVIDER_NAME"],
+            scopes=[os.environ["OAUTH_SCOPE"]],
+            oauth2Flow="M2M",
+        )
+    except Exception as exc:  # noqa: BLE001 - message is sanitised before re-raising
+        sys.stderr.write(f"[agent] token retrieval failed: {type(exc).__name__}: {exc}\n")
+        sys.stderr.flush()
+        raise RuntimeError("credential retrieval failed") from None
+    return resp["accessToken"]
 
 
 # ── Claude Code turn ──────────────────────────────────────────────────────────
 
 
-def run_claude(prompt: str) -> tuple[bool, str]:
+def run_claude(prompt: str, workload_token: str) -> tuple[bool, str]:
     env = dict(os.environ)
     env["CLAUDE_CONFIG_DIR"] = CLAUDE_CONFIG_DIR
-    env["ANTHROPIC_AUTH_TOKEN"] = mint_token()
+    env["ANTHROPIC_AUTH_TOKEN"] = mint_token(workload_token)
     # Mandatory: without it the gateway rejects Claude Code's experimental beta flags
     # with "400 invalid beta flag".
     env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
@@ -221,13 +175,22 @@ class Handler(BaseHTTPRequestHandler):
 
         session = self.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", "-")
         sys.stderr.write(f"[agent] invocation session={session} prompt={prompt[:80]!r}\n")
+        # AgentCore Runtime sends a workload access token only when the caller names a
+        # runtime user, as invoke.py does. Without it there is no identity to request a
+        # gateway token for.
+        workload_token = self.headers.get("WorkloadAccessToken")
+        if not workload_token:
+            sys.stderr.write("[agent] invocation carried no WorkloadAccessToken header; invoke with runtimeUserId\n")
+            sys.stderr.flush()
+            self._json(500, {"error": "internal error", "status": "error"})
+            return
         _set_busy(1)
         try:
-            ok, out = run_claude(prompt)
+            ok, out = run_claude(prompt, workload_token)
         except Exception as exc:  # noqa: BLE001 - any failure must still answer the caller
             _set_busy(-1)
             # Log the detail, return a generic message: credential-path exceptions
-            # can carry the secret ARN.
+            # can carry resource identifiers.
             sys.stderr.write(f"[agent] invocation failed: {type(exc).__name__}: {exc}\n")
             sys.stderr.flush()
             self._json(500, {"error": "internal error", "status": "error"})
@@ -242,7 +205,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    missing = [n for n in ("OAUTH_SECRET_ID", "ANTHROPIC_BASE_URL") if not os.environ.get(n)]
+    missing = [n for n in ("OAUTH_PROVIDER_NAME", "OAUTH_SCOPE", "ANTHROPIC_BASE_URL") if not os.environ.get(n)]
     if missing:
         sys.stderr.write(f"[agent] missing required env: {', '.join(missing)}\n")
         return 2

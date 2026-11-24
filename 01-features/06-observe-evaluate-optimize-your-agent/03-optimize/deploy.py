@@ -64,6 +64,21 @@ iam = boto3.client("iam", region_name=REGION)
 s3 = boto3.client("s3", region_name=REGION)
 ctrl = boto3.client("bedrock-agentcore-control", region_name=REGION)
 
+
+def find_existing_runtime(name: str) -> dict | None:
+    """Look up an agent runtime by name. Returns its summary dict, or None if not found."""
+    next_token = None
+    while True:
+        kwargs = {"nextToken": next_token} if next_token else {}
+        resp = ctrl.list_agent_runtimes(**kwargs)
+        for runtime in resp.get("agentRuntimes", []):
+            if runtime.get("agentRuntimeName") == name:
+                return runtime
+        next_token = resp.get("nextToken")
+        if not next_token:
+            return None
+
+
 ROLE_NAME = f"{RUNTIME_NAME}Role"
 S3_BUCKET = f"bedrock-agentcore-code-{ACCOUNT_ID}-{REGION}"
 S3_KEY = f"{RUNTIME_NAME}/deployment_package.zip"
@@ -147,6 +162,29 @@ iam.put_role_policy(
 )
 print("IAM policy attached. Waiting 10s for propagation...")
 time.sleep(10)
+
+# ── Check for an existing runtime with this name ──────────────────────────
+#
+# optimize.py shells out to this script on every run unless --skip-deploy is
+# passed, and the documented Quick Start runs this script directly before
+# optimize.py. Without this check, the second invocation hits
+# create_agent_runtime unconditionally and fails with ConflictException
+# (see https://github.com/awslabs/agentcore-samples/issues/2177). Reuse the
+# existing runtime instead of recreating it -- this script never deletes or
+# modifies a runtime that's already there.
+
+EXISTING_RUNTIME = find_existing_runtime(RUNTIME_NAME)
+
+if EXISTING_RUNTIME is not None:
+    existing_status = EXISTING_RUNTIME.get("status", "UNKNOWN")
+    if existing_status not in ("ACTIVE", "READY"):
+        raise RuntimeError(
+            f"Runtime '{RUNTIME_NAME}' already exists (id={EXISTING_RUNTIME['agentRuntimeId']}) "
+            f"but is in status '{existing_status}', not ACTIVE/READY. Run "
+            f"'python cleanup.py --name {RUNTIME_NAME}' to remove it, then redeploy."
+        )
+    RUNTIME_ID = EXISTING_RUNTIME["agentRuntimeId"]
+    print(f"Runtime '{RUNTIME_NAME}' already exists (id={RUNTIME_ID}, status={existing_status}). Reusing it.")
 
 # ── Agent code ────────────────────────────────────────────────────────────
 
@@ -239,84 +277,89 @@ def build_v2_code() -> str:
     return base
 
 
-# ── Build deployment package ──────────────────────────────────────────────
+if EXISTING_RUNTIME is None:
+    # ── Build deployment package ────────────────────────────────────────
+    if BUILD_DIR.exists():
+        shutil.rmtree(BUILD_DIR)
+    PKG_DIR = BUILD_DIR / "pkg"
+    PKG_DIR.mkdir(parents=True)
 
-if BUILD_DIR.exists():
-    shutil.rmtree(BUILD_DIR)
-PKG_DIR = BUILD_DIR / "pkg"
-PKG_DIR.mkdir(parents=True)
+    print(f"Installing dependencies for ARM64 into {PKG_DIR}...")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "strands-agents[otel]",
+            "bedrock-agentcore",
+            "aws-opentelemetry-distro",
+            "-t",
+            str(PKG_DIR),
+            "--platform",
+            "manylinux2014_aarch64",
+            "--only-binary=:all:",
+            "--python-version",
+            "3.13",
+            "--quiet",
+        ],
+        check=True,
+    )
 
-print(f"Installing dependencies for ARM64 into {PKG_DIR}...")
-subprocess.run(
-    [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "strands-agents[otel]",
-        "bedrock-agentcore",
-        "aws-opentelemetry-distro",
-        "-t",
-        str(PKG_DIR),
-        "--platform",
-        "manylinux2014_aarch64",
-        "--only-binary=:all:",
-        "--python-version",
-        "3.13",
-        "--quiet",
-    ],
-    check=True,
-)
+    agent_code = build_v2_code() if VERSION == "v2" else build_v1_code()
+    (PKG_DIR / "main.py").write_text(agent_code)
+    print(f"Agent code ({VERSION}) written to {PKG_DIR}/main.py")
 
-agent_code = build_v2_code() if VERSION == "v2" else build_v1_code()
-(PKG_DIR / "main.py").write_text(agent_code)
-print(f"Agent code ({VERSION}) written to {PKG_DIR}/main.py")
+    ZIP_PATH = BUILD_DIR / "deployment_package.zip"
+    with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(PKG_DIR):
+            for f in files:
+                if f.endswith(".pyc") or "__pycache__" in root:
+                    continue
+                full = Path(root) / f
+                zf.write(full, full.relative_to(PKG_DIR))
 
-ZIP_PATH = BUILD_DIR / "deployment_package.zip"
-with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zf:
-    for root, _, files in os.walk(PKG_DIR):
-        for f in files:
-            if f.endswith(".pyc") or "__pycache__" in root:
-                continue
-            full = Path(root) / f
-            zf.write(full, full.relative_to(PKG_DIR))
+    size_mb = ZIP_PATH.stat().st_size / (1024 * 1024)
+    print(f"Package built: {ZIP_PATH} ({size_mb:.1f} MB)")
 
-size_mb = ZIP_PATH.stat().st_size / (1024 * 1024)
-print(f"Package built: {ZIP_PATH} ({size_mb:.1f} MB)")
+    # ── Upload to S3 ────────────────────────────────────────────────────
 
-# ── Upload to S3 ──────────────────────────────────────────────────────────
+    try:
+        if REGION == "us-east-1":
+            s3.create_bucket(Bucket=S3_BUCKET)
+        else:
+            s3.create_bucket(
+                Bucket=S3_BUCKET,
+                CreateBucketConfiguration={"LocationConstraint": REGION},
+            )
+        print(f"Created S3 bucket: {S3_BUCKET}")
+    except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
+        print(f"S3 bucket exists: {S3_BUCKET}")
 
-try:
-    if REGION == "us-east-1":
-        s3.create_bucket(Bucket=S3_BUCKET)
-    else:
-        s3.create_bucket(
-            Bucket=S3_BUCKET,
-            CreateBucketConfiguration={"LocationConstraint": REGION},
-        )
-    print(f"Created S3 bucket: {S3_BUCKET}")
-except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
-    print(f"S3 bucket exists: {S3_BUCKET}")
+    s3.upload_file(str(ZIP_PATH), S3_BUCKET, S3_KEY)
+    print(f"Uploaded to s3://{S3_BUCKET}/{S3_KEY}")
 
-s3.upload_file(str(ZIP_PATH), S3_BUCKET, S3_KEY)
-print(f"Uploaded to s3://{S3_BUCKET}/{S3_KEY}")
+    # ── Create AgentCore Runtime ────────────────────────────────────────
 
-# ── Create AgentCore Runtime ──────────────────────────────────────────────
+    resp = ctrl.create_agent_runtime(
+        agentRuntimeName=RUNTIME_NAME,
+        agentRuntimeArtifact={
+            "codeConfiguration": {
+                "code": {"s3": {"bucket": S3_BUCKET, "prefix": S3_KEY}},
+                "runtime": "PYTHON_3_13",
+                "entryPoint": ["opentelemetry-instrument", "main.py"],
+            }
+        },
+        networkConfiguration={"networkMode": "PUBLIC"},
+        roleArn=ROLE_ARN,
+    )
+    RUNTIME_ID = resp["agentRuntimeId"]
+    print(f"Runtime created: {RUNTIME_ID}. Polling for READY/ACTIVE...")
 
-resp = ctrl.create_agent_runtime(
-    agentRuntimeName=RUNTIME_NAME,
-    agentRuntimeArtifact={
-        "codeConfiguration": {
-            "code": {"s3": {"bucket": S3_BUCKET, "prefix": S3_KEY}},
-            "runtime": "PYTHON_3_13",
-            "entryPoint": ["opentelemetry-instrument", "main.py"],
-        }
-    },
-    networkConfiguration={"networkMode": "PUBLIC"},
-    roleArn=ROLE_ARN,
-)
-RUNTIME_ID = resp["agentRuntimeId"]
-print(f"Runtime created: {RUNTIME_ID}. Polling for READY/ACTIVE...")
+# ── Wait for READY/ACTIVE ────────────────────────────────────────────────
+# Runs for both the newly-created and the reused-existing-runtime path --
+# when reusing, this confirms the still-current status in one extra call
+# and immediately falls through.
 
 for i in range(90):
     detail = ctrl.get_agent_runtime(agentRuntimeId=RUNTIME_ID)

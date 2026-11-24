@@ -1,200 +1,126 @@
-# MCP End-to-End Examples
+# MCP 2026-07-28 end-to-end examples
 
 ## Overview
 
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) defines a standard way for AI agents to discover and use tools, access resources, and interact with users through a structured protocol. AgentCore runtime supports hosting MCP servers with full protocol compliance — tools, resources, prompts, sampling, elicitation, and progress notifications.
+The [Model Context Protocol](https://modelcontextprotocol.io/) defines how AI agents discover and use tools, read resources, and ask a user or a model for something. The [2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28) makes the protocol stateless: no handshake, no protocol session, and every request self-describing.
 
-This folder contains end-to-end tutorials that cover the complete MCP feature set on AgentCore runtime, from server-side capabilities to client-side interactions and utility features.
+Amazon Bedrock AgentCore Runtime hosts MCP servers on both the new and earlier protocol versions, choosing the behavior per request from the `MCP-Protocol-Version` header, with no configuration change. These five tutorials cover the whole feature set on one MCP Python SDK v2 server: the server features, the client features, the utilities, the base protocol, and what your existing clients and servers see.
 
-## MCP Feature Support in AgentCore runtime
+<img src="img/overview.png" style="width: 90%;">
 
-<table>
-  <thead>
-    <tr>
-      <th>Category</th>
-      <th>Feature</th>
-      <th>Spec Methods</th>
-      <th align="center">runtime</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td rowspan="4"><strong>MCP Server Features</strong></td>
-      <td>Tools</td>
-      <td><code>tools/list</code>, <code>tools/call</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Tools (output schema)</td>
-      <td><code>output schema</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Resources</td>
-      <td><code>resources/list</code>, <code>resources/read</code>, <code>resources/subscribe</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Prompts</td>
-      <td><code>prompts/list</code>, <code>prompts/get</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td rowspan="3"><strong>MCP Client Features</strong></td>
-      <td>Sampling</td>
-      <td><code>sampling/createMessage</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Roots</td>
-      <td><code>roots/list</code></td>
-      <td align="center">TBD</td>
-    </tr>
-    <tr>
-      <td>Elicitation</td>
-      <td><code>elicitation/create</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td rowspan="2"><strong>MCP Base Protocol</strong></td>
-      <td>Lifecycle</td>
-      <td><code>initialize</code>, <code>initialized</code>, <code>ping</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Transports</td>
-      <td><code>response streaming</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td rowspan="4"><strong>MCP Utilities</strong></td>
-      <td>Progress</td>
-      <td><code>notifications/progress</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Cancellation</td>
-      <td><code>notifications/cancel</code></td>
-      <td align="center">TBD</td>
-    </tr>
-    <tr>
-      <td>Logging</td>
-      <td><code>logs/send</code></td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Tasks</td>
-      <td><code>tasks/list</code>, <code>tasks/cancel</code></td>
-      <td align="center">✅</td>
-    </tr>
-  </tbody>
-</table>
+## What changed in MCP 2026-07-28
 
-> ✅ Supported | TBD To Be Determined
+The [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog) lists every change. These are the ones that matter when you host an MCP server:
 
-## Project Structure
+* **No sessions.** Protocol sessions and the `Mcp-Session-Id` header are gone ([SEP-2567](https://modelcontextprotocol.io/seps/2567-sessionless-mcp)).
+* **No handshake, and no `ping`.** `initialize` and `ping` are removed, and `server/discover` replaces the `initialize` result. Each request carries its protocol version and the client's capabilities in `_meta` ([SEP-2575](https://modelcontextprotocol.io/seps/2575-stateless-mcp)).
+* **Routing fields in headers.** Every request carries `MCP-Protocol-Version`, `Mcp-Method`, and `Mcp-Name`, so a gateway can route without parsing the body ([SEP-2243](https://modelcontextprotocol.io/seps/2243-http-standardization)).
+* **Errors carry an HTTP status.** A protocol error pairs an HTTP status with its JSON-RPC code.
+* **Elicitation and sampling without a session.** The server returns `input_required` with its questions, and the client calls the tool again with the answers: a multi round-trip request ([SEP-2322](https://modelcontextprotocol.io/seps/2322-MRTR)).
+* **Cancellation is closing the stream.** Over HTTP, closing a request's response stream *is* the cancellation; `notifications/cancelled` is now for stdio only.
+* **Sampling, Roots, and Logging are deprecated.** They keep working for at least twelve months, but new servers shouldn't adopt them ([SEP-2577](https://modelcontextprotocol.io/seps/2577-deprecate-roots-sampling-and-logging)).
+
+## What AgentCore Runtime does
+
+* **It reads `MCP-Protocol-Version` on every request** and applies that version's behavior. One runtime serves both, so your clients can move at their own pace.
+* **It keeps a session's requests on one microVM.** For 2026-07-28 it routes on `X-Amzn-Bedrock-AgentCore-Runtime-Session-Id`, which your client sends; earlier clients keep routing on `Mcp-Session-Id`.
+* **It health-checks your server's `GET /ping`.** The route is recommended rather than required, and since 2026-07-28 removed the MCP `ping` method it's the only reliable health signal. While it answers `HealthyBusy`, the session's microVM stays alive.
+* **It passes some of your server's status codes through.** For 2026-07-28 requests, 200, 202, 400, 401, 403, and 404 reach the client with your body, and any other status becomes HTTP 424 with `-32010`. For earlier clients, only 200 and 202 pass, and any other status becomes HTTP 200.
+
+## MCP feature support
+
+| Feature | Spec methods | MCP 2025-11-25 | MCP 2026-07-28 | Covered in |
+|:--|:--|:--|:--|:--|
+| Tools | `tools/list`, `tools/call` | yes | yes, plus cache hints and typed results | 01 |
+| Resources | `resources/list`, `resources/read` | yes | yes | 01 |
+| Prompts | `prompts/list`, `prompts/get` | yes | yes | 01 |
+| Discovery | `initialize` → `server/discover` | yes | yes, but it lists only 2026-07-28 | 01, 05 |
+| Elicitation | `elicitation/create` | stateful mode only | multi round-trip requests | 02, 05 |
+| Sampling | `sampling/createMessage` | stateful mode only | the same, deprecated | 02 |
+| Progress | `notifications/progress` | yes, in either mode (with SSE responses, the SDK default) | yes | 03, 05 |
+| Health checks | `ping` → `GET /ping` | either | `GET /ping`; without it AgentCore Runtime only sees a server that stops answering | 03 |
+| Cancellation | `notifications/cancelled` → closing the stream | yes | **the disconnect does not reach the server yet** | 03 |
+| Errors | — | mostly HTTP 200 | the HTTP status matches | 04 |
+| Sessions | `Mcp-Session-Id` → runtime session header | yes | yes | 04, 05 |
+| Resource subscriptions | `resources/subscribe` → `subscriptions/listen` | yes | not covered here | — |
+| Logging | `logging/setLevel` → `_meta` log level | yes | deprecated; `logging/setLevel` is removed and the level is set per request | — |
+| Roots | `roots/list` | not covered here | deprecated | — |
+| Tasks | `tasks/*` | experimental, not covered | moved to an extension, not covered | — |
+| `Mcp-Param-{name}` headers | — | — | not covered here | — |
+
+## Project structure
 
 ```
-08-mcp-e2e/
-├── 01-server-e2e/       # MCP Server features (Tools, Resources, Prompts)
-│   ├── agents/          # MCP server code (mcp_e2e_stateless_server.py)
-│   ├── deploy.py        # Deploy runtime + DynamoDB table
-│   ├── invoke.py        # Send JSON-RPC messages to test all features
-│   └── cleanup.py       # Delete all resources
-├── 02-client-e2e/       # MCP Client features (Elicitation, Sampling)
-│   ├── agents/          # MCP server code (mcp_client_features.py)
-│   ├── deploy.py        # Deploy runtime + DynamoDB table
-│   ├── invoke.py        # Test elicitation and sampling
-│   └── cleanup.py       # Delete all resources
-├── 03-utilities-e2e/    # MCP Utilities (Progress Notifications)
-│   ├── agents/          # MCP server code (mcp_progress_server.py)
-│   ├── deploy.py        # Deploy runtime + DynamoDB table
-│   ├── invoke.py        # Test progress notifications
-│   └── cleanup.py       # Delete all resources
-└── helpers/             # Shared utilities (DynamoDB, IAM, Cognito)
+09-mcp-e2e/
+├── 01-server-e2e/           # Tools, resources, and prompts on MCP Python SDK v2
+├── 02-client-e2e/           # Elicitation and sampling as multi round-trip requests
+├── 03-utilities-e2e/        # Progress, health checks, and cancellation
+├── 04-protocol-e2e/         # No handshake, sessions, and errors, behind a Cognito JWT
+├── 05-compatibility-e2e/    # Earlier clients, stateful mode, and an existing SDK v1 server
+└── helpers/                 # Shared code: deploy, serve, storage, and the MCP clients
 ```
 
-## What Each Subfolder Demonstrates
+Every folder has the same shape: `agents/` with the server, then `deploy.py`, `invoke.py`, and `cleanup.py`, plus its own README and architecture diagram.
 
-### 01 — MCP Server Features
+| Helper | What it does |
+|:--|:--|
+| `deploy_utils.py` | The code zip, IAM role, DynamoDB table, Cognito user pool, and the agent runtime |
+| `runtime_utils.py` | Serving the MCP app, `GET /ping` with `HealthyBusy`, and the shared `requestState` key |
+| `mcp_client.py` | MCP clients over boto3 and over plain HTTPS, and the MCP Python SDK v2 transport |
+| `dynamo_utils.py` | The finance storage the samples share |
 
-Deploys an MCP server with all three core server capabilities using a finance tracking example:
+## What each folder shows
 
-- **Tools** — `tools/list` and `tools/call` for expense operations (add_expense, add_income, set_budget, get_balance)
-- **Resources** — `resources/list` and `resources/read` for monthly summaries and budget status
-- **Prompts** — `prompts/list` and `prompts/get` for budget analysis and savings plan templates
+### 01 — Server features
 
-The server uses DynamoDB for persistent storage.
+Tools, resources, and prompts on one SDK v2 server, with DynamoDB behind them. It shows `server/discover`, the `ttlMs` and `cacheScope` hints that let clients cache list results, typed tool results, and an unknown resource arriving as HTTP 400 with `-32602`. The same server then answers a 2025-11-25 client.
 
-```bash
-cd 01-server-e2e
-python deploy.py    # Creates DynamoDB table, IAM role, uploads code, deploys runtime
-python invoke.py    # Sends JSON-RPC messages to test tools, resources, and prompts
-python cleanup.py   # Deletes runtime, IAM role, S3 object, and DynamoDB table
-```
+### 02 — Client features
 
-### 02 — MCP Client Features
+A tool that asks the user for an expense and then for a confirmation built from those answers, as multi round-trip requests, and one that asks the client's model for an analysis (sampling, deprecated). Each round is a separate request, so a round can land on a different microVM; a key in AWS Secrets Manager is what lets any microVM unseal the `requestState`.
 
-Demonstrates client-side MCP capabilities for stateful, interactive sessions:
+### 03 — Utilities
 
-- **Elicitation** — Server asks the client for user input mid-execution (e.g., guided expense entry with multi-turn prompts)
-- **Sampling** — Server delegates LLM call to the client for AI-powered spending analysis
+A five-step report that streams progress as it runs, a background job that keeps its microVM alive by reporting `HealthyBusy` on `GET /ping`, and cancellation. Closing the response stream is the 2026-07-28 cancellation signal, but the disconnect doesn't reach the server through AgentCore Runtime today, so the folder also shows a cancel tool that works.
 
-These features enable richer interactions where the server and client collaborate during tool execution, rather than simple request/response patterns.
+### 04 — Base protocol
 
-```bash
-cd 02-client-e2e
-python deploy.py    # Creates DynamoDB table, IAM role, uploads code, deploys runtime
-python invoke.py    # Tests elicitation and sampling features
-python cleanup.py   # Deletes runtime, IAM role, S3 object, and DynamoDB table
-```
+A runtime behind an Amazon Cognito JWT authorizer, showing that a 2026-07-28 client's first request needs no handshake, that the runtime session header decides which microVM answers, and how the same seven failures come back on each protocol version.
 
-### 03 — MCP Utilities
+### 05 — Compatibility
 
-Covers utility features for long-running operations:
-
-- **Progress Notifications** — One-way updates from server to client during execution. The example generates a 5-step monthly financial report with progress updates at each stage using `ctx.report_progress()`.
-
-Unlike elicitation and sampling (which are request/response), progress notifications are one-way — the server sends updates without waiting for a response.
-
-```bash
-cd 03-utilities-e2e
-python deploy.py    # Creates DynamoDB table, IAM role, uploads code, deploys runtime
-python invoke.py    # Tests progress notifications during report generation
-python cleanup.py   # Deletes runtime, IAM role, S3 object, and DynamoDB table
-```
-
-### Shared Utilities (`helpers/`)
-
-Common code used across all three examples:
-
-| File | Description |
-|:-----|:------------|
-| `utils.py` | Cognito user pool setup, IAM role creation, Secrets Manager helpers |
-| `dynamo_utils.py` | DynamoDB operations for the finance tracking example |
-
-These helpers are automatically included in the deployment zip by each `deploy.py` script.
+Three runtimes: the SDK v2 server in its default stateless mode and in stateful mode, and an unchanged SDK v1 server. An earlier client gets its tools and progress in either mode but needs stateful mode for elicitation, and an SDK v2 client falls back to `initialize` for the old server unless you pin it to 2026-07-28.
 
 ## Prerequisites
 
-- AWS CLI configured with appropriate permissions
-- Python 3.13+ recommended
-- Access to Amazon Bedrock AgentCore runtime
-- AWS services used: DynamoDB, IAM, S3
+* Python 3.12 or later, and `pip install -r requirements.txt`
+* AWS credentials, and a Region where AgentCore Runtime V2 is available, for example `export AWS_REGION=us-west-2`
+* Access to Amazon Bedrock AgentCore Runtime. Folder 02 also calls Claude Haiku 5.5 on Amazon Bedrock
+* AWS services used: AgentCore Runtime, IAM, S3, DynamoDB, Secrets Manager (02, 05), Cognito (04)
 
-## Quick Start
+### Region and cost
+
+The samples run in any Region with AgentCore Runtime V2. Folder 02 answers sampling requests with the `us.anthropic.claude-haiku-5-5` cross-Region inference profile, which works from US Regions; elsewhere, set `MODEL` in `02-client-e2e/invoke.py` to your geography's profile. Runtimes are billed for the time their sessions run, and the other resources cost little at this scale. Each `cleanup.py` deletes everything its `deploy.py` created, including after a failed deploy.
+
+### Before you build on these samples
+
+* **The tools trust the `user_alias` argument.** AgentCore Runtime authenticates the caller, but any caller can pass any alias. In your server, take the user from the authenticated identity instead, for example the JWT that a runtime with a JWT authorizer forwards when you add `Authorization` to its request header allowlist.
+* **Bind `requestState` to the caller.** The SDK binds sealed `requestState` to the authenticated principal, but only when the SDK itself authenticates the request. Behind AgentCore Runtime it sees no token, so the state isn't bound to a caller and anyone allowed to invoke the runtime can replay it until it expires (10 minutes by default). Pass `bind_principal=` to `RequestStateSecurity` with the caller's identity, such as the `sub` claim of the forwarded JWT.
+
+## Quick start
 
 ```bash
-# Deploy and test the MCP server features example
 cd 01-server-e2e
-python deploy.py
-python invoke.py
-python cleanup.py
+python deploy.py    # builds the code zip and deploys the runtime; a few minutes
+python invoke.py    # calls it and prints every exchange
+python cleanup.py   # deletes everything it created
 ```
 
-Follow the examples in order (01 → 02 → 03) since the client and utilities examples build on the same finance tracking pattern.
+Read the folders in order. Each one deploys its own resources and deletes them again, so run `cleanup.py` before moving on.
 
 ## Resources
 
-- [MCP Specification](https://modelcontextprotocol.io/specification/2025-11-25/server)
-- [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
+* [MCP 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28) and its [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)
+* [MCP servers on AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html) and the [protocol contract](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp-protocol-contract.html)
+* [Stateful MCP server features](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/mcp-stateful-features.html), for earlier clients
+* [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
