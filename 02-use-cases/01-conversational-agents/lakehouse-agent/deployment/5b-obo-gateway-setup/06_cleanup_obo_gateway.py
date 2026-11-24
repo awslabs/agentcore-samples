@@ -14,8 +14,9 @@ What is deleted, in run() order:
      up to ~60 s until the target list is empty
   2. The notes gateway (lakehouse-notes-gateway); its id comes from SSM
      notes-gateway-id, else a paginated by-name search
-  3. The gateway's IAM role (agentcore-lakehouse-notes-gateway-role): inline
-     policies deleted and managed policies detached first, which IAM requires
+  3. The gateway's IAM role (agentcore-lakehouse-notes-gateway-role), only if
+     this sample's ownership record matches it and it has no policy other than
+     GatewayExecutionPolicy; otherwise it is left in place
   4. OAuth2 credential providers: Okta OBO (lakehouse-obo-okta-provider) and
      Cognito M2M (lakehouse-notes-cognito-oauth-provider); each is skipped if
      absent, so only the active IdP's provider is actually deleted
@@ -54,6 +55,10 @@ find the gateway id.
 Idempotent: re-running after a successful first run logs
 all ⏭️ and exits 0.
 
+Exit code: 0 when everything was deleted or already gone, 1 on any error or
+unconfirmed delete, 3 when the only problem is the IAM role left in place because
+this sample cannot prove it created it.
+
 Usage:
     python 06_cleanup_obo_gateway.py [--keep-ssm]
 """
@@ -67,6 +72,7 @@ import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.iam_roles import FAILED, LEFT, OK, combine, delete_owned_role
 from utils.notebook_init import pause, wait_for
 
 # Names match the create-side scripts in this directory (01, 03, 04)
@@ -77,6 +83,10 @@ COLLECTION_NAME = "lakehouse-claim-notes"
 # 5a-gateway-setup/cleanup_gateway.py.
 GATEWAY_NAME = "lakehouse-notes-gateway"
 GATEWAY_ROLE_NAME = f"agentcore-{GATEWAY_NAME}-role"
+# Policies 04_create_obo_gateway.py adds to the role. A role with any other
+# attachment is not deleted.
+GATEWAY_ROLE_INLINE = {"GatewayExecutionPolicy"}
+GATEWAY_ROLE_MANAGED: set[str] = set()
 PROVIDER_NAME = "lakehouse-obo-okta-provider"
 # Cognito M2M gateway->runtime credential provider created by 04's Cognito
 # branch (COGNITO_M2M_PROVIDER_NAME). Deleted explicitly here (symmetric with
@@ -101,6 +111,8 @@ class OBOCleanup:
         # Failed deletes are collected here; run() prints ✨ only when this and
         # not_confirmed stay empty. "Not found" outcomes are not failures.
         self.errors = []
+        # Result of the IAM role delete (OK / FAILED / LEFT), combined into the exit code.
+        self.role_code = OK
 
     def _get_ssm_param(self, name, default=None):
         try:
@@ -226,25 +238,11 @@ class OBOCleanup:
     # ─── 3: OBO gateway IAM role ──────────────────────────────────────
     def delete_gateway_role(self):
         print(f"\n🗑️  Deleting OBO_Gateway IAM role: {GATEWAY_ROLE_NAME}")
-        try:
-            self.iam.get_role(RoleName=GATEWAY_ROLE_NAME)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {GATEWAY_ROLE_NAME}")
-            return
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {GATEWAY_ROLE_NAME}: {e}")
-            return
-        try:
-            for p in self.iam.list_role_policies(RoleName=GATEWAY_ROLE_NAME)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=GATEWAY_ROLE_NAME, PolicyName=p)
-            for p in self.iam.list_attached_role_policies(RoleName=GATEWAY_ROLE_NAME)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=GATEWAY_ROLE_NAME, PolicyArn=p["PolicyArn"])
-            self.iam.delete_role(RoleName=GATEWAY_ROLE_NAME)
-            print(f"   ✅ Deleted role: {GATEWAY_ROLE_NAME}")
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {GATEWAY_ROLE_NAME}: {e}")
+        self.role_code = delete_owned_role(
+            self.iam, self.ssm, GATEWAY_ROLE_NAME, GATEWAY_ROLE_INLINE, GATEWAY_ROLE_MANAGED
+        )
+        if self.role_code == FAILED:
+            self.errors.append(f"role {GATEWAY_ROLE_NAME}: not deleted (see ❌ above)")
 
     # ─── 4: OAuth2 credential providers (Okta OBO + Cognito M2M) ───────
     def _oauth_provider_names(self):
@@ -417,7 +415,8 @@ class OBOCleanup:
                 print(f"   - {item}")
         else:
             print("\nNot confirmed deleted: none")
-        if self.errors or self.not_confirmed:
+        code = combine([FAILED if self.errors or self.not_confirmed else OK, self.role_code])
+        if code == FAILED:
             count = len(self.errors) + len(self.not_confirmed)
             print(f"\n❌ 06_cleanup_obo_gateway.py finished with {count} error(s):")
             for err in self.errors:
@@ -425,6 +424,9 @@ class OBOCleanup:
             for item in self.not_confirmed:
                 print(f"   • not confirmed deleted: {item} (a slow delete may still finish; re-run to check)")
             sys.exit(1)
+        if code == LEFT:
+            print("\n⚠  06_cleanup_obo_gateway.py finished; the IAM role was left in place (see ⚠ above)")
+            sys.exit(LEFT)
         print("\n✨ OBO_Gateway cleanup complete!")
 
 

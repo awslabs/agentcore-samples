@@ -102,19 +102,69 @@ echo "✅ Package created: notes-interceptor-lambda.zip"
 # Dedicated LEAST-PRIVILEGE execution role: basic Lambda execution (CloudWatch
 # Logs) ONLY — no DynamoDB, no STS, no SSM. The notes interceptor just validates
 # a JWT and forwards the caller sub (all its config arrives via env vars set
-# below), so it needs nothing beyond log write. In-place + idempotent.
+# below), so it needs nothing beyond log write. A role name alone does not show who
+# created the role, so the new role's id is recorded in SSM; a re-run updates the
+# role in place only if its id matches that record, and a same-name role this sample
+# did not create is refused before any policy is attached to it.
 ROLE_NAME="lakehouse-notes-interceptor-role"
+ROLE_RECORD="/app/lakehouse-agent/role-ids/$ROLE_NAME"
 echo ""
 echo "🔑 Ensuring dedicated least-privilege execution role: $ROLE_NAME"
 TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+
+# aws_capture <aws args...> runs an aws command and keeps its output in AWS_OUT and its error
+# text in AWS_ERR (leading blank lines removed), so the caller can tell one expected error code
+# from any other failure. Returns the command's exit status.
+aws_capture() {
+    local err_file status
+    err_file=$(mktemp)
+    if AWS_OUT=$(aws "$@" 2>"$err_file"); then status=0; else status=$?; fi
+    AWS_ERR=$(cat "$err_file")
+    rm -f "$err_file"
+    AWS_ERR="${AWS_ERR#"${AWS_ERR%%[![:space:]]*}"}"
+    return $status
+}
+
+if aws_capture iam create-role --role-name "$ROLE_NAME" \
+    --assume-role-policy-document "$TRUST_POLICY" \
+    --description "Least-priv execution role for the notes gateway REQUEST interceptor (CloudWatch Logs only)" \
+    --tags Key=Application,Value=lakehouse-agent Key=Purpose,Value=notes-interceptor-role \
+    --query Role.RoleId --output text; then
+    ROLE_ID="$AWS_OUT"
+    if ! aws_capture ssm put-parameter --name "$ROLE_RECORD" --type String --value "$ROLE_ID" --overwrite --region "$AWS_REGION"; then
+        PUT_ERR="$AWS_ERR"
+        if aws_capture iam delete-role --role-name "$ROLE_NAME"; then
+            echo "❌ Could not record ownership of new IAM role $ROLE_NAME: $PUT_ERR. The role was deleted again. Fix the error, then re-run this step."
+        else
+            echo "❌ Could not record ownership of new IAM role $ROLE_NAME: $PUT_ERR. It could not be deleted ($AWS_ERR); delete it by hand: aws iam delete-role --role-name $ROLE_NAME. Fix the error, then re-run this step."
+        fi
+        exit 1
+    fi
+    echo "   ✅ Created role: $ROLE_NAME"
+elif [[ "$AWS_ERR" == *"(EntityAlreadyExists)"* ]]; then
+    if aws_capture ssm get-parameter --name "$ROLE_RECORD" --query Parameter.Value --output text --region "$AWS_REGION"; then
+        RECORDED_ID="$AWS_OUT"
+    elif [[ "$AWS_ERR" == *"(ParameterNotFound)"* ]]; then
+        RECORDED_ID=""
+    else
+        echo "❌ Could not read the ownership record for IAM role $ROLE_NAME: $AWS_ERR. Nothing was changed."
+        exit 1
+    fi
+    if ! aws_capture iam get-role --role-name "$ROLE_NAME" --query Role.RoleId --output text; then
+        echo "❌ aws iam get-role failed:"
+        echo "$AWS_ERR"
+        exit 1
+    fi
+    if [ -z "$RECORDED_ID" ] || [ "$RECORDED_ID" != "$AWS_OUT" ]; then
+        echo "❌ IAM role $ROLE_NAME already exists and this sample has no matching ownership record for it. Nothing was changed. Delete or rename that role, then re-run this step."
+        exit 1
+    fi
     echo "   ℹ️  Role exists; updating trust policy in place"
     aws iam update-assume-role-policy --role-name "$ROLE_NAME" --policy-document "$TRUST_POLICY"
 else
-    aws iam create-role --role-name "$ROLE_NAME" \
-        --assume-role-policy-document "$TRUST_POLICY" \
-        --description "Least-priv execution role for the notes gateway REQUEST interceptor (CloudWatch Logs only)" \
-        --tags Key=Application,Value=lakehouse-agent Key=Purpose,Value=notes-interceptor-role
+    echo "❌ aws iam create-role failed:"
+    echo "$AWS_ERR"
+    exit 1
 fi
 # CloudWatch Logs only.
 aws iam attach-role-policy --role-name "$ROLE_NAME" \

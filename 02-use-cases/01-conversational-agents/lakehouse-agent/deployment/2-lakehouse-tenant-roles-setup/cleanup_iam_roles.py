@@ -9,6 +9,15 @@ Deletes:
 - LakeFormationS3TablesDataAccessRole
 - SSM parameters for role ARNs
 
+A role is deleted only when its ownership record shows this sample created it and it
+carries no policies or instance profiles this sample did not add. A same-name role with
+no ownership record is left in place, and LakeFormationS3TablesDataAccessRole is not
+deleted while Lake Formation still uses it for the S3 Tables registration (run
+3-s3tables-setup/cleanup_s3tables.py first).
+
+Exit code: 0 when every role was deleted or already gone, 1 on any error, 3 when the
+only problem is a role left in place.
+
 Run the Lake Formation revoke first. All four roles above are Lake Formation grant
 principals (see 3-s3tables-setup/setup_lakeformation_permissions.py). Deleting a role that
 still holds grants leaves each grant keyed to a principal ARN that no longer resolves, and
@@ -33,6 +42,20 @@ import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.iam_roles import (
+    FAILED,
+    LEFT,
+    OK,
+    OURS,
+    RoleOwnershipError,
+    combine,
+    delete_owned_role,
+    lf_registration_owner,
+)
+
+# The managed policy setup_iam_roles.py attaches to every tenant role.
+ATHENA_FULL_ACCESS_ARN = "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
+LF_ROLE_NAME = "LakeFormationS3TablesDataAccessRole"
 
 
 class IAMRolesCleanup:
@@ -40,42 +63,13 @@ class IAMRolesCleanup:
         _session, self.region, self.account_id = get_aws_session()
         self.iam = boto3.client("iam")
         self.ssm = boto3.client("ssm", region_name=self.region)
+        self.lakeformation = boto3.client("lakeformation", region_name=self.region)
         self.keep_ssm = keep_ssm
-        # Failed deletes are collected here; run() prints ✨ only when this stays empty.
-        # "Not found" outcomes are not failures.
+        # Failed SSM deletes are collected here; run() prints ✨ only when this stays empty
+        # and every role result is OK. "Not found" outcomes are not failures.
         self.errors = []
-
-    def _delete_role(self, role_name):
-        try:
-            self.iam.get_role(RoleName=role_name)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {role_name}")
-            return
-        except Exception as e:
-            print(f"   ❌ Error checking {role_name}: {e}")
-            self.errors.append(f"role {role_name}: {e}")
-            return
-
-        try:
-            # Delete inline policies
-            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
-
-            # Detach managed policies
-            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
-
-            # Remove from instance profiles
-            for ip in self.iam.list_instance_profiles_for_role(RoleName=role_name)["InstanceProfiles"]:
-                self.iam.remove_role_from_instance_profile(
-                    InstanceProfileName=ip["InstanceProfileName"], RoleName=role_name
-                )
-
-            self.iam.delete_role(RoleName=role_name)
-            print(f"   ✅ Deleted role: {role_name}")
-        except Exception as e:
-            print(f"   ❌ Error deleting {role_name}: {e}")
-            self.errors.append(f"role {role_name}: {e}")
+        # (role name, OK / FAILED / LEFT) for every role this script handled.
+        self.role_results = []
 
     def delete_tenant_roles(self):
         print("\n🗑️  Deleting tenant IAM roles...")
@@ -85,11 +79,32 @@ class IAMRolesCleanup:
             "lakehouse-administrators-role",
         ]
         for role in roles:
-            self._delete_role(role)
+            # The inline policy names setup_iam_roles.py puts on each role.
+            if "administrators" in role:
+                expected_inline = {f"{role}-admin-access"}
+            else:
+                expected_inline = {f"{role}-athena-s3-access"}
+            code = delete_owned_role(self.iam, self.ssm, role, expected_inline, {ATHENA_FULL_ACCESS_ARN})
+            self.role_results.append((role, code))
 
     def delete_lakeformation_role(self):
         print("\n🗑️  Deleting Lake Formation data access role...")
-        self._delete_role("LakeFormationS3TablesDataAccessRole")
+        resource_arn = f"arn:aws:s3tables:{self.region}:{self.account_id}:bucket/*"
+        try:
+            owner, _ = lf_registration_owner(self.lakeformation, self.iam, self.ssm, resource_arn, LF_ROLE_NAME)
+        except RoleOwnershipError as e:
+            print(f"   {e}")
+            self.role_results.append((LF_ROLE_NAME, FAILED))
+            return
+        if owner == OURS:
+            print(
+                f"   ❌ IAM role {LF_ROLE_NAME} is still registered with Lake Formation for S3 Tables. "
+                "Run cleanup_s3tables.py first. Nothing was deleted."
+            )
+            self.role_results.append((LF_ROLE_NAME, FAILED))
+            return
+        code = delete_owned_role(self.iam, self.ssm, LF_ROLE_NAME, {"S3TablesDataAccess"}, set())
+        self.role_results.append((LF_ROLE_NAME, code))
 
     def delete_ssm_parameters(self):
         if self.keep_ssm:
@@ -123,11 +138,18 @@ class IAMRolesCleanup:
         self.delete_tenant_roles()
         self.delete_lakeformation_role()
         self.delete_ssm_parameters()
-        if self.errors:
-            print(f"\n❌ cleanup_iam_roles.py finished with {len(self.errors)} error(s):")
-            for err in self.errors:
+        # Exit 1 on any error; exit 3 when the only problem is a role left in place.
+        failed = [f"role {name}: see above" for name, code in self.role_results if code == FAILED] + self.errors
+        left = [name for name, code in self.role_results if code == LEFT]
+        rc = combine([code for _, code in self.role_results] + [FAILED] * len(self.errors))
+        if failed:
+            print(f"\n❌ cleanup_iam_roles.py finished with {len(failed)} error(s):")
+            for err in failed:
                 print(f"   • {err}")
-            sys.exit(1)
+        if left:
+            print("\n⚠  cleanup_iam_roles.py left these roles in place: " + ", ".join(left))
+        if rc != OK:
+            sys.exit(rc)
         print("\n✨ IAM roles cleanup complete!")
 
 

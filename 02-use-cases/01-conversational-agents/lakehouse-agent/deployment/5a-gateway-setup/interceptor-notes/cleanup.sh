@@ -48,6 +48,19 @@ BASIC_EXEC_POLICY_ARN="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecut
 # Errors are collected here and reported at the end.
 ERRORS=()
 
+# aws_capture <aws args...> runs an aws command and keeps its output in AWS_OUT and its error
+# text in AWS_ERR (leading blank lines removed), so the caller can tell one expected error code
+# from any other failure. Returns the command's exit status.
+aws_capture() {
+    local err_file status
+    err_file=$(mktemp)
+    if AWS_OUT=$(aws "$@" 2>"$err_file"); then status=0; else status=$?; fi
+    AWS_ERR=$(cat "$err_file")
+    rm -f "$err_file"
+    AWS_ERR="${AWS_ERR#"${AWS_ERR%%[![:space:]]*}"}"
+    return $status
+}
+
 # ─── 1: Lambda function ───────────────────────────────────────────────
 echo ""
 echo "🗑️  Deleting Lambda function: $FUNCTION_NAME"
@@ -62,29 +75,96 @@ else
 fi
 
 # ─── 2: Dedicated least-privilege execution role ──────────────────────
+# deploy.sh records the role's id in SSM when it creates the role. The role is deleted
+# only if its id still matches that record and it carries nothing beyond what deploy.sh
+# attaches, so a same-name role this sample did not create is never deleted.
+ROLE_RECORD="/app/lakehouse-agent/role-ids/$ROLE_NAME"
+ROLE_LEFT=false
 echo ""
 echo "🗑️  Deleting IAM role: $ROLE_NAME"
-if PROBE_ERR=$(aws iam get-role --role-name "$ROLE_NAME" 2>&1 >/dev/null); then
-    # Detach managed policies (deploy.sh attaches AWSLambdaBasicExecutionRole;
-    # detach whatever is attached to be safe), then remove any inline policies.
-    # A failed detach or delete stops the script (set -e) before its ✅ line.
-    for arn in $(aws iam list-attached-role-policies --role-name "$ROLE_NAME" \
-        --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null); do
-        aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$arn"
-        echo "   ✅ Detached managed policy: $arn"
-    done
-    for pol in $(aws iam list-role-policies --role-name "$ROLE_NAME" \
-        --query 'PolicyNames[]' --output text 2>/dev/null); do
-        aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$pol"
-        echo "   ✅ Deleted inline policy: $pol"
-    done
-    aws iam delete-role --role-name "$ROLE_NAME"
-    echo "   ✅ Deleted role: $ROLE_NAME"
-elif [[ "$PROBE_ERR" == *"(NoSuchEntity)"* ]]; then
-    echo "   ⏭️  Role not found: $ROLE_NAME"
+RECORD_READ=true
+RECORDED_ID=""
+if aws_capture ssm get-parameter --name "$ROLE_RECORD" --query Parameter.Value --output text --region "$AWS_REGION"; then
+    RECORDED_ID="$AWS_OUT"
+elif [[ "$AWS_ERR" != *"(ParameterNotFound)"* ]]; then
+    RECORD_READ=false
+    echo "   ❌ Could not read the ownership record for IAM role $ROLE_NAME: $AWS_ERR. Nothing was changed."
+    ERRORS+=("IAM role $ROLE_NAME: could not read the ownership record: $AWS_ERR")
+fi
+if [ "$RECORD_READ" = false ]; then
+    :
+elif aws_capture iam get-role --role-name "$ROLE_NAME" --query Role.RoleId --output text; then
+    ROLE_ID="$AWS_OUT"
+    if [ -z "$RECORDED_ID" ]; then
+        echo "   ⚠  IAM role $ROLE_NAME exists but this sample has no ownership record for it, so it was left in place. If it is yours, remove its policies and run: aws iam delete-role --role-name $ROLE_NAME"
+        ROLE_LEFT=true
+    elif [ "$RECORDED_ID" != "$ROLE_ID" ]; then
+        echo "   ❌ IAM role $ROLE_NAME is not the role this sample created (its role id does not match the ownership record). Nothing was deleted."
+        ERRORS+=("IAM role $ROLE_NAME: role id does not match the ownership record")
+    elif ! aws_capture iam list-role-policies --role-name "$ROLE_NAME" --query 'PolicyNames[]' --output text; then
+        echo "   ❌ Error deleting $ROLE_NAME: $AWS_ERR"
+        ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
+    else
+        INLINE_POLICIES="$AWS_OUT"
+        if ! aws_capture iam list-attached-role-policies --role-name "$ROLE_NAME" --query 'AttachedPolicies[].PolicyArn' --output text; then
+            echo "   ❌ Error deleting $ROLE_NAME: $AWS_ERR"
+            ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
+        else
+            MANAGED_POLICIES="$AWS_OUT"
+            if ! aws_capture iam list-instance-profiles-for-role --role-name "$ROLE_NAME" --query 'InstanceProfiles[].InstanceProfileName' --output text; then
+                echo "   ❌ Error deleting $ROLE_NAME: $AWS_ERR"
+                ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
+            else
+                # deploy.sh adds no inline policy and no instance profile, and attaches only
+                # AWSLambdaBasicExecutionRole; anything else was added by someone else.
+                UNEXPECTED=()
+                for pol in $INLINE_POLICIES; do
+                    UNEXPECTED+=("$pol")
+                done
+                for arn in $MANAGED_POLICIES; do
+                    if [ "$arn" != "$BASIC_EXEC_POLICY_ARN" ]; then
+                        UNEXPECTED+=("$arn")
+                    fi
+                done
+                for profile in $AWS_OUT; do
+                    UNEXPECTED+=("$profile")
+                done
+                if [ ${#UNEXPECTED[@]} -gt 0 ]; then
+                    UNEXPECTED_LIST=""
+                    while IFS= read -r item; do
+                        UNEXPECTED_LIST="${UNEXPECTED_LIST:+$UNEXPECTED_LIST, }$item"
+                    done < <(printf '%s\n' "${UNEXPECTED[@]}" | LC_ALL=C sort)
+                    echo "   ❌ IAM role $ROLE_NAME has attachments this sample did not add: $UNEXPECTED_LIST. Nothing was deleted. Remove them, or delete the role by hand."
+                    ERRORS+=("IAM role $ROLE_NAME: attachments this sample did not add: $UNEXPECTED_LIST")
+                else
+                    # A failed detach or delete stops the script (set -e) before its ✅ line.
+                    for arn in $MANAGED_POLICIES; do
+                        aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$arn"
+                        echo "   ✅ Detached managed policy: $arn"
+                    done
+                    aws iam delete-role --role-name "$ROLE_NAME"
+                    if aws_capture ssm delete-parameter --name "$ROLE_RECORD" --region "$AWS_REGION" || [[ "$AWS_ERR" == *"(ParameterNotFound)"* ]]; then
+                        echo "   ✅ Deleted role: $ROLE_NAME"
+                    else
+                        echo "   ❌ Error deleting $ROLE_NAME: $AWS_ERR"
+                        ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
+                    fi
+                fi
+            fi
+        fi
+    fi
+elif [[ "$AWS_ERR" == *"(NoSuchEntity)"* ]]; then
+    if [ -z "$RECORDED_ID" ]; then
+        echo "   ⏭  Role not found: $ROLE_NAME"
+    elif aws_capture ssm delete-parameter --name "$ROLE_RECORD" --region "$AWS_REGION" || [[ "$AWS_ERR" == *"(ParameterNotFound)"* ]]; then
+        echo "   ⏭  Role already deleted: $ROLE_NAME (ownership record cleared)"
+    else
+        echo "   ❌ Error deleting $ROLE_NAME: $AWS_ERR"
+        ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
+    fi
 else
-    echo "   ❌ Could not check IAM role $ROLE_NAME: $PROBE_ERR"
-    ERRORS+=("IAM role $ROLE_NAME: $PROBE_ERR")
+    echo "   ❌ Could not check IAM role $ROLE_NAME: $AWS_ERR"
+    ERRORS+=("IAM role $ROLE_NAME: $AWS_ERR")
 fi
 
 # ─── 3: CloudWatch Logs log group ─────────────────────────────────────
@@ -132,5 +212,11 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
         echo "   • $err"
     done
     exit 1
+fi
+# Exit 3: nothing failed, but the role was left in place because this sample could not
+# prove it created it (see step 2).
+if [ "$ROLE_LEFT" = true ]; then
+    echo "⚠  interceptor-notes/cleanup.sh finished; IAM role $ROLE_NAME was left in place (see above)."
+    exit 3
 fi
 echo "✨ Notes interceptor cleanup complete!"

@@ -4,13 +4,23 @@ Create IAM role for Gateway Interceptor Lambda
 """
 
 import json
+import os
 import sys
 
 import boto3
 
+# Make the repo's utils/ importable (iam_roles lives there) when this script
+# runs from its own deployment subdir.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from utils.iam_roles import RoleOwnershipError, ensure_role
+
 
 def create_lambda_role():
-    """Create IAM role for Lambda execution."""
+    """Create IAM role for Lambda execution.
+
+    Re-running on the role this sample created re-applies its trust policy and
+    policies. A same-name role this sample did not create is refused, with no change.
+    """
     session = boto3.Session()
     region = session.region_name
 
@@ -34,19 +44,23 @@ def create_lambda_role():
     }
 
     try:
-        # Create role
         print(f"Creating IAM role: {role_name}")
-        response = iam.create_role(
-            RoleName=role_name,
-            AssumeRolePolicyDocument=json.dumps(trust_policy),
-            Description="Lambda execution role for Gateway Interceptor",
-            Tags=[
+        role_arn, created = ensure_role(
+            iam,
+            ssm,
+            role_name,
+            trust_policy,
+            description="Lambda execution role for Gateway Interceptor",
+            tags=[
                 {"Key": "Application", "Value": "lakehouse-agent"},
                 {"Key": "Purpose", "Value": "claims-interceptor-role"},
             ],
         )
-        role_arn = response["Role"]["Arn"]
-        print(f"✅ Created IAM role: {role_arn}")
+        if created:
+            print(f"✅ Created IAM role: {role_arn}")
+        else:
+            print(f"ℹ️  Role {role_name} already exists and was created by this sample; re-applying its policies")
+            print(f"✅ Using existing role: {role_arn}")
 
         # Attach basic Lambda execution policy
         iam.attach_role_policy(
@@ -113,69 +127,9 @@ def create_lambda_role():
 
         return role_arn
 
-    except iam.exceptions.EntityAlreadyExistsException:
-        print(f"ℹ️  Role {role_name} already exists, retrieving ARN")
-        response = iam.get_role(RoleName=role_name)
-        role_arn = response["Role"]["Arn"]
-        print(f"✅ Using existing role: {role_arn}")
-
-        # Update inline policy for STS AssumeRole on tenant roles
-        sts_policy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Sid": "AssumeRoleTenantRoles",
-                    "Effect": "Allow",
-                    "Action": "sts:AssumeRole",
-                    "Resource": [
-                        f"arn:aws:iam::{account_id}:role/lakehouse-users-role",
-                        f"arn:aws:iam::{account_id}:role/lakehouse-adjusters-role",
-                        f"arn:aws:iam::{account_id}:role/lakehouse-policyholders-role",
-                        f"arn:aws:iam::{account_id}:role/lakehouse-administrators-role",
-                    ],
-                }
-            ],
-        }
-
-        iam.put_role_policy(
-            RoleName=role_name,
-            PolicyName="AssumeRoleTenantPolicy",
-            PolicyDocument=json.dumps(sts_policy),
-        )
-        print("✅ Updated inline policy for STS AssumeRole on tenant roles")
-
-        # Add/update inline policy for KMS decrypt (for Lambda environment variables)
-        kms_policy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Sid": "KMSDecryptForLambda",
-                    "Effect": "Allow",
-                    "Action": ["kms:Decrypt", "kms:DescribeKey"],
-                    "Resource": f"arn:aws:kms:{region}:{account_id}:key/*",
-                }
-            ],
-        }
-
-        iam.put_role_policy(
-            RoleName=role_name,
-            PolicyName="KMSDecryptPolicy",
-            PolicyDocument=json.dumps(kms_policy),
-        )
-        print("✅ Updated inline policy for KMS decrypt")
-
-        # Store role ARN in SSM Parameter Store
-        print("💾 Storing role ARN in SSM Parameter Store...")
-        ssm.put_parameter(
-            Name="/app/lakehouse-agent/interceptor-lambda-role-arn",
-            Value=role_arn,
-            Description="IAM role ARN for Gateway Interceptor Lambda",
-            Type="String",
-            Overwrite=True,
-        )
-        print("✅ Stored parameter: /app/lakehouse-agent/interceptor-lambda-role-arn")
-
-        return role_arn
+    except RoleOwnershipError as e:
+        print(str(e))
+        sys.exit(1)
     except Exception as e:
         print(f"❌ Error creating role: {e}")
         sys.exit(1)

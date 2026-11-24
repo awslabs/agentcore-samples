@@ -39,10 +39,14 @@ Inputs read from SSM Parameter Store (each role reads only its own):
                      written by 5b-obo-gateway-setup/01_deploy_opensearch_collection.py
     lakehouse-agent  (none)
 
-Create is idempotent: an existing role keeps its other attachments, and this
-script re-asserts only its own trust policy and its own inline policy
-(AgentCoreRuntimePermissions). Delete is idempotent: a missing role is reported
-and skipped.
+Each role this script creates gets an ownership record in SSM
+(/app/lakehouse-agent/role-ids/<role name> = the role's RoleId). Re-running
+create on a role with a matching record re-asserts its trust policy and its
+inline policy (AgentCoreRuntimePermissions). A role of the same name without a
+matching record is refused, and nothing is changed. Delete removes a role only
+when its record matches and it carries nothing but this script's inline policy;
+a role with no record is left in place with a warning, and a missing role is
+reported and skipped.
 
 Usage:
     python setup_runtime_roles.py create                          # all three roles
@@ -53,17 +57,28 @@ Usage:
 Arguments:
     --account-id: (Optional) AWS Account ID used in policy ARNs. If not provided, uses current account.
     --role:       (Optional, repeatable) Limit the action to the named role(s). Default: all three.
+
+Exit code: 0 on success; 1 on any failure; 3 when delete's only problem was a
+role left in place because this sample cannot prove it created it.
 """
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
 import boto3
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from utils.iam_roles import FAILED, OK, RoleOwnershipError, combine, delete_owned_role, ensure_role
+
 SSM_PREFIX = "/app/lakehouse-agent/"
 INLINE_POLICY_NAME = "AgentCoreRuntimePermissions"
+
+# Everything create puts on a runtime role. Delete refuses a role carrying anything else.
+EXPECTED_INLINE = {INLINE_POLICY_NAME}
+EXPECTED_MANAGED: set[str] = set()
 
 # Trust policy shared by all three roles: only the AgentCore service may assume them.
 TRUST_POLICY: dict[str, Any] = {
@@ -289,10 +304,11 @@ class RuntimeRoles:
         return values
 
     def create(self, role_keys: list[str]) -> dict[str, str]:
-        """Create or update the selected roles; return {role name: role ARN}.
+        """Create the selected roles, or update this sample's own; return {role name: role ARN}.
 
         All SSM inputs are read before any IAM call, so a missing input stops
-        the run before a role is half-configured.
+        the run before a role is half-configured. A same-name role this sample
+        did not create raises RoleOwnershipError before any policy call.
         """
         print("\n🚀 Creating AgentCore Runtime execution roles")
         print(f"   Region: {self.region}")
@@ -313,72 +329,40 @@ class RuntimeRoles:
         return arns
 
     def create_one(self, spec: dict[str, Any], permissions_policy: dict[str, Any]) -> str:
-        """Create one role with the trust policy and inline policy; update it in place if it exists."""
+        """Create one role (or reuse this sample's own), then put its inline policy."""
         role_name = spec["name"]
-        try:
-            print(f"\nCreating IAM role: {role_name}")
-            response = self.iam.create_role(
-                RoleName=role_name,
-                AssumeRolePolicyDocument=json.dumps(TRUST_POLICY),
-                Description=spec["description"],
-                Tags=role_tags(spec["purpose"]),
-            )
-            role_arn = response["Role"]["Arn"]
-            self.iam.put_role_policy(
-                RoleName=role_name,
-                PolicyName=INLINE_POLICY_NAME,
-                PolicyDocument=json.dumps(permissions_policy),
-            )
+        print(f"\nCreating IAM role: {role_name}")
+        role_arn, created = ensure_role(
+            self.iam,
+            self.ssm,
+            role_name,
+            TRUST_POLICY,
+            description=spec["description"],
+            tags=role_tags(spec["purpose"]),
+        )
+        self.iam.put_role_policy(
+            RoleName=role_name,
+            PolicyName=INLINE_POLICY_NAME,
+            PolicyDocument=json.dumps(permissions_policy),
+        )
+        if created:
             print(f"✅ Created IAM role: {role_arn}")
-            return role_arn
+        else:
+            print(f"✅ Updated this sample's existing IAM role: {role_arn}")
+        return role_arn
 
-        except self.iam.exceptions.EntityAlreadyExistsException:
-            # Idempotent in-place update: re-assert this script's trust policy and
-            # its own inline policy, and leave every other attachment untouched
-            # (other inline policies, managed policies, instance profiles).
-            # No detach-all, no delete-and-recreate.
-            print(f"ℹ️  Role {role_name} already exists — updating in place (preserving out-of-band attachments)")
-            role_arn = self.iam.get_role(RoleName=role_name)["Role"]["Arn"]
-            self.iam.update_assume_role_policy(RoleName=role_name, PolicyDocument=json.dumps(TRUST_POLICY))
-            self.iam.put_role_policy(
-                RoleName=role_name,
-                PolicyName=INLINE_POLICY_NAME,
-                PolicyDocument=json.dumps(permissions_policy),
-            )
-            print(f"✅ Updated existing IAM role in place: {role_arn}")
-            return role_arn
-
-    def delete(self, role_keys: list[str]) -> bool:
-        """Delete the selected roles. Returns False if any deletion failed."""
+    def delete(self, role_keys: list[str]) -> int:
+        """Delete the selected roles; return OK, FAILED or LEFT combined over all of them."""
         print("\n🗑️  Deleting AgentCore Runtime execution roles")
-        ok = True
-        for rk in role_keys:
-            ok = self.delete_one(ROLES[rk]["name"]) and ok
-        return ok
+        return combine([self.delete_one(ROLES[rk]["name"]) for rk in role_keys])
 
-    def delete_one(self, role_name: str) -> bool:
-        """Delete one role. IAM refuses to delete a role that still has policies,
-        so every inline policy is deleted and every managed policy detached first."""
-        try:
-            self.iam.get_role(RoleName=role_name)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {role_name}")
-            return True
-        try:
-            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
-            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
-            self.iam.delete_role(RoleName=role_name)
-            print(f"   ✅ Deleted role: {role_name}")
-            return True
-        except Exception as e:
-            print(f"   ❌ Error deleting {role_name}: {e}")
-            return False
+    def delete_one(self, role_name: str) -> int:
+        """Delete one role if this sample created it and it carries only this script's inline policy."""
+        return delete_owned_role(self.iam, self.ssm, role_name, EXPECTED_INLINE, EXPECTED_MANAGED)
 
 
 def main(argv=None) -> int:
-    """CLI entry point. Exit code is 1 only when a delete fails."""
+    """CLI entry point. Exit code: 0 success, 1 any failure, 3 a role left in place on delete."""
     parser = argparse.ArgumentParser(description="Create or delete the AgentCore Runtime execution roles")
     parser.add_argument(
         "--account-id",
@@ -388,7 +372,7 @@ def main(argv=None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command, help_text in (
-        ("create", "Create the roles (or update them in place)"),
+        ("create", "Create the roles (or update this sample's own)"),
         ("delete", "Delete the roles"),
     ):
         sub = subparsers.add_parser(command, help=help_text)
@@ -404,9 +388,13 @@ def main(argv=None) -> int:
     role_keys = [rk for rk in ROLES if not args.role or rk in args.role]
     roles = RuntimeRoles(account_id=args.account_id)
     if args.command == "create":
-        roles.create(role_keys)
-        return 0
-    return 0 if roles.delete(role_keys) else 1
+        try:
+            roles.create(role_keys)
+        except RoleOwnershipError as e:
+            print(e)
+            return FAILED
+        return OK
+    return roles.delete(role_keys)
 
 
 if __name__ == "__main__":

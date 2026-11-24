@@ -13,6 +13,12 @@ Run by notebook 02 (Step 2), after create_lambda_role.py has stored the
 interceptor Lambda role ARN at /app/lakehouse-agent/interceptor-lambda-role-arn.
 Each role ARN is written to /app/lakehouse-agent/roles/<role-name>.
 
+Each role this script creates gets an ownership record in SSM
+(/app/lakehouse-agent/role-ids/<role name> = the role's RoleId). A re-run on
+a role with a matching record re-asserts its trust policy and its policies. A
+role of the same name without a matching record is refused, nothing is changed
+on it, and the script exits 1.
+
 Usage:
     python setup_iam_roles.py
     python setup_iam_roles.py --account-id 123456789012
@@ -23,11 +29,16 @@ Arguments:
 
 import argparse
 import json
+import os
+import sys
 import time
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from utils.iam_roles import RoleOwnershipError, ensure_role
 
 
 class IAMRolesSetup:
@@ -57,7 +68,7 @@ class IAMRolesSetup:
             "lakehouse-administrators-role",
         ]
 
-        # Roles found already present by create_role (reused, not created)
+        # This sample's own roles found already present by create_role (reused, not created)
         self.existing_roles: set[str] = set()
 
     def get_trust_policy(self) -> dict[str, Any]:
@@ -264,7 +275,10 @@ class IAMRolesSetup:
 
     def create_role(self, role_name: str, trust_policy: dict[str, Any]) -> str:
         """
-        Create IAM role with trust policy.
+        Create IAM role with trust policy, or reuse this sample's own role of that name.
+
+        A same-name role without a matching ownership record is refused: the
+        message is printed and the script exits 1 before any policy call.
 
         Args:
             role_name: Name of the IAM role
@@ -274,24 +288,32 @@ class IAMRolesSetup:
             Role ARN
         """
         try:
-            # Check if role already exists
-            try:
-                response = self.iam_client.get_role(RoleName=role_name)
-                print(f"✅ Role {role_name} already exists")
-                self.existing_roles.add(role_name)
-                return response["Role"]["Arn"]
-            except self.iam_client.exceptions.NoSuchEntityException:
-                pass
-
             # Create the role, retrying while IAM's principal validation catches up.
             # See _create_role_with_principal_retry for why this retry is necessary.
-            response = self._create_role_with_principal_retry(role_name, trust_policy)
+            role_arn, created = ensure_role(
+                self.iam_client,
+                self.ssm_client,
+                role_name,
+                trust_policy,
+                description=f"IAM role for {role_name} group in lakehouse agent",
+                tags=[
+                    {"Key": "Application", "Value": "lakehouse-agent"},
+                    {"Key": "Group", "Value": role_name},
+                ],
+                create_role_fn=self._create_role_with_principal_retry,
+            )
 
-            role_arn = response["Role"]["Arn"]
-            print(f"✅ Created role: {role_name}")
-            print(f"   ARN: {role_arn}")
+            if created:
+                print(f"✅ Created role: {role_name}")
+                print(f"   ARN: {role_arn}")
+            else:
+                print(f"✅ Role {role_name} already exists (created by this sample)")
+                self.existing_roles.add(role_name)
             return role_arn
 
+        except RoleOwnershipError as e:
+            print(e)
+            sys.exit(1)
         except Exception as e:
             print(f"❌ Error creating role {role_name}: {e}")
             raise

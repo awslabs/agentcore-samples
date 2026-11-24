@@ -7,12 +7,18 @@ Deletes:
 - OAuth2 credential providers (lakehouse-related)
 - Request interceptor Lambda function
 - Response interceptor Lambda function
-- Lambda execution role (InsuranceClaimsGatewayInterceptorRole)
+- IAM roles InsuranceClaimsGatewayInterceptorRole and agentcore-lakehouse-gateway-role,
+  only if this sample's ownership record matches the role and the role has no
+  policies this sample did not add
 - DynamoDB tenant role mapping table
 - SSM parameters
 
 Usage:
     python cleanup_gateway.py [--keep-ssm]
+
+Exit code: 0 when everything was deleted or already gone, 1 on any error, 3 when
+the only problem is an IAM role left in place because this sample cannot prove
+it created it.
 """
 
 import argparse
@@ -24,6 +30,7 @@ import boto3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.iam_roles import FAILED, LEFT, OK, combine, delete_owned_role
 from utils.idp_config import get_idp_provider
 from utils.notebook_init import pause, wait_for
 
@@ -33,6 +40,19 @@ from utils.notebook_init import pause, wait_for
 # preferred so a non-default name still resolves. Mirrors GATEWAY_NAME in
 # 5b-obo-gateway-setup/06_cleanup_obo_gateway.py.
 GATEWAY_NAME = "lakehouse-gateway"
+
+# IAM roles this script deletes, with the policies the setup scripts add to each.
+# A role with any other attachment is not deleted.
+INTERCEPTOR_ROLE_NAME = "InsuranceClaimsGatewayInterceptorRole"
+INTERCEPTOR_ROLE_INLINE = {
+    "AssumeRoleTenantPolicy",  # create_lambda_role.py
+    "KMSDecryptPolicy",  # create_lambda_role.py
+    "DynamoDBTenantRoleMappingPolicy",  # interceptor-request/setup_dynamodb_tenant_role_maps.py
+}
+INTERCEPTOR_ROLE_MANAGED = {"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"}
+GATEWAY_ROLE_NAME = "agentcore-lakehouse-gateway-role"
+GATEWAY_ROLE_INLINE = {"GatewayExecutionPolicy"}
+GATEWAY_ROLE_MANAGED: set[str] = set()
 
 
 class GatewayCleanup:
@@ -49,6 +69,8 @@ class GatewayCleanup:
         # Failed or unconfirmed deletes are collected here; run() prints ✨ only when this
         # stays empty. "Not found" outcomes are not failures.
         self.errors = []
+        # One result per IAM role (OK / FAILED / LEFT), combined into the exit code.
+        self.role_codes = []
 
     def _get_ssm_param(self, name, default=None):
         try:
@@ -224,51 +246,19 @@ class GatewayCleanup:
                 print(f"   ❌ Error deleting {func_name}: {e}")
                 self.errors.append(f"Lambda {func_name}: {e}")
 
+    def _delete_role(self, role_name, expected_inline, expected_managed):
+        code = delete_owned_role(self.iam, self.ssm, role_name, expected_inline, expected_managed)
+        self.role_codes.append(code)
+        if code == FAILED:
+            self.errors.append(f"role {role_name}: not deleted (see ❌ above)")
+
     def delete_lambda_role(self):
         print("\n🗑️  Deleting Lambda execution role...")
-        role_name = "InsuranceClaimsGatewayInterceptorRole"
-        try:
-            self.iam.get_role(RoleName=role_name)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {role_name}")
-            return
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {role_name}: {e}")
-            return
-        try:
-            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
-            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
-            self.iam.delete_role(RoleName=role_name)
-            print(f"   ✅ Deleted role: {role_name}")
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {role_name}: {e}")
+        self._delete_role(INTERCEPTOR_ROLE_NAME, INTERCEPTOR_ROLE_INLINE, INTERCEPTOR_ROLE_MANAGED)
 
     def delete_gateway_role(self):
         print("\n🗑️  Deleting Gateway IAM role...")
-        role_name = "agentcore-lakehouse-gateway-role"
-        try:
-            self.iam.get_role(RoleName=role_name)
-        except self.iam.exceptions.NoSuchEntityException:
-            print(f"   ⏭️  Role not found: {role_name}")
-            return
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {role_name}: {e}")
-            return
-        try:
-            for p in self.iam.list_role_policies(RoleName=role_name)["PolicyNames"]:
-                self.iam.delete_role_policy(RoleName=role_name, PolicyName=p)
-            for p in self.iam.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]:
-                self.iam.detach_role_policy(RoleName=role_name, PolicyArn=p["PolicyArn"])
-            self.iam.delete_role(RoleName=role_name)
-            print(f"   ✅ Deleted role: {role_name}")
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-            self.errors.append(f"role {role_name}: {e}")
+        self._delete_role(GATEWAY_ROLE_NAME, GATEWAY_ROLE_INLINE, GATEWAY_ROLE_MANAGED)
 
     def delete_dynamodb_table(self):
         print("\n🗑️  Deleting DynamoDB tenant role mapping table...")
@@ -317,11 +307,15 @@ class GatewayCleanup:
         self.delete_gateway_role()
         self.delete_dynamodb_table()
         self.delete_ssm_parameters()
-        if self.errors:
+        code = combine([FAILED if self.errors else OK, *self.role_codes])
+        if code == FAILED:
             print(f"\n❌ cleanup_gateway.py finished with {len(self.errors)} error(s):")
             for err in self.errors:
                 print(f"   • {err}")
             sys.exit(1)
+        if code == LEFT:
+            print("\n⚠  cleanup_gateway.py finished; an IAM role was left in place (see ⚠ above)")
+            sys.exit(LEFT)
         print("\n✨ Gateway cleanup complete!")
 
 

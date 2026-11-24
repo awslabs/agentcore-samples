@@ -26,9 +26,10 @@ from typing import Any
 
 import boto3
 
-# Make the repo's utils/ importable (idp_config lives there) when this script
-# runs from its own deployment subdir.
+# Make the repo's utils/ importable (idp_config and iam_roles live there) when
+# this script runs from its own deployment subdir.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from utils.iam_roles import RoleOwnershipError, ensure_role
 from utils.idp_config import assert_gateway_idp_matches, get_idp_provider
 
 
@@ -181,6 +182,10 @@ class GatewaySetup:
         """
         Create IAM role for Gateway.
 
+        Re-running on the role this sample created re-applies its trust policy
+        and inline policy. A same-name role this sample did not create is
+        refused with no change, and the script exits 1.
+
         Args:
             gateway_name: Name for the gateway
 
@@ -259,17 +264,21 @@ class GatewaySetup:
 
         try:
             print(f"🔑 Creating IAM role: {role_name}")
-            response = iam.create_role(
-                RoleName=role_name,
-                AssumeRolePolicyDocument=json.dumps(trust_policy),
-                Description="IAM role for AgentCore Gateway",
-                Tags=[
+            role_arn, created = ensure_role(
+                iam,
+                self.config.ssm,
+                role_name,
+                trust_policy,
+                description="IAM role for AgentCore Gateway",
+                tags=[
                     {"Key": "Application", "Value": "lakehouse-agent"},
                     {"Key": "Purpose", "Value": "claims-gateway-role"},
                 ],
             )
-            role_arn = response["Role"]["Arn"]
-            print(f"✅ Created IAM role: {role_arn}")
+            if created:
+                print(f"✅ Created IAM role: {role_arn}")
+            else:
+                print(f"ℹ️  Role {role_name} already exists and was created by this sample; re-applying its policy")
 
             # Attach policy
             iam.put_role_policy(
@@ -281,26 +290,11 @@ class GatewaySetup:
 
             return role_arn
 
-        except iam.exceptions.EntityAlreadyExistsException:
-            # In-place idempotent update (both paths): re-assert the
-            # script-owned trust + inline policy while preserving any out-of-band
-            # attachments. No detach-all / delete-recreate / sleep.
-            print(f"ℹ️  Role {role_name} already exists — updating in place (preserving out-of-band attachments)")
-
-            role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
-
-            # Repair the trust policy in place (no delete).
-            iam.update_assume_role_policy(RoleName=role_name, PolicyDocument=json.dumps(trust_policy))
-
-            # Upsert ONLY our known inline policy; put_role_policy overwrites in place.
-            iam.put_role_policy(
-                RoleName=role_name,
-                PolicyName="GatewayExecutionPolicy",
-                PolicyDocument=json.dumps(policy_document),
-            )
-
-            print(f"✅ Updated existing IAM role in place: {role_arn}")
-            return role_arn
+        except RoleOwnershipError as e:
+            # Exit here rather than raise: create_gateway() treats any error whose text
+            # contains "already exists" as an existing gateway and would update it.
+            print(str(e))
+            sys.exit(1)
 
         except Exception as e:
             print(f"❌ Error creating role: {e}")

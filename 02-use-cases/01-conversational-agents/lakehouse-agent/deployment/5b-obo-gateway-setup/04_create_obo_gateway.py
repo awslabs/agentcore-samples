@@ -22,11 +22,13 @@ client_credentials provider for the gateway-to-runtime leg.
 
 This script does, in order:
 
-  1. Create or update the IAM role agentcore-lakehouse-notes-gateway-role,
-     assumed by bedrock-agentcore.amazonaws.com. It grants runtime invoke,
+  1. Create the IAM role agentcore-lakehouse-notes-gateway-role, assumed by
+     bedrock-agentcore.amazonaws.com. It grants runtime invoke,
      workload-identity token and OAuth2 token-vault access, which the
-     gateway needs to run the credential provider. An existing role is
-     updated in place (trust policy + GatewayExecutionPolicy inline policy).
+     gateway needs to run the credential provider. If the role already exists
+     and this sample created it, its trust policy and GatewayExecutionPolicy
+     inline policy are re-applied. A same-name role this sample did not create
+     is refused with no change, and the script exits 1.
   2. Create the gateway (CUSTOM_JWT authorizer, MCP protocol,
      supportedVersions=['2025-11-25']). An existing gateway is reused only
      if it was deployed for the same IdP (pre-flight IdP-mismatch guard).
@@ -70,8 +72,9 @@ from typing import Any
 
 import boto3
 
-# Make the repo's utils/ importable (idp_config lives there).
+# Make the repo's utils/ importable (idp_config and iam_roles live there).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from utils.iam_roles import RoleOwnershipError, ensure_role
 from utils.idp_config import assert_gateway_idp_matches, get_idp_provider
 
 # Pattern naming over data-store naming.
@@ -205,7 +208,9 @@ def create_obo_gateway_role(config: SSMConfig) -> str:
 
     Mirrors 5a-gateway-setup/create_gateway.py:create_gateway_role(). Same
     trust policy + same permissions shape (workload-identity + OAuth2
-    token-vault access). If the role already exists it is updated in place.
+    token-vault access). Re-running on the role this sample created re-applies
+    its trust policy and inline policy; a same-name role this sample did not
+    create is refused with no change, and the script exits 1.
     """
     iam = boto3.client("iam", region_name=config.region)
 
@@ -274,56 +279,34 @@ def create_obo_gateway_role(config: SSMConfig) -> str:
         ],
     }
 
+    print(f"🔑 Creating IAM role: {role_name}")
     try:
-        print(f"🔑 Creating IAM role: {role_name}")
-        response = iam.create_role(
-            RoleName=role_name,
-            AssumeRolePolicyDocument=json.dumps(trust_policy),
-            Description="IAM role for AgentCore OBO_Gateway",
-            Tags=[
+        role_arn, created = ensure_role(
+            iam,
+            config.ssm,
+            role_name,
+            trust_policy,
+            description="IAM role for AgentCore OBO_Gateway",
+            tags=[
                 {"Key": "Application", "Value": "lakehouse-agent"},
                 {"Key": "Purpose", "Value": "notes-gateway-role"},
             ],
         )
-        role_arn = response["Role"]["Arn"]
+    except RoleOwnershipError as e:
+        print(str(e))
+        sys.exit(1)
+    if created:
         print(f"✅ Created IAM role: {role_arn}")
+    else:
+        print(f"ℹ️  Role {role_name} already exists and was created by this sample; re-applying its policy")
 
-        iam.put_role_policy(
-            RoleName=role_name,
-            PolicyName="GatewayExecutionPolicy",
-            PolicyDocument=json.dumps(policy_document),
-        )
-        print("✅ Attached execution policy to role")
-        return role_arn
-
-    except iam.exceptions.EntityAlreadyExistsException:
-        # Idempotent in-place update — preserves any out-of-band attachments.
-        # This re-asserts the script-owned trust policy + the
-        # 'GatewayExecutionPolicy' inline policy (overwriting any hand-edits to
-        # *those two* on re-run, by design), while leaving every OTHER attachment
-        # untouched: other inline policies, managed-policy attachments, and
-        # instance-profile memberships. No detach-all, no delete_role, no sleep.
-        # (Kept in sync with 5a-gateway-setup/create_gateway.py:create_gateway_role.)
-        print(f"ℹ️  Role {role_name} already exists — updating in place (preserving any out-of-band attachments)")
-
-        role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
-
-        # Repair the trust policy in place (no delete).
-        iam.update_assume_role_policy(
-            RoleName=role_name,
-            PolicyDocument=json.dumps(trust_policy),
-        )
-
-        # Upsert ONLY our known inline policy; put_role_policy overwrites an
-        # existing PolicyName, so this is a safe in-place update.
-        iam.put_role_policy(
-            RoleName=role_name,
-            PolicyName="GatewayExecutionPolicy",
-            PolicyDocument=json.dumps(policy_document),
-        )
-
-        print(f"✅ Updated existing IAM role in place: {role_arn}")
-        return role_arn
+    iam.put_role_policy(
+        RoleName=role_name,
+        PolicyName="GatewayExecutionPolicy",
+        PolicyDocument=json.dumps(policy_document),
+    )
+    print("✅ Attached execution policy to role")
+    return role_arn
 
 
 def create_obo_gateway(client, config: SSMConfig, role_arn: str) -> dict[str, Any]:
