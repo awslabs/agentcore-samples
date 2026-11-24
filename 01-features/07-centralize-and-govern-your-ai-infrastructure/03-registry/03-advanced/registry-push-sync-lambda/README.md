@@ -52,8 +52,8 @@ The following AWS services are used in this solution:
 The following describes the end-to-end flow when an MCP server in Account B is updated and the registry in Account A needs to be synced.
 
 ### Phase 1: Event Generation (Account B)
-1. Developer deploys or updates MCP server via `agentcore launch`
-2. AgentCore calls `UpdateAgentRuntime` API
+1. A developer updates an existing MCP server Runtime in Account B, directly or through their deployment tooling.
+2. The trigger is the AgentCore `UpdateAgentRuntime` API call. Creating a Runtime for the first time does not match this rule.
 3. CloudTrail logs the API call as a management event (~5 min delivery delay). No CloudTrail data events need to be enabled.
 4. Event delivered to Account B's default EventBridge bus
 
