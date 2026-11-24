@@ -21,7 +21,6 @@ Steps 9 and 10 archive and restore Insights and remove what you created.
 | **Agent deployment** | 20 to 30 minutes |
 | **Sending 100 claims** | About 2 to 3 minutes for each round, with 20 claims in flight |
 | **First Insights** | After about 20 failed sessions are evaluated. In our run, 12 minutes after the first claim. |
-| **Cost** | About $55 for the full walkthrough (two rounds of 100 claims), estimated. See [docs/cost.md](docs/cost.md). |
 | **Language** | Python 3.12 or later |
 
 This folder sits inside the [Event-Driven Claims Agent](../README.md) sample, which you deploy first. It holds the scripts, documents, and a reference patch for the loop around the claims agent.
@@ -92,11 +91,14 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-To run the unit tests for the scripts (no AWS calls): `pip install -r requirements-dev.txt && pytest`.
-
 **What you should see.** `deploy.sh` finishes without an error and creates the runtime `ClaimsAgent_claimsagent`. `test_invoke.py` prints the claims agent's answer to a test claim. Deployment takes 20 to 30 minutes.
 
-**If it does not match.** For install problems, see [troubleshooting: install and deploy](docs/troubleshooting.md#install-and-deploy). For deployment errors, use the claims agent's own README.
+**If it does not match.** Two issues in the claims agent's deployment are known:
+
+- `./deploy.sh` stops at the CDK step because the AgentCore CLI does not accept the project's `aws-cdk` version. In `agentcore/cdk/package.json`, change `"aws-cdk": "^2.1128.0"` to `"aws-cdk": "~2.1126.0"`, then run `./deploy.sh us-east-1` again.
+- The first `./deploy.sh` fails with `DiscoveryUrl is not a valid URL`. Run `agentcore remove credential --name cognito-gateway-m2m --yes` in `<claims-agent-dir>` (it changes local configuration only), then run `./deploy.sh us-east-1` again.
+
+For other deployment errors, use the claims agent's own README.
 
 ### Step 2: Register the deployed runtime
 
@@ -116,8 +118,6 @@ python scripts/register_agent.py --name ClaimsAgent
 Registered ClaimsAgent_claimsagent (<runtime id>) in us-east-1.
 Wrote agent_state_ClaimsAgent.json. Next: python scripts/setup_insights.py --name ClaimsAgent
 ```
-
-**If it does not match.** See [troubleshooting: register and set up](docs/troubleshooting.md#register-and-set-up).
 
 ### Step 3: Turn on Continuous Insights
 
@@ -144,7 +144,7 @@ The claims agent has its own online evaluation configuration, `ClaimsEvaluation`
 Continuous Insights is on. Next: python scripts/drive.py --name ClaimsAgent --count 100 --concurrency 20
 ```
 
-**If it does not match.** See [troubleshooting: register and set up](docs/troubleshooting.md#register-and-set-up). If the script says the application name has no spans yet, invoke the claims agent once, wait two minutes, and run the script again.
+**If it does not match.** If the script says the application name has no spans yet, invoke the claims agent once, wait two minutes, and run the script again.
 
 ### Step 4: Send claims and wait for Insights
 
@@ -221,7 +221,7 @@ In that run, all 7 Insights appeared 12 minutes after the first claim, about 10 
 
 An empty Insight list early in the run is normal. Run `status.py` again every few minutes. Go to step 5 when the list shows Insights.
 
-**If it does not match.** For invocation errors, see [troubleshooting: send claims](docs/troubleshooting.md#send-claims). For an Insight list that stays empty, see [troubleshooting: no Insights yet](docs/troubleshooting.md#no-insights-yet).
+**If it does not match.** If the Insight list stays empty, run `status.py` and check that `Sessions evaluated` shows at least 20 sessions with failures. A session is evaluated only after it has been idle for the 2-minute timeout, and only sessions that start after step 3 count.
 
 ### Step 5: Export the Insights
 
@@ -253,8 +253,6 @@ The script writes `insights/<timestamp>/`:
 | `summary.json` | Each Insight's ID, name, affected-session count, and last-seen time. Step 8 uses it as the baseline. |
 
 Keep this folder. It is your baseline.
-
-**If it does not match.** See [troubleshooting: export](docs/troubleshooting.md#export).
 
 ### Step 6: Fix the agent with an AI coding assistant
 
@@ -303,8 +301,6 @@ The patch holds the coding assistant's changes from our run:
 
 **What you should see.** `git diff` in `<claims-agent-dir>` shows the prompt, tool-description, code, and test changes. Run `pytest` in `<claims-agent-dir>`: the claims agent's tests and the added tests pass (103 tests with the reference patch).
 
-**If it does not match.** See [troubleshooting: apply the patches](docs/troubleshooting.md#apply-the-patches).
-
 ### Step 7: Redeploy and send the same claims again
 
 **What this step does.** It puts the changes from step 6 into the running claims agent with one redeploy, then sends the same traffic again so that the new sessions are comparable with the first round.
@@ -323,7 +319,7 @@ Before you send the full round, run the smoke test described in [step 8](#step-8
 
 **What you should see.** `deploy.sh` finishes without an error. `drive.py` ends with `100 sent, 0 failed to invoke`, as in step 4.
 
-**If it does not match.** For `drive.py` problems, see [troubleshooting: send claims](docs/troubleshooting.md#send-claims). For deployment errors, use the claims agent's own README.
+**If it does not match.** For deployment errors, use the claims agent's own README.
 
 ### Step 8: Compare with the baseline
 
@@ -370,7 +366,7 @@ python scripts/outcomes.py --name ClaimsAgent --since <round start, for example 
 
 Run it once for each round and compare. [Sample results](#sample-results) shows both views from our run.
 
-**If it does not match.** See [troubleshooting: verify the fix](docs/troubleshooting.md#verify-the-fix).
+**If it does not match.** Exit code `2` means the evaluator has not covered the new sessions yet. Run the script again with a larger `--wait-minutes`.
 
 ### Step 9: Archive and restore Insights
 
@@ -386,7 +382,7 @@ python scripts/export_insights.py --name ClaimsAgent --archive-status ARCHIVED
 
 **What you should see.** The same output as step 5, with the archived Insights in the count: `Exported <k> Insight(s) to ...`.
 
-**If it does not match.** If the script writes `0 active Insight(s)` or an empty export, see [troubleshooting: export](docs/troubleshooting.md#export).
+**If it does not match.** If the script writes `0 active Insight(s)` or an empty export, the Insights are not ready yet. Run `status.py` and try again when it lists them.
 
 ### Step 10: Clean up
 
@@ -411,8 +407,6 @@ Two account-wide settings stay in place:
 - **CloudWatch Transaction Search.** It bills per ingested span for every traced workload in the account. Turn it off only if nothing else needs it.
 
 **What you should see.** One `deleted` line for each resource, then `Done. Remove agent_state_ClaimsAgent.json when you no longer need it.` A resource that is already gone prints `skip ... (already gone)`.
-
-**If it does not match.** See [troubleshooting: clean up](docs/troubleshooting.md#clean-up).
 
 ## How to read the results
 
@@ -477,42 +471,9 @@ Run `scripts/register_agent.py` with `--runtime-name` set to your runtime's name
 
 The coding assistant instructions in [`AGENTS.md`](AGENTS.md) name the claims agent's files: where the prompts, the tool descriptions, and the checks live. Edit them for your code base.
 
-## Repository layout
-
-```text
-README.md                  This guide
-AGENTS.md                  Instructions for the coding assistant (written for the claims agent)
-requirements.txt           Script dependencies (boto3)
-requirements-dev.txt       Adds pytest
-scripts/
-  common.py                Shared helpers (state file, clients)
-  register_agent.py        Find the deployed claims agent runtime and write the state file
-  setup_insights.py        Enable the Store; create the evaluation role and configuration
-  drive.py                 Send scripted claims to the runtime
-  status.py                Show the pipeline state and Insights
-  export_insights.py       Write Insights to FAILURES.md and JSON
-  verify_fix.py            Compare the Insights with an exported baseline
-  outcomes.py              Count how claims were routed (approved, human review, rejected)
-  cleanup.py               Delete the evaluation configuration and role
-patches/
-  claims-agent-insight-fixes.patch    Reference prompt, tool-description, and code fixes for the claims agent
-docs/
-  architecture.md          Components, data flow, IAM role, design choices
-  architecture.png         Architecture diagram
-  troubleshooting.md       Symptoms, causes, and fixes
-  cost.md                  Cost drivers and an estimate
-tests/                     Unit tests for the scripts (no AWS calls)
-```
-
-The scripts create these files in the repository root when you run them: `agent_state_<name>.json`, `sessions_<name>.jsonl`, and `insights/<timestamp>/`.
-
-## Troubleshooting
-
-[docs/troubleshooting.md](docs/troubleshooting.md) lists the messages the scripts print, their causes, and fixes. Start with `python scripts/status.py --name ClaimsAgent`.
-
 ## Security
 
-This is sample code. The scripts use your AWS credentials from the environment and store none. The evaluation role trusts only AgentCore in your account, and the coding assistant has no AWS access. See [Well-Architected tradeoffs](docs/architecture.md#well-architected-tradeoffs). To report a security issue, see [CONTRIBUTING](../../../../CONTRIBUTING.md#security-issue-notifications).
+This is sample code. The scripts use your AWS credentials from the environment and store none. The evaluation role trusts only AgentCore in your account, and the coding assistant has no AWS access. To report a security issue, see [CONTRIBUTING](../../../../CONTRIBUTING.md#security-issue-notifications).
 
 ## License
 

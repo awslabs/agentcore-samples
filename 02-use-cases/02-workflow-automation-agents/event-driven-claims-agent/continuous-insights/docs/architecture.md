@@ -58,7 +58,7 @@ Claims arrive as files in S3. An EventBridge rule starts a trigger Lambda, which
 | `scripts/outcomes.py` | Reads the runtime log for a time window and counts how the claims agent routed each claim: approved automatically, sent to human review, or rejected. It only reads from your account. |
 | `scripts/cleanup.py` | Deletes the online evaluation config and the evaluation role. |
 | Online evaluation config `<name>_insights` | `Builtin.FailureAnalysis` as the only evaluator, 100% sampling, and a session idle timeout (2 minutes in this sample). Reads the runtime log group for the runtime's `service.name`. |
-| Evaluation execution role `AgentCoreEvaluationRole-<name>` | The role the evaluation assumes. See [Security](#well-architected-tradeoffs). |
+| Evaluation execution role `AgentCoreEvaluationRole-<name>` | The role the evaluation assumes. Only `bedrock-agentcore.amazonaws.com` can assume it, and only for evaluators and online evaluation configurations in your account and Region. It can query CloudWatch Logs to read spans, write results under `/aws/bedrock-agentcore/evaluations/*`, and invoke Bedrock models for the evaluator. |
 | Agent Insight Store | One default store per account and Region. It must be `ACTIVE` and `ENABLED`. It holds the Agent Insights. |
 | CloudWatch Logs | Holds the runtime's spans in two places: the `aws/spans` log group (written by CloudWatch Transaction Search) and the runtime log group. |
 
@@ -104,31 +104,6 @@ Claims arrive as files in S3. An EventBridge rule starts a trigger Lambda, which
 
 `scripts/verify_fix.py` reports `quiet` for an Insight whose count and last-seen time have not moved, `STILL FAILING` for one that has, and `NEW` for an Insight that was not in the baseline. It exits 0 when nothing grew, 1 when something did, and 2 when the evaluator has not yet covered the replayed sessions.
 
-## Well-Architected tradeoffs
-
-**Operational excellence.** Spans, evaluation results and Insights all land where you can query them. The workflow is readable Python with a local state file. The tradeoff is that nothing here is defined as infrastructure as code yet.
-
-**Security.** The sample creates one role and gives it only what Failure Analysis needs.
-
-- *Trust policy.* Only `bedrock-agentcore.amazonaws.com` can assume it, and only when `aws:SourceAccount` and `aws:ResourceAccount` equal your account and `aws:SourceArn` matches an evaluator or online evaluation config in your account and Region. These conditions keep another account's AgentCore resources from using the role (the confused-deputy problem). If your account requires another trust statement, `scripts/setup_insights.py --extra-trust-statement <file>` appends it.
-- *Permissions.* CloudWatch Logs query actions (`StartQuery`, `GetQueryResults`, `StopQuery`, `DescribeLogGroups`) to read spans. Log-group, log-stream and `PutLogEvents` actions limited to `/aws/bedrock-agentcore/evaluations/*` to write results. `bedrock:InvokeModel` and `InvokeModelWithResponseStream` on foundation models in the Region and inference profiles in your account, for the evaluator's judge model.
-- *Credentials.* None are stored in the scripts. They use your AWS credentials from the environment. `agent_state_*.json`, `sessions_*.jsonl` and `insights/` hold account-specific data and are in `.gitignore`.
-- *The coding assistant has no AWS access.* `AGENTS.md` tells it not to deploy, call AWS, or read `.env` or state files.
-
-**Reliability.** The sample adds no component to the claims agent's request path. Evaluation reads spans after a session ends, so an evaluation problem does not affect claims. The scripts retry with adaptive backoff, retry role assumption while a new role propagates, and use one client token for every retry of a create call so a retry cannot make two configs.
-
-**Performance efficiency.** Evaluation is asynchronous. It reads idle sessions on a schedule and adds no latency to the agent. Insights appear after sessions have been evaluated and enough failed ones have accumulated.
-
-**Cost optimization.** Evaluation cost scales with the number of sessions you sample, so the sampling rate is the main lever. The sample uses 100% so a small amount of traffic produces Insights. Lower it for high-volume agents. The other drivers are the claims agent's own model calls and runtime, and CloudWatch Logs ingestion for spans and results. See the [cost shape](#cost-shape).
-
-**Sustainability.** All components are managed and scale with traffic. Sampling less at production volume cuts evaluator model calls.
-
-**Data residency.** Session data in spans and results stays in the Region of the log groups. The evaluator calls a Bedrock model through the role. Choose model and inference-profile settings by your data-residency rules.
-
-## Cost shape
-
-The main drivers are the Failure Analysis evaluations, which scale with the number of sessions you sample, and the claims agent's own model calls. CloudWatch Logs ingestion for spans and results is small by comparison. After teardown, idle cost is close to zero. [cost.md](cost.md) has the unit prices, the assumptions and an estimate you can adjust.
-
 ## Sample versus production
 
 This is sample code. It shows a pattern; it is not a hardened deployment.
@@ -144,5 +119,3 @@ This is sample code. It shows a pattern; it is not a hardened deployment.
 | Single Region (us-east-1) | Run the sample in a Region where Continuous Insights is available. |
 
 Account-wide settings stay on after `scripts/cleanup.py`: the Agent Insight Store (disabling it deletes stored Insights for every application in the account) and CloudWatch Transaction Search. The claims agent is removed with its own teardown script.
-
-For symptoms and fixes, see [troubleshooting.md](troubleshooting.md).

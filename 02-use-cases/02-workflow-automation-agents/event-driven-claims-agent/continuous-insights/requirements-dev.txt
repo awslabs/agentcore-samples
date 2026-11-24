@@ -1,3 +1,0 @@
-# Local development and tests.
--r requirements.txt
-pytest>=8,<10

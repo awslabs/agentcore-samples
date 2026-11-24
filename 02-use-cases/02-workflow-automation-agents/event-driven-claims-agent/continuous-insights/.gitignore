@@ -1,7 +1,6 @@
 # Local environment
 .venv/
 __pycache__/
-.pytest_cache/
 
 # Written by the scripts: account-specific, never commit
 agent_state_*.json
