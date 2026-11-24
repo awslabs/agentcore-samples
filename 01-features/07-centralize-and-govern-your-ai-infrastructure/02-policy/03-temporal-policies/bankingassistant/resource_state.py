@@ -3,6 +3,7 @@
 Not an importer for deployed v0 stacks. Never repair an uncertain ledger by
 inventing IDs or ownership tags. Run only one setup/cleanup process at a time.
 """
+
 import json
 import os
 import re
@@ -50,19 +51,22 @@ def validate_ledger(cfg, *, allow_unresolved_intents=False):
             raise RuntimeError(f"Missing {key}; legacy state needs a separate reviewed migration")
     if not re.fullmatch(r"\d{12}", cfg["account_id"]):
         raise RuntimeError("Invalid account_id")
-    for kind, service, resource in (("role", "iam", "role"),
-                                    ("engine", "bedrock-agentcore", "policy-engine"),
-                                    ("gateway", "bedrock-agentcore", "gateway")):
+    for kind, service, resource in (
+        ("role", "iam", "role"),
+        ("engine", "bedrock-agentcore", "policy-engine"),
+        ("gateway", "bedrock-agentcore", "gateway"),
+    ):
         arn = cfg.get(kind + "_arn")
         identity = cfg.get("role_name" if kind == "role" else kind + "_id")
         if arn:
             # IAM roles created here have the default / path, not arbitrary paths.
-            expected = f"arn:aws:{service}:{'' if kind == 'role' else cfg['region']}:{cfg['account_id']}:{resource}/{identity}"
+            expected = (
+                f"arn:aws:{service}:{'' if kind == 'role' else cfg['region']}:{cfg['account_id']}:{resource}/{identity}"
+            )
             require_equal(arn, expected, kind + " ARN/account/region/identity")
         elif kind != "role" and identity:
             intent = cfg.get("create_intents", {}).get(kind, {})
-            require_equal(intent.get("params", {}).get("name"), cfg[kind + "_name"],
-                          kind + " partial-create intent")
+            require_equal(intent.get("params", {}).get("name"), cfg[kind + "_name"], kind + " partial-create intent")
     if not cfg.get("ownership_id"):
         raise RuntimeError("Missing ownership_id; do not adopt legacy resources by editing the ledger")
     if not allow_unresolved_intents:
@@ -97,7 +101,12 @@ def verify_resources(ctrl, iam, cfg, *, allow_unresolved_intents=False):
     validate_ledger(cfg, allow_unresolved_intents=allow_unresolved_intents)
     owner = cfg["ownership_id"]
     for kind, id_key, arn_key, getter in (
-        ("engine", "policyEngineId", "policyEngineArn", lambda: ctrl.get_policy_engine(policyEngineId=cfg["engine_id"])),
+        (
+            "engine",
+            "policyEngineId",
+            "policyEngineArn",
+            lambda: ctrl.get_policy_engine(policyEngineId=cfg["engine_id"]),
+        ),
         ("gateway", "gatewayId", "gatewayArn", lambda: ctrl.get_gateway(gatewayIdentifier=cfg["gateway_id"])),
     ):
         if not cfg.get(kind + "_id"):
@@ -113,10 +122,17 @@ def verify_resources(ctrl, iam, cfg, *, allow_unresolved_intents=False):
         require_equal(tags.get(OWNER_TAG), owner, kind + " ownership tag")
         if kind == "gateway":
             require_equal(current.get("roleArn"), cfg.get("role_arn"), "gateway role reference")
-            require_equal(current.get("policyEngineConfiguration", {}).get("arn"), cfg.get("engine_arn"), "gateway engine reference")
+            require_equal(
+                current.get("policyEngineConfiguration", {}).get("arn"),
+                cfg.get("engine_arn"),
+                "gateway engine reference",
+            )
             if cfg.get("workload_identity_arn"):
-                require_equal(current.get("workloadIdentityDetails", {}).get("workloadIdentityArn"),
-                              cfg["workload_identity_arn"], "gateway workload identity")
+                require_equal(
+                    current.get("workloadIdentityDetails", {}).get("workloadIdentityArn"),
+                    cfg["workload_identity_arn"],
+                    "gateway workload identity",
+                )
     if cfg.get("role_arn"):
         response = read_present(lambda: iam.get_role(RoleName=cfg["role_name"]))
         if response is not None:

@@ -1,16 +1,17 @@
 """Focused round-2 regressions. Fakes only; no service clients or secret access."""
+
 import copy
-from datetime import datetime, timezone
 import fnmatch
 import json
 import unittest
+from datetime import UTC, datetime, timezone
 from unittest.mock import Mock, patch
 
+import oauth_provider as oauth
 import test_migration
 import test_safety
-from test_migration import setup, error
 from resource_state import OWNER_TAG
-import oauth_provider as oauth
+from test_migration import error, setup
 
 
 class CompletionTests(unittest.TestCase):
@@ -23,12 +24,22 @@ class CompletionTests(unittest.TestCase):
                 self.config.unlink(missing_ok=True)
                 ctrl = Mock()
                 ctrl.get_oauth2_credential_provider.return_value = {
-                    "name": "banking-oauth", "credentialProviderVendor": "CustomOauth2",
-                    "credentialProviderArn": f"arn:aws:bedrock-agentcore:{setup.REGION}:123456789012:token-vault/default/oauth2credentialprovider/banking-oauth"}
+                    "name": "banking-oauth",
+                    "credentialProviderVendor": "CustomOauth2",
+                    "credentialProviderArn": f"arn:aws:bedrock-agentcore:{setup.REGION}:123456789012:token-vault/default/oauth2credentialprovider/banking-oauth",
+                }
                 ctrl.list_tags_for_resource.return_value = {"tags": {OWNER_TAG: "unrelated-owner"}}
                 ctrl.get_oauth2_credential_provider.side_effect = failure
                 with self.assertRaises((RuntimeError, type(error()))):
-                    oauth.prepare(ctrl, "123456789012", setup.REGION, "new-client", "https://example.invalid", "fake-secret", name="banking-oauth")
+                    oauth.prepare(
+                        ctrl,
+                        "123456789012",
+                        setup.REGION,
+                        "new-client",
+                        "https://example.invalid",
+                        "fake-secret",
+                        name="banking-oauth",
+                    )
                 ctrl.create_oauth2_credential_provider.assert_not_called()
                 ctrl.update_oauth2_credential_provider.assert_not_called()
                 self.assertEqual(json.loads(self.config.read_text())["name"], "banking-oauth")
@@ -37,33 +48,48 @@ class CompletionTests(unittest.TestCase):
         ctrl = Mock()
         store, tags = {}, {}
         model = test_migration.Session().get_service_model("bedrock-agentcore-control")
+
         def checked_response(operation, response):
             # Reject invented SDK response members, not only malformed create requests.
             test_migration.validate_parameters(response, model.operation_model(operation).output_shape)
             return copy.deepcopy(response)
+
         def get(**params):
             if not store:
                 raise error()
             self.assertEqual(params["name"], store["name"])
             return checked_response("GetOauth2CredentialProvider", store)
+
         def list_tags(**params):
             self.assertEqual(params["resourceArn"], store["credentialProviderArn"])
             return checked_response("ListTagsForResource", {"tags": tags})
+
         def create(**params):
-            test_migration.validate_parameters(params, model.operation_model("CreateOauth2CredentialProvider").input_shape)
+            test_migration.validate_parameters(
+                params, model.operation_model("CreateOauth2CredentialProvider").input_shape
+            )
             state = json.loads(self.config.read_text())
             self.assertEqual(params["tags"][OWNER_TAG], state["ownership_id"])
             prefix = f"arn:aws:bedrock-agentcore:{setup.REGION}:123456789012:"
             config = copy.deepcopy(params["oauth2ProviderConfigInput"])
             config["customOauth2ProviderConfig"].pop("clientSecret")
             tags.update(params["tags"])
-            store.update(name=params["name"], credentialProviderVendor="CustomOauth2",
-                         credentialProviderArn=prefix + "token-vault/default/oauth2credentialprovider/" + params["name"],
-                         clientSecretArn={"secretArn": f"arn:aws:secretsmanager:{setup.REGION}:123456789012:secret:owned-123456"},
-                         createdTime=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                         lastUpdatedTime=datetime(2026, 1, 1, tzinfo=timezone.utc), oauth2ProviderConfigOutput=config)
-            return checked_response("CreateOauth2CredentialProvider", {
-                k: store[k] for k in ("name", "credentialProviderArn", "clientSecretArn")})
+            store.update(
+                name=params["name"],
+                credentialProviderVendor="CustomOauth2",
+                credentialProviderArn=prefix + "token-vault/default/oauth2credentialprovider/" + params["name"],
+                clientSecretArn={
+                    "secretArn": f"arn:aws:secretsmanager:{setup.REGION}:123456789012:secret:owned-123456"
+                },
+                createdTime=datetime(2026, 1, 1, tzinfo=UTC),
+                lastUpdatedTime=datetime(2026, 1, 1, tzinfo=UTC),
+                oauth2ProviderConfigOutput=config,
+            )
+            return checked_response(
+                "CreateOauth2CredentialProvider",
+                {k: store[k] for k in ("name", "credentialProviderArn", "clientSecretArn")},
+            )
+
         ctrl.get_oauth2_credential_provider.side_effect = get
         ctrl.list_tags_for_resource.side_effect = list_tags
         ctrl.create_oauth2_credential_provider.side_effect = create
@@ -80,11 +106,20 @@ class CompletionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "--reuse-owned"):
                 oauth.prepare(*args)
             self.assertEqual(oauth.prepare(*args, reuse_owned=True), name)
-            for field, value in (("createdTime", datetime(2026, 2, 1, tzinfo=timezone.utc)),
-                                 ("clientSecretArn", {"secretArn": ledger["secret_arn"] + "other"}),
-                                 ("credentialProviderArn", ledger["provider_arn"] + "other"),
-                                 ("oauth2ProviderConfigOutput", {"customOauth2ProviderConfig": {
-                                     "clientId": "other", "oauthDiscovery": {"discoveryUrl": "https://other.invalid"}}})):
+            for field, value in (
+                ("createdTime", datetime(2026, 2, 1, tzinfo=UTC)),
+                ("clientSecretArn", {"secretArn": ledger["secret_arn"] + "other"}),
+                ("credentialProviderArn", ledger["provider_arn"] + "other"),
+                (
+                    "oauth2ProviderConfigOutput",
+                    {
+                        "customOauth2ProviderConfig": {
+                            "clientId": "other",
+                            "oauthDiscovery": {"discoveryUrl": "https://other.invalid"},
+                        }
+                    },
+                ),
+            ):
                 original = store[field]
                 store[field] = value
                 tag_reads = ctrl.list_tags_for_resource.call_count
@@ -97,7 +132,7 @@ class CompletionTests(unittest.TestCase):
             ctrl.update_oauth2_credential_provider.assert_not_called()
 
     def test_oauth_tag_reads_fail_closed_without_updates(self):
-        ctrl, store, _ = self.oauth_fake()
+        ctrl, _store, _ = self.oauth_fake()
         args = (ctrl, "123456789012", setup.REGION, "client", "https://example.invalid", "fake-secret")
         with patch.object(oauth, "STATE_FILE", self.config):
             oauth.prepare(*args)
@@ -134,9 +169,11 @@ class CompletionTests(unittest.TestCase):
         ctrl, store, create = self.oauth_fake()
         args = (ctrl, "123456789012", setup.REGION, "client", "https://example.invalid", "fake-secret")
         with patch.object(oauth, "STATE_FILE", self.config):
+
             def lost(**params):
                 create(**params)
                 raise TimeoutError("accepted; response lost")
+
             ctrl.create_oauth2_credential_provider.side_effect = lost
             with self.assertRaises(TimeoutError):
                 oauth.prepare(*args)
@@ -159,31 +196,51 @@ class CompletionTests(unittest.TestCase):
         with patch.object(oauth, "STATE_FILE", self.config):
             with self.assertRaises(RuntimeError):
                 oauth.prepare(*args, reuse_owned=True)
-            with patch.object(oauth, "atomic_save", side_effect=OSError("disk full")):
-                with self.assertRaises(OSError):
-                    oauth.prepare(*args)
+            with (
+                patch.object(oauth, "atomic_save", side_effect=OSError("disk full")),
+                self.assertRaises(OSError),
+            ):
+                oauth.prepare(*args)
             self.assertEqual(ctrl.mock_calls, [])
 
     def test_gateway_grant_exact_contract_and_unrelated_resource_negatives(self):
         prefix = f"arn:aws:bedrock-agentcore:{setup.REGION}:123456789012:"
-        cfg = {"account_id": "123456789012", "region": setup.REGION, "role_name": "r",
-               "engine_arn": prefix + "policy-engine/owned", "gateway_arn": prefix + "gateway/owned",
-               "workload_identity_arn": prefix + "workload-identity-directory/default/workload-identity/owned"}
-        provider = {"provider_arn": prefix + "token-vault/default/oauth2credentialprovider/owned",
-                    "secret_arn": f"arn:aws:secretsmanager:{setup.REGION}:123456789012:secret:owned-123456"}
+        cfg = {
+            "account_id": "123456789012",
+            "region": setup.REGION,
+            "role_name": "r",
+            "engine_arn": prefix + "policy-engine/owned",
+            "gateway_arn": prefix + "gateway/owned",
+            "workload_identity_arn": prefix + "workload-identity-directory/default/workload-identity/owned",
+        }
+        provider = {
+            "provider_arn": prefix + "token-vault/default/oauth2credentialprovider/owned",
+            "secret_arn": f"arn:aws:secretsmanager:{setup.REGION}:123456789012:secret:owned-123456",
+        }
         iam = Mock()
         setup.apply_gateway_policy(iam, cfg, provider)
         statements = json.loads(iam.put_role_policy.call_args.kwargs["PolicyDocument"])["Statement"]
         by_sid = {s["Sid"]: s for s in statements}
-        self.assertEqual(set(by_sid["PolicyEngineAuthorization"]["Action"]), {
-            "bedrock-agentcore:GetPolicyEngine", "bedrock-agentcore:CheckAuthorizePermissions",
-            "bedrock-agentcore:AuthorizeAction", "bedrock-agentcore:PartiallyAuthorizeActions"})
+        self.assertEqual(
+            set(by_sid["PolicyEngineAuthorization"]["Action"]),
+            {
+                "bedrock-agentcore:GetPolicyEngine",
+                "bedrock-agentcore:CheckAuthorizePermissions",
+                "bedrock-agentcore:AuthorizeAction",
+                "bedrock-agentcore:PartiallyAuthorizeActions",
+            },
+        )
         self.assertEqual(by_sid["PolicyEngineAuthorization"]["Resource"], [cfg["engine_arn"], cfg["gateway_arn"]])
         directory = prefix + "workload-identity-directory/default"
         self.assertEqual(by_sid["GetWorkloadAccessToken"]["Resource"], [directory, cfg["workload_identity_arn"]])
-        self.assertEqual(by_sid["ResourceOauth2Token"]["Resource"], [prefix + "token-vault/default", provider["provider_arn"], directory, cfg["workload_identity_arn"]])
+        self.assertEqual(
+            by_sid["ResourceOauth2Token"]["Resource"],
+            [prefix + "token-vault/default", provider["provider_arn"], directory, cfg["workload_identity_arn"]],
+        )
         self.assertEqual(by_sid["GetSecretValue"]["Resource"], provider["secret_arn"])
-        grants = [r for s in statements for r in (s["Resource"] if isinstance(s["Resource"], list) else [s["Resource"]])]
+        grants = [
+            r for s in statements for r in (s["Resource"] if isinstance(s["Resource"], list) else [s["Resource"]])
+        ]
         self.assertTrue(all("*" not in r and "?" not in r for r in grants))
         for resource in (*cfg.values(), *provider.values()):
             if not resource.startswith("arn:"):
@@ -191,7 +248,9 @@ class CompletionTests(unittest.TestCase):
             for unrelated in (resource + "-other", resource.replace("123456789012", "000000000000")):
                 self.assertFalse(any(fnmatch.fnmatchcase(unrelated, r) for r in grants))
         # Bootstrap has no unknown gateway/OAuth wildcard while create is pending.
-        setup.apply_gateway_policy(iam, {k: v for k, v in cfg.items() if k not in ("gateway_arn", "workload_identity_arn")}, provider)
+        setup.apply_gateway_policy(
+            iam, {k: v for k, v in cfg.items() if k not in ("gateway_arn", "workload_identity_arn")}, provider
+        )
         bootstrap = json.loads(iam.put_role_policy.call_args.kwargs["PolicyDocument"])["Statement"]
         self.assertEqual(len(bootstrap), 1)
         self.assertEqual(bootstrap[0]["Resource"], [cfg["engine_arn"]])
@@ -199,8 +258,10 @@ class CompletionTests(unittest.TestCase):
     def test_unresolved_children_block_cleanup_until_recovered(self):
         helper = test_safety.SafetyTests()
         helper.config = self.config
-        for kind, intent in (("target", {"params": {"name": setup.TARGET_NAME}}),
-                             ("policy:permit_get_account_balance", {"params": {"name": "permit_get_account_balance"}})):
+        for kind, intent in (
+            ("target", {"params": {"name": setup.TARGET_NAME}}),
+            ("policy:permit_get_account_balance", {"params": {"name": "permit_get_account_balance"}}),
+        ):
             cfg = helper.ledger()
             cfg["create_intents"] = {kind: intent}
             ctrl, iam = helper.clients(cfg)

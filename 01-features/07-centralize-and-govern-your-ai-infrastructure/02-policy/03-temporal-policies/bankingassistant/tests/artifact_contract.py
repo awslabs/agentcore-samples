@@ -4,15 +4,16 @@ Usage: python3 tests/artifact_contract.py ZIP CODE_CONFIGURATION_JSON
 Requires packaging (also a locked FastMCP transitive dependency). Linux native
 execution still needs an authorized matching host; this is a packaging contract.
 """
+
 import configparser
-from email.parser import Parser
 import json
-from pathlib import Path
 import re
 import struct
 import sys
 import tomllib
 import zipfile
+from email.parser import Parser
+from pathlib import Path
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -36,11 +37,14 @@ def check(zip_path, code):
         assert launcher.startswith("#!/usr/bin/env python3\n"), launcher
         assert "from opentelemetry.instrumentation.auto_instrumentation import run" in launcher
         assert archive.getinfo("bin/opentelemetry-instrument").external_attr >> 16 & 0o111
-        for module in ("opentelemetry/instrumentation/auto_instrumentation/__init__.py",
-                       "opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py",
-                       "opentelemetry/sdk/trace/__init__.py", "botocore/auth.py",
-                       "amazon/opentelemetry/distro/exporter/otlp/aws/common/aws_auth_session.py",
-                       "fastmcp/__init__.py"):
+        for module in (
+            "opentelemetry/instrumentation/auto_instrumentation/__init__.py",
+            "opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py",
+            "opentelemetry/sdk/trace/__init__.py",
+            "botocore/auth.py",
+            "amazon/opentelemetry/distro/exporter/otlp/aws/common/aws_auth_session.py",
+            "fastmcp/__init__.py",
+        ):
             assert module in names, module
         distributions = {}
         for name in names:
@@ -55,9 +59,17 @@ def check(zip_path, code):
         assert "botocore" in distributions  # AWS OTLP SigV4/EMF needs the distro's patch extra.
         # Verify the transitive base dependency closure under the *target* marker
         # environment, not macOS. Optional extras are installed by the real lock.
-        environment = {**default_environment(), "python_version": "3.14", "python_full_version": "3.14.0",
-                       "sys_platform": "linux", "platform_system": "Linux", "platform_machine": "aarch64",
-                       "implementation_name": "cpython", "implementation_version": "3.14.0", "extra": ""}
+        environment = {
+            **default_environment(),
+            "python_version": "3.14",
+            "python_full_version": "3.14.0",
+            "sys_platform": "linux",
+            "platform_system": "Linux",
+            "platform_machine": "aarch64",
+            "implementation_name": "cpython",
+            "implementation_version": "3.14.0",
+            "extra": "",
+        }
         for key, metadata in distributions.items():
             for text in metadata.get_all("Requires-Dist", []):
                 requirement = Requirement(text)
@@ -105,10 +117,14 @@ def check(zip_path, code):
                             continue
                         if "manylinux" not in platform:
                             continue
-                        if (py == "cp314" and abi == "cp314") or (abi == "abi3" and py.startswith("cp") and int(py[2:]) <= 314):
+                        if (py == "cp314" and abi == "cp314") or (
+                            abi == "abi3" and py.startswith("cp") and int(py[2:]) <= 314
+                        ):
                             compatible.append(tag)
                     assert compatible, (name, tags)
-        print(f"PASS real CodeZip contract: {len(distributions)} locked distributions; {len(native)} ELF ARM64 libraries; launcher, AWS distro/configurator, Python 3.14 closure and wheel tags")
+        print(
+            f"PASS real CodeZip contract: {len(distributions)} locked distributions; {len(native)} ELF ARM64 libraries; launcher, AWS distro/configurator, Python 3.14 closure and wheel tags"
+        )
         print("NOT RUN: Linux ARM64 launcher/server execution or AWS telemetry delivery")
 
 

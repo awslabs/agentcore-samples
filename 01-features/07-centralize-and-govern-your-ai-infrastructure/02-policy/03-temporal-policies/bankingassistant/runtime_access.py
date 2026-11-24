@@ -12,8 +12,7 @@ def access(status: dict, field: str, credential_name: str = "banking_assistant_t
         "url": ("runtime", "banking_assistant_tools"),
         "credential": ("credential", credential_name),
     }[field]
-    matches = [r for r in status["resources"]
-               if r["resourceType"] == kind and r["name"] == name]
+    matches = [r for r in status["resources"] if r["resourceType"] == kind and r["name"] == name]
     if len(matches) != 1 or matches[0].get("deploymentState") != "deployed":
         raise ValueError(f"{kind} {name} is not deployed on target {status.get('target')}")
     arn = matches[0]["arn"]
@@ -29,7 +28,8 @@ def access(status: dict, field: str, credential_name: str = "banking_assistant_t
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("field", choices=["url", "credential"])
-    parser.add_argument("--credential-name", default=os.environ.get(
-        "MCP_CREDENTIAL_NAME", "banking_assistant_tools-oauth"))
+    parser.add_argument(
+        "--credential-name", default=os.environ.get("MCP_CREDENTIAL_NAME", "banking_assistant_tools-oauth")
+    )
     args = parser.parse_args()
     print(access(json.load(sys.stdin), args.field, args.credential_name))

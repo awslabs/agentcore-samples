@@ -8,6 +8,7 @@ Only fresh labs and explicit reuse of this ledger's owned provider are supported
 Never imports a pre-existing provider, rotates a secret, or erases CLI state.
 Run one provisioning process at a time. Requires cloud authorization.
 """
+
 import argparse
 import json
 import os
@@ -17,8 +18,8 @@ import uuid
 from pathlib import Path
 
 import boto3
-from resource_state import OWNER_TAG, atomic_save, read_present, require_equal
 from policy_contract import API_VERSION, verified_policy_session
+from resource_state import OWNER_TAG, atomic_save, read_present, require_equal
 
 STATE_FILE = Path(__file__).parent / "oauth_provider_state.json"
 
@@ -27,8 +28,11 @@ def verify_provider(ctrl, state):
     current = ctrl.get_oauth2_credential_provider(name=state["name"])
     prefix = f"arn:aws:bedrock-agentcore:{state['region']}:{state['account_id']}:"
     require_equal(current.get("name"), state["name"], "OAuth name")
-    require_equal(current.get("credentialProviderArn"),
-                  prefix + "token-vault/default/oauth2credentialprovider/" + state["name"], "OAuth ARN")
+    require_equal(
+        current.get("credentialProviderArn"),
+        prefix + "token-vault/default/oauth2credentialprovider/" + state["name"],
+        "OAuth ARN",
+    )
     # GetOauth2CredentialProvider does not return tags in the pinned SDK model.
     # Read them separately only after validating the exact account/region/name ARN.
     tags = ctrl.list_tags_for_resource(resourceArn=current["credentialProviderArn"]).get("tags", {})
@@ -38,12 +42,17 @@ def verify_provider(ctrl, state):
     require_equal(config.get("clientId"), state["client_id"], "OAuth client")
     require_equal(config.get("oauthDiscovery", {}).get("discoveryUrl"), state["discovery_url"], "OAuth discovery")
     secret = current.get("clientSecretArn", {}).get("secretArn", "")
-    if not secret.startswith(f"arn:aws:secretsmanager:{state['region']}:{state['account_id']}:secret:") or any(c in secret for c in "*?"):
+    if not secret.startswith(f"arn:aws:secretsmanager:{state['region']}:{state['account_id']}:secret:") or any(
+        c in secret for c in "*?"
+    ):
         raise RuntimeError("Missing or invalid exact OAuth secret ARN")
     if not current.get("createdTime"):
         raise RuntimeError("Missing OAuth creation identity")
-    identity = {"provider_arn": current["credentialProviderArn"], "secret_arn": secret,
-                "created_time": current["createdTime"].isoformat()}
+    identity = {
+        "provider_arn": current["credentialProviderArn"],
+        "secret_arn": secret,
+        "created_time": current["createdTime"].isoformat(),
+    }
     for key, value in identity.items():
         if key in state:
             require_equal(value, state[key], "OAuth " + key)
@@ -58,14 +67,23 @@ def prepare(ctrl, account_id, region, client_id, discovery_url, secret, *, reuse
         name = name or "banking-oauth-" + uuid.uuid4().hex
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name):
             raise ValueError("Invalid OAuth provider name")
-        state = {"name": name, "account_id": account_id, "region": region,
-                 "client_id": client_id, "discovery_url": discovery_url,
-                 "ownership_id": str(uuid.uuid4())}
+        state = {
+            "name": name,
+            "account_id": account_id,
+            "region": region,
+            "client_id": client_id,
+            "discovery_url": discovery_url,
+            "ownership_id": str(uuid.uuid4()),
+        }
         # Includes the unique tag before the first request, permitting response-loss recovery.
         atomic_save(STATE_FILE, state)
     else:
-        for key, value in (("account_id", account_id), ("region", region),
-                           ("client_id", client_id), ("discovery_url", discovery_url)):
+        for key, value in (
+            ("account_id", account_id),
+            ("region", region),
+            ("client_id", client_id),
+            ("discovery_url", discovery_url),
+        ):
             require_equal(state[key], value, "OAuth " + key)
         if name:
             require_equal(state["name"], name, "OAuth selected name")
@@ -82,11 +100,17 @@ def prepare(ctrl, account_id, region, client_id, discovery_url, secret, *, reuse
             raise ValueError("Fresh OAuth reservation requires client secret on stdin")
         # Create only: a collision between GET and CREATE fails, NEVER calls update.
         ctrl.create_oauth2_credential_provider(
-            name=state["name"], credentialProviderVendor="CustomOauth2",
-            oauth2ProviderConfigInput={"customOauth2ProviderConfig": {
-                "clientId": client_id, "clientSecret": secret,
-                "oauthDiscovery": {"discoveryUrl": discovery_url}}},
-            tags={OWNER_TAG: state["ownership_id"]})
+            name=state["name"],
+            credentialProviderVendor="CustomOauth2",
+            oauth2ProviderConfigInput={
+                "customOauth2ProviderConfig": {
+                    "clientId": client_id,
+                    "clientSecret": secret,
+                    "oauthDiscovery": {"discoveryUrl": discovery_url},
+                }
+            },
+            tags={OWNER_TAG: state["ownership_id"]},
+        )
         identity = verify_provider(ctrl, state)
     atomic_save(STATE_FILE, {**state, **identity})
     return state["name"]
@@ -95,16 +119,24 @@ def prepare(ctrl, account_id, region, client_id, discovery_url, secret, *, reuse
 def main():
     sdk = verified_policy_session()  # Fail before reservation/STS if model selection diverges.
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--reuse-owned", action="store_true",
-                        help="Verify/recover only the originally tagged provider; never import or rotate")
+    parser.add_argument(
+        "--reuse-owned",
+        action="store_true",
+        help="Verify/recover only the originally tagged provider; never import or rotate",
+    )
     args = parser.parse_args()
     region = os.environ.get("REGION", "us-east-1")
     session = boto3.Session(botocore_session=sdk, region_name=region)
-    name = prepare(session.client("bedrock-agentcore-control", api_version=API_VERSION),
-                   session.client("sts").get_caller_identity()["Account"], region,
-                   os.environ["MCP_CLIENT_ID"], os.environ["DISCOVERY_URL"],
-                   "" if args.reuse_owned else sys.stdin.read(), reuse_owned=args.reuse_owned,
-                   name=os.environ.get("MCP_CREDENTIAL_NAME"))
+    name = prepare(
+        session.client("bedrock-agentcore-control", api_version=API_VERSION),
+        session.client("sts").get_caller_identity()["Account"],
+        region,
+        os.environ["MCP_CLIENT_ID"],
+        os.environ["DISCOVERY_URL"],
+        "" if args.reuse_owned else sys.stdin.read(),
+        reuse_owned=args.reuse_owned,
+        name=os.environ.get("MCP_CREDENTIAL_NAME"),
+    )
     print(name)
 
 

@@ -3,10 +3,12 @@
 No boto3 client, credentials or network. Responses are explicit service fields,
 not request echoes. Valid synthetic IDs are intentionally longer than model minima.
 """
+
 import copy
 import json
 import os
 from types import SimpleNamespace
+
 from botocore.exceptions import ClientError
 from botocore.parsers import create_parser
 from botocore.serialize import create_serializer
@@ -45,9 +47,14 @@ class PolicyWire:
         return parsed
 
     def not_found(self, operation):
-        parsed = self.parser.parse({"headers": {"x-amzn-errortype": "ResourceNotFoundException"},
-            "status_code": 404, "body": b'{"message":"synthetic policy absent"}'},
-            self.model.operation_model(operation).output_shape)
+        parsed = self.parser.parse(
+            {
+                "headers": {"x-amzn-errortype": "ResourceNotFoundException"},
+                "status_code": 404,
+                "body": b'{"message":"synthetic policy absent"}',
+            },
+            self.model.operation_model(operation).output_shape,
+        )
         raise ClientError(parsed, operation)
 
     def create_policy(self, **p):
@@ -55,12 +62,19 @@ class PolicyWire:
         if self.create_failure:
             raise self.create_failure
         policy_id = p["name"] + "-abcdefghij"
-        self.policies[policy_id] = {"policyId": policy_id, "name": p["name"],
-            "policyEngineId": p["policyEngineId"], "createdAt": 0, "updatedAt": 0,
+        self.policies[policy_id] = {
+            "policyId": policy_id,
+            "name": p["name"],
+            "policyEngineId": p["policyEngineId"],
+            "createdAt": 0,
+            "updatedAt": 0,
             "policyArn": f"arn:aws:bedrock-agentcore:{os.environ.get('REGION', 'us-east-1')}:123456789012:policy-engine/{p['policyEngineId']}/policy/{policy_id}",
-            "status": "ACTIVE", "enforcementMode": p.get("enforcementMode", "ACTIVE"),
-            "definition": copy.deepcopy(p["definition"]), "description": p.get("description", "synthetic"),
-            "statusReasons": []}
+            "status": "ACTIVE",
+            "enforcementMode": p.get("enforcementMode", "ACTIVE"),
+            "definition": copy.deepcopy(p["definition"]),
+            "description": p.get("description", "synthetic"),
+            "statusReasons": [],
+        }
         result = self.response("CreatePolicy", {**self.policies[policy_id], "status": "CREATING"})
         if self.lose_create_response:
             raise TimeoutError("synthetic accepted create response lost")

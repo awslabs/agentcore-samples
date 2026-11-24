@@ -194,9 +194,7 @@ def get_account_balance(account_id: str) -> dict:
         },
     }
 )
-def transfer_funds(
-    from_account: str, to_account: str, amount: int, memo: str = ""
-) -> dict:
+def transfer_funds(from_account: str, to_account: str, amount: int, memo: str = "") -> dict:
     """Transfer funds between two accounts."""
     if from_account not in ACCOUNTS:
         return {"error": f"Source account {from_account} not found"}
@@ -250,9 +248,7 @@ def get_transaction_history(account_id: str, limit: int = 10) -> dict:
     """Return recent transactions for an account."""
     if account_id not in ACCOUNTS:
         return {"error": f"Account {account_id} not found"}
-    acct_txns = [
-        t for t in TRANSACTIONS if t["from"] == account_id or t["to"] == account_id
-    ]
+    acct_txns = [t for t in TRANSACTIONS if t["from"] == account_id or t["to"] == account_id]
     recent = sorted(acct_txns, key=lambda t: t["ts"], reverse=True)[:limit]
     return {"account_id": account_id, "transactions": recent, "count": len(recent)}
 
@@ -476,9 +472,7 @@ def get_market_price(symbol: str) -> dict:
         },
     }
 )
-def execute_trade(
-    portfolio_id: str, symbol: str, action: str, shares: int, cost: int
-) -> dict:
+def execute_trade(portfolio_id: str, symbol: str, action: str, shares: int, cost: int) -> dict:
     """Execute a buy or sell order against a portfolio."""
     # The signed cost is an intentional temporal-policy input; share quantity is
     # not. Reject it before mutating cash, holdings, or the trade log.
@@ -497,21 +491,15 @@ def execute_trade(
     total = shares * price
     if action == "BUY":
         if port["cash"] < total:
-            return {
-                "error": f"Insufficient cash: have ${port['cash']:.2f}, need ${total:.2f}"
-            }
+            return {"error": f"Insufficient cash: have ${port['cash']:.2f}, need ${total:.2f}"}
         port["cash"] -= total
         holding = next((h for h in port["holdings"] if h["symbol"] == symbol), None)
         if holding:
             new_shares = holding["shares"] + shares
-            holding["avg_cost"] = (
-                holding["avg_cost"] * holding["shares"] + total
-            ) / new_shares
+            holding["avg_cost"] = (holding["avg_cost"] * holding["shares"] + total) / new_shares
             holding["shares"] = new_shares
         else:
-            port["holdings"].append(
-                {"symbol": symbol, "shares": shares, "avg_cost": price}
-            )
+            port["holdings"].append({"symbol": symbol, "shares": shares, "avg_cost": price})
     else:
         holding = next((h for h in port["holdings"] if h["symbol"] == symbol), None)
         if not holding or holding["shares"] < shares:
@@ -556,11 +544,7 @@ def rebalance_portfolio(portfolio_id: str, target_allocations: list) -> dict:
         return {"error": f"Portfolio {portfolio_id} not found"}
     port = PORTFOLIOS[portfolio_id]
     total_value = (
-        sum(
-            MARKET_PRICES.get(h["symbol"], h["avg_cost"]) * h["shares"]
-            for h in port["holdings"]
-        )
-        + port["cash"]
+        sum(MARKET_PRICES.get(h["symbol"], h["avg_cost"]) * h["shares"] for h in port["holdings"]) + port["cash"]
     )
     rebalance_id = _generate_id("RBL")
     actions = []
@@ -606,9 +590,7 @@ def rebalance_portfolio(portfolio_id: str, target_allocations: list) -> dict:
         },
     }
 )
-def approve_trade(
-    trade_request_id: str, approved_by: str, status: str = "approved", notes: str = ""
-) -> dict:
+def approve_trade(trade_request_id: str, approved_by: str, status: str = "approved", notes: str = "") -> dict:
     """Record advisor approval for a large trade."""
     TRADE_APPROVALS[trade_request_id] = {
         "status": status,
@@ -637,9 +619,7 @@ def approve_trade(
         },
     }
 )
-def interact_advisor(
-    advisor_id: str, action: str = "check_in", notes: str = ""
-) -> dict:
+def interact_advisor(advisor_id: str, action: str = "check_in", notes: str = "") -> dict:
     """Record an advisor interaction to reset the 15-minute trust-decay clock."""
     return {
         "advisorId": advisor_id,

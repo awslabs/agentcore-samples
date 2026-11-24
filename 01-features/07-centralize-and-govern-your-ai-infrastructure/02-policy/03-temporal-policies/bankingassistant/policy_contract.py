@@ -7,6 +7,7 @@
 Never installs/injects models or changes user configuration. Run preflight before
 provisioning. SDK model shadowing is independent of the installed version label.
 """
+
 import argparse
 import hashlib
 import importlib.metadata
@@ -18,9 +19,15 @@ import botocore
 import botocore.session
 from botocore.model import ServiceModel
 
-VERSIONS = {"boto3": "1.44.9", "botocore": "1.44.9", "jmespath": "1.1.0",
-            "s3transfer": "0.19.3", "python-dateutil": "2.9.0.post0",
-            "six": "1.17.0", "urllib3": "2.8.0"}
+VERSIONS = {
+    "boto3": "1.44.9",
+    "botocore": "1.44.9",
+    "jmespath": "1.1.0",
+    "s3transfer": "0.19.3",
+    "python-dateutil": "2.9.0.post0",
+    "six": "1.17.0",
+    "urllib3": "2.8.0",
+}
 # Canonical service-2 model from the SHA-verified published botocore wheel.
 MODEL_SHA256 = "65a81c44be9752576a0f03cc1292d0f992e638987e8064894d138c3e1a68a4db"
 SERVICE = "bedrock-agentcore-control"
@@ -43,7 +50,8 @@ def require_policy_model(session=None):
     if selected != API_VERSION:
         raise RuntimeError(
             f"Unsupported/shadowed policy API selection {selected!r}; expected {API_VERSION}. "
-            "Inspect api_versions and model search paths; no clients or intents may be created.")
+            "Inspect api_versions and model search paths; no clients or intents may be created."
+        )
     _, origin = loader.load_data_with_path(f"{SERVICE}/{selected}/service-2")
     bundled = Path(botocore.__file__).resolve().parent / "data" / SERVICE / API_VERSION / "service-2"
     data = loader.load_service_model(SERVICE, "service-2", selected)
@@ -53,7 +61,8 @@ def require_policy_model(session=None):
             f"Unsupported/shadowed policy model at {origin} (sha256 {digest}). "
             "No provisioning is safe with this model. See README control-environment preflight; "
             "use a private HOME and no AWS_DATA_PATH override while preserving explicit authorized "
-            "AWS config/credential paths. Do not delete global models or edit deployment ledgers.")
+            "AWS config/credential paths. Do not delete global models or edit deployment ledgers."
+        )
     return session.get_service_model(SERVICE, selected)
 
 
@@ -73,8 +82,9 @@ def require_policy_client_model(client):
     """
     model = getattr(getattr(client, "meta", None), "service_model", None)
     if isinstance(model, ServiceModel):
-        digest = hashlib.sha256(json.dumps(model._service_description,
-            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        digest = hashlib.sha256(
+            json.dumps(model._service_description, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
         if model.api_version != API_VERSION or digest != MODEL_SHA256:
             raise RuntimeError("Unsupported policy client model; retain intents and use the verified session/API")
 

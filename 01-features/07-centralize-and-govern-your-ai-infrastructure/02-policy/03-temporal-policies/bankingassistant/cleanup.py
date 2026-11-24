@@ -17,8 +17,8 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
-from resource_state import OWNER_TAG, absent, require_equal, verify_resources
 from policy_contract import API_VERSION, verified_policy_session
+from resource_state import OWNER_TAG, absent, require_equal, verify_resources
 
 CONFIG_FILE = Path(__file__).parent / "setup_config.json"
 
@@ -64,23 +64,23 @@ def cleanup(ctrl, iam, cfg: dict) -> None:
     engine_id = cfg.get("engine_id")
     gateway_id = cfg.get("gateway_id")
     # Inventory all children before the first deletion, not one page at a time.
-    policies = list_all(ctrl.list_policies, "policies", policyEngineId=engine_id,
-                        maxResults=50) if engine_id else []
-    targets = list_all(ctrl.list_gateway_targets, "items", gatewayIdentifier=gateway_id,
-                       maxResults=50) if gateway_id else []
+    policies = list_all(ctrl.list_policies, "policies", policyEngineId=engine_id, maxResults=50) if engine_id else []
+    targets = (
+        list_all(ctrl.list_gateway_targets, "items", gatewayIdentifier=gateway_id, maxResults=50) if gateway_id else []
+    )
     # Engine and gateway must be dedicated to this lab: every policy/target is
     # removed, including tutorial policies added after setup.py completed.
     if engine_id:
         for policy in policies:
             params = {"policyEngineId": engine_id, "policyId": policy["policyId"]}
             delete_if_present(ctrl.delete_policy, **params)
-            wait_deleted(lambda: ctrl.get_policy(**params), "Policy")
+            wait_deleted(lambda params=params: ctrl.get_policy(**params), "Policy")
 
     if gateway_id:
         for target in targets:
             params = {"gatewayIdentifier": gateway_id, "targetId": target["targetId"]}
             delete_if_present(ctrl.delete_gateway_target, **params)
-            wait_deleted(lambda: ctrl.get_gateway_target(**params), "Gateway target")
+            wait_deleted(lambda params=params: ctrl.get_gateway_target(**params), "Gateway target")
         # Remove the gateway attachment before deleting its engine.
         delete_if_present(ctrl.delete_gateway, gatewayIdentifier=gateway_id)
         wait_deleted(lambda: ctrl.get_gateway(gatewayIdentifier=gateway_id), "Gateway")
@@ -91,8 +91,7 @@ def cleanup(ctrl, iam, cfg: dict) -> None:
 
     if cfg.get("role_arn"):
         role_name = cfg["role_name"]
-        delete_if_present(iam.delete_role_policy, RoleName=role_name,
-                          PolicyName="GatewayExecutionPolicy")
+        delete_if_present(iam.delete_role_policy, RoleName=role_name, PolicyName="GatewayExecutionPolicy")
         delete_if_present(iam.delete_role, RoleName=role_name)
         wait_deleted(lambda: iam.get_role(RoleName=role_name), "Gateway role")
 
@@ -100,8 +99,9 @@ def cleanup(ctrl, iam, cfg: dict) -> None:
 def main() -> None:
     sdk = verified_policy_session()  # No clients/deletion with a divergent model selection.
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cognito", action="store_true",
-                        help="Also delete COGNITO_STACK_NAME (must be dedicated to this lab)")
+    parser.add_argument(
+        "--cognito", action="store_true", help="Also delete COGNITO_STACK_NAME (must be dedicated to this lab)"
+    )
     args = parser.parse_args()
     if not CONFIG_FILE.exists():
         print("No setup_config.json; nothing recorded to clean up.")
@@ -125,7 +125,7 @@ def main() -> None:
         if not stack_id:
             raise RuntimeError("--cognito requires recorded cognito_stack_id and matching ownership tag")
         expected = f"arn:aws:cloudformation:{region}:{account_id}:stack/{stack_name}/"
-        if not stack_id.startswith(expected) or not stack_id[len(expected):]:
+        if not stack_id.startswith(expected) or not stack_id[len(expected) :]:
             raise RuntimeError("Cognito stack ARN/name/account/region mismatch")
         cfn = session.client("cloudformation")
         stack = cfn.describe_stacks(StackName=stack_id)["Stacks"][0]
