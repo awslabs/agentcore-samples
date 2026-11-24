@@ -1,105 +1,62 @@
-"""Create a credential provider (OAuth2 or API Key) for outbound auth.
+"""Create an owned outbound provider, without reusing a same-name provider.
 
-Usage:
-    # OAuth2 credential provider
-    python scripts/create_credential.py \
-      --name my-oauth-credential \
-      --type oauth \
-      --discovery-url https://cognito-idp.us-west-2.amazonaws.com/us-west-2_xxx/.well-known/openid-configuration \
-      --client-id xxx \
-      --client-secret xxx
-
-    # API Key credential provider
-    python scripts/create_credential.py \
-      --name my-apikey-credential \
-      --type api-key \
-      --api-key-value sk-xxx \
-      --header-name x-api-key
+Prefer API_KEY_VALUE / OAUTH_CLIENT_SECRET environment variables to secret
+command-line arguments. --header-name is used when creating the TARGET, not by
+Identity; it is retained here as a reminder and recorded for the operator.
 """
-
 import argparse
+import os
 
 import boto3
-from botocore.exceptions import ClientError
+
+from lifecycle import account_for, record_path, reserve, save
+from credential_generation import created_time, secret_arn, verify_generation
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Create a credential provider")
-    parser.add_argument("--name", required=True, help="Credential provider name")
-    parser.add_argument(
-        "--type",
-        required=True,
-        choices=["oauth", "api-key"],
-        help="Credential type: oauth or api-key",
-    )
-
-    # OAuth args
-    parser.add_argument("--discovery-url", help="OIDC discovery URL (for oauth type)")
-    parser.add_argument("--client-id", help="OAuth client ID (for oauth type)")
-    parser.add_argument("--client-secret", help="OAuth client secret (for oauth type)")
-
-    # API Key args
-    parser.add_argument("--api-key-value", help="API key value (for api-key type)")
-    parser.add_argument(
-        "--header-name",
-        default="x-api-key",
-        help="Header name for API key (default: x-api-key)",
-    )
-
-    args = parser.parse_args()
-
-    region = boto3.Session().region_name
-    control = boto3.client("bedrock-agentcore-control", region_name=region)
-    account_id = boto3.client("sts").get_caller_identity()["Account"]
-
-    print(f"--- Creating {args.type} credential provider '{args.name}' ---")
-
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--type", required=True, choices=["oauth", "api-key"])
+    parser.add_argument("--discovery-url")
+    parser.add_argument("--client-id")
+    parser.add_argument("--client-secret", default=os.environ.get("OAUTH_CLIENT_SECRET"))
+    parser.add_argument("--api-key-value", default=os.environ.get("API_KEY_VALUE"))
+    parser.add_argument("--header-name", default="x-api-key")
+    args = parser.parse_args(argv)
+    try:
+        path = record_path("credential", args.name)
+        if path.exists():
+            raise ValueError(f"Ownership record exists: {path}; reconcile before creating")
+        if args.type == "oauth" and not all([args.discovery_url, args.client_id, args.client_secret]):
+            raise ValueError("OAuth requires discovery URL, client ID and client secret")
+        if args.type == "api-key" and not args.api_key_value:
+            raise ValueError("Set API_KEY_VALUE or --api-key-value")
+    except ValueError as error:
+        parser.error(str(error))
+    session = boto3.Session()
+    control = session.client("bedrock-agentcore-control")
+    record = {"name": args.name, "type": args.type, "region": session.region_name,
+              "accountId": account_for(session), "headerName": args.header_name, "status": "CREATE_PENDING"}
+    reserve(path, record)
     if args.type == "oauth":
-        if not all([args.discovery_url, args.client_id, args.client_secret]):
-            print(
-                "ERROR: --discovery-url, --client-id, --client-secret required for oauth type"
-            )
-            raise SystemExit(1)
-
-        try:
-            resp = control.create_oauth2_credential_provider(
-                name=args.name,
-                credentialProviderVendor="CustomOauth2",
-                oauth2ProviderConfigInput={
-                    "customOauth2ProviderConfig": {
-                        "oauthDiscovery": {"discoveryUrl": args.discovery_url},
-                        "clientId": args.client_id,
-                        "clientSecret": args.client_secret,
-                    }
-                },
-            )
-            cred_arn = resp["credentialProviderArn"]
-            print(f"  Created: {cred_arn}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ConflictException":
-                cred_arn = f"arn:aws:bedrock-agentcore:{region}:{account_id}:token-vault/default/oauth2credentialprovider/{args.name}"
-                print(f"  Already exists: {cred_arn}")
-            else:
-                raise
-
-    elif args.type == "api-key":
-        if not args.api_key_value:
-            print("ERROR: --api-key-value required for api-key type")
-            raise SystemExit(1)
-
-        try:
-            resp = control.create_api_key_credential_provider(
-                name=args.name,
-                apiKey=args.api_key_value,
-            )
-            cred_arn = resp["credentialProviderArn"]
-            print(f"  Created: {cred_arn}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ConflictException":
-                cred_arn = f"arn:aws:bedrock-agentcore:{region}:{account_id}:token-vault/default/apikeycredentialprovider/{args.name}"
-                print(f"  Already exists: {cred_arn}")
-            else:
-                raise
+        response = control.create_oauth2_credential_provider(
+            name=args.name, credentialProviderVendor="CustomOauth2",
+            oauth2ProviderConfigInput={"customOauth2ProviderConfig": {
+                "oauthDiscovery": {"discoveryUrl": args.discovery_url},
+                "clientId": args.client_id, "clientSecret": args.client_secret}})
+    else:
+        response = control.create_api_key_credential_provider(name=args.name, apiKey=args.api_key_value)
+    record.update(arn=response["credentialProviderArn"], status="CREATE_CONFIRMING")
+    save(path, record)
+    record['secretArn'] = secret_arn(response, args.type)
+    # Save returned identifiers before the follow-up read; never save secret values.
+    save(path, record)
+    kind = 'oauth2' if args.type == 'oauth' else 'api_key'
+    detail = getattr(control, f'get_{kind}_credential_provider')(name=args.name)
+    verify_generation(record, detail, require_time=False)
+    record.update(createdTime=created_time(detail), status='CREATED')
+    save(path, record)
+    print(f"Created {record['arn']}; ownership record: {path}")
 
 
 if __name__ == "__main__":

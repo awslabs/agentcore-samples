@@ -20,11 +20,11 @@ Both the DNS and the certificate are fully private. The domain only resolves ins
 
 AgentCore Gateway **does not support private certificates**. It validates TLS certificates against public root CAs only. A fully private setup (private cert + private domain) will fail with a TLS handshake error.
 
-Additionally, a private domain requires `routingDomain` since VPC Lattice needs a publicly resolvable domain for routing.
+Private DNS can resolve a target through a VPC-associated private hosted zone. `routingDomain` is an optional routing override for the proxy pattern; it is not universally required for private domains.
 
 ## Workaround
 
-Place a load balancer with a **public certificate** in front of your resource, and use `routingDomain` for the private domain:
+Place a load balancer with a **public certificate** in front of your resource. Use a private DNS alias to that load balancer, or the explicit `routingDomain` override shown in the detailed proxy lab:
 
 ```
 AgentCore Gateway
@@ -48,8 +48,8 @@ This effectively converts the setup into the [Public Certificate + Private Domai
 2. [Create a private hosted zone](./create-private-hosted-zone.md) associated with your VPC
 3. Optionally, set up [AWS Private CA](https://docs.aws.amazon.com/privateca/latest/userguide/PcaWelcome.html) for backend certificates
 4. Deploy your CDK stack with the public cert on the load balancer
-5. Configure `routingDomain` when creating the AgentCore Gateway target
+5. Follow the detailed private-DNS or proxy lab: select its private alias or explicit `routingDomain` as appropriate
 
 ## License
 
-This project is licensed under the Apache License 2.0. See the [LICENSE](../LICENSE.txt) file for details.
+This project is licensed under the Apache License 2.0. See the [LICENSE](../../LICENSE.txt) file for details.

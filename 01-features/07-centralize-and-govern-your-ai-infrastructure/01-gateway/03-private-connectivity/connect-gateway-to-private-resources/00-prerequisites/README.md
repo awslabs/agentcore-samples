@@ -4,15 +4,21 @@ This lab deploys the foundational infrastructure for all VPC egress tutorials: [
 
 ![Multi-account architecture](./images/multi-account.png)
 
+> The original parent stacks have been [restored with provenance](../SOURCE_PROVENANCE.md).
+> They remain separate from the nested CLI project. Select only the stack for
+> your lab, never `--all`: optional EKS/CA stacks have additional IAM, cost and
+> cleanup prerequisites. Review [ownership and safety](../vpcegress/README.md)
+> first. No mode in this migration has been cloud-tested.
+
 ## Domain and Certificate Guides
 
 AgentCore gateway VPC egress requires a **publicly trusted TLS certificate** on the target endpoint. These guides explain each DNS/certificate combination:
 
 | Guide | Description |
 |-------|-------------|
-| [Create an ACM Public Certificate](./create-acm-public-certificate.md) | Request, validate via DNS, and verify an ACM public certificate |
-| [Create a Public DNS Record](./create-public-dns-record.md) | Create a CNAME in a public hosted zone pointing to your internal load balancer |
-| [Create a Private Hosted Zone](./create-private-hosted-zone.md) | Create a Route 53 private hosted zone with an Alias record |
+| [Create an ACM Public Certificate](./concepts/create-acm-public-certificate.md) | Request, validate via DNS, and verify an ACM public certificate |
+| [Create a Public DNS Record](./concepts/create-public-dns-record.md) | Create a CNAME in a public hosted zone pointing to your internal load balancer |
+| [Create a Private Hosted Zone](./concepts/create-private-hosted-zone.md) | Create a Route 53 private hosted zone with an Alias record |
 
 ## VPC Architecture
 
@@ -25,12 +31,12 @@ Each VPC is created with three subnet types:
 
 ## Prerequisites
 
-- **[Node.js](https://nodejs.org/en/download)** v18 or later
+- **[Node.js](https://nodejs.org/en/download)** v22 or later
 - **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** v2
 - **[Docker](https://docs.docker.com/engine/install/)**
 - **[AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html)**
 - **[TypeScript](https://www.typescriptlang.org/download/)**
-- **[AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore)**: `npm install -g @aws/agentcore@0.30.0`
+- **[AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore)** 1.0.3 (see [local setup](../vpcegress/README.md))
 - Python 3.12+
 
 ## Deployment Steps
@@ -53,8 +59,13 @@ agentcore --version
 ### Step 2: Install project dependencies
 
 ```bash
-npm install
+npm ci
+export PATH="$PWD/node_modules/.bin:$PATH"
+npm test
 ```
+
+Use `set -euo pipefail` in Bash, stop on errors and keep all output/ownership
+files. The parent tests use fake context; they do not deploy anything.
 
 ### Step 3: Configure AWS credentials
 
@@ -62,6 +73,8 @@ Update the profile name to match your AWS CLI profile:
 
 ```bash
 export ACCOUNT_A_PROFILE="default"
+export AWS_PROFILE="$ACCOUNT_A_PROFILE"
+export AWS_DEFAULT_REGION="us-west-2"
 
 export ACCOUNT_A_ID=$(aws sts get-caller-identity --profile $ACCOUNT_A_PROFILE --query Account --output text)
 echo "Account A: $ACCOUNT_A_ID (profile: $ACCOUNT_A_PROFILE)"
@@ -69,7 +82,7 @@ echo "Account A: $ACCOUNT_A_ID (profile: $ACCOUNT_A_PROFILE)"
 
 ### Step 4: Bootstrap CDK
 
-CDK bootstrap provisions the resources CDK needs to deploy (S3 bucket for assets, ECR repo for container images, IAM roles). This only needs to be done once per account/region.
+CDK bootstrap provisions the resources CDK needs to deploy (S3 bucket for assets, ECR repo for container images, IAM roles). **Skip this step for an already bootstrapped account/region; do not modify shared bootstrap resources.** It is needed only once for a new environment.
 
 Bootstrap **us-west-2** (required for all labs):
 
@@ -127,9 +140,9 @@ cdk deploy VpcegressStack-USEast1 PeeringApigw-USEast1 VpcPeeringStack \
 ### Step 6: Deploy Amazon Cognito (shared)
 
 > [!NOTE]
-> Amazon Cognito is **not required** for AgentCore gateway. This tutorial uses it to keep the focus on gateway patterns. For your enterprise workloads, you can configure any OAuth 2.0 compliant identity provider (e.g., Entra ID, Auth0, Okta). See the [Optional Setup guide](../../../../00-optional-setup/) for full details.
+> Amazon Cognito is **not required** for AgentCore gateway. This tutorial uses it to keep the focus on gateway patterns. For your enterprise workloads, you can configure any OAuth 2.0 compliant identity provider (e.g., Entra ID, Auth0, Okta). See the [Optional Setup guide](../../../00-optional-setup/) for full details.
 
-If you haven't deployed the shared Cognito stack yet, deploy it using the Launch Stack button in [00-optional-setup](../../../../00-optional-setup/) or via the CLI:
+If you haven't deployed the shared Cognito stack yet, deploy it using the Launch Stack button in [00-optional-setup](../../../00-optional-setup/) or via the CLI:
 
 ```bash
 export COGNITO_STACK_NAME="agentcore-gateway-lab"
@@ -171,14 +184,11 @@ export GATEWAY_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
 
 agentcore add gateway \
   --name vpc-egress-gateway \
+  --protocol-type MCP \
   --authorizer-type CUSTOM_JWT \
-  --discovery-url $DISCOVERY_URL \
-  --allowed-clients $GATEWAY_CLIENT_ID \
-  --client-id $GATEWAY_CLIENT_ID \
-  --client-secret $GATEWAY_CLIENT_SECRET \
-  --exception-level DEBUG
+  --authorizer-configuration "{\"customJwtAuthorizer\":{\"discoveryUrl\":\"$DISCOVERY_URL\",\"allowedClients\":[\"$GATEWAY_CLIENT_ID\"]}}"
 
-agentcore deploy --yes
+agentcore deploy --yes --skip-bootstrap
 ```
 
 Capture the gateway ID and URL:
@@ -187,12 +197,12 @@ Capture the gateway ID and URL:
 export GATEWAY_ID=$(agentcore status --json | python3 -c "
 import sys, json
 data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
-print(next(r['identifier'] for r in data['resources'] if r['name'] == 'vpc-egress-gateway'))
+print(next(r['arn'].rsplit('/', 1)[-1] for r in data['resources'] if r['name'] == 'vpc-egress-gateway'))
 ")
 
 export GATEWAY_URL=$(aws bedrock-agentcore-control get-gateway \
   --gateway-identifier $GATEWAY_ID \
-  --query 'gatewayUrl' --output text)/mcp
+  --query 'gatewayUrl' --output text)
 
 echo "gateway ID:  $GATEWAY_ID"
 echo "gateway URL: $GATEWAY_URL"
@@ -238,13 +248,16 @@ ACCOUNT_B_ID=$ACCOUNT_B_ID cdk deploy VpcegressStack-USWest2-AccountB \
 > The AgentCore gateway cannot be deleted while it has targets. Delete all targets from subsequent labs first.
 
 > [!NOTE]
-> The VPC stack may fail to delete if security groups or ENIs from other labs are still present. Ensure all lab targets are deleted and manually remove any retained security groups and orphaned ENIs before destroying VPC stacks.
+> The VPC pre-delete guard only reports remaining security groups. Delete only
+> ledgered retained groups after their targets/ENIs are gone. Do not manually
+> detach service-owned ENIs or delete unowned groups to force VPC deletion.
 
 From the [`vpcegress/`](../vpcegress/) directory, remove the gateway:
 
 ```bash
-agentcore remove gateway --name vpc-egress-gateway -y
-agentcore deploy --yes
+python3 scripts/configure_gateway_permissions.py --clear
+agentcore remove gateway --name vpc-egress-gateway
+agentcore deploy --yes --skip-bootstrap
 ```
 
 Delete the Cognito stack (if no longer needed):

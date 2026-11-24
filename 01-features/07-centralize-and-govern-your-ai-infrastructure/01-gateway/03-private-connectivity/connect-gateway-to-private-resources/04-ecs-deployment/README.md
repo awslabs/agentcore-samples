@@ -10,14 +10,14 @@ Deploy MCP servers on Amazon ECS and connect them to AgentCore gateway using VPC
 
 ![arch](./images/ecs-fargate.png)
 
-An internal Application Load Balancer (ALB) sits in front of the ECS services. A Route 53 private hosted zone maps a private domain to the ALB. The `routingDomain` parameter tells VPC Lattice to route via the ALB's publicly resolvable DNS.
+An internal Application Load Balancer (ALB) sits in front of the ECS services. A Route 53 private hosted zone maps a private domain to the ALB. The detailed lab uses the VPC's private DNS alias to reach the ALB; it does not require a `routingDomain` override.
 
 - **Private domain**: only resolves inside the VPC (e.g., `ecs-mcp.example.com`)
 - **TLS termination**: ALB terminates HTTPS with an ACM public certificate, forwards plain HTTP to ECS tasks
-- **No public DNS needed**: no CNAME record or domain ownership required
+- **No public endpoint record needed**: the endpoint alias is private. You still need control of the public parent domain to validate the public certificate.
 
 ```
-AgentCore gateway → VPC Lattice (routingDomain: ALB *.elb.amazonaws.com)
+AgentCore gateway → VPC Lattice (private DNS alias to the ALB)
     → Resource gateway ENIs → Internal ALB (HTTPS :443, public cert) → ECS Fargate Tasks (HTTP :8000)
 ```
 
@@ -25,7 +25,7 @@ AgentCore gateway → VPC Lattice (routingDomain: ALB *.elb.amazonaws.com)
 
 - Completed [Lab 0: Prerequisites](../00-prerequisites/) (VPC + AgentCore gateway deployed)
 - Docker running (for CDK container image builds)
-- An ACM public certificate: see [Create an ACM Public Certificate](../00-prerequisites/create-acm-public-certificate.md)
+- An ACM public certificate: see [Create an ACM Public Certificate](../00-prerequisites/concepts/create-acm-public-certificate.md)
 
 ## Labs
 

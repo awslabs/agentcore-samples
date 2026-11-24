@@ -29,16 +29,16 @@ Create a [VPC Lattice Resource gateway](https://docs.aws.amazon.com/vpc/latest/p
 ```bash
 aws vpc-lattice create-resource-gateway \
   --name my-resource-gateway \
-  --vpc-identifier vpc-0abc123def456 \
-  --subnet-ids subnet-0abc123 subnet-0def456 \
-  --security-group-ids sg-0abc123def \
+  --vpc-identifier vpc-0123456789abcdef0 \
+  --subnet-ids subnet-0123456789abcdef0 subnet-0123456789abcdef1 \
+  --security-group-ids sg-0123456789abcdef0 \
   --ip-address-type IPV4
 ```
 
 
-This provisions one ENI per subnet, governed by the security groups you specified. By default, each ENI gets 1 IP address. You can configure up to 62 IPs per ENI using the `--ip-addresses-per-eni` parameter.
+This provisions one ENI per subnet, governed by the security groups you specified. By default, each ENI gets 1 IP address. You can configure up to 62 IPs per ENI using the `--ipv4-addresses-per-eni` (SDK field `ipv4AddressesPerEni`) parameter.
 
-Note the `resourceGatewayId` from the response.
+Note the `id` (and `arn`) from the response. These snippets illustrate API shapes; use the detailed lab's journaled helper for lifecycle/cleanup.
 
 ### Step 2: Create a Resource Configuration
 
@@ -80,7 +80,7 @@ aws vpc-lattice create-resource-configuration \
 
 The `--port-ranges` parameter restricts which ports the Resource gateway ENIs can forward traffic to, providing an additional layer of access control alongside your security groups.
 
-Note the `resourceConfigurationArn` from the response.
+Note the `arn` from the response; this Resource Configuration ARN is passed to the Gateway target, not the Resource Gateway ARN.
 
 ### Step 3 (Cross-account only): Share via AWS RAM
 
@@ -116,7 +116,7 @@ To create a gateway target with a self-managed private endpoint, include `privat
 {
   "privateEndpoint": {
     "selfManagedLatticeResource": {
-      "resourceConfigurationIdentifier": "arn:aws:vpc-lattice:us-east-1:123456789012:resourceconfiguration/rcfg-abc123"
+      "resourceConfigurationIdentifier": "arn:aws:vpc-lattice:us-east-1:123456789012:resourceconfiguration/rcfg-0123456789abcdef0"
     }
   }
 }

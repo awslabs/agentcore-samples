@@ -1,0 +1,3 @@
+# Both external MCP servers use one explicitly selected FastMCP version.
+# Regenerate and test both hash locks together after changing this input.
+fastmcp==4.2.5

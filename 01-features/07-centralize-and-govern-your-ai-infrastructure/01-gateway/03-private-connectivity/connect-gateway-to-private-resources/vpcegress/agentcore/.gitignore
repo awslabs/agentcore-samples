@@ -11,5 +11,4 @@ cdk/node_modules/
 # Ephemeral Staging
 .cache/*
 
-# Exception: Commit the State
-!.cli/deployed-state.json
+# Deployment state can contain identity metadata; keep it local.

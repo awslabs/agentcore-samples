@@ -18,7 +18,7 @@ This lab deploys the same private [Amazon API Gateway](https://docs.aws.amazon.c
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
 - CDK dependencies installed (`npm install` at project root)
 
@@ -67,61 +67,22 @@ In self-managed mode, **you** create the Resource Gateway. This provisions ENIs 
 export VPC_USW2_ID=$(python3 -c "import json; print(json.load(open('vpc-outputs.json'))['VpcegressStack-USWest2']['VpcId'])")
 export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
 
-export RESOURCE_GATEWAY_ID=$(aws vpc-lattice create-resource-gateway \
-  --name self-managed-apigw-rg \
-  --vpc-identifier $VPC_USW2_ID \
-  --subnet-ids $(echo $VPC_USW2_PRIVATE_SUBNETS | tr ',' ' ') \
-  --security-group-ids $VPCE_SG_ID \
-  --ip-address-type IPV4 \
-  --query 'id' --output text)
-
-echo "Resource Gateway ID: $RESOURCE_GATEWAY_ID"
+python3 vpcegress/scripts/lattice_resources.py \
+  --name self-managed-apigw \
+  --vpc-id "$VPC_USW2_ID" \
+  --subnet-ids "$VPC_USW2_PRIVATE_SUBNETS" \
+  --security-group-ids "$VPCE_SG_ID" \
+  --dns-name "$API_VPCE_DNS"
 ```
 
-Wait for ACTIVE status:
+This SDK helper creates the Resource Gateway **and** a SINGLE Resource Configuration
+for this DNS name on port 443. It waits for ACTIVE with a timeout and saves each
+identifier immediately, including on failure. Neither resource is a CDK output.
+
+### Step 4: Read the owned Resource Configuration ARN — from project root
 
 ```bash
-while true; do
-  STATUS=$(aws vpc-lattice get-resource-gateway \
-    --resource-gateway-identifier $RESOURCE_GATEWAY_ID \
-    --query 'status' --output text)
-  echo "Status: $STATUS"
-  [ "$STATUS" = "ACTIVE" ] && break
-  sleep 15
-done
-```
-
-### Step 4: Create Resource Configuration — from project root
-
-The Resource Configuration defines **what** AgentCore is allowed to reach through the Resource Gateway — scoped to a single endpoint.
-
-![rc](./images/resource-config.png)
-
-```bash
-export RESOURCE_CONFIG_ARN=$(aws vpc-lattice create-resource-configuration \
-  --name self-managed-apigw-rc \
-  --type SINGLE \
-  --resource-gateway-identifier $RESOURCE_GATEWAY_ID \
-  --resource-configuration-definition '{"dnsResource":{"domainName":"'$API_VPCE_DNS'","ipAddressType":"IPV4"}}' \
-  --port-ranges '["443"]' \
-  --query 'arn' --output text)
-
-echo "Resource Configuration ARN: $RESOURCE_CONFIG_ARN"
-```
-
-Wait for ACTIVE:
-
-```bash
-export RESOURCE_CONFIG_ID=$(echo $RESOURCE_CONFIG_ARN | awk -F/ '{print $NF}')
-
-while true; do
-  STATUS=$(aws vpc-lattice get-resource-configuration \
-    --resource-configuration-identifier $RESOURCE_CONFIG_ID \
-    --query 'status' --output text)
-  echo "Status: $STATUS"
-  [ "$STATUS" = "ACTIVE" ] && break
-  sleep 15
-done
+export RESOURCE_CONFIG_ARN=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/lattice-self-managed-apigw.json'))['resourceConfigurationArn'])")
 ```
 
 ### Step 5: Create API Key Credential Provider — from `vpcegress/`
@@ -139,25 +100,27 @@ python3 scripts/create_credential.py \
 Instead of providing VPC/subnet/SG details, you provide the **Resource Configuration ARN**. AgentCore associates it with its service network, completing end-to-end connectivity.
 
 ```bash
+python3 scripts/configure_gateway_permissions.py --credential self-managed-apigw-api-key
+agentcore deploy --yes --skip-bootstrap
+
 python3 scripts/create_target.py \
   --name self-managed-apigw \
-  --endpoint $TARGET_ENDPOINT \
-  --resource-gateway-arn $RESOURCE_CONFIG_ARN \
-  --credential-provider-arn $(python3 -c "
-import boto3
-account = boto3.client('sts').get_caller_identity()['Account']
-region = boto3.Session().region_name
-print(f'arn:aws:bedrock-agentcore:{region}:{account}:token-vault/default/apikeycredentialprovider/self-managed-apigw-api-key')
-")
+  --openapi-schema-file openapi-schemas/openapi-private-apigw.json \
+  --endpoint "$TARGET_ENDPOINT" \
+  --resource-configuration-identifier "$RESOURCE_CONFIG_ARN" \
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-self-managed-apigw-api-key.json'))['arn'])")"
 ```
 
 > [!NOTE]
-> The `--resource-gateway-arn` flag in `create_target.py` maps to `privateEndpoint.selfManagedResources.resourceGatewayArn` in the API. For self-managed, this is the Resource Configuration ARN.
+> `--resource-configuration-identifier` maps to
+> `privateEndpoint.selfManagedLatticeResource.resourceConfigurationIdentifier`.
+> A Resource Gateway ARN is rejected locally. Include all still-needed providers
+> when regenerating gateway permissions; see [ownership and IAM](../vpcegress/README.md).
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 7: Invoke the API through AgentCore Gateway
 
@@ -217,18 +180,14 @@ In self-managed mode, you must delete the VPC Lattice resources yourself (in rev
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name self-managed-apigw
+python3 scripts/delete_target.py --name self-managed-apigw &&
 python3 scripts/delete_credential.py --name self-managed-apigw-api-key --type api-key
 ```
 
 Delete VPC Lattice resources (from project root, wait a few minutes after target deletion):
 
 ```bash
-aws vpc-lattice delete-resource-configuration \
-  --resource-configuration-identifier $RESOURCE_CONFIG_ID
-
-aws vpc-lattice delete-resource-gateway \
-  --resource-gateway-identifier $RESOURCE_GATEWAY_ID
+python3 vpcegress/scripts/lattice_resources.py --name self-managed-apigw --delete
 ```
 
 Destroy the API Gateway CDK stack (from project root):

@@ -8,10 +8,10 @@ The MCP servers are reachable via a **private domain** in a Route 53 private hos
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
-- Docker running (for CDK container image builds)
-- An [ACM public certificate](../00-prerequisites/create-acm-public-certificate.md) for TLS termination on the NLB
+- A `kubectl` context (`CLUSTER_CONTEXT`) for this **private** EKS cluster, reachable from your authorized VPC-connected workstation. Review the optional EKS IAM/cleanup limits in [the migration notes](../vpcegress/README.md).
+- An [ACM public certificate](../00-prerequisites/concepts/create-acm-public-certificate.md) for TLS termination on the NLB
 
 ## Deployment Steps
 
@@ -31,7 +31,7 @@ export ACCOUNT_A_ID=$(aws sts get-caller-identity --query Account --output text)
 Deploy the shared EKS cluster (first time only):
 
 ```bash
-ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy SharedEksCluster --require-approval never
+ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy SharedEksCluster --require-approval never --outputs-file eks-cluster-outputs.json
 ```
 
 Deploy the MCP servers with NGINX Ingress + NLB:
@@ -44,17 +44,30 @@ ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy McpEks \
   --outputs-file eks-mcp-outputs.json
 ```
 
-Capture outputs:
+The NLB is created asynchronously by Kubernetes, not a CDK output. Read the
+actual private-zone outputs, then select the NLB by the Service's exact DNS name:
 
 ```bash
-export NLB_SG_ID=$(python3 -c "import json; print(json.load(open('eks-mcp-outputs.json'))['McpEks']['NlbSgId'])")
-export MCP_ENDPOINT=$(python3 -c "import json; print(json.load(open('eks-mcp-outputs.json'))['McpEks']['McpEndpoint'])")
-export STOCK_ENDPOINT=$(python3 -c "import json; print(json.load(open('eks-mcp-outputs.json'))['McpEks']['StockEndpoint'])")
-
-echo "MCP Endpoint:   $MCP_ENDPOINT"
-echo "Stock Endpoint: $STOCK_ENDPOINT"
-echo "NLB SG:         $NLB_SG_ID"
+export PRIVATE_ZONE_ID=$(python3 -c "import json; print(json.load(open('eks-mcp-outputs.json'))['McpEks']['PrivateZoneId'])")
+export DOMAIN=$(python3 -c "import json; print(json.load(open('eks-mcp-outputs.json'))['McpEks']['PrivateDomain'])")
+kubectl --context "$CLUSTER_CONTEXT" -n ingress-nginx wait service/nginx-ingress-nlb --for=jsonpath='{.status.loadBalancer.ingress}' --timeout=5m
+export NLB_DNS=$(kubectl --context "$CLUSTER_CONTEXT" -n ingress-nginx get service nginx-ingress-nlb -o 'jsonpath={.status.loadBalancer.ingress[0].hostname}')
+export NLB_ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='$NLB_DNS'].LoadBalancerArn | [0]" --output text)
+python3 vpcegress/scripts/configure_eks_endpoint.py --name eks-mcp \
+  --nlb-arn "$NLB_ARN" --zone-id "$PRIVATE_ZONE_ID" --domain "$DOMAIN" --vpc-id "$VPC_USW2_ID"
+export RESOURCE_GATEWAY_SG_ID=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/eks-endpoint-eks-mcp.json'))['securityGroupId'])")
+export MCP_ENDPOINT="https://$DOMAIN/mcp-server/mcp"
+export STOCK_ENDPOINT="https://$DOMAIN/stock-mcp/mcp"
 ```
+
+The helper **creates**, never overwrites, the alias record and records only new
+ingress rules. For an NLB with multiple attached groups, inspect them first and
+add `--security-group-id <owned-frontend-sg>` to the helper command; never select
+a shared backend group arbitrarily. For a legacy NLB without its own SG, the
+helper creates a separately tagged Resource Gateway group with **no ingress**
+and **TCP 443 egress to the VPC CIDR only**. Its ID is always passed below; the
+restricted default SG is never selected or modified. Endpoint cleanup deletes
+that dedicated group only after targets are absent and ENIs release it.
 
 ### Step 3: Create AgentCore Gateway Targets — from `vpcegress/`
 
@@ -67,7 +80,7 @@ python3 scripts/create_target.py \
   --endpoint $MCP_ENDPOINT \
   --vpc-id $VPC_USW2_ID \
   --subnet-ids $VPC_USW2_PRIVATE_SUBNETS \
-  --security-group-ids $NLB_SG_ID
+  --security-group-ids "$RESOURCE_GATEWAY_SG_ID"
 ```
 
 (Optional) Stock price MCP server:
@@ -78,13 +91,13 @@ python3 scripts/create_target.py \
   --endpoint $STOCK_ENDPOINT \
   --vpc-id $VPC_USW2_ID \
   --subnet-ids $VPC_USW2_PRIVATE_SUBNETS \
-  --security-group-ids $NLB_SG_ID
+  --security-group-ids "$RESOURCE_GATEWAY_SG_ID"
 ```
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore MCP tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore MCP tools interactively.
 
 ### Step 4: Invoke the MCP servers through AgentCore Gateway
 
@@ -128,9 +141,16 @@ python3 scripts/delete_target.py --name eks-mcp-server
 python3 scripts/delete_target.py --name eks-stock-mcp
 ```
 
-Destroy CDK stacks (from project root):
+Destroy CDK stacks only after deleting the SDK alias and Kubernetes-owned NLB
+(from project root, with the same verified cluster context). The historical CDK
+manifests are retained; deleting the cluster is **not** NLB cleanup.
 
 ```bash
+python3 vpcegress/scripts/configure_eks_endpoint.py --name eks-mcp --delete
+kubectl --context "$CLUSTER_CONTEXT" -n ingress-nginx delete service nginx-ingress-nlb --wait=true --timeout=5m
+aws elbv2 wait load-balancers-deleted --load-balancer-arns "$NLB_ARN"
+kubectl --context "$CLUSTER_CONTEXT" delete namespace mcp-server --wait=true --timeout=5m
+
 ACCOUNT_A_ID=$ACCOUNT_A_ID cdk destroy McpEks \
   -c "publicCertArn=$CERT_ARN" -c "privateDomain=$DOMAIN" --force
 

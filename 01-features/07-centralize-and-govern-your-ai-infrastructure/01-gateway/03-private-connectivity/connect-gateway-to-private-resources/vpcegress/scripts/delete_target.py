@@ -1,63 +1,36 @@
-"""Delete a gateway target by name.
-
-Shared script used by all VPC egress labs for cleanup.
-
-Usage:
-    python scripts/delete_target.py --name my-mcp-target
-"""
-
+"""Delete only a target recorded by this lab and wait for confirmed absence."""
 import argparse
 import os
-import sys
-import time
 
-import boto3
 from botocore.exceptions import ClientError
 
-
-def get_required_env(key):
-    val = os.environ.get(key)
-    if not val:
-        print(f"ERROR: {key} not set. Export it first.")
-        sys.exit(1)
-    return val
+from lifecycle import load, not_found, record_path, save, verified_session, wait_target
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Delete a gateway target by name")
-    parser.add_argument("--name", required=True, help="Target name to delete")
-    args = parser.parse_args()
-
-    gateway_id = get_required_env("GATEWAY_ID")
-    region = boto3.Session().region_name
-    control = boto3.client("bedrock-agentcore-control", region_name=region)
-
-    print(f"--- Deleting target '{args.name}' from gateway {gateway_id} ---")
-
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--name", required=True)
+    args = parser.parse_args(argv)
     try:
-        targets = control.list_gateway_targets(
-            gatewayIdentifier=gateway_id, maxResults=50
-        )
-        target_id = next(
-            (t["targetId"] for t in targets.get("items", []) if t["name"] == args.name),
-            None,
-        )
-        if not target_id:
-            print(f"  Target not found: {args.name}")
-            return
-
-        control.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
-        print(f"  Deleted target: {args.name} ({target_id})")
-
-        print("  Waiting for deletion to complete...")
-        time.sleep(10)
-        print("  Done.")
-
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
-            print(f"  Target already deleted: {args.name}")
-        else:
-            print(f"  Error: {e}")
+        path = record_path("target", args.name)
+        record = load(path)
+        if not record.get("targetId"):
+            raise ValueError(f"Create response was not recorded; reconcile {path} before cleanup")
+        if record["gatewayId"] != os.environ.get("GATEWAY_ID"):
+            raise ValueError("GATEWAY_ID differs from the ownership record")
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
+    control = verified_session(record).client("bedrock-agentcore-control")
+    # Use the exact recorded ID, never a first-page/name search or adoption.
+    try:
+        control.delete_gateway_target(gatewayIdentifier=record["gatewayId"], targetId=record["targetId"])
+    except ClientError as error:
+        if not not_found(error):
+            raise
+    record["status"] = "DELETING"
+    save(path, record)
+    wait_target(control, record, path, deleting=True)
+    print(f"Confirmed target absence: {record['targetId']}. Audit record retained: {path}")
 
 
 if __name__ == "__main__":

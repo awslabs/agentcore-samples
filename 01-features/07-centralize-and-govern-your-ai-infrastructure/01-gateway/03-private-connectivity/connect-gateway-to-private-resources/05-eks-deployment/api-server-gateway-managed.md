@@ -8,10 +8,10 @@ Unlike the MCP server lab, this lab uses an **OpenAPI schema** to describe the A
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
-- Docker running (for CDK container image builds)
-- An [ACM public certificate](../00-prerequisites/create-acm-public-certificate.md) for TLS termination on the NLB
+- A `kubectl` context (`CLUSTER_CONTEXT`) for this **private** EKS cluster, reachable from your authorized VPC-connected workstation. Review the optional EKS IAM/cleanup limits in [the migration notes](../vpcegress/README.md).
+- An [ACM public certificate](../00-prerequisites/concepts/create-acm-public-certificate.md) for TLS termination on the NLB
 
 > [!IMPORTANT]
 > If you previously ran the MCP server lab, clean up that stack first (delete the gateway targets and `cdk destroy McpEks`) before deploying this one. The Shared EKS Cluster does not need to be destroyed.
@@ -34,7 +34,7 @@ export ACCOUNT_A_ID=$(aws sts get-caller-identity --query Account --output text)
 Deploy the shared EKS cluster (if not already deployed):
 
 ```bash
-ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy SharedEksCluster --require-approval never
+ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy SharedEksCluster --require-approval never --outputs-file eks-cluster-outputs.json
 ```
 
 Deploy the REST API with NGINX Ingress + NLB:
@@ -47,16 +47,30 @@ ACCOUNT_A_ID=$ACCOUNT_A_ID cdk deploy ApiEks \
   --outputs-file eks-api-outputs.json
 ```
 
-Capture outputs:
+The NLB is created asynchronously by Kubernetes. Capture actual CDK zone outputs
+and select the NLB by the Service's exact DNS name:
 
 ```bash
-export NLB_SG_ID=$(python3 -c "import json; print(json.load(open('eks-api-outputs.json'))['ApiEks']['NlbSgId'])")
-export API_ENDPOINT=$(python3 -c "import json; print(json.load(open('eks-api-outputs.json'))['ApiEks']['ApiEndpoint'])")
-export API_KEY_VALUE=$(python3 -c "import json; print(json.load(open('eks-api-outputs.json'))['ApiEks']['ApiKey'])")
-
-echo "API Endpoint: $API_ENDPOINT"
-echo "NLB SG:       $NLB_SG_ID"
+export PRIVATE_ZONE_ID=$(python3 -c "import json; print(json.load(open('eks-api-outputs.json'))['ApiEks']['PrivateZoneId'])")
+export DOMAIN=$(python3 -c "import json; print(json.load(open('eks-api-outputs.json'))['ApiEks']['PrivateDomain'])")
+kubectl --context "$CLUSTER_CONTEXT" -n rest-api wait service/rest-api-nlb --for=jsonpath='{.status.loadBalancer.ingress}' --timeout=5m
+export NLB_DNS=$(kubectl --context "$CLUSTER_CONTEXT" -n rest-api get service rest-api-nlb -o 'jsonpath={.status.loadBalancer.ingress[0].hostname}')
+export NLB_ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='$NLB_DNS'].LoadBalancerArn | [0]" --output text)
+python3 vpcegress/scripts/configure_eks_endpoint.py --name eks-api \
+  --nlb-arn "$NLB_ARN" --zone-id "$PRIVATE_ZONE_ID" --domain "$DOMAIN" --vpc-id "$VPC_USW2_ID"
+export RESOURCE_GATEWAY_SG_ID=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/eks-endpoint-eks-api.json'))['securityGroupId'])")
+export API_ENDPOINT="https://$DOMAIN"
+# This original demo backend does not enforce API keys. The target API requires
+# a provider configuration; use a non-secret demo value, never a production key.
+export API_KEY_VALUE="dummy-key-for-eks-api"
 ```
+
+For multiple NLB security groups, inspect them before running the helper and add
+`--security-group-id <owned-frontend-sg>`; do not modify a shared backend group.
+For a legacy NLB without its own SG, the helper owns a dedicated Resource
+Gateway group: no ingress, TCP 443 egress to this VPC CIDR only. Its ID is passed
+to the target; the restricted default SG is never selected or opened. The
+endpoint cleanup removes the dedicated group after target/ENI release.
 
 ### Step 3: Create API Key Credential Provider — from `vpcegress/`
 
@@ -74,27 +88,28 @@ python3 scripts/create_credential.py \
 export VPC_USW2_ID=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['VpcId'])")
 export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
 
+python3 scripts/configure_gateway_permissions.py --credential eks-api-key
+agentcore deploy --yes --skip-bootstrap
+
 python3 scripts/create_target.py \
   --name eks-api-server \
+  --openapi-schema-file openapi-schemas/openapi-eks-api.json \
   --endpoint $API_ENDPOINT \
   --vpc-id $VPC_USW2_ID \
   --subnet-ids $VPC_USW2_PRIVATE_SUBNETS \
-  --security-group-ids $NLB_SG_ID \
-  --credential-provider-arn $(python3 -c "
-import boto3
-a=boto3.client('sts').get_caller_identity()['Account']
-r=boto3.Session().region_name
-print(f'arn:aws:bedrock-agentcore:{r}:{a}:token-vault/default/apikeycredentialprovider/eks-api-key')
-")
+  --security-group-ids "$RESOURCE_GATEWAY_SG_ID" \
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-eks-api-key.json'))['arn'])")"
 ```
 
 > [!NOTE]
-> This target uses an OpenAPI schema for tool definitions. For the full boto3 call with `openApiSchema.inlinePayload`, see the [notebook](./api-server-gateway-managed.ipynb). The schema is at [`vpcegress/openapi-schemas/openapi-eks-api.json`](../vpcegress/openapi-schemas/openapi-eks-api.json).
+> The helper sends `openApiSchema.inlinePayload` using the checked-in schema,
+> with the endpoint URL supplied above. The simple EKS API is a network demo,
+> not an API-key-enforcing production backend.
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 5: Invoke the API through AgentCore Gateway
 
@@ -143,13 +158,20 @@ curl -s -X POST $GATEWAY_URL \
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name eks-api-server
+python3 scripts/delete_target.py --name eks-api-server &&
 python3 scripts/delete_credential.py --name eks-api-key --type api-key
 ```
 
-Destroy CDK stacks (from project root):
+Destroy CDK stacks only after deleting the SDK alias and Kubernetes-owned NLB
+(from project root, with the same verified cluster context). Retained Kubernetes
+manifests and their NLB must be cleaned up before the shared cluster.
 
 ```bash
+python3 vpcegress/scripts/configure_eks_endpoint.py --name eks-api --delete
+kubectl --context "$CLUSTER_CONTEXT" -n rest-api delete service rest-api-nlb --wait=true --timeout=5m
+aws elbv2 wait load-balancers-deleted --load-balancer-arns "$NLB_ARN"
+kubectl --context "$CLUSTER_CONTEXT" delete namespace rest-api --wait=true --timeout=5m
+
 ACCOUNT_A_ID=$ACCOUNT_A_ID cdk destroy ApiEks \
   -c "publicCertArn=$CERT_ARN" -c "privateDomain=$DOMAIN" --force
 

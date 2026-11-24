@@ -1,6 +1,10 @@
 # Build output
 dist/
 
+# Override the repository's Python lib/ ignore: this is CDK source.
+!lib/
+!lib/cdk-stack.ts
+
 # Dependencies
 node_modules/
 

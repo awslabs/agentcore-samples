@@ -1,0 +1,16 @@
+# Authoritative parent source and reproducible local dependency graphs.
+!/lib/
+!/lib/shared/
+!/lib/**/*.ts
+!/package-lock.json
+!/vpcegress/agentcore/cdk/package-lock.json
+!/docker/fastmcp-mock/Dockerfile
+!/docker/stock-mcp-mock/Dockerfile
+!/docker/fastmcp-mock/.dockerignore
+!/docker/stock-mcp-mock/.dockerignore
+node_modules/
+cdk.out/
+*.js.map
+*-outputs*.json
+.venv/
+.tools/

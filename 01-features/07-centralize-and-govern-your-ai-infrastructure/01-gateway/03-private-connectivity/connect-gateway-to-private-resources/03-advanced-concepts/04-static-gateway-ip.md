@@ -25,7 +25,7 @@ Route AgentCore Gateway traffic through your VPC using VPC egress, and exit thro
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
 
 ## Deployment Steps
@@ -33,20 +33,17 @@ Route AgentCore Gateway traffic through your VPC using VPC egress, and exit thro
 > [!IMPORTANT]
 > CDK commands run from the **project root**. Script commands run from [`vpcegress/`](../vpcegress/).
 
-### Step 1: Deploy the static IP infrastructure (CDK) — from project root
+### Step 1: Identify the existing NAT Elastic IP — from project root
 
-This stack creates a NAT Gateway with an Elastic IP in the VPC's public subnet, and updates the private subnet route table to route outbound traffic through it.
-
-```bash
-cdk deploy StaticGatewayIp --require-approval never --outputs-file static-ip-outputs.json
-```
+The prerequisite VPC already owns one NAT Gateway per Availability Zone. Use
+**one private subnet** for a single egress IP; do not create or replace routes.
+This is the original lab's NAT reuse pattern, not a separate `StaticGatewayIp` stack.
 
 ```bash
-export ELASTIC_IP=$(python3 -c "import json; print(json.load(open('static-ip-outputs.json'))['StaticGatewayIp']['ElasticIp'])")
-export NAT_GW_ID=$(python3 -c "import json; print(json.load(open('static-ip-outputs.json'))['StaticGatewayIp']['NatGatewayId'])")
-
+export STATIC_IP_SUBNET_ID=$(python3 -c "import json; print(json.load(open('vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'].split(',')[0])")
+python3 vpcegress/scripts/static_ip.py --subnet-id "$STATIC_IP_SUBNET_ID" > static-ip-outputs.json
+export ELASTIC_IP=$(python3 -c "import json; print(json.load(open('static-ip-outputs.json'))['elasticIp'])")
 echo "Elastic IP (static egress): $ELASTIC_IP"
-echo "NAT Gateway ID:             $NAT_GW_ID"
 ```
 
 ### Step 2: Create the Gateway Target — from `vpcegress/`
@@ -57,11 +54,18 @@ Point the target at any external MCP server or API. The traffic exits through th
 export VPC_USW2_ID=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['VpcId'])")
 export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
 
+# The prerequisite default SG has no egress. Own a separate RG-only group:
+# no ingress, and TCP 443 egress for the external endpoint via the existing NAT.
+python3 scripts/resource_gateway_sg.py --name static-ip \
+  --vpc-id "$VPC_USW2_ID" --destination-cidr 0.0.0.0/0
+export RESOURCE_GATEWAY_SG_ID=$(python3 -c "import json; print(json.load(open('.vpc-state/resource-gateway-sg-static-ip.json'))['securityGroupId'])")
+
 python3 scripts/create_target.py \
   --name static-ip-target \
   --endpoint https://your-external-mcp-server.com/mcp \
   --vpc-id $VPC_USW2_ID \
-  --subnet-ids $VPC_USW2_PRIVATE_SUBNETS
+  --subnet-ids "$STATIC_IP_SUBNET_ID" \
+  --security-group-ids "$RESOURCE_GATEWAY_SG_ID"
 ```
 
 ### Step 3: Verify the static IP
@@ -76,7 +80,7 @@ echo "Provide this IP to the MCP server operator for allowlisting."
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to invoke tools and verify the source IP.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to invoke tools and verify the source IP.
 
 Follow the same invocation pattern as [lab 01 (Private Domain)](./01-private-domain.md#demo). The external service should see all requests coming from `$ELASTIC_IP`.
 
@@ -85,17 +89,18 @@ Follow the same invocation pattern as [lab 01 (Private Domain)](./01-private-dom
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name static-ip-target
+python3 scripts/delete_target.py --name static-ip-target &&
+python3 scripts/resource_gateway_sg.py --name static-ip --delete
 ```
 
-Destroy the CDK stack (from project root):
+The group helper verifies its exact ID/VPC/ownership tag and waits for ENI
+references to disappear. On denial or timeout, keep the record and stop. Never
+open or delete the shared default group.
 
-```bash
-cdk destroy StaticGatewayIp --force
-```
-
-> [!NOTE]
-> The Elastic IP is released when the CDK stack is destroyed. No ongoing charges after cleanup.
+The NAT Gateway/EIP belongs to the shared prerequisite VPC. Do not delete it or
+change its route while other labs use it. Release it only during the final
+[prerequisite cleanup](../00-prerequisites/README.md#cleanup); verify the EIP
+and NAT Gateway are then absent.
 
 ## Documentation
 

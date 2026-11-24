@@ -23,6 +23,6 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["bin/**/*", "lib/**/*", "test/**/*"],
+  "include": ["bin/**/*", "lib/**/*"],
   "exclude": ["node_modules", "cdk.out", "dist"]
 }
