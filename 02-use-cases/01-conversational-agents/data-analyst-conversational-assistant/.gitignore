@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+agentcore/.cli/
+agentcore/.cache/
+agentcore/fresh-port.json
+deploy_outputs.json
+evaluations/eval_results*.json
+request.json
+# Explicit source exception to the repository's hidden-file ignore rule.
+!cdk-data-analyst-assistant-agentcore-strands/data-analyst-assistant-agentcore-strands/.dockerignore
+
+# Sample-local CLI
+.tools/

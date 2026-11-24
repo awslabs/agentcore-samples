@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-bedrock-agentcore';
 import { getAwsClient, type CognitoAuthParams } from '@/utils/aws-client';
 import { getQueryResults } from './aws-calls';
+import { RuntimeEvents } from './runtime-events';
 import type { Answer, ControlAnswer, MessageItem } from '../types';
 
 interface GetAnswerParams {
@@ -70,6 +71,7 @@ export const getAnswer = async ({
     const agentCore = getAwsClient(BedrockAgentCoreClient, auth);
 
     const payload = JSON.stringify({
+      id_token: auth.idToken,
       prompt: myQuery,
       session_id: sessionId,
       user_id: userId,
@@ -85,7 +87,6 @@ export const getAnswer = async ({
       runtimeSessionId: sessionId,
     };
 
-    console.log('📤 Agent Core Input:', input);
 
     const command = new InvokeAgentRuntimeCommand(input);
     const response = await agentCore.send(command);
@@ -101,11 +102,12 @@ export const getAnswer = async ({
         const stream = response.response.transformToWebStream();
         const reader = stream.getReader();
         const decoder = new TextDecoder();
+        const events = new RuntimeEvents();
 
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) { events.push(decoder.decode()); events.finish(); break; }
 
             const chunk = decoder.decode(value, { stream: true });
             console.log('📦 Streaming Chunk:', chunk);
@@ -118,30 +120,8 @@ export const getAnswer = async ({
             }
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const dataObjects: any[] = [];
+            const dataObjects: any[] = events.push(chunk);
             let currentToolName = '';
-
-            chunk.split('\n').forEach((line) => {
-              if (line.trim() && line.startsWith('data: ')) {
-                const jsonString = line.replace(/^data: /, '{"data": ') + '}';
-                try {
-                  const obj = JSON.parse(jsonString);
-                  if (obj.data && typeof obj.data === 'string') {
-                    if (
-                      obj.data.includes('serviceUnavailableException') ||
-                      obj.data.includes('Bedrock is unable to process your request')
-                    ) {
-                      throw new Error('Bedrock service is currently unavailable.');
-                    }
-                  }
-                  const dataObject = JSON.parse(obj.data);
-                  dataObjects.push(dataObject);
-                } catch (e) {
-                  if ((e as Error).message?.includes('Bedrock service')) throw e;
-                  // Expected: chunks can split JSON across boundaries — silently skip
-                }
-              }
-            });
 
             for (const jsonData of dataObjects) {
               try {

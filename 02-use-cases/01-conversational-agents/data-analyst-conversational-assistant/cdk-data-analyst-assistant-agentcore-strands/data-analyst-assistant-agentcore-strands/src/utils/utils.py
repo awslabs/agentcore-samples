@@ -6,7 +6,7 @@ Provides functions for storing analysis query results to DynamoDB.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -37,8 +37,8 @@ def save_raw_query_result(user_prompt_uuid, user_prompt, sql_query, sql_query_de
             TableName=question_answers_table,
             Item={
                 "id": {"S": user_prompt_uuid},
-                "my_timestamp": {"N": str(int(datetime.now(timezone.utc).timestamp()))},
-                "datetime": {"S": str(datetime.now(timezone.utc))},
+                "my_timestamp": {"N": str(int(datetime.now(UTC).timestamp()))},
+                "datetime": {"S": str(datetime.now(UTC))},
                 "user_prompt": {"S": user_prompt},
                 "sql_query": {"S": sql_query},
                 "sql_query_description": {"S": sql_query_description},

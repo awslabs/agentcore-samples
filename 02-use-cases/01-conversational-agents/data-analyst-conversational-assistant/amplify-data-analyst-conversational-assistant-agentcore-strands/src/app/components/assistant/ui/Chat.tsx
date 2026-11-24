@@ -192,7 +192,7 @@ export default function Chat({ config, identityPoolId, userPoolId }: ChatProps) 
                       )}
                       {isChartConfig(answer.chart) && controlAnswers[index]?.current_tab_view === 'chart' && (
                         <div className="animate-tab-fade" style={{ marginTop: 8 }}>
-                          <MyChart caption={answer.chart.caption} options={answer.chart.chart_configuration.options} series={answer.chart.chart_configuration.series} type={answer.chart.chart_type} />
+                          <MyChart chart={answer.chart} />
                         </div>
                       )}
                       {answer.queryResults && answer.queryResults.length > 0 && (

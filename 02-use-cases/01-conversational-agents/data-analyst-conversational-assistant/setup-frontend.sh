@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REGION="${AWS_DEFAULT_REGION:-us-east-1}"
-STACK_NAME="CdkDataAnalystAssistantAgentcoreStrandsStack"
+STACK_NAME=""
 FRONTEND_DIR="amplify-data-analyst-conversational-assistant-agentcore-strands"
 
 # Parse arguments
@@ -22,6 +22,8 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+[[ -n "$STACK_NAME" ]] || { echo 'ERROR: --stack-name is required (use the fresh v1 stack name)'; exit 1; }
 
 echo "================================================"
 echo "Data Analyst Conversational Assistant — Frontend Setup"
@@ -46,7 +48,7 @@ MEMORY_ID=$(get_output "MemoryId")
 
 if [ -z "$AGENT_RUNTIME_ARN" ] || [ "$AGENT_RUNTIME_ARN" = "None" ]; then
   echo "ERROR: Could not find stack outputs. Is the CDK stack deployed?"
-  echo "  Run: cd cdk-data-analyst-assistant-agentcore-strands && cdk deploy"
+  echo "  Follow MIGRATION.md; do not deploy the old stack name."
   exit 1
 fi
 
@@ -76,17 +78,7 @@ EOF
 echo "Generated: $ENV_FILE"
 echo ""
 
-# Install frontend dependencies
-echo "Installing frontend dependencies..."
-cd "$FRONTEND_DIR"
-
-if command -v pnpm &> /dev/null; then
-  pnpm install
-else
-  echo "pnpm not found. Install it with: npm install -g pnpm"
-  echo "Then run: cd $FRONTEND_DIR && pnpm install && pnpm ampx sandbox"
-  exit 0
-fi
+# Dependency installation is explicit; this output generator does not run installers.
 
 echo ""
 echo "================================================"

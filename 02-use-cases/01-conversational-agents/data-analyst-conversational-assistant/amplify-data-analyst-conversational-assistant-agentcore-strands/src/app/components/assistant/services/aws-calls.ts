@@ -5,16 +5,13 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import {
   BedrockAgentCoreClient,
-  ListMemoryRecordsCommand,
+  InvokeAgentRuntimeCommand,
 } from '@aws-sdk/client-bedrock-agentcore';
 import { getAwsClient, type CognitoAuthParams } from '@/utils/aws-client';
+import { RuntimeEvents } from './runtime-events';
 import type { QueryResult, ChartData, Answer } from '../types';
-import {
-  extractBetweenTags,
-  removeCharFromStartAndEnd,
-  handleFormatter,
-  CHART_PROMPT,
-} from '../utils';
+import { CHART_PROMPT } from '../utils';
+import { parseChartResponse } from '../chart-contract';
 
 /**
  * Fetch query results from DynamoDB for a given prompt UUID.
@@ -24,26 +21,36 @@ export const getQueryResults = async (
   tableName: string,
   auth: CognitoAuthParams
 ): Promise<QueryResult[]> => {
-  const res = await fetch('/api/agent/query-results', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      idToken: auth.idToken,
-      identityPoolId: auth.identityPoolId,
-      userPoolId: auth.userPoolId,
-      queryUuid,
-      tableName,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Failed to fetch query results');
-  }
-
-  const data = await res.json();
-  return data.results;
+  const data = await runtimeRead({ operation: 'query_results', prompt_uuid: queryUuid }, auth);
+  return data.results as QueryResult[];
 };
+
+async function runtimeRead(payload: Record<string, string>, auth: CognitoAuthParams) {
+  const arn = process.env.AGENT_RUNTIME_ARN;
+  if (!arn) throw new Error('AGENT_RUNTIME_ARN is required');
+  const session = crypto.randomUUID();
+  const response = await getAwsClient(BedrockAgentCoreClient, auth).send(new InvokeAgentRuntimeCommand({
+    agentRuntimeArn: arn, qualifier: process.env.AGENT_ENDPOINT_NAME || 'DEFAULT',
+    runtimeSessionId: session,
+    payload: JSON.stringify({ ...payload, session_id: session, id_token: auth.idToken }),
+  }));
+  if (!response.response) throw new Error('Empty Runtime response');
+  const reader = response.response.transformToWebStream().getReader();
+  const decoder = new TextDecoder();
+  const parser = new RuntimeEvents();
+  const values: Record<string, unknown>[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      values.push(...parser.push(decoder.decode(value, { stream: true })));
+    }
+    values.push(...parser.push(decoder.decode()));
+    parser.finish();
+  } finally { reader.releaseLock(); }
+  if (values.length !== 1) throw new Error('Invalid Runtime read response');
+  return values[0];
+}
 
 /**
  * Generate a chart configuration using Bedrock (Claude).
@@ -93,44 +100,14 @@ export const generateChart = async (
     });
 
     const apiResponse = await bedrock.send(command);
-    const decodedResponseBody = new TextDecoder().decode(apiResponse.body);
-    const responseBody = JSON.parse(decodedResponseBody).content[0].text;
-
-    console.log('🎨 Response chart generation:', responseBody.slice(0, 300));
-
-    const hasChart = parseInt(extractBetweenTags(responseBody, 'has_chart'));
-
-    if (hasChart) {
-      const chartConfig = JSON.parse(
-        extractBetweenTags(responseBody, 'chart_configuration')
-      );
-      const chart = {
-        chart_type: removeCharFromStartAndEnd(
-          extractBetweenTags(responseBody, 'chart_type'),
-          '\n'
-        ),
-        chart_configuration: handleFormatter(chartConfig) as {
-          options: ApexCharts.ApexOptions;
-          series: ApexCharts.ApexOptions['series'];
-        },
-        caption: removeCharFromStartAndEnd(
-          extractBetweenTags(responseBody, 'caption'),
-          '\n'
-        ),
-      };
-
-      console.log('🎨 Final chart:', chart.chart_type);
-      return chart;
+    if (!apiResponse.body || apiResponse.body.byteLength > 200_000) {
+      throw new Error('Chart response is missing or too large');
     }
-
-    return {
-      rationale: removeCharFromStartAndEnd(
-        extractBetweenTags(responseBody, 'rationale'),
-        '\n'
-      ),
-    };
-  } catch (error) {
-    console.error('❌ Chart generation failed:', error);
+    const decodedResponseBody = new TextDecoder().decode(apiResponse.body);
+    const responseBody: unknown = JSON.parse(decodedResponseBody)?.content?.[0]?.text;
+    return parseChartResponse(responseBody);
+  } catch {
+    console.error('Chart generation failed or returned unsupported data');
     return {
       rationale: 'Error generating or parsing chart data.',
     };
@@ -153,53 +130,6 @@ export const getMemoryFacts = async (
   userId: string,
   auth: CognitoAuthParams
 ): Promise<MemoryFact[]> => {
-  const client = getAwsClient(BedrockAgentCoreClient, auth);
-  const namespace = `facts/${userId}/`;
-
-  const namespacesToTry = [
-    `facts/${userId}/`,
-    `/facts/${userId}/`,
-    `facts/${userId}`,
-    `/facts/${userId}`,
-  ];
-
-  console.log('🧠 Fetching memory facts:', { memoryId, userId, namespacesToTry });
-
-  try {
-    for (const ns of namespacesToTry) {
-      console.log(`🧠 Trying namespace: "${ns}"`);
-      const command = new ListMemoryRecordsCommand({
-        memoryId,
-        namespace: ns,
-      });
-
-      const response = await client.send(command);
-      const records = response.memoryRecordSummaries || [];
-      console.log(`🧠 Namespace "${ns}" returned ${records.length} records`);
-
-      if (records.length > 0) {
-        console.log('🧠 Full response:', JSON.stringify(response, null, 2));
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const facts = records.map((record: any) => ({
-          memoryRecordId: record.memoryRecordId || record.id || '',
-          content: record.content?.text || JSON.stringify(record.content) || '',
-          createdAt: record.createdAt || record.createdTimestamp || '',
-          namespace: record.namespace || ns,
-        }));
-
-        facts.forEach((fact: MemoryFact, i: number) => {
-          console.log(`🧠 Fact ${i + 1}:`, fact.content.slice(0, 100));
-        });
-
-        return facts;
-      }
-    }
-
-    console.log('🧠 No facts found in any namespace pattern');
-    return [];
-  } catch (error) {
-    console.error('❌ Failed to fetch memory facts:', { memoryId, error });
-    return [];
-  }
+  const data = await runtimeRead({ operation: 'memory_facts' }, auth);
+  return data.facts as MemoryFact[];
 };

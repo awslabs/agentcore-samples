@@ -28,10 +28,49 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as path from 'path';
 import { aws_bedrockagentcore as bedrockagentcore } from 'aws-cdk-lib';
+import { AgentCoreApplicationProps } from '@aws/agentcore-cdk';
+
+export interface DataAnalystStackProps extends cdk.StackProps {
+  application: AgentCoreApplicationProps;
+}
 
 export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: DataAnalystStackProps) {
     super(scope, id, props);
+    const spec = props.application.spec;
+    // This adapter deliberately supports one fixed scenario. Never silently ignore
+    // additions/removals made by generic CLI resource writers.
+    const runtimeSpec = spec.runtimes[0];
+    const memorySpec = spec.memories[0];
+    const runtimeKeys = new Set(['name', 'protocol', 'build', 'entrypoint', 'codeLocation', 'dockerfile', 'authorizerType', 'networkMode', 'instrumentation', 'description']);
+    if (Object.keys(runtimeSpec ?? {}).some(k => !runtimeKeys.has(k)) ||
+        Object.entries(spec).some(([key, value]) => Array.isArray(value) && !['runtimes', 'memories'].includes(key) && value.length > 0) ||
+        spec.runtimes.length !== 1 || spec.memories.length !== 1 ||
+        runtimeSpec.name !== 'DataAnalystRuntime' || runtimeSpec.build !== 'Container' ||
+        runtimeSpec.protocol !== 'HTTP' || runtimeSpec.authorizerType !== 'AWS_IAM' ||
+        runtimeSpec.networkMode !== 'PUBLIC' || runtimeSpec.entrypoint !== 'app.py' ||
+        runtimeSpec.instrumentation?.enableOtel !== true || runtimeSpec.dockerfile !== 'Dockerfile' ||
+        memorySpec.name !== 'DataAnalystAssistantMemory' ||
+        Object.keys(memorySpec).some(k => !['name', 'eventExpiryDuration', 'strategies'].includes(k)) ||
+        memorySpec.strategies.length !== 1 || memorySpec.strategies[0].type !== 'SEMANTIC' ||
+        memorySpec.strategies[0].name !== 'Facts' ||
+        JSON.stringify(memorySpec.strategies[0].namespaces) !== JSON.stringify(['/facts/{actorId}']) ||
+        (spec.agentCoreGateways?.length ?? 0) || (spec.evaluators?.length ?? 0) ||
+        (spec.credentials?.length ?? 0) || (spec.policyEngines?.length ?? 0)) {
+      throw new Error('Unsupported custom data-analyst inventory: edit the adapter with the manifest; generic add/remove is not supported.');
+    }
+    if (props.application.targetName && (!process.env.COGNITO_USER_POOL_ID || !process.env.COGNITO_CLIENT_ID)) {
+      throw new Error('Targeted synthesis requires COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID from the Amplify auth outputs');
+    }
+    const userPoolId = new cdk.CfnParameter(this, 'CognitoUserPoolId', {
+      type: 'String', allowedPattern: '[a-z0-9-]+_[A-Za-z0-9]+',
+      default: process.env.COGNITO_USER_POOL_ID,
+      description: 'Amplify auth user pool; used to verify request identity independently of payload actor IDs',
+    });
+    const userPoolClientId = new cdk.CfnParameter(this, 'CognitoUserPoolClientId', {
+      type: 'String', allowedPattern: '[a-z0-9]+',
+      default: process.env.COGNITO_CLIENT_ID,
+    });
 
     // ================================
     // STACK PARAMETERS
@@ -238,13 +277,19 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
         S3FileKey: 'video_games_sales_no_headers.csv',
         TableName: 'video_games_sales_units',
         // Change this value to force re-import on next deploy
-        DeployTimestamp: Date.now().toString(),
+        DataVersion: 'video-games-v1',
       },
     });
 
     // Ensure data loading happens after cluster and CSV upload are ready
     dataLoaderCr.node.addDependency(cluster);
     dataLoaderCr.node.addDependency(csvDeployment);
+
+    // Use the actual asset repository, including non-default bootstrap qualifiers.
+    const dockerImageAsset = new ecr_assets.DockerImageAsset(this, 'RuntimeDockerImage', {
+      directory: path.resolve(props.application.projectRoot!, runtimeSpec.codeLocation),
+      platform: ecr_assets.Platform.LINUX_ARM64
+    });
 
     // ================================
     // AGENTCORE IAM ROLE & PERMISSIONS
@@ -263,13 +308,9 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
                 'ecr:BatchCheckLayerAvailability',
                 'ecr:BatchGetImage',
                 'ecr:GetDownloadUrlForLayer',
-                'ecr:PutImage',
-                'ecr:InitiateLayerUpload',
-                'ecr:UploadLayerPart',
-                'ecr:CompleteLayerUpload',
               ],
               resources: [
-                `arn:aws:ecr:${this.region}:${this.account}:repository/*`
+                dockerImageAsset.repository.repositoryArn
               ]
             }),
             new iam.PolicyStatement({
@@ -354,63 +395,16 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
                 `arn:aws:bedrock:${this.region}:${this.account}:*`
               ]
             }),
-            // New permissions for RDS Data API
-            new iam.PolicyStatement({
-              sid: 'RDSDataAPIAccess',
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'rds-data:ExecuteStatement',
-                'rds-data:BatchExecuteStatement'
-              ],
-              resources: [
-                cluster.clusterArn
-              ]
-            }),
-            // New permissions for Secrets Manager
-            new iam.PolicyStatement({
-              sid: 'SecretsManagerAccess',
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'secretsmanager:GetSecretValue'
-              ],
-              resources: [
-                secret.secretArn,
-                readOnlySecret.secretArn
-              ]
-            }),
             // Permissions for DynamoDB
             new iam.PolicyStatement({
               sid: 'DynamoDBTableAccess',
               effect: iam.Effect.ALLOW,
               actions: [
                 'dynamodb:Query',
-                'dynamodb:Scan',
-                'dynamodb:GetItem',
-                'dynamodb:PutItem',
-                'dynamodb:UpdateItem'
+                'dynamodb:PutItem'
               ],
               resources: [
                 rawQueryResults.tableArn
-              ]
-            }),
-            // Permissions for AgentCore Memory
-            new iam.PolicyStatement({
-              sid: 'BedrockAgentCoreMemoryAccess',
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'bedrock-agentcore:GetMemoryRecord',
-                'bedrock-agentcore:GetMemory',
-                'bedrock-agentcore:RetrieveMemoryRecords',
-                'bedrock-agentcore:DeleteMemoryRecord',
-                'bedrock-agentcore:ListMemoryRecords',
-                'bedrock-agentcore:CreateEvent',
-                'bedrock-agentcore:DeleteEvent',
-                'bedrock-agentcore:ListSessions',
-                'bedrock-agentcore:ListEvents',
-                'bedrock-agentcore:GetEvent'
-              ],
-              resources: [
-                `*`
               ]
             }),
             new iam.PolicyStatement({
@@ -423,19 +417,6 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
               resources: [
                 'arn:aws:bedrock:*::foundation-model/*',
                 'arn:aws:bedrock:*:*:inference-profile/*'
-              ]
-            }),
-            // Gateway invocation permission
-            new iam.PolicyStatement({
-              sid: 'AgentCoreGatewayAccess',
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'bedrock-agentcore:InvokeGateway',
-                'bedrock-agentcore:GetGateway',
-                'bedrock-agentcore:ListGatewayTargets'
-              ],
-              resources: [
-                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:gateway/*`
               ]
             }),
             // Guardrail invocation permission
@@ -475,33 +456,6 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
       }
     );
 
-    // Add additional RDS permissions to Aurora S3 role
-    auroraS3Role.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "rds:CreateDBSnapshot",
-          "rds:CreateDBClusterSnapshot",
-          "rds:RestoreDBClusterFromSnapshot",
-          "rds:RestoreDBClusterToPointInTime",
-          "rds:RestoreDBInstanceFromDBSnapshot",
-          "rds:RestoreDBInstanceToPointInTime",
-        ],
-        resources: [cluster.clusterArn],
-      })
-    );
-
-    // ================================
-    // DOCKER IMAGE ASSET
-    // ================================
-
-    // Build and push Docker image automatically during CDK deployment
-    // DockerImageAsset creates and manages its own ECR repository
-    const dockerImageAsset = new ecr_assets.DockerImageAsset(this, 'RuntimeDockerImage', {
-      directory: path.join(__dirname, '../data-analyst-assistant-agentcore-strands'),
-      platform: ecr_assets.Platform.LINUX_ARM64
-    });
-
     // ================================
     // BEDROCK AGENTCORE MEMORY (LTM)
     // ================================
@@ -509,16 +463,16 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
     // Long-term memory with semantic strategy for AgentCore
     const uniqueSuffix = cdk.Names.uniqueId(this).slice(-8).toLowerCase().replace(/[^a-z0-9]/g, '');
     const agentMemory = new bedrockagentcore.CfnMemory(this, 'AgentMemory', {
-      name: `DataAnalystAssistantMemory_${uniqueSuffix}`,
-      eventExpiryDuration: 90, // Events expire after 90 days
+      name: `${memorySpec.name}_${uniqueSuffix}`,
+      eventExpiryDuration: memorySpec.eventExpiryDuration,
       memoryExecutionRoleArn: agentCoreRole.roleArn,
       description: 'Long-term semantic memory for data analyst assistant conversations',
       memoryStrategies: [
         {
           semanticMemoryStrategy: {
-            name: 'Facts',
+            name: memorySpec.strategies[0].name ?? 'Facts',
             description: 'Extracts and stores facts from data analysis conversations',
-            namespaces: ['/facts/{actorId}'],
+            namespaces: memorySpec.strategies[0].namespaces ?? ['/facts/{actorId}'],
           },
         },
       ],
@@ -539,7 +493,7 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
         READONLY_SECRET_ARN: readOnlySecret.secretArn,
         AURORA_RESOURCE_ARN: cluster.clusterArn,
         DATABASE_NAME: databaseName.valueAsString,
-        MAX_RESPONSE_SIZE_BYTES: '1048576',
+        MAX_RESPONSE_SIZE_BYTES: '250000',
       },
       initialPolicy: [
         new iam.PolicyStatement({
@@ -556,6 +510,8 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
     // Allow AgentCore Gateway to invoke the Lambda
     dbToolsLambda.addPermission('AllowAgentCoreGateway', {
       principal: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
+      sourceAccount: this.account,
+      sourceArn: `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:gateway/*`,
       action: 'lambda:InvokeFunction',
     });
 
@@ -594,11 +550,31 @@ export class CdkDataAnalystAssistantAgentcoreStrandsStack extends cdk.Stack {
     // Gateway resource (IAM-based auth — agent runtime invokes via its execution role)
     const gateway = new bedrockagentcore.CfnGateway(this, 'ToolsGateway', {
       name: `VideoGamesToolsGateway-${uniqueSuffix}`,
-      authorizerType: 'NONE',
+      authorizerType: 'AWS_IAM',
       protocolType: 'MCP',
       roleArn: gatewayRole.roleArn,
       description: 'Gateway exposing database tools as MCP targets',
     });
+
+    // A separate policy can reference these resources without creating a
+    // Role -> Memory -> Role cycle. Runtime may access only this stack's data.
+    const runtimeDataPolicy = new iam.Policy(this, 'RuntimeDataPolicy', {
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['bedrock-agentcore:GetMemoryRecord', 'bedrock-agentcore:GetMemory',
+            'bedrock-agentcore:RetrieveMemoryRecords', 'bedrock-agentcore:DeleteMemoryRecord',
+            'bedrock-agentcore:ListMemoryRecords', 'bedrock-agentcore:CreateEvent',
+            'bedrock-agentcore:DeleteEvent', 'bedrock-agentcore:ListSessions',
+            'bedrock-agentcore:ListEvents', 'bedrock-agentcore:GetEvent'],
+          resources: [agentMemory.attrMemoryArn],
+        }),
+        new iam.PolicyStatement({
+          actions: ['bedrock-agentcore:InvokeGateway'],
+          resources: [gateway.attrGatewayArn],
+        }),
+      ],
+    });
+    runtimeDataPolicy.attachToRole(agentCoreRole);
 
     // Register the Lambda as a Gateway target with inline tool schema
     const gatewayTarget = new bedrockagentcore.CfnGatewayTarget(this, 'DbToolsGatewayTarget', {
@@ -828,7 +804,7 @@ Score 1 for responses that fail to address the question or are incorrect.`,
 
     // AgentCore Runtime with container type for the data analyst assistant
     const agentRuntime = new bedrockagentcore.CfnRuntime(this, 'AgentRuntime', {
-      agentRuntimeName: `DataAnalystRuntime_${uniqueSuffix}`,
+      agentRuntimeName: `${runtimeSpec.name}_${uniqueSuffix}`,
       agentRuntimeArtifact: {
         containerConfiguration: {
           containerUri: dockerImageAsset.imageUri,
@@ -841,6 +817,9 @@ Score 1 for responses that fail to address the question or are incorrect.`,
       description: 'Container runtime for data analyst conversational assistant',
       environmentVariables: {
         MEMORY_ID: agentMemory.attrMemoryId,
+        COGNITO_USER_POOL_ID: userPoolId.valueAsString,
+        COGNITO_CLIENT_ID: userPoolClientId.valueAsString,
+        AWS_REGION: this.region,
         BEDROCK_MODEL_ID: bedrockModelId.valueAsString,
         READONLY_SECRET_ARN: readOnlySecret.secretArn,
         AURORA_RESOURCE_ARN: cluster.clusterArn,
@@ -851,6 +830,7 @@ Score 1 for responses that fail to address the question or are incorrect.`,
       },
     });
     
+    agentRuntime.node.addDependency(runtimeDataPolicy);
     agentRuntime.addDependency(agentMemory);
     agentRuntime.addDependency(gateway);
 
@@ -1021,6 +1001,19 @@ Score 1 for responses that fail to address the question or are incorrect.`,
     new cdk.CfnOutput(this, "QuestionAnswersTableArn", {
       value: rawQueryResults.tableArn,
       description: "The ARN of the DynamoDB table for storing query results",
+    });
+
+    new cdk.CfnOutput(this, 'RuntimeIdV1', {
+      value: agentRuntime.attrAgentRuntimeId,
+      exportName: `${this.stackName}-${runtimeSpec.name}-RuntimeId`,
+    });
+    new cdk.CfnOutput(this, 'RuntimeArnV1', {
+      value: agentRuntime.attrAgentRuntimeArn,
+      exportName: `${this.stackName}-${runtimeSpec.name}-RuntimeArn`,
+    });
+    new cdk.CfnOutput(this, 'MemoryArnV1', {
+      value: agentMemory.attrMemoryArn,
+      exportName: `${this.stackName}-Memory-${memorySpec.name}-Arn`,
     });
 
     new cdk.CfnOutput(this, "AgentRuntimeArn", {

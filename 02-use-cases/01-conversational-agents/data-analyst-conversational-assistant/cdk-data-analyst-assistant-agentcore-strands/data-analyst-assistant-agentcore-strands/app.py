@@ -15,8 +15,11 @@ Key Features:
 """
 
 import json
+import logging
 import os
-from uuid import uuid4
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # OpenTelemetry — ADOT auto-instruments Bedrock calls; we add custom spans for
 # tool execution, memory operations, and request-level context.
@@ -35,13 +38,21 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import (
     AgentCoreMemorySessionManager,
 )
 from mcp.client.streamable_http import streamablehttp_client
+from query_results import QueryResults, memory_facts
+from request_security import GatewaySigV4, authenticated_actor, request_ids
 
 # Custom module imports
 from src.utils import load_file_content
-from strands import Agent
+from strands import Agent, tool
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
-from strands_tools import current_time
+
+
+@tool
+def current_time(timezone: str = "UTC") -> str:
+    """Return the current time in the requested IANA timezone."""
+    return datetime.now(ZoneInfo(timezone)).isoformat()
+
 
 # Retrieve AgentCore Memory ID
 memory_id = os.environ.get("MEMORY_ID")
@@ -52,6 +63,8 @@ bedrock_model_id_env = os.environ.get("BEDROCK_MODEL_ID", "global.anthropic.clau
 # Gateway URL for centralized MCP tools (guardrails enforced at Gateway via Policy Engine)
 gateway_url = os.environ.get("GATEWAY_URL", "")
 
+# A level survives Uvicorn startup configuration; .disabled does not.
+logging.getLogger("strands.event_loop.streaming").setLevel(logging.ERROR)
 # Initialize the Bedrock Agent Core app
 app = BedrockAgentCoreApp()
 
@@ -72,7 +85,7 @@ def load_system_prompt():
                 interpret data, and provide actionable business intelligence."""
 
     try:
-        prompt = load_file_content("instructions.txt", default_content=fallback_prompt)
+        prompt = load_file_content(str(Path(__file__).with_name("instructions.txt")), default_content=fallback_prompt)
         if prompt == fallback_prompt:
             print("⚠️  Using fallback prompt (instructions.txt not found)")
         else:
@@ -80,8 +93,8 @@ def load_system_prompt():
             print(f"📊 Prompt length: {len(prompt)} characters")
         print("=" * 50 + "\n")
         return prompt
-    except Exception as e:
-        print(f"❌ Error loading system prompt: {e!s}")
+    except Exception:
+        print("❌ Could not load system prompt; using the fallback")
         print("=" * 50 + "\n")
         return fallback_prompt
 
@@ -94,7 +107,7 @@ def get_mcp_client():
     """Create an MCP client connected to the AgentCore Gateway."""
     if not gateway_url:
         raise RuntimeError("GATEWAY_URL environment variable not set")
-    return MCPClient(lambda: streamablehttp_client(gateway_url))
+    return MCPClient(lambda: streamablehttp_client(gateway_url, auth=GatewaySigV4(os.environ["AWS_REGION"])))
 
 
 @app.entrypoint
@@ -104,41 +117,52 @@ async def agent_invocation(payload):
     Expected payload structure:
     {
         "prompt": "Your data analysis question",
-        "prompt_uuid": "optional-unique-prompt-identifier",
+        "prompt_uuid": "required-uuid",
+        "id_token": "short-lived-cognito-id-token",
         "user_timezone": "US/Pacific",
         "session_id": "conversation-session-id",
-        "user_id": "cognito-user-sub"
+        "user_id": "optional-consistency-assertion-must-match-token-sub"
     }
 
     Returns:
         AsyncGenerator: Yields streaming response chunks with analysis results
     """
+    token = None
     try:
-        # Extract parameters from payload
-        user_message = payload.get(
-            "prompt",
-            "No prompt found in input, please guide customer to create a json payload with prompt key",
-        )
-        prompt_uuid = payload.get("prompt_uuid", str(uuid4()))
-        user_timezone = payload.get("user_timezone", "US/Pacific")
-        session_id = payload.get("session_id", str(uuid4()))
-        user_id = payload.get("user_id", "guest")
-        user_name = payload.get("user_name", "User")
+        # IAM authenticates the transport; verify the Cognito ID token separately
+        # so an authenticated user cannot select somebody else's actor/namespace.
+        user_id = authenticated_actor(payload)
+        operation = payload.get("operation", "chat")
+        if operation == "memory_facts":
+            yield json.dumps({"facts": memory_facts(user_id)}) + "\n"
+            return
+        prompt_uuid, session_id = request_ids(payload, user_id)
+        results = QueryResults(user_id, prompt_uuid)
+        if operation == "query_results":
+            yield json.dumps({"results": results.read()}) + "\n"
+            return
+        if operation != "chat":
+            raise ValueError("Unsupported operation")
+        user_message = payload.get("prompt", "")
+        if not isinstance(user_message, str) or not 1 <= len(user_message) <= 16000:
+            raise ValueError("Prompt must be 1-16000 characters")
+        user_timezone = payload.get("user_timezone", "UTC")
+        user_name = "User"
 
         # Set OpenTelemetry baggage for trace correlation across spans
-        ctx = baggage.set_baggage("session.id", session_id)
+        ctx = baggage.set_baggage("session.id", payload["session_id"])
         ctx = baggage.set_baggage("user.id", user_id, context=ctx)
         ctx = baggage.set_baggage("prompt.uuid", prompt_uuid, context=ctx)
         token = context.attach(ctx)
 
-        print(f"Session: {session_id} | User: {user_id} | Model: {bedrock_model_id_env}")
+        print("Processing authenticated analysis request")
 
         with tracer.start_as_current_span(
             "agent_invocation",
             attributes={
                 "gen_ai.system": "aws.bedrock",
                 "gen_ai.request.model": bedrock_model_id_env,
-                "session.id": session_id,
+                "session.id": payload["session_id"],
                 "user.id": user_id,
                 "prompt.uuid": prompt_uuid,
             },
@@ -189,6 +213,7 @@ async def agent_invocation(payload):
                         system_prompt=system_prompt,
                         session_manager=session_manager,
                         tools=[current_time] + gateway_tools,
+                        hooks=[results],
                         callback_handler=None,
                     )
 
@@ -221,33 +246,15 @@ async def agent_invocation(payload):
                 with tracer.start_as_current_span("memory_flush"):
                     try:
                         session_manager.close()
-                    except Exception as close_err:
-                        print(f"Memory flush warning (non-fatal): {close_err}")
+                    except Exception:
+                        print("Memory flush failed; the response is preserved")
 
-        context.detach(token)
-
-    except Exception as e:
-        import traceback
-
-        tb = traceback.extract_tb(e.__traceback__)
-        filename, line_number, function_name, text = tb[-1]
-        print("\n" + "=" * 80)
-        print("DATA ANALYSIS ERROR")
-        print("=" * 80)
-        print(f"Error: {e!s}")
-        print(f"Location: Line {line_number} in {filename}")
-        print(f"Function: {function_name}")
-        if text:
-            print(f"Code: {text}")
-        print("=" * 80 + "\n")
-
-        error_detail = str(e)[:200]
-        error_msg = (
-            "I'm sorry, I encountered a temporary issue processing your request. "
-            "Please try again — I'm ready to help with your data analysis. "
-            f"(Details: {error_detail})"
-        )
-        yield json.dumps({"data": error_msg}) + "\n"
+    except Exception:
+        # Do not return tokens, SQL, database details, or internal tracebacks.
+        yield json.dumps({"error": "Request rejected or processing failed"}) + "\n"
+    finally:
+        if token is not None:
+            context.detach(token)
 
 
 if __name__ == "__main__":

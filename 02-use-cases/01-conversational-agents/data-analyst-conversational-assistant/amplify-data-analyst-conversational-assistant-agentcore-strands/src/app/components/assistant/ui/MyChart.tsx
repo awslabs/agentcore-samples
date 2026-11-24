@@ -1,79 +1,37 @@
 'use client';
 
-import { useState, useEffect, Component, type ReactNode } from 'react';
+import { useMemo, Component, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import MarkdownRenderer from './MarkdownRenderer';
+import { buildChartOptions, type ChartConfig } from '../chart-contract';
 
-// ApexCharts requires window — load it dynamically with SSR disabled
+// Only validated data reaches the application-owned ApexCharts option factory.
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-interface MyChartProps {
-  caption: string;
-  options: ApexCharts.ApexOptions;
-  series: ApexCharts.ApexOptions['series'];
-  type: string;
-}
-
-// Error boundary for chart rendering failures
 class ChartErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
     super(props);
     this.state = { hasError: false };
   }
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error: Error) {
-    console.error('Chart error:', error);
-  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch() { console.error('Chart rendering failed'); }
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-          Failed to render chart. Please check your chart configuration.
-        </div>
-      );
-    }
+    if (this.state.hasError) return <p role="status">Unable to render this chart.</p>;
     return this.props.children;
   }
 }
 
-export default function MyChart({ caption, options, series, type }: MyChartProps) {
-  const [isVisible, setIsVisible] = useState(false);
-  const [chartSeries, setChartSeries] = useState<ApexCharts.ApexOptions['series']>([]);
-  const [chartOptions, setChartOptions] = useState<ApexCharts.ApexOptions>({});
-
-  useEffect(() => {
-    const t1 = setTimeout(() => setIsVisible(true), 100);
-    const t2 = setTimeout(() => setChartSeries(series), 300);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [series]);
-
-  useEffect(() => {
-    const enhanced = { ...options };
-    if (!enhanced.chart) enhanced.chart = {};
-    enhanced.chart.zoom = { enabled: false };
-    enhanced.chart.animations = { enabled: true };
-    if (enhanced.chart.type === 'bar' && !enhanced.chart.stacked) {
-      enhanced.dataLabels = { enabled: false };
-    }
-    if (enhanced.title) enhanced.title.align = 'center';
-    if (enhanced.subtitle) enhanced.subtitle.align = 'center';
-    setChartOptions(enhanced);
-  }, [options]);
-
+export default function MyChart({ chart }: { chart: ChartConfig }) {
+  const rendered = useMemo(() => {
+    try { return buildChartOptions(chart); }
+    catch { return null; }
+  }, [chart]);
+  if (!rendered) return <p role="status">Chart data did not match the supported format.</p>;
   return (
-    <div
-      className={`transition-all duration-800 ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'
-      }`}
-    >
+    <div>
       <ChartErrorBoundary>
-        <Chart options={chartOptions} series={chartSeries} type={type as 'bar' | 'line' | 'pie'} height="420px" width="100%" />
+        <Chart options={rendered.options} series={rendered.series} type={rendered.type} height="420px" width="100%" />
       </ChartErrorBoundary>
-      <div className="text-base pt-2 pb-2">
-        <MarkdownRenderer content={caption} />
-      </div>
+      <p className="text-base pt-2 pb-2">{rendered.caption}</p>
     </div>
   );
 }
