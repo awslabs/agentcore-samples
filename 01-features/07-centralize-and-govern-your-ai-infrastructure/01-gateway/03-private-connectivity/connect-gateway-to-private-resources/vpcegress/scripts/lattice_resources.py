@@ -3,24 +3,41 @@
 Run with the resource owner's AWS profile (Account B for the cross-account lab).
 Delete targets and RAM shares first. All waits are bounded and IDs are durable.
 """
+
 import argparse
 import re
 import time
 
 import boto3
 from botocore.exceptions import ClientError
-
-from lifecycle import account_for, begin, complete, load, record_path, require_reconciled, reserve, save, verified_session
+from lifecycle import (
+    account_for,
+    begin,
+    complete,
+    load,
+    record_path,
+    require_reconciled,
+    reserve,
+    save,
+    verified_session,
+)
 
 
 def wait(client, kind, identifier, *, deleted=False):
     get = getattr(client, f"get_{kind}")
-    key = "resourceGatewayIdentifier" if kind == "resource_gateway" else "resourceConfigurationIdentifier"
+    key = (
+        "resourceGatewayIdentifier"
+        if kind == "resource_gateway"
+        else "resourceConfigurationIdentifier"
+    )
     for attempt in range(30):
         try:
             status = get(**{key: identifier})["status"]
         except ClientError as error:
-            if deleted and error.response["Error"]["Code"] == "ResourceNotFoundException":
+            if (
+                deleted
+                and error.response["Error"]["Code"] == "ResourceNotFoundException"
+            ):
                 return
             raise
         if not deleted and status == "ACTIVE":
@@ -33,7 +50,11 @@ def wait(client, kind, identifier, *, deleted=False):
 
 
 def delete_resource(client, kind, identifier):
-    key = "resourceGatewayIdentifier" if kind == "resource_gateway" else "resourceConfigurationIdentifier"
+    key = (
+        "resourceGatewayIdentifier"
+        if kind == "resource_gateway"
+        else "resourceConfigurationIdentifier"
+    )
     for attempt in range(30):
         try:
             getattr(client, f"delete_{kind}")(**{key: identifier})
@@ -65,21 +86,34 @@ def main(argv=None):
     else:
         if not re.fullmatch(r"vpc-[0-9a-f]+", args.vpc_id or ""):
             parser.error("Provide --vpc-id")
-        if not re.fullmatch(r"subnet-[0-9a-f]+(?:,subnet-[0-9a-f]+)*", args.subnet_ids or ""):
+        if not re.fullmatch(
+            r"subnet-[0-9a-f]+(?:,subnet-[0-9a-f]+)*", args.subnet_ids or ""
+        ):
             parser.error("Provide nonempty subnet IDs")
-        if not re.fullmatch(r"sg-[0-9a-f]+(?:,sg-[0-9a-f]+)*", args.security_group_ids or ""):
+        if not re.fullmatch(
+            r"sg-[0-9a-f]+(?:,sg-[0-9a-f]+)*", args.security_group_ids or ""
+        ):
             parser.error("Provide nonempty security group IDs")
         if not re.fullmatch(r"[A-Za-z0-9.-]+", args.dns_name or ""):
             parser.error("Provide --dns-name, not a URL")
         if path.exists():
-            parser.error(f"Record exists: {path}; reconcile it rather than adopting resources")
+            parser.error(
+                f"Record exists: {path}; reconcile it rather than adopting resources"
+            )
         session = boto3.Session()
-        record = {"name": args.name, "region": session.region_name, "accountId": account_for(session), "status": "CREATE_PENDING"}
+        record = {
+            "name": args.name,
+            "region": session.region_name,
+            "accountId": account_for(session),
+            "status": "CREATE_PENDING",
+        }
         reserve(path, record)
     client = session.client("vpc-lattice")
     if args.delete:
         if record.get("resourceConfigurationArn"):
-            delete_resource(client, "resource_configuration", record["resourceConfigurationArn"])
+            delete_resource(
+                client, "resource_configuration", record["resourceConfigurationArn"]
+            )
             record["configurationDeleted"] = True
             save(path, record)
         if record.get("resourceGatewayId"):
@@ -87,15 +121,26 @@ def main(argv=None):
         record["status"] = "DELETED"
         save(path, record)
     else:
-        begin(record, path, 'create_resource_gateway')
-        gateway = client.create_resource_gateway(name=f"{args.name}-rg", vpcIdentifier=args.vpc_id,
-            subnetIds=args.subnet_ids.split(","), securityGroupIds=args.security_group_ids.split(","), ipAddressType="IPV4")
+        begin(record, path, "create_resource_gateway")
+        gateway = client.create_resource_gateway(
+            name=f"{args.name}-rg",
+            vpcIdentifier=args.vpc_id,
+            subnetIds=args.subnet_ids.split(","),
+            securityGroupIds=args.security_group_ids.split(","),
+            ipAddressType="IPV4",
+        )
         complete(record, path, resourceGatewayId=gateway["id"])
         wait(client, "resource_gateway", gateway["id"])
-        begin(record, path, 'create_resource_configuration')
-        config = client.create_resource_configuration(name=f"{args.name}-rc", type="SINGLE",
-            resourceGatewayIdentifier=gateway["id"], portRanges=["443"],
-            resourceConfigurationDefinition={"dnsResource": {"domainName": args.dns_name, "ipAddressType": "IPV4"}})
+        begin(record, path, "create_resource_configuration")
+        config = client.create_resource_configuration(
+            name=f"{args.name}-rc",
+            type="SINGLE",
+            resourceGatewayIdentifier=gateway["id"],
+            portRanges=["443"],
+            resourceConfigurationDefinition={
+                "dnsResource": {"domainName": args.dns_name, "ipAddressType": "IPV4"}
+            },
+        )
         complete(record, path, resourceConfigurationArn=config["arn"])
         wait(client, "resource_configuration", config["arn"])
         record["status"] = "ACTIVE"

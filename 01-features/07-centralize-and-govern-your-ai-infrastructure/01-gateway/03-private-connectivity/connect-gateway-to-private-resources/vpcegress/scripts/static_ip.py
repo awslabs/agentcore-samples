@@ -1,4 +1,5 @@
 """Identify the existing VPC NAT EIP for one private subnet; creates nothing."""
+
 import argparse
 import json
 import re
@@ -7,14 +8,28 @@ import boto3
 
 
 def identify(ec2, subnet_id):
-    tables = ec2.describe_route_tables(Filters=[{"Name": "association.subnet-id", "Values": [subnet_id]}])["RouteTables"]
-    nats = {route["NatGatewayId"] for table in tables for route in table["Routes"]
-            if route.get("DestinationCidrBlock") == "0.0.0.0/0" and route.get("NatGatewayId") and route.get("State") == "active"}
+    tables = ec2.describe_route_tables(
+        Filters=[{"Name": "association.subnet-id", "Values": [subnet_id]}]
+    )["RouteTables"]
+    nats = {
+        route["NatGatewayId"]
+        for table in tables
+        for route in table["Routes"]
+        if route.get("DestinationCidrBlock") == "0.0.0.0/0"
+        and route.get("NatGatewayId")
+        and route.get("State") == "active"
+    }
     if len(nats) != 1:
-        raise ValueError("Expected exactly one active NAT default route for this lab subnet")
+        raise ValueError(
+            "Expected exactly one active NAT default route for this lab subnet"
+        )
     nat_id = nats.pop()
     nat = ec2.describe_nat_gateways(NatGatewayIds=[nat_id])["NatGateways"][0]
-    ips = [address["PublicIp"] for address in nat["NatGatewayAddresses"] if address.get("PublicIp")]
+    ips = [
+        address["PublicIp"]
+        for address in nat["NatGatewayAddresses"]
+        if address.get("PublicIp")
+    ]
     if nat["State"] != "available" or len(ips) != 1:
         raise ValueError("Expected an available NAT with exactly one public IP")
     return {"subnetId": subnet_id, "natGatewayId": nat_id, "elasticIp": ips[0]}

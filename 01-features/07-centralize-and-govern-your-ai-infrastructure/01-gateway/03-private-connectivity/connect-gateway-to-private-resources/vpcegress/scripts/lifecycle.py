@@ -3,12 +3,13 @@
 Records contain identifiers, never credential values. Keep this directory on
 partial failure: it is separate from CLI state and is needed to resume cleanup.
 """
+
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
 import time
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
@@ -18,20 +19,24 @@ STATE_DIR = Path(__file__).resolve().parents[1] / ".vpc-state"
 
 def account_for(session):
     if not session.region_name:
-        raise ValueError('Set an explicit AWS region before managing lab resources')
-    account = session.client('sts').get_caller_identity()['Account']
-    if not re.fullmatch(r'\d{12}', account):
-        raise ValueError('Invalid caller account')
+        raise ValueError("Set an explicit AWS region before managing lab resources")
+    account = session.client("sts").get_caller_identity()["Account"]
+    if not re.fullmatch(r"\d{12}", account):
+        raise ValueError("Invalid caller account")
     return account
 
 
 def verified_session(record):
     # NotFound in the wrong account is not evidence that our resource is gone.
-    if not re.fullmatch(r'\d{12}', record.get('accountId', '')):
-        raise ValueError('Ownership record lacks accountId; reconcile it before cleanup/resume')
-    session = boto3.Session(region_name=record['region'])
-    if account_for(session) != record['accountId']:
-        raise RuntimeError('Caller account differs from the ownership record; no resource operation attempted')
+    if not re.fullmatch(r"\d{12}", record.get("accountId", "")):
+        raise ValueError(
+            "Ownership record lacks accountId; reconcile it before cleanup/resume"
+        )
+    session = boto3.Session(region_name=record["region"])
+    if account_for(session) != record["accountId"]:
+        raise RuntimeError(
+            "Caller account differs from the ownership record; no resource operation attempted"
+        )
     return session
 
 
@@ -72,27 +77,35 @@ def load(path):
 
 def begin(record, path, operation):
     """Journal an operation whose response may be lost, before submitting it."""
-    record['pendingOperation'] = operation
+    record["pendingOperation"] = operation
     save(path, record)
 
 
 def complete(record, path, **identifiers):
     record.update(identifiers)
-    record.pop('pendingOperation', None)
+    record.pop("pendingOperation", None)
     save(path, record)
 
 
 def require_reconciled(record):
-    if record.get('pendingOperation'):
-        raise RuntimeError(f"Reconcile the uncertain {record['pendingOperation']} response before cleanup; keep the ownership record")
-    if record.get('status') == 'CREATE_PENDING' and not any(record.get(key) for key in (
-        'resourceGatewayId', 'securityGroupId', 'aliasCreated'
-    )):
-        raise RuntimeError('No creation response recorded; reconcile ownership before cleanup')
+    if record.get("pendingOperation"):
+        raise RuntimeError(
+            f"Reconcile the uncertain {record['pendingOperation']} response before cleanup; keep the ownership record"
+        )
+    if record.get("status") == "CREATE_PENDING" and not any(
+        record.get(key)
+        for key in ("resourceGatewayId", "securityGroupId", "aliasCreated")
+    ):
+        raise RuntimeError(
+            "No creation response recorded; reconcile ownership before cleanup"
+        )
 
 
 def not_found(error):
-    return isinstance(error, ClientError) and error.response["Error"]["Code"] == "ResourceNotFoundException"
+    return (
+        isinstance(error, ClientError)
+        and error.response["Error"]["Code"] == "ResourceNotFoundException"
+    )
 
 
 def wait_target(control, record, path, *, deleting=False, attempts=30, delay=10):
@@ -113,7 +126,11 @@ def wait_target(control, record, path, *, deleting=False, attempts=30, delay=10)
         if not deleting and record["status"] == "READY":
             return
         if record["status"] in {"FAILED", "UPDATE_UNSUCCESSFUL", "DELETE_UNSUCCESSFUL"}:
-            raise RuntimeError(f"Target {record['targetId']}: {record['status']}; see {path}")
+            raise RuntimeError(
+                f"Target {record['targetId']}: {record['status']}; see {path}"
+            )
         if attempt + 1 < attempts:
             time.sleep(delay)
-    raise TimeoutError(f"Target {record['targetId']} timed out ({record['status']}); keep {path}")
+    raise TimeoutError(
+        f"Target {record['targetId']} timed out ({record['status']}); keep {path}"
+    )
