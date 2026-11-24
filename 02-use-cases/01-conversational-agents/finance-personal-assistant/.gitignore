@@ -161,7 +161,7 @@ cython_debug/
 .ipynb_checkpoints
 .dockerignore
 .bedrock_agentcore.yaml
-Dockerfile
+!Dockerfile
 # VS Code
 .vscode/
 
