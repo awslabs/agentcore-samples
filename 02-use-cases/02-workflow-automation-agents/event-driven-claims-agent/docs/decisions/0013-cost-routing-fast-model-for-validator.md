@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The discussion of a Sonnet Executor below is historical; [ADR-0014](0014-deterministic-phase3-no-llm.md) subsequently removed the third LLM call. The v1 port preserves Sonnet processing + Haiku validation + deterministic execution.
 
 ## Context
 

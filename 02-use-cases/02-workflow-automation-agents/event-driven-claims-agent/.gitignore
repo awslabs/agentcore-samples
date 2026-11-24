@@ -20,6 +20,11 @@ cdk.out/
 .env
 .env.local
 .cognito-state.json
+.claims-v1.json
+.claims-v1.tmp
+.claims-cli-home/
+!.dockerignore
+!app/claimsagent/.dockerignore
 cdk.context.json
 cdk-outputs.json
 agentcore/cdk/cdk.out/

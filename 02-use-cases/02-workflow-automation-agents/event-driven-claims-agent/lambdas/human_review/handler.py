@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -20,7 +20,7 @@ def handler(event, context):
         return json.dumps({"error": "claim_id is required"})
 
     review_id = f"REV-{uuid.uuid4().hex[:8].upper()}"
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     priority = "high" if estimated_amount >= 50000 else "medium"
 
     item = {
@@ -34,7 +34,7 @@ def handler(event, context):
     }
     table.put_item(Item=item)
 
-    if TOPIC_ARN:
+    if TOPIC_ARN and os.environ.get("NOTIFICATIONS_ENABLED", "false") == "true":
         sns.publish(
             TopicArn=TOPIC_ARN,
             Subject=f"[{priority.upper()}] Review needed: {claim_id}",

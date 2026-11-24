@@ -2,8 +2,8 @@
 
 Covers `parse_email` and `is_email_format` in lambdas/trigger/handler.py — the
 stdlib-only functions that turn an S3 object into a structured prompt. The
-handler imports boto3 (lazy clients, no network at import), so importing it is
-safe without AWS credentials.
+handler creates an S3 client at import time; stub it before importing.
+Also checks the actual SigV4 signing path with fake credentials and mocked HTTP.
 
 Run:
     python3 -m unittest discover -s tests
@@ -12,10 +12,17 @@ Run:
 import os
 import sys
 import unittest
+from unittest.mock import MagicMock, patch
+
+from botocore.credentials import Credentials
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambdas", "trigger"))
 
-from handler import is_email_format, parse_email  # noqa: E402
+with patch("boto3.client", return_value=MagicMock()):
+    import handler as trigger
+
+is_email_format = trigger.is_email_format
+parse_email = trigger.parse_email
 
 
 class IsEmailFormatTests(unittest.TestCase):
@@ -66,7 +73,7 @@ class ParseEmailTests(unittest.TestCase):
 
     def test_no_headers_yields_empty_dict(self):
         # No blank line and no recognized headers → body_start stays 0.
-        headers, body = parse_email("just a body with no headers")
+        headers, _body = parse_email("just a body with no headers")
         self.assertEqual(headers, {})
 
     def test_ignores_unrecognized_headers(self):
@@ -74,6 +81,31 @@ class ParseEmailTests(unittest.TestCase):
         headers, _ = parse_email(content)
         self.assertIn("from", headers)
         self.assertNotIn("x-custom", headers)
+
+
+class RuntimeAuthTests(unittest.TestCase):
+    def test_trigger_signs_with_iam_not_cognito(self):
+        credentials = Credentials("offline-key", "offline-secret", "offline-token")
+        session = MagicMock()
+        session.get_credentials.return_value = credentials
+        response = MagicMock()
+        response.status = 200
+        response.__iter__.return_value = iter([b"accepted\n"])
+        arn = "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/claimsagent-test"
+        with (
+            patch.object(trigger, "BotocoreSession", return_value=session),
+            patch.object(trigger, "RUNTIME_ARN", arn),
+            patch.object(trigger.urllib.request, "urlopen") as urlopen,
+        ):
+            urlopen.return_value.__enter__.return_value = response
+            status, preview = trigger.invoke_runtime_async({"prompt": "offline"})
+        self.assertEqual((status, preview), (200, ["accepted"]))
+        request = urlopen.call_args.args[0]
+        self.assertIn("runtime%2Fclaimsagent-test/invocations", request.full_url)
+        self.assertTrue(request.get_header("Authorization").startswith("AWS4-HMAC-SHA256 "))
+        self.assertIn("/us-west-2/bedrock-agentcore/aws4_request", request.get_header("Authorization"))
+        self.assertEqual(request.get_header("X-amz-security-token"), "offline-token")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 65)
 
 
 if __name__ == "__main__":

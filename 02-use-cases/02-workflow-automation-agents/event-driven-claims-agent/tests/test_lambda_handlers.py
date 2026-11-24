@@ -15,7 +15,7 @@ import importlib.util
 import json
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # boto3.resource() can require a region at creation time; set one before import.
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
@@ -23,7 +23,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
 _ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 try:
-    import boto3  # noqa: F401
+    import boto3
 
     _BOTO3_AVAILABLE = True
 except ImportError:
@@ -35,7 +35,10 @@ def _load(module_name: str, rel_path: str):
     path = os.path.join(_ROOT, rel_path)
     spec = importlib.util.spec_from_file_location(module_name, path)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # The handlers create a DynamoDB resource at import time. Stub before import,
+    # not just table operations afterward: never resolve a real credential chain.
+    with patch("boto3.resource", return_value=MagicMock()):
+        spec.loader.exec_module(mod)
     return mod
 
 

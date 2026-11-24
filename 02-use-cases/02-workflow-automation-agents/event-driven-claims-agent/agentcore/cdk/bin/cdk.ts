@@ -1,90 +1,42 @@
 #!/usr/bin/env node
-import { AgentCoreStack } from '../lib/cdk-stack';
-import { ConfigIO, type AgentCoreMcpSpec, type AwsDeploymentTarget } from '@aws/agentcore-cdk';
-import { App, Aspects, type Environment } from 'aws-cdk-lib';
+import { App, Aspects } from 'aws-cdk-lib';
+import { readAgentCoreProject, resolveTargetStacks, transformAgentCoreJson } from '@aws/agentcore-cdk';
 import { AwsSolutionsChecks } from 'cdk-nag';
-import * as path from 'path';
-import * as fs from 'fs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { AgentCoreStack } from '../lib/cdk-stack';
 
-function toEnvironment(target: AwsDeploymentTarget): Environment {
-  return {
-    account: target.account,
-    region: target.region,
-  };
-}
-
-function sanitize(name: string): string {
-  return name.replace(/_/g, '-');
-}
-
-function toStackName(projectName: string, targetName: string): string {
-  return `AgentCore-${sanitize(projectName)}-${sanitize(targetName)}`;
-}
-
-async function main() {
-  // Config root is parent of cdk/ directory. The CLI sets process.cwd() to agentcore/cdk/.
-  const configRoot = path.resolve(process.cwd(), '..');
-  const configIO = new ConfigIO({ baseDir: configRoot });
-
-  const spec = await configIO.readProjectSpec();
-  const targets = await configIO.readAWSDeploymentTargets();
-
-  // Extract MCP/Gateway configuration from the project spec. These fields are
-  // now typed on AgentCoreProjectSpec (@aws/agentcore-cdk alpha.39+).
-  const mcpSpec: AgentCoreMcpSpec | undefined = spec.agentCoreGateways?.length
-    ? {
-        agentCoreGateways: spec.agentCoreGateways,
-        mcpRuntimeTools: spec.mcpRuntimeTools,
-      }
-    : undefined;
-
-  // Read deployed state for credential ARNs (populated by pre-deploy identity setup)
-  let deployedState: Record<string, unknown> | undefined;
-  try {
-    deployedState = JSON.parse(fs.readFileSync(path.join(configRoot, '.cli', 'deployed-state.json'), 'utf8'));
-  } catch {
-    // Deployed state may not exist on first deploy
+try {
+  const project = readAgentCoreProject();
+  const owned = JSON.parse(readFileSync(join(project.projectRoot, '.claims-v1.json'), 'utf8'));
+  if (owned.version !== 1 || project.projectName !== owned.project || !/^Claims[a-z0-9]{8,12}$/.test(owned.project)) {
+    throw new Error('Fresh v1 ownership configuration required; old stacks cannot be adopted');
   }
-
-  if (targets.length === 0) {
-    throw new Error('No deployment targets configured. Please define targets in agentcore/aws-targets.json');
+  if (project.targets.length !== 1 || project.targets[0].name !== owned.target ||
+      project.targets[0].account !== owned.account || project.targets[0].region !== owned.region) {
+    throw new Error('Deployment target differs from the ownership ledger');
   }
-
+  if (!owned.discovery_url || !owned.client_id || !owned.provider_arn || typeof owned.notifications !== 'boolean') {
+    throw new Error('Run the ownership-checked auth setup before synthesis');
+  }
   const app = new App();
-
-  for (const target of targets) {
-    const env = toEnvironment(target);
-    const stackName = toStackName(spec.name, target.name);
-
-    // Extract credentials from deployed state for this target
-    const targetState = (deployedState as Record<string, unknown>)?.targets as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-    const targetResources = targetState?.[target.name]?.resources as Record<string, unknown> | undefined;
-    const credentials = targetResources?.credentials as
-      | Record<string, { credentialProviderArn: string; clientSecretArn?: string }>
-      | undefined;
-
-    new AgentCoreStack(app, stackName, {
-      spec,
-      mcpSpec,
-      credentials,
-      env,
-      description: `AgentCore stack for ${spec.name} deployed to ${target.name} (${target.region})`,
-      tags: {
-        'agentcore:project-name': spec.name,
-        'agentcore:target-name': target.name,
-      },
+  for (const stack of resolveTargetStacks({ projectName: project.projectName, targets: project.targets,
+    deployedState: project.deployedState })) {
+    if (stack.credentials?.['cognito-gateway-m2m']?.credentialProviderArn !== owned.provider_arn ||
+        stack.credentials?.['cognito-gateway-m2m']?.clientSecretArn !== owned.secret_arn) {
+      throw new Error('Credential state differs from the ownership ledger');
+    }
+    new AgentCoreStack(app, stack.stackName, {
+      env: stack.env, tags: { ...stack.tags, 'claims:owner': owned.owner }, description: stack.description,
+      application: transformAgentCoreJson(project.agentCoreJson, {
+        projectRoot: project.projectRoot, credentials: stack.credentials, target: stack.target,
+      }),
+      discoveryUrl: owned.discovery_url, clientId: owned.client_id, notifications: owned.notifications,
     });
   }
-
-  if (process.env.CDK_NAG === "true") {
-    Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
-  }
+  if (process.env.CDK_NAG === 'true') Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
   app.synth();
-}
-
-main().catch((error: unknown) => {
+} catch (error) {
   console.error('AgentCore CDK synthesis failed:', error instanceof Error ? error.message : error);
   process.exitCode = 1;
-});
+}

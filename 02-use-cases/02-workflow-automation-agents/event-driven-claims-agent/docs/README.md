@@ -1,5 +1,8 @@
 # Event-Driven Claims Agent — Documentation
 
+> Start with [CLI 1.2.0 migration boundaries](MIGRATION.md): this custom v1 port
+> supports fresh stacks only. Cloud verification is NOT RUN.
+
 The Event-Driven Claims Agent is an insurance claims processor built on Amazon Bedrock AgentCore. It demonstrates a dual-agent architecture where a Claims Processor evaluates submissions, a Validation Agent reviews decisions, and the system routes outcomes to auto-approval or human review based on confidence scoring.
 
 ## Where to Start
@@ -10,13 +13,13 @@ The Event-Driven Claims Agent is an insurance claims processor built on Amazon B
 | Understand how it works | [Architecture](ARCHITECTURE.md) |
 | Modify it for your use case | [Tutorial: Make It Your Own](tutorial.md) |
 | Look up a specific setting | [Configuration Reference](CONFIGURATION.md) |
-| Validate auth & behavior after deploy | [`scripts/test_auth.py`](../scripts/test_auth.py) + [Deployment → Verify](deployment.md#9-verify-deployment) |
+| Validate auth & behavior after deploy | [`scripts/test_auth.py`](../scripts/test_auth.py) + [Deployment verification](deployment.md#bounded-cloud-verification) |
 | Deploy step-by-step (manual) | [Deployment Guide](deployment.md) |
 
 ## Prerequisites
 
 - AWS Account with Bedrock model access (Claude Sonnet 4)
-- AgentCore CLI 0.30.0 (`npm install -g @aws/agentcore@0.30.0`; verify with `agentcore --version`)
+- AgentCore CLI **1.2.0**, supplied as an explicit local binary; no global installation is needed. Use the ownership-checking deployment helper.
 - Node.js 20+ (required by the AgentCore CLI; CDK itself accepts 18+)
 - Docker or Finch (for container builds)
 - Python 3.12+ with uv
