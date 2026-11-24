@@ -44,4 +44,3 @@ ignore = [
 # best-effort cleanup paths in the same samples that intentionally swallow errors.
 "02-use-cases/01-conversational-agents/lakehouse-agent/deployment/5-gateway-setup/**/*.py" = ["BLE001"]
 "02-use-cases/02-workflow-automation-agents/enterprise-web-intelligence-agent/interactive_tools/**/*.py" = ["BLE001", "S110"]
-"02-use-cases/02-workflow-automation-agents/visa-b2b-account-payable-agent/infrastructure/scripts/*.py" = ["BLE001"]

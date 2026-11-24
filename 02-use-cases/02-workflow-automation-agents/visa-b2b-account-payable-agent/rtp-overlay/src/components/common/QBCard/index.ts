@@ -1,1 +1,0 @@
-export { QBCard } from './QBCard';

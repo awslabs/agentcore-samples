@@ -51,7 +51,6 @@ eggs/
 
 lib/
 !05-blueprints/**/lib/
-!02-use-cases/visa-b2b-account-payable-agent/infrastructure/lib/
 !04-infrastructure-as-code/cdk/typescript/knowledge-base-rag-agent/infrastructure/lib/
 !01-features/07-centralize-and-govern-your-ai-infrastructure/01-gateway/05-community/gateway-mcp-inspector/client/src/lib/
 !02-use-cases/lakehouse-agent/deployment/advanced-agentcore-policy-gateway-interceptor/lib/

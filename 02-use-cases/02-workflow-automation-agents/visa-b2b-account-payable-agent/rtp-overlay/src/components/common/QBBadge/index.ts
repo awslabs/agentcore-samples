@@ -1,1 +1,0 @@
-export { QBBadge } from './QBBadge';
