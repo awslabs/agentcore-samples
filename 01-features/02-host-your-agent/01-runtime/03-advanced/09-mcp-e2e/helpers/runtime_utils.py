@@ -14,6 +14,7 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import uvicorn
@@ -22,6 +23,7 @@ from mcp.server.mcpserver import RequestStateSecurity
 from mcp.server.request_state import AESGCMRequestStateCodec, InvalidRequestState
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +146,12 @@ def request_state_security() -> RequestStateSecurity:
     return RequestStateSecurity.ephemeral()
 
 
-def serve(mcp: MCPServer) -> None:
+def serve(mcp: MCPServer, wrap: Callable[[ASGIApp], ASGIApp] | None = None) -> None:
     """Run the server on the AgentCore Runtime MCP contract: port 8000, path /mcp.
 
     stateless_http applies to MCP 2025-11-25 and earlier clients; 2026-07-28 is always stateless.
+    wrap adds ASGI middleware around the MCP app (04-protocol-e2e uses it to answer one call with HTTP 500).
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    app = mcp.streamable_http_app(stateless_http=True, host=HOST)
-    uvicorn.run(app, host=HOST, port=PORT)
+    app: ASGIApp = mcp.streamable_http_app(stateless_http=True, host=HOST)
+    uvicorn.run(wrap(app) if wrap else app, host=HOST, port=PORT)
