@@ -39,6 +39,18 @@ The trade-off: **create and update take minutes rather than seconds**, because t
 - Access to Amazon Bedrock models (Claude) in your region
 - An AWS account and region where New Runtime is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
 
+### Deployment caller versus execution role
+
+The **deployment caller** builds and uploads the ZIP, provisions the Runtime and endpoint, invokes the deployed agent, and cleans up. The **execution role** is assumed by AgentCore to read the ZIP and invoke the model. The caller does not need administrator access or direct Bedrock model access. Have the sandbox owner provision the caller separately. To scope permissions to one run, agree on the generated sample name before granting access.
+
+A hosted test against an existing code bucket exposed three additional authorization checks during `CreateAgentRuntime`:
+
+- The service checked `bedrock-agentcore:CreateAgentRuntimeEndpoint` against `runtime/*` in the selected account and Region, not just the final Runtime ARN. This is broader than a single Runtime; use a dedicated sandbox if that permission is inappropriate in a shared account.
+- The caller needed read access to the uploaded ZIP, not only permission to write it. Scope object access to that key. The test used an unversioned bucket; it did not validate a KMS-encrypted or versioned artifact.
+- `bedrock-agentcore:CreateWorkloadIdentity` was checked against **both** the default workload identity directory and the Runtime-generated identity under it. Restrict the latter to the unique sample name and generated suffix. Do not grant all identity operations.
+
+Scope `iam:PassRole` to the one execution role and `iam:PassedToService = bedrock-agentcore.amazonaws.com`. Scope role and policy management to that role, object operations to the deployment key, and Runtime operations to the selected Region and sample wherever supported. If creation is denied after the upload, keep the receipt: a pending create intentionally blocks automatic deletion. Verify service-side absence and the recorded role identity and object ETag before reconciling. Do not clear the pending marker or widen access to administrator just to retry.
+
 ## Step 1: Write the Agent (`agent.py`)
 
 LangGraph uses an explicit **state graph** to define the agent loop — unlike Strands where the loop is automatic. You define nodes (functions), edges (routing), and state (typed dict):
