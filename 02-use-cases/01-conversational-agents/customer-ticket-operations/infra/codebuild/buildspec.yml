@@ -1,0 +1,8 @@
+# Runs in CodeBuild (ARM). Packages every deployable artifact from the uploaded source zip; nothing
+# is built on a laptop. Output: s3://$ARTIFACTS_BUCKET/builds/$BUILD_ID/ + manifest.json, and the
+# SSM pointer /$PROJECT/$ENVIRONMENT/build/current that Terraform reads.
+version: 0.2
+phases:
+  build:
+    commands:
+      - bash infra/codebuild/build.sh

@@ -6,6 +6,7 @@ Demonstrates the full optimization loop:
   2. Create baseline Configuration Bundle and send traffic
   3. Run baseline batch evaluation (GoalSuccessRate, Helpfulness, Correctness)
   4. Generate system prompt recommendation from production traces
+     (or from an insights batch evaluation with --insights-eval-arn)
   5. Generate tool description recommendation from production traces
   6. Create control and treatment configuration bundles
   7. A/B test via config-bundle routing (same runtime, different configs)
@@ -18,6 +19,10 @@ Usage:
 
     # Skip deployment (use existing state files):
     python optimize.py --name HRAssistV1 --skip-deploy
+
+    # Chain insights into the system prompt recommendation (Step 5a reads the
+    # FailureAnalysis batch evaluation produced by insights.py instead of raw traces):
+    python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
 
     # Cleanup only:
     python optimize.py --name HRAssistV1 --cleanup-only
@@ -59,6 +64,15 @@ parser.add_argument(
     action="store_true",
     help="Skip all demo steps and only run cleanup",
 )
+parser.add_argument(
+    "--insights-eval-arn",
+    default=None,
+    help=(
+        "ARN of an insights batch evaluation (printed by insights.py). When set, the "
+        "system prompt recommendation in Step 5a uses the sessions that batch evaluation "
+        "analyzed as its traces, instead of the last 7 days of CloudWatch traces."
+    ),
+)
 args = parser.parse_args()
 
 REGION = args.region
@@ -82,7 +96,28 @@ print(f"SUFFIX     = {SUFFIX}")
 print(f"V1_NAME    = {V1_NAME}")
 print(f"V2_NAME    = {V2_NAME}")
 
+INSIGHTS_EVAL_ARN = args.insights_eval_arn
+if INSIGHTS_EVAL_ARN:
+    # Fail fast, before any resource is created, if the ARN points at another
+    # region or account: the recommendation would reject it only after
+    # deployment, traffic, and baseline evaluation (~10 minutes in).
+    _arn_parts = INSIGHTS_EVAL_ARN.split(":")
+    if len(_arn_parts) < 6 or _arn_parts[2] != "bedrock-agentcore":
+        sys.exit(f"--insights-eval-arn is not a bedrock-agentcore ARN: {INSIGHTS_EVAL_ARN}")
+    if _arn_parts[3] != REGION or _arn_parts[4] != ACCOUNT_ID:
+        sys.exit(
+            f"--insights-eval-arn is in region={_arn_parts[3]} account={_arn_parts[4]}, "
+            f"but this run uses region={REGION} account={ACCOUNT_ID}. "
+            "Run insights.py against the same runtime, or pass --region to match."
+        )
+    print(f"INSIGHTS   = {INSIGHTS_EVAL_ARN}")
+
 SCRIPT_DIR = Path(__file__).parent
+
+# Online evaluation configs consider a session closed after this many minutes
+# without a new request. No session can be scored, and so no A/B result can
+# include it, before its timeout elapses.
+SESSION_TIMEOUT_MINUTES = 2
 
 # ── State tracking (populated as resources are created) ───────────────────
 
@@ -117,6 +152,8 @@ ONLINE_EVAL_ID = None
 ONLINE_EVAL_ARN = None
 ONLINE_EVAL_V2_ID = None
 ONLINE_EVAL_V2_ARN = None
+ONLINE_EVAL_TARGET_V1_ID = None
+ONLINE_EVAL_TARGET_V1_ARN = None
 ABTEST_BUNDLE_ID = None
 ABTEST_TARGET_ID = None
 DELIVERY_ID = None
@@ -142,6 +179,7 @@ def _save_state():
             "target_id_v2": TARGET_ID_V2,
             "online_eval_id": ONLINE_EVAL_ID,
             "online_eval_v2_id": ONLINE_EVAL_V2_ID,
+            "online_eval_target_v1_id": ONLINE_EVAL_TARGET_V1_ID,
             "abtest_bundle_id": ABTEST_BUNDLE_ID,
             "abtest_target_id": ABTEST_TARGET_ID,
             "delivery_id": DELIVERY_ID,
@@ -149,7 +187,7 @@ def _save_state():
         }
         state_file.write_text(json.dumps(state, indent=2))
         print(f"\nState saved to {state_file}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"\nWarning: could not save state to {state_file}: {e}")
 
 
@@ -192,7 +230,7 @@ def fetch_eval_scores(eval_id: str) -> dict:
             logGroupName=log_group,
             logStreamName=stream_name,
         ).get("events", [])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  CloudWatch fallback failed: {e}")
         return {}
 
@@ -205,12 +243,142 @@ def fetch_eval_scores(eval_id: str) -> dict:
             score = attrs.get("gen_ai.evaluation.score.value")
             if name and score is not None:
                 scores.setdefault(name, []).append(float(score))
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip log events that are not evaluation results
             continue
     return {k: sum(v) / len(v) for k, v in scores.items() if v}
 
 
+# ── Helpers: A/B test results ─────────────────────────────────────────────
+
+
+def _percent_change(control_stats: dict, variant: dict):
+    """Use the service's percentChange, or derive it from the two means."""
+    pct = variant.get("percentChange")
+    if pct is None:
+        cm, vm = control_stats.get("mean"), variant.get("mean")
+        if cm is not None and vm is not None and float(cm) != 0:
+            pct = (float(vm) - float(cm)) / float(cm) * 100
+    return pct
+
+
+def poll_ab_results(ab_test_id: str, not_before: datetime, control_label: str, treatment_label: str):
+    """Poll an A/B test until it reports results computed after `not_before`.
+
+    `not_before` is the time the last test session can close (last request +
+    session timeout). An analysis computed earlier cannot include this run's
+    sessions, so it is shown but not accepted. Returns the results dict, or
+    None if no fresh analysis appears within the polling window.
+    """
+    print(f"Accepting only analyses computed after {not_before.strftime('%H:%M:%S')} UTC")
+    print("(last request + session timeout; earlier analyses cannot include this run's sessions)")
+    for poll in range(25):
+        ab = dp.get_ab_test(abTestId=ab_test_id)
+        results = ab.get("results") or {}
+        metrics = results.get("evaluatorMetrics", [])
+        analysis_ts = results.get("analysisTimestamp")
+        print(f"--- Poll {poll + 1}/25 -- {time.strftime('%H:%M:%S')} ---")
+        print(f"  analysisTimestamp: {analysis_ts or 'none'}")
+        for m in metrics:
+            name = m.get("evaluatorArn", "").split("/")[-1]
+            cs = m.get("controlStats", {})
+            line = f"  {name}: {control_label} mean={cs.get('mean', '-')} n={cs.get('sampleSize', '-')}"
+            for vr in m.get("variantResults", []):
+                pct = _percent_change(cs, vr)
+                delta = f" change={pct:+.1f}%" if pct is not None else ""
+                line += (
+                    f" | {treatment_label} mean={vr.get('mean', '-')} n={vr.get('sampleSize', '-')}"
+                    f" p={vr.get('pValue', 'N/A')}{delta}"
+                )
+            print(line)
+        if analysis_ts and metrics:
+            if analysis_ts >= not_before:
+                print("Results available!")
+                return results
+            print("  Analysis predates this run's sessions -- waiting for a fresh one.")
+        print()
+        time.sleep(60)
+    print("No fresh analysis within the polling window. Check the test later with get_ab_test.")
+    return None
+
+
+def decide_ab_outcome(results: dict) -> str:
+    """Apply the README decision framework to A/B results.
+
+    Returns "REGRESSION" if any evaluator is significantly worse for the
+    treatment, "WIN" if at least one is significantly better and none is
+    significantly worse, otherwise "INCONCLUSIVE". The built-in evaluators used
+    here (GoalSuccessRate, Helpfulness) are higher-is-better.
+    """
+    any_win, any_regression = False, False
+    for m in results.get("evaluatorMetrics", []):
+        name = m.get("evaluatorArn", "").split("/")[-1]
+        cs = m.get("controlStats", {})
+        variants = m.get("variantResults", [])
+        if not variants:
+            print(f"  {name}: no treatment sessions scored yet")
+        for vr in variants:
+            sig = bool(vr.get("isSignificant"))
+            pct = _percent_change(cs, vr)
+            pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
+            print(
+                f"  {name}: change={pct_str}  significant={sig}  "
+                f"n(control)={cs.get('sampleSize', '-')}  n(treatment)={vr.get('sampleSize', '-')}"
+            )
+            if sig and pct is not None and pct > 0:
+                any_win = True
+            elif sig and pct is not None and pct < 0:
+                any_regression = True
+    if any_regression:
+        return "REGRESSION"
+    if any_win:
+        return "WIN"
+    return "INCONCLUSIVE"
+
+
+def stop_ab_test(ab_test_id: str):
+    """Stop a running or paused A/B test and wait until it reports STOPPED."""
+    try:
+        ab = dp.get_ab_test(abTestId=ab_test_id)
+        if ab.get("executionStatus") in ("RUNNING", "PAUSED"):
+            dp.update_ab_test(abTestId=ab_test_id, executionStatus="STOPPED")
+            for _ in range(20):
+                ab = dp.get_ab_test(abTestId=ab_test_id)
+                if ab.get("executionStatus") == "STOPPED":
+                    break
+                time.sleep(5)
+        print(f"A/B test {ab_test_id}: executionStatus={ab.get('executionStatus')}")
+    except Exception as e:  # noqa: BLE001
+        print(f"Stop skipped: {e}")
+
+
 # ── Cleanup function (also called with --cleanup-only) ────────────────────
+
+
+# Deletes that follow an asynchronous change must wait for it to finish:
+# an online eval config cannot be deleted while UPDATING, and a gateway cannot
+# be deleted while any of its targets still exists (including DELETING ones).
+CLEANUP_WAIT_TIMEOUT_SECONDS = 120
+CLEANUP_WAIT_INTERVAL_SECONDS = 5
+
+
+def _wait_online_eval_settled(ctrl_client, oe_id: str) -> str:
+    """Wait until an online eval config leaves CREATING/UPDATING; return its status."""
+    deadline = time.time() + CLEANUP_WAIT_TIMEOUT_SECONDS
+    while True:
+        status = ctrl_client.get_online_evaluation_config(onlineEvaluationConfigId=oe_id).get("status")
+        if status not in ("CREATING", "UPDATING") or time.time() >= deadline:
+            return status
+        time.sleep(CLEANUP_WAIT_INTERVAL_SECONDS)
+
+
+def _wait_gateway_targets_gone(ctrl_client, gateway_id: str) -> int:
+    """Wait until a gateway lists no targets; return how many remain."""
+    deadline = time.time() + CLEANUP_WAIT_TIMEOUT_SECONDS
+    while True:
+        remaining = len(ctrl_client.list_gateway_targets(gatewayIdentifier=gateway_id).get("items", []))
+        if remaining == 0 or time.time() >= deadline:
+            return remaining
+        time.sleep(CLEANUP_WAIT_INTERVAL_SECONDS)
 
 
 def run_cleanup(state: dict):
@@ -238,23 +406,25 @@ def run_cleanup(state: dict):
                 time.sleep(3)
             _dp.delete_ab_test(abTestId=ab_id)
             print(f"   Deleted: {ab_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 2. Delete online evaluation configs
     for oe_id, label in [
         (state.get("online_eval_id"), "v1"),
+        (state.get("online_eval_target_v1_id"), "v1 canary control"),
         (state.get("online_eval_v2_id"), "v2"),
     ]:
         if not oe_id:
             continue
         print(f"2. Deleting online eval config ({label}): {oe_id}")
         try:
+            _wait_online_eval_settled(_ctrl, oe_id)
             _ctrl.update_online_evaluation_config(onlineEvaluationConfigId=oe_id, executionStatus="DISABLED")
-            time.sleep(2)
+            _wait_online_eval_settled(_ctrl, oe_id)
             _ctrl.delete_online_evaluation_config(onlineEvaluationConfigId=oe_id)
             print(f"   Deleted: {oe_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 3. Delete configuration bundles
@@ -269,7 +439,7 @@ def run_cleanup(state: dict):
         try:
             _ctrl.delete_configuration_bundle(bundleId=b_id)
             print(f"   Deleted: {b_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     # 4. Delete gateway delivery and source
@@ -279,7 +449,7 @@ def run_cleanup(state: dict):
         try:
             _logs.delete_delivery(id=delivery_id)
             print(f"   Deleted delivery: {delivery_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped delivery: {e}")
 
     delivery_source = state.get("delivery_source_name")
@@ -288,7 +458,7 @@ def run_cleanup(state: dict):
         try:
             _logs.delete_delivery_source(name=delivery_source)
             print(f"   Deleted delivery source: {delivery_source}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped delivery source: {e}")
 
     # 5. Delete gateway targets and gateway
@@ -303,16 +473,18 @@ def run_cleanup(state: dict):
             print(f"5. Deleting gateway target ({tname}): {t_id}")
             try:
                 _ctrl.delete_gateway_target(gatewayIdentifier=gateway_id, targetId=t_id)
-                time.sleep(3)
                 print(f"   Deleted: {t_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"   Skipped: {e}")
 
         print(f"5. Deleting gateway: {gateway_id}")
         try:
+            remaining = _wait_gateway_targets_gone(_ctrl, gateway_id)
+            if remaining:
+                print(f"   {remaining} target(s) still attached after {CLEANUP_WAIT_TIMEOUT_SECONDS}s; trying anyway")
             _ctrl.delete_gateway(gatewayIdentifier=gateway_id)
             print(f"   Deleted gateway: {gateway_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped gateway: {e}")
 
     # 6. Delete AgentCore runtimes
@@ -326,7 +498,7 @@ def run_cleanup(state: dict):
         try:
             _ctrl.delete_agent_runtime(agentRuntimeId=rt_id)
             print(f"   Deleted runtime: {rt_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped runtime: {e}")
 
     # 7. Delete IAM roles
@@ -343,7 +515,7 @@ def run_cleanup(state: dict):
                 iam.delete_role_policy(RoleName=role_name, PolicyName=policy)
             iam.delete_role(RoleName=role_name)
             print(f"   Deleted: {role_name}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   Skipped: {e}")
 
     print("\nCleanup complete.")
@@ -384,6 +556,7 @@ else:
         ],
         capture_output=False,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"deploy.py failed with exit code {result.returncode}")
@@ -535,8 +708,31 @@ print("\n" + "=" * 60)
 print("STEP 5a: System Prompt Recommendation")
 print("=" * 60)
 
-now = datetime.now(timezone.utc)
+now = datetime.now(timezone.utc)  # noqa: UP017 - datetime.UTC requires Python 3.11; this sample supports 3.10+
 start_dt = now - timedelta(days=7)
+
+# Trace source for the system prompt recommendation:
+#   - Default: raw agent traces from CloudWatch for the last 7 days.
+#   - With --insights-eval-arn: the insights batch evaluation from insights.py.
+#     The recommendation reads the same sessions Builtin.FailureAnalysis
+#     analyzed. insights.py sends mostly failure-mode sessions, so the
+#     recommendation works from those failing sessions rather than from all
+#     recent traffic.
+if INSIGHTS_EVAL_ARN:
+    sp_agent_traces = {"batchEvaluation": {"batchEvaluationArn": INSIGHTS_EVAL_ARN}}
+    print("Trace source: insights batch evaluation (chained from insights.py)")
+    print(f"  {INSIGHTS_EVAL_ARN}")
+else:
+    sp_agent_traces = {
+        "cloudwatchLogs": {
+            "logGroupArns": [LOG_GROUP_ARN],
+            "serviceNames": [SERVICE_NAME],
+            "startTime": start_dt,
+            "endTime": now,
+        }
+    }
+    print("Trace source: CloudWatch agent traces from the last 7 days")
+    print("  (pass --insights-eval-arn to use the sessions analyzed by insights.py instead)")
 
 sp_rec_resp = dp.start_recommendation(
     name=f"HRSpRec{SUFFIX}",
@@ -544,14 +740,7 @@ sp_rec_resp = dp.start_recommendation(
     recommendationConfig={
         "systemPromptRecommendationConfig": {
             "systemPrompt": {"text": CURRENT_SYSTEM_PROMPT},
-            "agentTraces": {
-                "cloudwatchLogs": {
-                    "logGroupArns": [LOG_GROUP_ARN],
-                    "serviceNames": [SERVICE_NAME],
-                    "startTime": start_dt,
-                    "endTime": now,
-                }
-            },
+            "agentTraces": sp_agent_traces,
             "evaluationConfig": {
                 "evaluators": [{"evaluatorArn": "arn:aws:bedrock-agentcore:::evaluator/Builtin.GoalSuccessRate"}]
             },
@@ -768,7 +957,7 @@ try:
         logType="TRACES",
     )
     print(f"Delivery source created: {DELIVERY_SOURCE_NAME}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Delivery source: {e}")
 
 destinations = logs.describe_delivery_destinations().get("deliveryDestinations", [])
@@ -789,7 +978,7 @@ try:
     )
     DELIVERY_ID = delivery["delivery"]["id"]
     print(f"Delivery created: {DELIVERY_ID}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Delivery: {e}")
     for d in logs.describe_deliveries().get("deliveries", []):
         if d.get("deliverySourceName") == DELIVERY_SOURCE_NAME:
@@ -911,55 +1100,38 @@ for i, prompt in enumerate(GW_PROMPTS):
         else:
             fail += 1
             print(f"  [{i + 1:2d}] ERR {resp.status_code}: {resp.text[:80]}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         fail += 1
         print(f"  [{i + 1:2d}] ERR {e}")
     time.sleep(1)
 
+bundle_last_request_at = datetime.now(timezone.utc)  # noqa: UP017 - datetime.UTC requires Python 3.11; this sample supports 3.10+
 print(f"\nGateway traffic: success={success}, fail={fail}")
 
 # 7f: Poll for A/B test results
-print("\nPolling for config-bundle A/B test results (up to 20 minutes)...")
-bundle_ab_results = None
-for poll in range(25):
-    ab = dp.get_ab_test(abTestId=ABTEST_BUNDLE_ID)
-    results = ab.get("results", {})
-    metrics = results.get("evaluatorMetrics", [])
-    print(f"--- Poll {poll + 1}/25 -- {time.strftime('%H:%M:%S')} ---")
-    print(f"  analysisTimestamp: {results.get('analysisTimestamp', 'none')}")
-    for m in metrics:
-        name = m.get("evaluatorArn", "").split("/")[-1]
-        cs = m.get("controlStats", {})
-        print(f"  {name}: Control mean={cs.get('mean', '-')}", end="")
-        for vr in m.get("variantResults", []):
-            pct = vr.get("percentChange")
-            if pct is None:
-                cm, vm = cs.get("mean"), vr.get("mean")
-                if cm and vm and float(cm) != 0:
-                    pct = (float(vm) - float(cm)) / float(cm) * 100
-            delta = f" change={pct:+.1f}%" if pct is not None else ""
-            print(f"  Treatment mean={vr.get('mean', '-')} p={vr.get('pValue', 'N/A')}{delta}")
-    if results.get("analysisTimestamp") and metrics:
-        bundle_ab_results = results
-        print("Results available!")
-        break
-    print()
-    time.sleep(60)
+print("\nPolling for config-bundle A/B test results (up to 25 minutes)...")
+bundle_ab_results = poll_ab_results(
+    ABTEST_BUNDLE_ID,
+    not_before=bundle_last_request_at + timedelta(minutes=SESSION_TIMEOUT_MINUTES),
+    control_label="Control",
+    treatment_label="Treatment",
+)
 
-# 7g: Promote treatment bundle if it won
-if bundle_ab_results:
-    for m in bundle_ab_results.get("evaluatorMetrics", []):
-        name = m.get("evaluatorArn", "").split("/")[-1]
-        cs_mean = m.get("controlStats", {}).get("mean")
-        for vr in m.get("variantResults", []):
-            sig = vr.get("isSignificant")
-            pct = vr.get("percentChange")
-            if pct is None and cs_mean and vr.get("mean") and float(cs_mean) != 0:
-                pct = (float(vr.get("mean")) - float(cs_mean)) / float(cs_mean) * 100
-            pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
-            print(f"\n  {name}: change={pct_str}  significant={sig}")
+# 7g: Stop the test before acting on its results. Only one A/B test can run
+# per gateway, and Step 8 starts a new one on the same gateway.
+print("\nStopping config-bundle A/B test...")
+stop_ab_test(ABTEST_BUNDLE_ID)
 
-    # Promote treatment config into control bundle
+# 7h: Decide and promote. Promotion happens only when the treatment is
+# significantly better on at least one evaluator and worse on none.
+print("\n--- Config-bundle A/B decision ---")
+bundle_decision = decide_ab_outcome(bundle_ab_results) if bundle_ab_results else "NO_RESULTS"
+print(f"Decision: {bundle_decision}")
+
+if bundle_decision == "WIN":
+    # Promote the treatment config into the control bundle as a new version.
+    # parentVersionIds records lineage and rejects the update if someone else
+    # changed the bundle since we read it.
     current = ctrl.get_configuration_bundle(bundleId=CONTROL_BUNDLE_ID)
     CONTROL_BUNDLE_VERSION = current["versionId"]
     promote_resp = ctrl.update_configuration_bundle(
@@ -977,7 +1149,16 @@ if bundle_ab_results:
         clientToken=str(uuid.uuid4()),
     )
     CONTROL_BUNDLE_VERSION_V2 = promote_resp["versionId"]
-    print(f"\nControl bundle promoted to version: {CONTROL_BUNDLE_VERSION_V2}")
+    print(f"ACTION: Treatment won. Control bundle promoted to version: {CONTROL_BUNDLE_VERSION_V2}")
+elif bundle_decision == "REGRESSION":
+    print("ACTION: Treatment is significantly worse. Keeping the control bundle; investigate the treatment.")
+elif bundle_decision == "INCONCLUSIVE":
+    print("ACTION: No significant difference (p >= 0.05). Keeping the control bundle unchanged.")
+    print("        Collect more sessions before promoting. With ~10 sessions this is the expected outcome.")
+    print("        Once T1 wins, promotion is one update_configuration_bundle call on the control bundle")
+    print("        with the treatment config and parentVersionIds=[<current control version>].")
+else:
+    print("ACTION: No fresh results yet. Keeping the control bundle unchanged.")
 
 # ── Step 8: A/B test — target-based routing ───────────────────────────────
 
@@ -1004,6 +1185,7 @@ else:
         ],
         capture_output=False,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"deploy.py (v2) failed with exit code {result.returncode}")
@@ -1059,20 +1241,37 @@ ONLINE_EVAL_V2_ID = online_eval_v2_resp["onlineEvaluationConfigId"]
 ONLINE_EVAL_V2_ARN = online_eval_v2_resp["onlineEvaluationConfigArn"]
 print(f"v2 online eval config: {ONLINE_EVAL_V2_ID}")
 
-# 8d: Stop bundle A/B test and create target-based A/B test
-print("Stopping config-bundle A/B test...")
-try:
-    ab = dp.get_ab_test(abTestId=ABTEST_BUNDLE_ID)
-    if ab.get("executionStatus") in ("RUNNING", "PAUSED"):
-        dp.update_ab_test(abTestId=ABTEST_BUNDLE_ID, executionStatus="STOPPED")
-        for i in range(20):
-            ab = dp.get_ab_test(abTestId=ABTEST_BUNDLE_ID)
-            if ab.get("executionStatus") == "STOPPED":
-                break
-            time.sleep(5)
-except Exception as e:
-    print(f"Stop skipped: {e}")
+# 8c (cont.): Create a dedicated online eval config for the v1 (control) side.
+# Variant names are fixed to "C" and "T1" by the API, so the only way to keep
+# this test's control scores separate from the Step 7 test is to give it its
+# own online eval config. Reusing the Step 7 config returned that test's
+# results unchanged for this one.
+online_eval_tgt_v1_resp = ctrl.create_online_evaluation_config(
+    onlineEvaluationConfigName=f"HROnlineEvalTgtV1{SUFFIX}",
+    description="HR Assistant v1 online evaluation (control side of target-based routing)",
+    dataSourceConfig={
+        "cloudWatchLogs": {
+            "logGroupNames": [LOG_GROUP],
+            "serviceNames": [SERVICE_NAME],
+        }
+    },
+    evaluators=[
+        {"evaluatorId": "Builtin.GoalSuccessRate"},
+        {"evaluatorId": "Builtin.Helpfulness"},
+    ],
+    rule={
+        "samplingConfig": {"samplingPercentage": 100.0},
+        "sessionConfig": {"sessionTimeoutMinutes": SESSION_TIMEOUT_MINUTES},
+    },
+    evaluationExecutionRoleArn=ROLE_ARN,
+    enableOnCreate=True,
+    clientToken=str(uuid.uuid4()),
+)
+ONLINE_EVAL_TARGET_V1_ID = online_eval_tgt_v1_resp["onlineEvaluationConfigId"]
+ONLINE_EVAL_TARGET_V1_ARN = online_eval_tgt_v1_resp["onlineEvaluationConfigArn"]
+print(f"v1 canary-control online eval config: {ONLINE_EVAL_TARGET_V1_ID}")
 
+# 8d: Create target-based A/B test (the Step 7 test was already stopped in 7g)
 abtest_target_resp = dp.create_ab_test(
     name=f"HRTargetAB{SUFFIX}",
     description="HR Assistant: phased rollout v1 (90%) vs v2 (10%)",
@@ -1081,7 +1280,7 @@ abtest_target_resp = dp.create_ab_test(
     enableOnCreate=True,
     evaluationConfig={
         "perVariantOnlineEvaluationConfig": [
-            {"name": "C", "onlineEvaluationConfigArn": ONLINE_EVAL_ARN},
+            {"name": "C", "onlineEvaluationConfigArn": ONLINE_EVAL_TARGET_V1_ARN},
             {"name": "T1", "onlineEvaluationConfigArn": ONLINE_EVAL_V2_ARN},
         ]
     },
@@ -1115,8 +1314,12 @@ for i in range(30):
 
 print(f"\n90% -> {TARGET_NAME} (v1)   10% -> {TARGET_NAME_V2} (v2 canary)")
 
-# 8e: Send traffic
-GW_INVOKE_URL_V2 = f"{GATEWAY_URL}/{TARGET_NAME_V2}/invocations"
+# 8e: Send traffic. Every request goes to the control target's path
+# (/HRAgentV1/invocations). The A/B test's gatewayFilter intercepts only that
+# path, and the gateway splits each new session 90/10 between v1 and v2.
+# Calling /HRAgentV2/invocations directly would bypass the split entirely.
+# 20 sessions keeps the step short; expect roughly 18 on v1 and 2 on v2, which
+# shows the routing but is far too few for statistical significance.
 TARGET_PROMPTS = [
     "Employee ID: EMP-001. Check my PTO balance and submit a request for 2026-11-24 to 2026-11-28.",
     "Employee ID: EMP-042. I have a payroll dispute. Can you escalate this to an HR manager?",
@@ -1128,16 +1331,26 @@ TARGET_PROMPTS = [
     "Employee ID: EMP-001. Can I take PTO before I've fully accrued the days?",
     "Employee ID: EMP-042. I need a dental claim reviewed — can you escalate?",
     "Employee ID: EMP-001. What vision insurance benefits do we have?",
+    "Employee ID: EMP-002. What is my current PTO balance?",
+    "Employee ID: EMP-042. My December 2025 pay stub looks wrong. Who can review it?",
+    "Employee ID: EMP-001. What does the code of conduct say about outside employment?",
+    "Employee ID: EMP-002. Submit a PTO request from 2026-10-05 to 2026-10-07 for a family event.",
+    "Employee ID: EMP-042. How much does the company contribute to my 401k?",
+    "Employee ID: EMP-001. I was denied a remote work request. Can someone in HR look at it?",
+    "Employee ID: EMP-002. What life insurance coverage do I get?",
+    "Employee ID: EMP-042. Can I work from another country for two weeks?",
+    "Employee ID: EMP-001. Show me my January 2026 pay stub and explain the 401k deduction.",
+    "Employee ID: EMP-002. I need to report a safety concern at the office. What should I do?",
 ]
 
+print(f"Sending {len(TARGET_PROMPTS)} sessions to /{TARGET_NAME}/invocations (gateway applies the 90/10 split)...")
 success, fail = 0, 0
 for i, prompt in enumerate(TARGET_PROMPTS):
     sid = str(uuid.uuid4())
-    invoke_url = GW_INVOKE_URL if i % 2 == 0 else GW_INVOKE_URL_V2
     body = json.dumps({"prompt": prompt, "sessionId": sid})
     req = AWSRequest(
         method="POST",
-        url=invoke_url,
+        url=GW_INVOKE_URL,
         data=body,
         headers={
             "Content-Type": "application/json",
@@ -1146,61 +1359,46 @@ for i, prompt in enumerate(TARGET_PROMPTS):
     )
     SigV4Auth(credentials, "bedrock-agentcore", REGION).add_auth(req)
     try:
-        resp = http_requests.post(invoke_url, data=body, headers=dict(req.headers), timeout=120)
+        resp = http_requests.post(GW_INVOKE_URL, data=body, headers=dict(req.headers), timeout=120)
         if resp.status_code == 200:
             success += 1
             print(f"  [{i + 1:2d}] OK  {sid[:8]}...")
         else:
             fail += 1
             print(f"  [{i + 1:2d}] ERR {resp.status_code}: {resp.text[:80]}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         fail += 1
         print(f"  [{i + 1:2d}] ERR {e}")
     time.sleep(1)
 
+target_last_request_at = datetime.now(timezone.utc)  # noqa: UP017 - datetime.UTC requires Python 3.11; this sample supports 3.10+
 print(f"\nTarget traffic: success={success}, fail={fail}")
 
-# 8f: Poll for target A/B results
-print("\nPolling for target-based A/B test results (up to 20 minutes)...")
-for poll in range(25):
-    ab = dp.get_ab_test(abTestId=ABTEST_TARGET_ID)
-    results = ab.get("results", {})
-    metrics = results.get("evaluatorMetrics", [])
-    print(f"--- Poll {poll + 1}/25 -- {time.strftime('%H:%M:%S')} ---")
-    print(f"  analysisTimestamp: {results.get('analysisTimestamp', 'none')}")
-    for m in metrics:
-        name = m.get("evaluatorArn", "").split("/")[-1]
-        cs = m.get("controlStats", {})
-        print(f"  {name}: v1 mean={cs.get('mean', '-')}", end="")
-        for vr in m.get("variantResults", []):
-            pct = vr.get("percentChange")
-            if pct is None:
-                cm, vm = cs.get("mean"), vr.get("mean")
-                if cm and vm and float(cm) != 0:
-                    pct = (float(vm) - float(cm)) / float(cm) * 100
-            delta = f" change={pct:+.1f}%" if pct is not None else ""
-            print(f"  v2 mean={vr.get('mean', '-')} p={vr.get('pValue', 'N/A')}{delta}")
-    if results.get("analysisTimestamp") and metrics:
-        print("Target A/B results available!")
-        for m in metrics:
-            name = m.get("evaluatorArn", "").split("/")[-1]
-            cs_mean = m.get("controlStats", {}).get("mean")
-            for vr in m.get("variantResults", []):
-                sig = vr.get("isSignificant")
-                pct = vr.get("percentChange")
-                if pct is None and cs_mean and vr.get("mean") and float(cs_mean) != 0:
-                    pct = (float(vr.get("mean")) - float(cs_mean)) / float(cs_mean) * 100
-                pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
-                print(f"  {name}: change={pct_str}  significant={sig}")
-                if sig and pct is not None and pct > 0:
-                    print("    ACTION: Ramp to 50%, then 100% cutover to v2")
-                elif sig and pct is not None and pct < 0:
-                    print("    ACTION: Halt rollout; keep v1, investigate v2")
-                else:
-                    print("    ACTION: Continue sending traffic to accumulate sample size")
-        break
-    print()
-    time.sleep(60)
+# 8f: Poll for target A/B results. The n= values show how the gateway split
+# the sessions between v1 (C) and v2 (T1).
+print("\nPolling for target-based A/B test results (up to 25 minutes)...")
+target_ab_results = poll_ab_results(
+    ABTEST_TARGET_ID,
+    not_before=target_last_request_at + timedelta(minutes=SESSION_TIMEOUT_MINUTES),
+    control_label="v1",
+    treatment_label="v2",
+)
+
+# 8g: Rollout decision (README "Phased Rollout"). The test keeps running so the
+# canary can collect more sessions; cleanup.py stops and deletes it.
+print("\n--- Target-based A/B decision ---")
+target_decision = decide_ab_outcome(target_ab_results) if target_ab_results else "NO_RESULTS"
+print(f"Decision: {target_decision}")
+if target_decision == "WIN":
+    print("ACTION: v2 is significantly better. Ramp to 50% (update_ab_test with new weights),")
+    print("        then stop the test and route all traffic to v2.")
+elif target_decision == "REGRESSION":
+    print("ACTION: v2 is significantly worse. Halt the rollout: stop the test and keep v1.")
+elif target_decision == "INCONCLUSIVE":
+    print("ACTION: No significant difference yet. Keep the 90/10 split and keep sending traffic.")
+    print("        A ~2-session canary cannot reach significance; this is the expected outcome here.")
+else:
+    print("ACTION: No fresh results yet. Keep the canary running and check get_ab_test later.")
 
 print("\n" + "=" * 60)
 print("Optimization workflow complete.")

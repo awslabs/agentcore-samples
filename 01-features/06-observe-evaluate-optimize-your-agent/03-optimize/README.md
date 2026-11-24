@@ -32,7 +32,7 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
 
 - AWS account with Bedrock AgentCore access enabled
 - AWS CLI configured: `aws configure` (or set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`)
-- IAM caller permissions:
+- IAM caller permissions (see [optimization prerequisites](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/optimization-prereqs.html)):
   - `bedrock-agentcore:GetConfigurationBundle*`, `ListConfigurationBundleVersions`, `CreateConfigurationBundle`, `UpdateConfigurationBundle`, `DeleteConfigurationBundle`
   - `bedrock-agentcore:StartRecommendation`, `GetRecommendation`
   - `bedrock-agentcore:StartABTest`, `StopABTest`, `GetABTest`, `DeleteABTest`, `ListABTests`
@@ -40,9 +40,23 @@ End-to-end optimization workflow for an HR Assistant agent on Amazon Bedrock Age
   - `iam:CreateRole`, `AttachRolePolicy`, `PassRole` to create the execution role for the A/B test
   - `bedrock:InvokeModel`, `s3:*`, `ecr:*`, `xray:*`
 - Python 3.10+
+- Optional, only for the [AgentCore CLI Examples](#agentcore-cli-examples): Node.js 20+ and AgentCore CLI v0.30.0 (`npm install -g @aws/agentcore@0.30.0`). The Python scripts do not use the CLI.
 - Access to Amazon Bedrock models (Nova Lite) in your region
 
 > **Timing note:** CloudWatch ingestion takes 2-3 minutes after invoking the agent. Batch evaluations take 1-5 minutes. Recommendations take 2-5 minutes. Budget ~45 minutes for the full workflow.
+
+### Running This in Workshop Studio
+
+- **Region is fixed by the event, not by you.** `deploy.py`, `invoke.py`, `optimize.py`, `cleanup.py`, and `insights.py` all resolve their region from `$AWS_DEFAULT_REGION` (falling back to `us-east-1` if unset) the first time they create a runtime, and from the runtime's own recorded region on every call after that -- so once `deploy.py` has run once for a given `--name`, every other script follows it automatically. Confirm Amazon Bedrock Optimization is available in the event's region before starting; it is a **preview** feature at the time of writing.
+- **Pre-provisioned lab roles** may not include `iam:CreateRole`/`PassRole` (needed by `deploy.py` to create the per-agent execution role) or the permissions listed above for ConfigurationBundles, Recommendations, and ABTesting. If any script fails with `AccessDenied`, check the lab role's attached policies before assuming it's a code issue.
+- **Transaction Search must be enabled** for the agent's OTel spans to land in the `aws/spans` log group that Insights and Recommendations read from. If a workshop account doesn't have it pre-enabled, see [Enable transaction search](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html) in the CloudWatch User Guide.
+- **Amazon Nova Lite** is used by the built-in evaluators and recommendations; confirm it's enabled for the account/region before running `optimize.py`.
+
+### Further Reading
+
+- [Optimizing production agents with Amazon Bedrock AgentCore Observability](https://aws.amazon.com/blogs/machine-learning/optimizing-production-agents-with-amazon-bedrock-agentcore-observability/)
+- [Introducing Agent Quality Optimization in AgentCore (preview)](https://aws.amazon.com/blogs/machine-learning/introducing-agent-quality-optimization-in-agentcore-now-in-preview/)
+- [Optimizing agent system prompts with Amazon Bedrock AgentCore](https://aws.amazon.com/blogs/machine-learning/optimizing-agent-system-prompts-with-amazon-bedrock-agentcore/)
 
 ## Quick Start
 
@@ -61,9 +75,32 @@ python insights.py --name HRAssistV1 --generate-traces
 # Run the full optimization workflow
 python optimize.py --name HRAssistV1
 
+# [Optional] Chain insights into the system prompt recommendation
+# (insights.py prints this command, with the ARN filled in, when it finishes)
+python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
+
 # Clean up all resources
 python cleanup.py --name HRAssistV1
 ```
+
+## Sample Prompts
+
+Prompts you can send through `invoke.py --name HRAssistV1 --prompt "..."` (or via `agentcore invoke`, Step 2 below) to exercise the HR Assistant that the rest of this workflow evaluates and optimizes:
+
+**Prompt**: `Employee ID: EMP-001. What is my current PTO balance?`
+**Expected Behavior**: Agent calls `get_pto_balance` and reports the exact remaining days.
+
+**Prompt**: `Employee ID: EMP-001. Please submit a PTO request from 2026-06-01 to 2026-06-05 for a family vacation.`
+**Expected Behavior**: Agent calls `submit_pto_request` and confirms the request with a ticket/reference.
+
+**Prompt**: `Employee ID: EMP-042. Tell me about the 401k plan -- how much does the company match?`
+**Expected Behavior**: Agent calls `get_benefits_summary` and states the match percentage.
+
+**Prompt**: `Employee ID: EMP-002. What is the parental leave policy for primary caregivers?`
+**Expected Behavior**: Agent calls `lookup_hr_policy` and summarizes the policy.
+
+**Prompt**: `Employee ID: EMP-999. What is my current PTO balance?`
+**Expected Behavior**: Agent calls `get_pto_balance`, gets an "employee not found" tool error, and reports it clearly -- this is one of the failure modes `insights.py --generate-traces` sends deliberately so `FailureAnalysis` has something to cluster.
 
 ## AgentCore CLI Examples
 
@@ -77,7 +114,7 @@ node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
   || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
 agentcore --version | grep -q '^0\.' \
   || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
-agentcore --version   # 0.20.1 or later
+agentcore --version   # should print 0.30.0
 ```
 
 ### Step 1: Deploy the HR Assistant
@@ -115,7 +152,7 @@ agentcore run batch-evaluation \
 
 ### Step 3: Run Insights
 
-After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`.
+After generating traffic, run insights to understand which sessions are failing and why before optimizing. Insights come from the `Builtin.FailureAnalysis` insight evaluator, which runs in a standard batch evaluation alongside other evaluators such as `Builtin.GoalSuccessRate`. The CLI insights commands require an `agentcore` project with a deployed runtime (v0.30.0+).
 
 ```bash
 # Run FailureAnalysis together with GoalSuccessRate over the agent's sessions:
@@ -235,6 +272,11 @@ agentcore add online-eval \
   --enable-on-create
 agentcore deploy
 
+# Register named endpoints for each runtime version (required for target-based mode)
+agentcore add runtime-endpoint --runtime HRAssistant   --name v1
+agentcore add runtime-endpoint --runtime HRAssistantV2 --name v2
+agentcore deploy
+
 # Create A/B test with target-based routing (90/10 canary)
 agentcore add ab-test \
   --name HRTargetABTest \
@@ -300,6 +342,8 @@ dp.start_batch_evaluation(
     },
 )
 ```
+
+`Builtin.FailureAnalysis` is an insight evaluator: like any session-level evaluator it scores each session, and it also groups the failures it finds across sessions into insights, each with root causes, suggested fixes, and the spans where the failures occurred. It is currently the only insight evaluator.
 
 `Builtin.FailureAnalysis` works in three steps:
 
@@ -387,7 +431,16 @@ Example output from `python insights.py --generate-traces` (trimmed). The servic
 
 ### Chaining Insights into Recommendations
 
-Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures:
+Pass the insights batch evaluation ARN to a recommendation to generate a system prompt that targets the identified failures.
+
+With the Python scripts, run `insights.py` first. It ends by printing the `optimize.py` command with its batch evaluation ARN. Passing `--insights-eval-arn` makes Step 5a read that batch evaluation instead of the last 7 days of raw CloudWatch traces. The rest of the workflow (tool description recommendation, bundles, A/B tests) is unchanged.
+
+```bash
+python insights.py --name HRAssistV1 --generate-traces
+python optimize.py --name HRAssistV1 --skip-deploy --insights-eval-arn <batch-evaluation-arn>
+```
+
+The ARN must be in the same account and region as the run; `optimize.py` checks this before creating any resources.
 
 ```bash
 # CLI:
@@ -492,11 +545,17 @@ User --> [gateway] --90%--> [Target HRAgentV1 -> HR runtime v1 (stable)]  --> Cl
 
 **Phased rollout:** 10% canary -> validate no regressions -> 50% ramp -> gather statistical significance -> 100% cutover -> decommission old runtime.
 
-**`gatewayFilter.targetPaths`** restricts the A/B routing rule to requests matching the control target's path, so only traffic for this test is affected.
+**`gatewayFilter.targetPaths`** restricts the A/B routing rule to requests matching the control target's path, so only traffic for this test is affected. For the same reason, `optimize.py` sends all canary traffic to `/HRAgentV1/invocations` and lets the gateway split it. Requests sent straight to `/HRAgentV2/invocations` would bypass the split.
+
+`optimize.py` sends 20 sessions to keep the step short. At 90/10 that is about 18 sessions on v1 and 2 on v2: enough to see the routing in the per-variant `n=` counts, not enough for statistical significance. Each variant uses an online evaluation config created for this test instead of the config from the Step 7 test. When the Step 7 config was reused, this step reported the Step 7 results unchanged as its own.
+
+Both A/B steps ignore any analysis whose `analysisTimestamp` is earlier than the last request plus the session timeout, because an analysis computed that early cannot include this run's sessions. The first analysis after that point can still be partial. Online evaluation keeps scoring sessions and the service republishes the analysis, so the console may later show larger `n` values and different percentages than the script printed. Compare the printed `n=` values with the number of sessions sent to see whether the analysis covers all of them. Promotion follows the [Decision Framework](#decision-framework): the treatment bundle is promoted only when at least one evaluator is significantly better and none is significantly worse. An inconclusive result keeps the control unchanged.
 
 ## Key Concepts
 
 ### From Triage to Optimization
+
+![Recommendations, Configuration Bundles, A/B Testing, Deploy Winner loop](images/ac-optimization.png)
 
 After insights identifies failure patterns, you can feed those findings into the Recommendations API to generate an improved system prompt:
 
@@ -574,3 +633,13 @@ This supports testing both prompt changes and tool description improvements in t
 | **Target-based v2 wins** | Ramp to 50%, then 100% cutover; delete v1 runtime |
 | **Regression detected** | Stop A/B test immediately (`update_ab_test(executionStatus="STOPPED")`), investigate |
 | **Inconclusive** | Continue sending traffic to accumulate sample size (p < 0.05 threshold) |
+
+## Clean Up
+
+```bash
+python cleanup.py --name HRAssistV1
+```
+
+Deletes, in order, any A/B tests, online evaluation configs, configuration bundles, gateway tracing delivery, gateway targets and gateway, AgentCore runtime(s), and IAM execution role(s) recorded in `optimize_state_{name}.json` (or `agent_state_{name}.json` if that's the only state file present, covering just the runtime and role). Each deletion is wrapped so a resource that's already gone or was never created is skipped rather than aborting the run -- safe to run after a partial or interrupted `optimize.py`. It does not delete the S3 deployment package or bucket that `deploy.py` creates.
+
+If you ran the [AgentCore CLI Examples](#agentcore-cli-examples) instead, use Step 7's `agentcore remove`/`agentcore stop` commands in that section -- `cleanup.py` only tears down resources created by the Python scripts.
