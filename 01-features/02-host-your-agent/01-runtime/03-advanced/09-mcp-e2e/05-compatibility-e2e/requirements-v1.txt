@@ -1,0 +1,3 @@
+# The existing server stays on MCP Python SDK v1, which speaks MCP 2025-11-25 and earlier.
+# mcp 2.x renamed FastMCP to MCPServer, so this pin is what keeps the old import working.
+mcp>=1.30,<2

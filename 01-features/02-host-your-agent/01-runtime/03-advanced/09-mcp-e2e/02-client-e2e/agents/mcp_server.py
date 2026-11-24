@@ -3,7 +3,7 @@
 A 2026-07-28 client gets `resultType: input_required` with the questions, answers them, and retries the
 same call with `inputResponses` and the sealed `requestState`. No session or open stream is needed
 between rounds, so each round can reach a different microVM. Earlier clients get the questions as
-server-to-client requests mid-call, which needs AgentCore Runtime's stateful mode.
+server-to-client requests mid-call, which needs stateful mode (05-compatibility-e2e).
 """
 
 from __future__ import annotations

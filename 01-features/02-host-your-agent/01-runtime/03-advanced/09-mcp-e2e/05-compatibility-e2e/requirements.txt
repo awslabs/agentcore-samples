@@ -1,0 +1,5 @@
+# The server's dependencies. deploy.py installs them for arm64 Python 3.13 into the code zip.
+# MCP Python SDK v2 answers MCP 2026-07-28 and earlier clients.
+mcp>=2.3,<3
+# boto3 reads the shared requestState key from AWS Secrets Manager.
+boto3
