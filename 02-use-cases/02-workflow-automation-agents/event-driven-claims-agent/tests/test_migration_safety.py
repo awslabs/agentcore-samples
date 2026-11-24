@@ -56,13 +56,27 @@ class FreshTests(unittest.TestCase):
         extra = json.loads(json.dumps(original))
         extra["credentials"].append(dict(extra["credentials"][0], name="unowned"))
         variants.append(extra)
-        secret = json.loads(json.dumps(original))
-        secret["credentials"][0]["clientSecretRef"] = {"secretId": "unowned"}
-        variants.append(secret)
+        external_reference_config = json.loads(json.dumps(original))
+        external_reference_config["credentials"][0]["clientSecretRef"] = {"secretId": "unowned"}
+        variants.append(external_reference_config)
         for value in variants:
             path.write_text(json.dumps(value))
             with self.assertRaises(ValueError):
                 lifecycle.load(self.root)
+
+    def test_invalid_stored_reference_is_refused_without_overwriting_journal(self):
+        state = self.configure()
+        path = self.root / ".claims-v1.json"
+        original = path.read_bytes()
+        state["secret_arn"] = "not-a-resource-reference"
+        with self.assertRaisesRegex(ValueError, "ARN reference"):
+            lifecycle.save(self.root, state)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(path.with_suffix(".tmp").exists())
+        path.write_text(json.dumps(state))  # Synthetic invalid input, not credential material.
+        with self.assertRaisesRegex(ValueError, "ARN reference"):
+            lifecycle.load(self.root)
+        self.assertEqual(json.loads(path.read_text()), state)
 
     def test_all_old_state_refused_without_overwrite(self):
         for name in (
@@ -264,7 +278,7 @@ class FreshTests(unittest.TestCase):
             phase="auth-ready",
             provider_arn="owned-provider-arn",
             pool_id="us-west-2_owned",
-            secret_arn="owned-secret-arn",
+            secret_arn="arn:aws:secretsmanager:us-west-2:111122223333:secret:owned-abcdef",
         )
         control = MagicMock()
         control.get_oauth2_credential_provider.return_value = {"credentialProviderArn": "owned-provider-arn"}
@@ -285,7 +299,7 @@ class FreshTests(unittest.TestCase):
             phase="auth-ready",
             provider_arn="owned-provider-arn",
             pool_id="us-west-2_owned",
-            secret_arn="owned-secret-arn",
+            secret_arn="arn:aws:secretsmanager:us-west-2:111122223333:secret:owned-abcdef",
         )
         clients = MagicMock()
         for method in ("get_oauth2_credential_provider", "describe_user_pool", "describe_secret"):

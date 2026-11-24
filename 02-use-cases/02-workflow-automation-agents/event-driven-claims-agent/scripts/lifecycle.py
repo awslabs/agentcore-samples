@@ -8,6 +8,7 @@ notifications. A failed/uncertain operation keeps its journal and stops.
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -23,7 +24,23 @@ PROVIDER_READY_INTERVAL_SECONDS = 5
 PROVIDER_READY_TIMEOUT_SECONDS = 120
 
 
+def credential_storage_reference(reference, state):
+    """Validate a same-target ARN reference; this never retrieves a credential value."""
+    prefix = f"arn:aws:secretsmanager:{state['region']}:{state['account']}:secret:"
+    if (
+        not isinstance(reference, str)
+        or not reference.startswith(prefix)
+        # Service-managed Identity names can contain '!'; all references must
+        # include Secrets Manager's six-character generated ARN suffix.
+        or not re.fullmatch(r"[A-Za-z0-9/_+=.@!-]{1,512}-[A-Za-z0-9]{6}", reference[len(prefix) :])
+    ):
+        raise ValueError("Invalid credential storage ARN reference; ownership journal retained")
+    return reference
+
+
 def save(root, state):
+    if "secret_arn" in state:
+        credential_storage_reference(state["secret_arn"], state)
     path = root / ".claims-v1.json"
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state, indent=2) + "\n")
@@ -32,6 +49,8 @@ def save(root, state):
 
 def load(root):
     state = json.loads((root / ".claims-v1.json").read_text())
+    if "secret_arn" in state:
+        credential_storage_reference(state["secret_arn"], state)
     spec = json.loads((root / "agentcore/agentcore.json").read_text())
     targets = json.loads((root / "agentcore/aws-targets.json").read_text())
     expected = [{"name": state["target"], "account": state["account"], "region": state["region"]}]
@@ -144,14 +163,17 @@ def setup(root, state, clients):
     # Persist every returned ID before polling or interpreting optional status.
     # A failed/malformed readiness response must not erase ownership evidence.
     state["provider_arn"] = provider["credentialProviderArn"]
-    secret_arn = provider.get("clientSecretArn", {}).get("secretArn")
-    if secret_arn:
-        state["secret_arn"] = secret_arn
     state["provider_status"] = provider.get("status")
     state["phase"] = "waiting-provider"
+    save(root, state)  # Keep the returned provider ID even if its reference is malformed.
+    descriptor = provider.get("clientSecretArn")
+    storage_reference = credential_storage_reference(
+        descriptor.get("secretArn") if isinstance(descriptor, dict) else None, state
+    )
+    # Preserve the existing journal/CLI schema: secret_arn holds a resource ARN,
+    # not the Cognito ClientSecret value passed to Identity above.
+    state["secret_arn"] = storage_reference
     save(root, state)
-    if not secret_arn:
-        raise ValueError("Provider returned no secret ARN; ownership journal retained")
     if provider.get("status") not in (None, "CREATING", "READY"):
         raise ValueError("Provider creation is not ready; ownership journal retained")
     wait_for_provider_ready(root, state, control)

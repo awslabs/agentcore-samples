@@ -112,6 +112,65 @@ class OAuthReadinessTests(unittest.TestCase):
         self.control.delete_oauth2_credential_provider.assert_not_called()
         self.control.update_oauth2_credential_provider.assert_not_called()
 
+    def test_malformed_credential_reference_never_reaches_journal_or_poll(self):
+        invalid = [
+            "RAW-VALUE-MUST-NOT-BE-JOURNALED",
+            self.secret_arn.replace("111122223333", "999988887777"),
+            self.secret_arn.replace("us-west-2", "us-east-1"),
+            self.secret_arn.replace(":secretsmanager:", ":s3:"),
+            self.secret_arn + "\n",
+            self.secret_arn.removesuffix("-abcdef"),
+        ]
+        for reference in invalid:
+            with self.subTest(reference_kind=invalid.index(reference)):
+                self.state["phase"] = "configured"
+                self.state.pop("secret_arn", None)
+                self.setup_sequence(["READY"])
+                reply = self.control.create_oauth2_credential_provider.return_value
+                reply["clientSecretArn"] = {"secretArn": reference}
+                self.control.get_oauth2_credential_provider.side_effect = [
+                    ClientError({"Error": {"Code": "ResourceNotFoundException", "Message": "absent"}}, "Get"),
+                    self.response("GetOauth2CredentialProvider", "READY"),
+                ]
+                with self.assertRaises(ValueError):
+                    lifecycle.setup(self.root, self.state, self.clients)
+                saved = json.loads((self.root / ".claims-v1.json").read_text())
+                self.assertEqual(saved["provider_arn"], self.provider_arn)
+                self.assertEqual(saved["phase"], "waiting-provider")
+                self.assertNotIn("secret_arn", saved)
+                self.assertNotIn(reference, json.dumps(saved))
+                self.assertEqual(self.control.get_oauth2_credential_provider.call_count, 1)
+                self.assertFalse((self.root / "agentcore/.cli").exists())
+                self.control.delete_oauth2_credential_provider.assert_not_called()
+                self.control.update_oauth2_credential_provider.assert_not_called()
+                self.control.reset_mock()
+
+    def test_invalid_descriptor_keeps_provider_identity_without_serializing_reply(self):
+        for descriptor in (None, [], {"secretArn": 123}, {}):
+            with self.subTest(descriptor_type=type(descriptor).__name__):
+                self.state["phase"] = "configured"
+                self.state.pop("secret_arn", None)
+                self.setup_sequence([])
+                self.control.create_oauth2_credential_provider.return_value["clientSecretArn"] = descriptor
+                with self.assertRaises(ValueError):
+                    lifecycle.setup(self.root, self.state, self.clients)
+                saved = json.loads((self.root / ".claims-v1.json").read_text())
+                self.assertEqual(saved["provider_arn"], self.provider_arn)
+                self.assertEqual(saved["phase"], "waiting-provider")
+                self.assertNotIn("secret_arn", saved)
+                self.assertFalse((self.root / "agentcore/.cli").exists())
+                self.control.reset_mock()
+
+    def test_managed_storage_arn_is_retained_as_a_reference(self):
+        self.secret_arn = (
+            "arn:aws:secretsmanager:us-west-2:111122223333:secret:bedrock-agentcore-identity!fixture/a_+=.@-ABC123"
+        )
+        self.setup_sequence(["READY"])
+        lifecycle.setup(self.root, self.state, self.clients)
+        self.assertEqual(lifecycle.load(self.root)["secret_arn"], self.secret_arn)
+        files = [p.read_text() for p in self.root.rglob("*") if p.is_file()]
+        self.assertNotIn("DO-NOT-PERSIST", "\n".join(files))
+
     def test_status_is_genuinely_modeled_but_optional(self):
         expected = ["CREATING", "CREATE_FAILED", "UPDATING", "UPDATE_FAILED", "READY", "DELETING", "DELETE_FAILED"]
         for operation in ("CreateOauth2CredentialProvider", "GetOauth2CredentialProvider"):
