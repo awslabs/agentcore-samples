@@ -1,59 +1,47 @@
 #!/usr/bin/env python3
 """Retrieve and report online evaluation results from AgentCore.
 
-Usage:
-  python scripts/evaluate.py              # latest results (last 1 hour)
-  python scripts/evaluate.py --hours 24   # last 24 hours of results
-  python scripts/evaluate.py --raw        # print raw JSON (for piping)
-  python scripts/evaluate.py --summary    # aggregate scores only
+Usage (BIND is the explicit project/target/account/region from the README):
+  python scripts/evaluate.py "${BIND[@]}" --hours 1 --summary
+  python scripts/evaluate.py "${BIND[@]}" --raw  # JSON only; not E2E proof
 
 Prerequisites:
-  - CloudWatch Transaction Search enabled (aws observabilityadmin start-telemetry-evaluation)
-  - Stack deployed with SKIP_ONLINE_EVAL=false
+  - CloudWatch Transaction Search enabled (account/region setting; review before deploy)
+  - Stack deployed with a non-empty onlineEvalConfigs array in agentcore.json
   - At least one ticket processed after Transaction Search was enabled
 """
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
 from collections import defaultdict
 
 import boto3
+from botocore.config import Config
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
-STACK_NAME = os.environ.get("STACK_NAME", "AgentCore-ITIncidentAgent-dev")
-EVAL_LOG_PREFIX = "/aws/bedrock-agentcore/evaluations/results/ITIncidentAgent"
 
 
-def find_eval_log_group() -> str:
-    """Find the most recent online evaluation results log group."""
-    logs = boto3.client("logs", region_name=REGION)
-    resp = logs.describe_log_groups(logGroupNamePrefix=EVAL_LOG_PREFIX)
-    groups = resp.get("logGroups", [])
-    if not groups:
-        sys.exit(
-            "❌ No evaluation results log group found.\n"
-            "   Ensure:\n"
-            "   1. CloudWatch Transaction Search is enabled\n"
-            "      (aws observabilityadmin start-telemetry-evaluation --region us-west-2)\n"
-            "   2. SKIP_ONLINE_EVAL=false in .env and stack redeployed\n"
-            "   3. At least one ticket processed after enabling\n"
-            "   4. Wait 2-5 minutes for eval results to appear"
-        )
-    # Use the most recently created log group
-    groups.sort(key=lambda g: g.get("creationTime", 0), reverse=True)
-    return groups[0]["logGroupName"]
+def find_eval_log_group(deployment) -> str:
+    """Use the owned configuration's actual output, never the latest name match."""
+    return deployment.evaluation_config()["outputConfig"]["cloudWatchConfig"]["logGroupName"]
 
 
 def query_eval_results(log_group: str, hours: int = 1) -> list:
     """Query evaluation results from CloudWatch Logs Insights."""
-    logs = boto3.client("logs", region_name=REGION)
-    end = int(time.time() * 1000)
-    start = end - hours * 60 * 60 * 1000
+    if not 1 <= hours <= 168:
+        raise ValueError("Query window must be 1..168 hours")
+    logs = boto3.client(
+        "logs", region_name=REGION, config=Config(connect_timeout=3, read_timeout=5, retries={"total_max_attempts": 1})
+    )
+    # Logs Insights StartQuery uses epoch seconds (not FilterLogEvents milliseconds).
+    end = int(time.time())
+    start = end - hours * 60 * 60
 
-    query = "fields @timestamp, @message | filter name = 'gen_ai.evaluation.result' | sort @timestamp desc | limit 200"
+    query = "fields @timestamp, @message | filter name like /gen_ai.evaluation/ | sort @timestamp desc | limit 1000"
 
     q = logs.start_query(
         logGroupName=log_group,
@@ -62,12 +50,21 @@ def query_eval_results(log_group: str, hours: int = 1) -> list:
         queryString=query,
     )["queryId"]
 
-    # Poll for results
+    # Bound wall time as well as poll count; SDK calls have explicit timeouts.
+    deadline = time.monotonic() + 30
     for _ in range(30):
+        if time.monotonic() >= deadline:
+            logs.stop_query(queryId=q)
+            raise TimeoutError("Evaluation query exceeded bounded wait")
         resp = logs.get_query_results(queryId=q)
-        if resp["status"] in ("Complete", "Failed", "Cancelled"):
+        if resp["status"] == "Complete":
             break
+        if resp["status"] in ("Failed", "Cancelled", "Timeout", "Unknown"):
+            raise RuntimeError(f"Evaluation query did not complete: {resp['status']}")
         time.sleep(1)
+    else:
+        logs.stop_query(queryId=q)
+        raise TimeoutError("Evaluation query exceeded 30 polls")
 
     results = []
     for record in resp.get("results", []):
@@ -85,6 +82,8 @@ def query_eval_results(log_group: str, hours: int = 1) -> list:
                         "session_id": attrs.get("session.id", ""),
                         "evaluator": attrs.get("gen_ai.evaluation.name", ""),
                         "score": attrs.get("gen_ai.evaluation.score.value"),
+                        "status": attrs.get("gen_ai.evaluation.status", ""),
+                        "error": attrs.get("gen_ai.evaluation.error", "") or parsed.get("error", ""),
                         "label": attrs.get("gen_ai.evaluation.score.label", ""),
                         "explanation": attrs.get("gen_ai.evaluation.explanation", ""),
                         "level": attrs.get("gen_ai.evaluation_level", ""),
@@ -92,7 +91,7 @@ def query_eval_results(log_group: str, hours: int = 1) -> list:
                     }
                 )
             except json.JSONDecodeError:
-                pass
+                raise ValueError("Malformed evaluation log record") from None
     return results
 
 
@@ -109,8 +108,8 @@ def print_summary(results: list) -> None:
             by_evaluator[r["evaluator"]].append(r["score"])
 
     # Count sessions
-    sessions = set(r["session_id"] for r in results if r["session_id"])
-    traces = set(r["trace_id"] for r in results if r["trace_id"])
+    sessions = {r["session_id"] for r in results if r["session_id"]}
+    traces = {r["trace_id"] for r in results if r["trace_id"]}
 
     print(f"  Sessions evaluated: {len(sessions)}")
     print(f"  Traces evaluated:   {len(traces)}")
@@ -197,28 +196,36 @@ def _score_bar(score) -> str:
 def main():
     """Parse CLI args and print online evaluation results for the agent."""
     parser = argparse.ArgumentParser(description="Retrieve online evaluation results for IT Incident Response Agent")
+    for name in ("project", "target", "account", "region"):
+        parser.add_argument("--" + name, required=True)
     parser.add_argument("--hours", type=int, default=1, help="Hours back to query (default: 1)")
     parser.add_argument("--raw", action="store_true", help="Print raw JSON")
     parser.add_argument("--summary", action="store_true", help="Show aggregate summary only")
     args = parser.parse_args()
 
-    print()
-    print("═══════════════════════════════════════════════════════════════")
-    print("  Online Evaluation Results — IT Incident Response Agent")
-    print("═══════════════════════════════════════════════════════════════")
-    print()
+    from lifecycle import ROOT, Deployment
 
-    log_group = find_eval_log_group()
-    print(f"  Log group: ...{log_group[-50:]}")
-    print(f"  Time window: last {args.hours} hour(s)")
-    print()
-
+    deployment = Deployment(ROOT, args.project, args.target, args.account, args.region)
+    global REGION
+    REGION = args.region
+    log_group = find_eval_log_group(deployment)
     results = query_eval_results(log_group, args.hours)
+    if not results or any(
+        isinstance(r["score"], bool)
+        or not isinstance(r["score"], (int, float))
+        or not math.isfinite(r["score"])
+        or r.get("error")
+        or r.get("status") not in (None, "", "Complete", "COMPLETED", "SUCCESS")
+        for r in results
+    ):
+        sys.exit("Evaluation results missing or incomplete; this is not successful scoring")
 
     if args.raw:
         print(json.dumps(results, indent=2, default=str))
         return
 
+    print(f"Online evaluation results from {log_group} (last {args.hours} hour(s))")
+    print("Exploratory display only: full E2E requires current-run correlation and all four outcomes.")
     if args.summary:
         print_summary(results)
     else:

@@ -1,51 +1,31 @@
 import {
   AgentCoreApplication,
-  AgentCoreMcp,
+  type AgentCoreApplicationProps,
   type AgentCoreProjectSpec,
-  type AgentCoreMcpSpec,
-  ContainerSourceAssetFromPath,
-  AgentEcrRepository,
-  ContainerBuildProject,
-  ContainerImageBuilder,
+  transformAgentCoreJson,
 } from '@aws/agentcore-cdk';
 import * as cdk from 'aws-cdk-lib';
 import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda_ from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import * as fs from 'fs';
+import { createHash } from 'crypto';
 import { InfraConstruct } from './infra-construct';
-
-export interface HarnessConfig {
-  name: string;
-  executionRoleArn?: string;
-  memoryName?: string;
-  containerUri?: string;
-  hasDockerfile?: boolean;
-  dockerfileName?: string;
-  harnessDir?: string;
-  tools?: { type: string; name: string }[];
-  apiKeyArn?: string;
-}
 
 export interface AgentCoreStackProps extends StackProps {
   /**
    * The AgentCore project specification containing agents, memories, and credentials.
    */
   spec: AgentCoreProjectSpec;
-  /**
-   * The MCP specification containing gateways and servers.
-   */
-  mcpSpec?: AgentCoreMcpSpec;
-  /**
-   * Credential provider ARNs from deployed state, keyed by credential name.
-   */
-  credentials?: Record<string, { credentialProviderArn: string; clientSecretArn?: string }>;
-  /**
-   * Harness role configurations. Each entry creates an IAM execution role for a harness.
-   */
-  harnesses?: HarnessConfig[];
+  /** Absolute sample root for container, Lambda and tool-schema assets. */
+  projectRoot: string;
+  targetName: string;
+  /** Credential provider ARNs populated by CLI pre-deploy identity setup. */
+  credentials?: AgentCoreApplicationProps['credentials'];
   /**
    * Pre-created Bedrock Knowledge Base ID (optional).
    */
@@ -61,8 +41,8 @@ export interface AgentCoreStackProps extends StackProps {
  *
  * The stack integrates:
  * 1. InfraConstruct — DynamoDB, S3, Lambda tools, SNS trigger, observability
- * 2. AgentCoreApplication — Runtime, Memory (from @aws/agentcore-cdk)
- * 3. AgentCoreMcp — Gateway + targets with real Lambda ARNs from step 1
+ * 2. AgentCoreApplication — Runtime, Memory, Gateway, policy and evaluation
+ * 3. Lambda target ARNs patched into the project spec before creating the application
  *
  * This enables single-command deployment via `agentcore deploy`.
  */
@@ -73,18 +53,34 @@ export class AgentCoreStack extends Stack {
   public readonly infra: InfraConstruct;
   /** Jira OAuth provider name (empty string if Jira not configured) */
   private readonly jiraProviderName: string;
+  private jiraProviderArn?: string;
+  private jiraManagedSecretArn?: string;
+  private readonly projectRoot: string;
+  private sdkLayer?: lambda_.LayerVersion;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
 
-    const { spec, mcpSpec, credentials, harnesses, kbId, destroyOnDelete } = props;
+    const { spec, credentials, kbId, destroyOnDelete, projectRoot, targetName } = props;
+    this.projectRoot = projectRoot;
 
     // ─── Step 0: Jira integration (conditional) ───────────────────
-    // Creates Secrets Manager secret + AtlassianOauth2 credential provider
-    // only when JIRA_OAUTH_CLIENT_ID is set in the environment.
+    // References an external secret/version and creates an owned AtlassianOauth2
+    // provider only when JIRA_OAUTH_CLIENT_ID is set.
     this.jiraProviderName = '';
     const jiraClientId = process.env.JIRA_OAUTH_CLIENT_ID || '';
     if (jiraClientId) {
+      if (!process.env.JIRA_RUNTIME_USER_ID || !/^[A-Za-z0-9_-]{1,128}$/.test(process.env.JIRA_RUNTIME_USER_ID)) {
+        throw new Error('JIRA_RUNTIME_USER_ID must identify the approved synthetic federation user');
+      }
+      if (!/^[a-fA-F0-9-]{36}$/.test(process.env.JIRA_CLOUD_ID || '') ||
+          !/^https:\/\/[a-zA-Z0-9-]+\.atlassian\.net$/.test(process.env.JIRA_SITE_URL || '')) {
+        throw new Error('Jira requires an explicit approved JIRA_CLOUD_ID and https Atlassian site');
+      }
+      const jiraTools = (process.env.JIRA_ALLOWED_TOOLS || '').split(/\s+/).filter(Boolean);
+      if (jiraTools.length !== 3 || new Set(jiraTools).size !== 3 || jiraTools.some(t => !/^jira_[A-Za-z0-9_-]+$/.test(t))) {
+        throw new Error('JIRA_ALLOWED_TOOLS must name the three approved issue read/comment/transition tools');
+      }
       this.jiraProviderName = this.createJiraOauthProvider(jiraClientId);
     }
 
@@ -92,68 +88,21 @@ export class AgentCoreStack extends Stack {
     // Creates DynamoDB tables, S3 buckets, Lambda tool functions, SNS trigger.
     // The lambdaArnMap maps gateway target names to their real Lambda ARNs.
     this.infra = new InfraConstruct(this, 'Infra', {
+      projectRoot,
       kbId,
       destroyOnDelete: destroyOnDelete ?? true,
       skipKb: process.env.SKIP_KB === 'true',
     });
 
-    // ─── Step 2: Patch mcpSpec with real Lambda ARNs ───────────────
-    // The agentcore.json has placeholder ARNs. Replace them with the real
-    // function ARNs created by InfraConstruct so the gateway targets point
-    // to the actual Lambda functions.
-    const patchedMcpSpec = mcpSpec ? this.patchMcpSpecArns(mcpSpec, this.infra.lambdaArnMap) : undefined;
-
-    // ─── Step 3: Build container images for harnesses ──────────────
-    const harnessesForCdk = harnesses ? [...harnesses] : [];
-    if (harnesses) {
-      for (let i = 0; i < harnesses.length; i++) {
-        const h = harnesses[i]!;
-        if (h.hasDockerfile && !h.containerUri && h.harnessDir) {
-          const pascalName = h.name.replace(/(^|_)([a-z])/g, (_: string, __: string, c: string) => c.toUpperCase());
-          const sourceAsset = new ContainerSourceAssetFromPath(this, `Harness${pascalName}SourceAsset`, {
-            sourcePath: h.harnessDir,
-          });
-          const ecrRepo = new AgentEcrRepository(this, `Harness${pascalName}EcrRepo`, {
-            projectName: spec.name,
-            agentName: `harness-${h.name}`,
-          });
-          const buildProject = ContainerBuildProject.getOrCreate(this);
-          buildProject.grantPushTo(ecrRepo.repository);
-          sourceAsset.asset.grantRead(buildProject.role);
-
-          const builder = new ContainerImageBuilder(this, `Harness${pascalName}ContainerBuild`, {
-            buildProject,
-            sourceAsset,
-            repository: ecrRepo,
-            dockerfile: h.dockerfileName ?? 'Dockerfile',
-          });
-
-          new CfnOutput(this, `Harness${pascalName}ContainerUriOutput`, {
-            value: builder.containerUri,
-          });
-
-          harnessesForCdk[i] = { ...h, containerUri: builder.containerUri };
-        }
-      }
-    }
-
-    // ─── Step 4: Create AgentCore Application ──────────────────────
-    // Deploys Runtime + Memory + PolicyEngine + OnlineEval using @aws/agentcore-cdk L3 constructs.
-    // All resources declared in agentcore.json are rendered to CloudFormation by the L3 construct.
+    // v1 owns gateways inside AgentCoreApplication. Patch BEFORE construction:
+    // a separate AgentCoreMcp would duplicate gateways and lose policy bindings.
+    const patchedSpec = this.patchLambdaArns(spec, this.infra.lambdaArnMap);
     this.application = new AgentCoreApplication(this, 'Application', {
-      spec,
-      harnesses: harnessesForCdk.length > 0 ? harnessesForCdk : undefined,
+      ...transformAgentCoreJson(patchedSpec, { projectRoot, credentials }),
+      targetName,
     });
 
-    // ─── Step 5: Create AgentCore MCP (Gateway + Targets) ──────────
-    if (patchedMcpSpec?.agentCoreGateways && patchedMcpSpec.agentCoreGateways.length > 0) {
-      new AgentCoreMcp(this, 'Mcp', {
-        projectName: spec.name,
-        mcpSpec: patchedMcpSpec,
-        agentCoreApplication: this.application,
-        credentials,
-        projectTags: spec.tags,
-      });
+    if (patchedSpec.agentCoreGateways.length > 0) {
 
       // ─── Step 5.1: Order GatewayTargets AFTER the gateway role's invoke policy ──
       // ROOT CAUSE: AgentCore validates that the Gateway execution ROLE has an
@@ -216,6 +165,8 @@ export class AgentCoreStack extends Stack {
         cfnRuntime.addPropertyOverride('EnvironmentVariables.GATEWAY_URL', gatewayCfn.getAtt('GatewayUrl'));
       }
 
+      cfnRuntime.addPropertyOverride('EnvironmentVariables.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT',
+        process.env.IT_SAMPLE_EVALUATION_CONTENT === 'synthetic-only' ? 'true' : 'false');
       cfnRuntime.addPropertyOverride('EnvironmentVariables.GUARDRAIL_ID', this.infra.guardrailId);
       cfnRuntime.addPropertyOverride(
         'EnvironmentVariables.GUARDRAIL_VERSION',
@@ -227,15 +178,26 @@ export class AgentCoreStack extends Stack {
       // agentcore.json → runtimes[].envVars[] (static config, not ARN-dependent).
       // Only genuinely ARN/resource-derived env vars remain as imperative overrides here.
 
-      // Auth mode: read from env or default to AWS_IAM
-      const authMode = process.env.GATEWAY_AUTH_MODE || 'AWS_IAM';
+      // Explicit deploy-time overrides take precedence over committed runtime config.
+      const runtimeEnv = Object.fromEntries(
+        spec.runtimes.find(runtime => runtime.name === 'ITIncidentAgent')?.envVars?.map(v => [v.name, v.value]) ?? []
+      );
+      const authMode = process.env.GATEWAY_AUTH_MODE || runtimeEnv.GATEWAY_AUTH_MODE || 'AWS_IAM';
+      const gatewayAuth = patchedSpec.agentCoreGateways.find(g => g.name === 'ITIncidentGateway')?.authorizerType;
+      if (gatewayAuth && authMode !== gatewayAuth) throw new Error('Runtime and Gateway authentication modes must agree');
       cfnRuntime.addPropertyOverride('EnvironmentVariables.GATEWAY_AUTH_MODE', authMode);
       if (authMode === 'CUSTOM_JWT') {
         // New naming: GATEWAY_OAUTH_* (boundary-scoped). Falls back to legacy names.
-        const oauthProvider = process.env.GATEWAY_OAUTH_PROVIDER_NAME || process.env.OAUTH_PROVIDER_NAME || 'auth0-m2m';
-        const oauthAudience = process.env.GATEWAY_OAUTH_AUDIENCE || process.env.GATEWAY_AUDIENCE || '';
+        const oauthProvider = process.env.GATEWAY_OAUTH_PROVIDER_NAME || process.env.OAUTH_PROVIDER_NAME || runtimeEnv.GATEWAY_OAUTH_PROVIDER_NAME || 'auth0-m2m';
+        const oauthAudience = process.env.GATEWAY_OAUTH_AUDIENCE || process.env.GATEWAY_AUDIENCE || runtimeEnv.GATEWAY_OAUTH_AUDIENCE || '';
         cfnRuntime.addPropertyOverride('EnvironmentVariables.GATEWAY_OAUTH_PROVIDER_NAME', oauthProvider);
         cfnRuntime.addPropertyOverride('EnvironmentVariables.GATEWAY_OAUTH_AUDIENCE', oauthAudience);
+        const scopes = (process.env.GATEWAY_OAUTH_SCOPES || runtimeEnv.GATEWAY_OAUTH_SCOPES || '').split(/\s+/).filter(Boolean);
+        const allowed = patchedSpec.agentCoreGateways.find(g => g.name === 'ITIncidentGateway')?.authorizerConfiguration?.customJwtAuthorizer?.allowedScopes ?? [];
+        if (!allowed.length || scopes.length !== allowed.length || scopes.some(s => !allowed.includes(s))) {
+          throw new Error('GATEWAY_OAUTH_SCOPES must match the explicit Gateway allowedScopes');
+        }
+        cfnRuntime.addPropertyOverride('EnvironmentVariables.GATEWAY_OAUTH_SCOPES', scopes.join(' '));
       }
 
       // ─── Jira integration (opt-in) ─────────────────────────────
@@ -245,8 +207,10 @@ export class AgentCoreStack extends Stack {
       if (jiraClientId) {
         cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_MCP_URL', 'https://mcp.atlassian.com/v1/sse');
         cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_SITE_URL', process.env.JIRA_SITE_URL || '');
+        cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_CLOUD_ID', process.env.JIRA_CLOUD_ID!);
         cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_PROJECT_KEY', process.env.JIRA_PROJECT_KEY || 'INC');
         cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_OAUTH_PROVIDER_NAME', this.jiraProviderName || '');
+        cfnRuntime.addPropertyOverride('EnvironmentVariables.JIRA_ALLOWED_TOOLS', process.env.JIRA_ALLOWED_TOOLS || '');
       }
 
       // ─── OBSERVABILITY: OpenTelemetry & X-Ray Configuration ────────
@@ -257,26 +221,27 @@ export class AgentCoreStack extends Stack {
       // Wire the Runtime ARN into the Trigger Lambda so it can invoke the agent
       const runtimeArn = cfnRuntime.getAtt('AgentRuntimeArn').toString();
       this.infra.triggerFn.addEnvironment('AGENT_RUNTIME_ARN', runtimeArn);
+      if (jiraClientId) this.infra.triggerFn.addEnvironment('JIRA_RUNTIME_USER_ID', process.env.JIRA_RUNTIME_USER_ID!);
 
       // Grant the trigger Lambda permission to invoke THIS specific runtime (least privilege)
       // The InvokeAgentRuntime action requires access to both the runtime ARN and its
       // endpoint sub-resource (e.g., .../runtime-endpoint/DEFAULT), hence the /* suffix.
       this.infra.triggerFn.addToRolePolicy(
         new iam.PolicyStatement({
-          actions: ['bedrock-agentcore:InvokeAgentRuntime'],
+          actions: ['bedrock-agentcore:InvokeAgentRuntime', ...(jiraClientId ? ['bedrock-agentcore:InvokeAgentRuntimeForUser'] : [])],
           resources: [runtimeArn, `${runtimeArn}/*`],
         })
       );
     }
 
     // ─── Step 5b: Grant Runtime execution role additional permissions ──
-    // The L3 construct's execution role only has bedrock:InvokeModel and
-    // memory permissions by default. Our agent code also needs:
+    // The L3 role includes model, memory, gateway and telemetry grants. These
+    // additional sample grants are preserved; see migration notes for IAM risks.
+    // Our agent code also needs:
     //   - dynamodb:UpdateItem on Tickets table (write resolution / mark failed)
     //   - bedrock:ApplyGuardrail (PII filtering)
     //   - events:PutEvents (EventBridge emission)
     //   - bedrock-agentcore:GetResourceOauth2Token (Jira 3LO token fetch)
-    //   - logs:StartQuery, logs:GetQueryResults, logs:StopQuery, etc. (CloudWatch Logs Insights)
     // NOTE: X-Ray put-trace permissions are NOT added here — the L3 RuntimeExecutionRole
     // already grants xray:PutTraceSegments / xray:PutTelemetryRecords on '*'.
     // Filter specifically for the Runtime ExecutionRole (not Memory's role).
@@ -296,51 +261,52 @@ export class AgentCoreStack extends Stack {
       const statements = [
         new iam.PolicyStatement({
           sid: 'DynamoDBTicketsAccess',
-          actions: ['dynamodb:UpdateItem', 'dynamodb:GetItem', 'dynamodb:PutItem'],
+          actions: ['dynamodb:UpdateItem', 'dynamodb:GetItem'],
           resources: [this.infra.ticketsTable.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: 'IncidentRecurrenceQuery',
+          actions: ['dynamodb:Query'],
+          resources: [`${this.infra.ticketsTable.tableArn}/index/byRequester`],
         }),
         new iam.PolicyStatement({
           sid: 'GuardrailAccess',
           actions: ['bedrock:ApplyGuardrail'],
-          resources: [`arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`],
+          resources: [`arn:${this.partition}:bedrock:${this.region}:${this.account}:guardrail/${this.infra.guardrailId}`],
         }),
         new iam.PolicyStatement({
           sid: 'EventBridgeAccess',
           actions: ['events:PutEvents'],
-          resources: [`arn:aws:events:${this.region}:${this.account}:event-bus/${this.infra.eventBusName}`],
+          resources: [`arn:${this.partition}:events:${this.region}:${this.account}:event-bus/${this.infra.eventBusName}`],
         }),
-        // ─── OBSERVABILITY: CloudWatch Logs Insights ──
-        // NOTE: X-Ray put-trace permissions (xray:PutTraceSegments / PutTelemetryRecords)
-        // are intentionally NOT granted here — the @aws/agentcore-cdk L3 RuntimeExecutionRole
-        // already grants them on '*'. This statement only adds the Logs Insights *query*
-        // APIs (StartQuery/GetQueryResults/StopQuery) and broadens log-group scope, which
-        // the L3 does not provide.
-        new iam.PolicyStatement({
-          sid: 'CloudWatchLogsInsights',
-          actions: [
-            'logs:FilterLogEvents',
-            'logs:GetLogEvents',
-            'logs:DescribeLogGroups',
-            'logs:DescribeLogStreams',
-            'logs:StartQuery',
-            'logs:GetQueryResults',
-            'logs:StopQuery',
-          ],
-          resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:*`],
-        }),
+        // The application does not query Logs Insights. Operator verification uses
+        // the operator role, not extra account-wide permissions in the runtime.
       ];
 
-      // Jira Identity permissions (only when Jira is configured)
-      // GetResourceOauth2Token supports resource-level scoping to oauth2credentialprovider ARNs.
-      // Scoped to '*' here because the provider ARN is not easily resolvable at synth time
-      // (it's created by a custom resource, not a standard CFN resource with a Ref).
-      // TODO: Scope to specific provider ARN once the Jira OAuth custom resource exports its ARN.
-      if (jiraClientId) {
+      const memory = this.application.memories.get('ITIncidentAgentMemory');
+      if (memory) {
+        // The application uses namespacePath=incidents/<actor>, not a session leaf.
+        // Do not broaden namespace writes or grant reads on another Memory.
+        statements.push(new iam.PolicyStatement({
+          sid: 'CrossSessionIncidentMemoryRead',
+          actions: ['bedrock-agentcore:RetrieveMemoryRecords'],
+          resources: [memory.memoryArn],
+          conditions: { StringLike: { 'bedrock-agentcore:namespacePath': 'incidents/*' } },
+        }));
+      }
+      const identitySecrets = Object.values(credentials ?? {}).map(c => c.clientSecretArn).filter((arn): arn is string => !!arn);
+      if (this.jiraManagedSecretArn) identitySecrets.push(this.jiraManagedSecretArn);
+      if (identitySecrets.length) statements.push(new iam.PolicyStatement({
+        sid: 'ConfiguredIdentitySecretsOnly', actions: ['secretsmanager:GetSecretValue'], resources: identitySecrets,
+      }));
+      if (jiraClientId && this.jiraProviderArn) {
         statements.push(
           new iam.PolicyStatement({
             sid: 'AgentCoreIdentityJiraAccess',
-            actions: ['bedrock-agentcore:GetResourceOauth2Token', 'bedrock-agentcore:GetWorkloadAccessToken'],
-            resources: ['*'],
+            actions: ['bedrock-agentcore:GetResourceOauth2Token'],
+            resources: [this.jiraProviderArn,
+              `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
+              `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/*`],
           })
         );
       }
@@ -363,9 +329,40 @@ export class AgentCoreStack extends Stack {
     // PREREQUISITE: CloudWatch Transaction Search must be enabled at the
     // account level so that OTEL spans land in the `aws/spans` log group
     // (the data source the online eval pipeline reads from). Step 6a below
-    // codifies this so it no longer has to be enabled manually in the console.
+    // verifies observed readiness; shared setup remains account-owner controlled.
     if (spec.onlineEvalConfigs && spec.onlineEvalConfigs.length > 0) {
-      this.enableTransactionSearch();
+      const transactionSearch = this.enableTransactionSearch();
+      for (const evaluation of this.application.onlineEvalConfigs.values()) {
+        evaluation.node.addDependency(transactionSearch);
+      }
+    }
+
+    // Strip unused bootstrap grants from the pinned L3 runtime policy. This
+    // scenario has no configuration bundles, API keys, or runtime secret reads.
+    for (const node of this.application.node.findAll()) {
+      if (node instanceof iam.CfnPolicy && node.node.path.includes('Runtime')) {
+        const original = node.policyDocument;
+        node.policyDocument = cdk.Lazy.any({ produce: () => {
+          const document = this.resolve(original);
+          document.Statement = document.Statement.map((statement: any) => {
+            const actions = (Array.isArray(statement.Action) ? statement.Action : [statement.Action]) as string[];
+            const kept = actions.filter(action => !action.includes('ConfigurationBundle') &&
+              !['secretsmanager:GetSecretValue', 'logs:PutResourcePolicy', 'logs:GetLogEvents', 'logs:FilterLogEvents', 'bedrock-agentcore:CreateWorkloadIdentity',
+                'bedrock-agentcore:GetApiKeyCredential', 'bedrock-agentcore:GetResourceApiKey'].includes(action));
+            if (!kept.length) return undefined;
+            // Bound the L3 OAuth bootstrap to this account/region, never all regions.
+            const result = { ...statement, Action: kept };
+            if (kept.includes('bedrock-agentcore:GetResourceOauth2Token')) {
+              const providers = Object.values(credentials ?? {}).map(c => c.credentialProviderArn);
+              result.Resource = [...providers,
+                `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
+                `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/*`];
+            }
+            return result;
+          }).filter(Boolean);
+          return document;
+        } });
+      }
     }
 
     // ─── Step 7: Stack outputs ─────────────────────────────────────
@@ -376,42 +373,61 @@ export class AgentCoreStack extends Stack {
   }
 
   /**
-   * STEP: OBSERVABILITY — Enable CloudWatch Transaction Search via custom resource.
+   * STEP: OBSERVABILITY — Verify CloudWatch Transaction Search via custom resource.
    *
-   * There is no native CloudFormation type for Transaction Search. This provisions
-   * a custom-resource Lambda that calls the X-Ray control plane to:
-   *   1. Route trace segments to CloudWatch Logs (creates the `aws/spans` log group)
-   *   2. Set the span indexing sampling percentage (100% for full searchability)
+   * Default behavior is read-only, checking ACTIVE routing and actual indexing.
+   * Explicit account-owner approval is required to grant/configure X-Ray writes.
+   * Logs delivery policy preparation is a separate account-owner prerequisite.
    *
    * This is an account- and region-level setting. On stack delete it is intentionally
    * left enabled (other agents in the account may depend on it).
    */
-  private enableTransactionSearch(): void {
-    const projectRoot = path.resolve(process.cwd(), '..', '..');
+  private infrastructureSdk(): lambda_.LayerVersion {
+    if (this.sdkLayer) return this.sdkLayer;
+    const directory = path.join(this.projectRoot, '.lambda-sdk');
+    const manifestFile = path.join(directory, 'manifest.json');
+    if (!fs.existsSync(manifestFile)) throw new Error('Run python scripts/package_sdk.py before synthesis');
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    if (manifest.lock_sha256 !== hash(path.join(this.projectRoot, 'lambdas/sdk-requirements.txt'))) {
+      throw new Error('Infrastructure SDK layer does not match its lock');
+    }
+    for (const [relative, expected] of Object.entries(manifest.files)) {
+      if (path.isAbsolute(relative) || relative.split('/').includes('..') ||
+          hash(path.join(directory, relative)) !== expected) throw new Error('Infrastructure SDK artifact mismatch');
+    }
+    this.sdkLayer = new lambda_.LayerVersion(this, 'InfrastructureSdk', {
+      code: lambda_.Code.fromAsset(directory),
+      compatibleRuntimes: [lambda_.Runtime.PYTHON_3_11, lambda_.Runtime.PYTHON_3_12],
+      description: 'Locked boto3/botocore 1.43.22 for custom resource SDK contracts',
+    });
+    return this.sdkLayer;
+  }
+
+  private enableTransactionSearch(): cdk.CustomResource {
+    const projectRoot = this.projectRoot;
 
     const txnSearchFn = new lambda_.Function(this, 'TransactionSearchFn', {
       runtime: lambda_.Runtime.PYTHON_3_11,
       handler: 'infra.transaction_search.handler',
+      layers: [this.infrastructureSdk()],
       timeout: cdk.Duration.minutes(2),
       memorySize: 256,
       code: lambda_.Code.fromAsset(path.join(projectRoot, 'lambdas')),
     });
 
-    // X-Ray control-plane permissions needed to configure Transaction Search.
+    const allowMutation = process.env.TXN_SEARCH_ALLOW_MUTATION === 'true';
+    const approval = process.env.TXN_SEARCH_ACCOUNT_OWNER_APPROVAL || '';
+    if (allowMutation && approval !== `${this.account}/${this.region}`) {
+      throw new Error('Transaction Search mutation requires exact account-owner approval');
+    }
+    // Read-only by default; Logs delivery policy is an account-owner prerequisite.
     txnSearchFn.addToRolePolicy(
       new iam.PolicyStatement({
         sid: 'TransactionSearchConfig',
         actions: [
-          'xray:UpdateTraceSegmentDestination',
-          'xray:GetTraceSegmentDestination',
-          'xray:UpdateIndexingRule',
-          'xray:GetIndexingRules',
-          // Transaction Search writes spans to a CloudWatch Logs resource policy;
-          // these allow X-Ray to set up the aws/spans log group destination.
-          'logs:CreateLogGroup',
-          'logs:PutResourcePolicy',
-          'logs:DescribeResourcePolicies',
-          'logs:DescribeLogGroups',
+          'xray:GetTraceSegmentDestination', 'xray:GetIndexingRules',
+          ...(allowMutation ? ['xray:UpdateTraceSegmentDestination', 'xray:UpdateIndexingRule'] : []),
         ],
         resources: ['*'],
       })
@@ -421,19 +437,21 @@ export class AgentCoreStack extends Stack {
       onEventHandler: txnSearchFn,
     });
 
-    new cdk.CustomResource(this, 'EnableTransactionSearch', {
+    const resource = new cdk.CustomResource(this, 'EnableTransactionSearch', {
       serviceToken: provider.serviceToken,
       properties: {
         IndexingPercentage: process.env.TXN_SEARCH_INDEXING_PERCENTAGE || '100',
-        // Bump to force re-run on deploy when needed.
-        Version: '1',
+        Account: this.account, Region: this.region,
+        AllowMutation: String(allowMutation), AccountOwnerApproval: approval,
+        Version: '2',
       },
     });
 
     new CfnOutput(this, 'TransactionSearchEnabled', {
       description: 'CloudWatch Transaction Search routes X-Ray spans to the aws/spans log group',
-      value: 'CloudWatchLogs',
+      value: resource.getAttString('Status'),
     });
+    return resource;
   }
 
   /**
@@ -441,24 +459,25 @@ export class AgentCoreStack extends Stack {
    *
    * Iterates through gateway targets of type `lambdaFunctionArn` and replaces
    * any ARN containing "PLACEHOLDER" with the real ARN from the lambdaArnMap.
-   * Targets without a matching real ARN are removed (e.g. query-kb when no KB_ID).
+   * Only query-kb may be omitted, when the KB is explicitly disabled. Unknown
+   * placeholders fail synthesis rather than silently removing tools.
    */
-  private patchMcpSpecArns(mcpSpec: AgentCoreMcpSpec, lambdaArnMap: Record<string, string>): AgentCoreMcpSpec {
-    // Deep-clone to avoid mutating the original
-    const patched = JSON.parse(JSON.stringify(mcpSpec));
+  private patchLambdaArns(spec: AgentCoreProjectSpec, lambdaArnMap: Record<string, string>): AgentCoreProjectSpec {
+    const patched: AgentCoreProjectSpec = structuredClone(spec);
 
-    for (const gateway of patched.agentCoreGateways ?? []) {
-      gateway.targets = (gateway.targets ?? []).filter((target: any) => {
-        if (target.targetType === 'lambdaFunctionArn' && target.lambdaFunctionArn) {
-          const realArn = lambdaArnMap[target.name];
-          if (realArn) {
-            target.lambdaFunctionArn.lambdaArn = realArn;
-            return true;
-          }
-          // No real ARN available (e.g. KB not configured) — remove target
-          return false;
+    for (const gateway of patched.agentCoreGateways) {
+      gateway.targets = gateway.targets.filter(target => {
+        if (target.targetType !== 'lambdaFunctionArn' || !target.lambdaFunctionArn) return true;
+        if (!target.lambdaFunctionArn.lambdaArn.startsWith('PLACEHOLDER_')) return true;
+        const expected = `PLACEHOLDER_${target.name.toUpperCase().replace(/-/g, '_')}`;
+        if (target.lambdaFunctionArn.lambdaArn !== expected) throw new Error(`Unexpected placeholder for ${target.name}`);
+        const realArn = lambdaArnMap[target.name];
+        if (realArn) {
+          target.lambdaFunctionArn.lambdaArn = realArn;
+          return true;
         }
-        return true;
+        if (target.name === 'query-kb' && !this.infra.knowledgeBaseId) return false;
+        throw new Error(`No Lambda ARN for gateway target "${target.name}"`);
       });
     }
 
@@ -468,44 +487,63 @@ export class AgentCoreStack extends Stack {
   /**
    * STEP: IDENTITY — Create Atlassian OAuth2 credential provider (conditional).
    *
-   * Provisions a Secrets Manager secret for the client_secret and a custom
-   * resource that registers an AtlassianOauth2 provider with AgentCore Identity.
+   * References an external Secrets Manager secret/version and registers an owned
+   * AtlassianOauth2 provider with AgentCore Identity. Values are never read at synth.
    * The agent uses @requires_access_token(auth_flow="USER_FEDERATION") at
    * runtime to obtain Jira access tokens — it never sees the secret.
    *
    * Only called when JIRA_OAUTH_CLIENT_ID is set at deploy time.
    */
   private createJiraOauthProvider(clientId: string): string {
-    const projectRoot = path.resolve(process.cwd(), '..', '..');
-    const clientSecret = process.env.JIRA_OAUTH_CLIENT_SECRET || '';
-    const providerName = `${this.stackName.toLowerCase().replace(/[^a-z0-9]/g, '')}_jira_3lo`;
+    const projectRoot = this.projectRoot;
+    const secretArn = process.env.JIRA_OAUTH_SECRET_ARN || '';
+    const secretVersionId = process.env.JIRA_OAUTH_SECRET_VERSION_ID || '';
+    const providerName = `${this.stackName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80)}_jira_3lo`;
+    const partition = this.region.startsWith('us-gov-') ? 'aws-us-gov' : this.region.startsWith('cn-') ? 'aws-cn' : 'aws';
 
-    // Secrets Manager secret for the Atlassian client_secret
-    // SECURITY: In production, store the secret externally (e.g., via AWS CLI or console)
-    // and reference it by ARN instead of passing the value through CloudFormation.
-    // This approach is acceptable for samples/demos only — the secret value will be
-    // visible in the CloudFormation template and cdk.out/ synthesis output.
-    if (!clientSecret) {
-      throw new Error(
-        'JIRA_OAUTH_CLIENT_SECRET is required when JIRA_OAUTH_CLIENT_ID is set. ' +
-          'Set it in .env or as an environment variable.'
-      );
+    if (process.env.JIRA_OAUTH_CLIENT_SECRET ||
+        !secretArn.startsWith(`arn:${partition}:secretsmanager:${this.region}:${this.account}:secret:`) ||
+        !/^[a-zA-Z0-9-]{32,64}$/.test(secretVersionId)) {
+      throw new Error('Jira requires an external same-account/region JIRA_OAUTH_SECRET_ARN and immutable JIRA_OAUTH_SECRET_VERSION_ID; never a plaintext client secret');
     }
-    const jiraSecret = new cdk.aws_secretsmanager.Secret(this, 'JiraOauthSecret', {
-      description:
-        'Atlassian 3LO client_secret (loaded into AgentCore Identity). For production, replace with externally-managed secret.',
-      secretStringValue: cdk.SecretValue.unsafePlainText(JSON.stringify({ client_secret: clientSecret })),
+    const version = new cdk.CfnParameter(this, 'JiraSecretVersionId', {
+      type: 'String', default: secretVersionId, allowedPattern: '[a-zA-Z0-9-]{32,64}',
+      description: 'External Jira secret VersionId; update this parameter for secret-only rotation',
     });
+    new CfnOutput(this, 'JiraExternalSecretArn', { value: secretArn });
+    const ownership = new dynamodb.Table(this, 'JiraProviderOwnership', {
+      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+    });
+    new CfnOutput(this, 'JiraOwnershipTable', { value: ownership.tableName });
 
     // Custom resource Lambda for OAuth provider lifecycle
     const providerFn = new lambda_.Function(this, 'JiraOauthProviderFn', {
       runtime: lambda_.Runtime.PYTHON_3_11,
       handler: 'infra.jira_oauth_provider.handler',
+      layers: [this.infrastructureSdk()],
       timeout: cdk.Duration.minutes(3),
       memorySize: 256,
       code: lambda_.Code.fromAsset(path.join(projectRoot, 'lambdas')),
     });
-    jiraSecret.grantRead(providerFn);
+    providerFn.addEnvironment('OWNERSHIP_TABLE', ownership.tableName);
+    providerFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [ownership.tableArn],
+    }));
+    providerFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'], resources: [secretArn],
+    }));
+    // If the external secret uses a customer CMK, grant decrypt only on that key.
+    if (process.env.JIRA_OAUTH_SECRET_KMS_KEY_ARN) {
+      providerFn.addToRolePolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt'],
+        resources: [process.env.JIRA_OAUTH_SECRET_KMS_KEY_ARN],
+        conditions: { StringEquals: { 'kms:ViaService': `secretsmanager.${this.region}.amazonaws.com`,
+          'kms:EncryptionContext:SecretARN': secretArn } },
+      }));
+    }
     providerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
@@ -514,7 +552,8 @@ export class AgentCoreStack extends Stack {
           'bedrock-agentcore:DeleteOauth2CredentialProvider',
           'bedrock-agentcore:GetOauth2CredentialProvider',
         ],
-        resources: ['*'],
+        resources: [`arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
+          `arn:${this.partition}:bedrock-agentcore:${this.region}:${this.account}:token-vault/default/oauth2credentialprovider/${providerName}-*`],
       })
     );
 
@@ -529,18 +568,21 @@ export class AgentCoreStack extends Stack {
         ProviderName: providerName,
         Vendor: 'AtlassianOauth2',
         ClientId: clientId,
-        SecretArn: jiraSecret.secretArn,
-        Version: '1',
+        SecretArn: secretArn,
+        SecretVersionId: version.valueAsString,
       },
     });
 
     // Outputs for post-deploy setup (callback URL registration)
-    new CfnOutput(this, 'JiraOauthProviderName', { value: providerName });
+    this.jiraProviderArn = jiraCr.getAttString('ProviderArn');
+    this.jiraManagedSecretArn = jiraCr.getAttString('ClientSecretArn');
+    new CfnOutput(this, 'JiraOauthProviderArn', { value: this.jiraProviderArn });
+    new CfnOutput(this, 'JiraOauthProviderName', { value: jiraCr.getAttString('ProviderName') });
     new CfnOutput(this, 'JiraOauthCallbackUrl', {
       value: jiraCr.getAttString('CallbackUrl'),
       description: 'Add this URL to the Atlassian OAuth app allowed callback URLs',
     });
 
-    return providerName;
+    return jiraCr.getAttString('ProviderName');
   }
 }

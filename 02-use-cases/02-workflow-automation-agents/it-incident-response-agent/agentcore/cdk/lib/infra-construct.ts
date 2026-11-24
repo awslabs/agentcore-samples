@@ -31,6 +31,8 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 export interface InfraConstructProps {
+  /** Absolute sample root, independent of the CDK caller's working directory. */
+  projectRoot: string;
   /** Pre-created Bedrock Knowledge Base ID (optional — if provided, skips KB creation) */
   kbId?: string;
   /** Whether to destroy data on stack delete (default: true for dev) */
@@ -71,7 +73,7 @@ export class InfraConstruct extends Construct {
   /** Bedrock KB data source ID (empty if KB skipped). Used to trigger ingestion on deploy. */
   public readonly knowledgeBaseDataSourceId: string = '';
 
-  constructor(scope: Construct, id: string, props: InfraConstructProps = {}) {
+  constructor(scope: Construct, id: string, props: InfraConstructProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
@@ -81,9 +83,7 @@ export class InfraConstruct extends Construct {
     // ─── Bedrock Guardrail ─────────────────────────────────────────
     this.guardrailId = props.guardrailId ?? '';
 
-    // Project root: process.cwd() is always agentcore/cdk/ (set by CDK CLI)
-    // Go up 2 levels: agentcore/cdk/ → agentcore/ → project root
-    const projectRoot = path.resolve(process.cwd(), '..', '..');
+    const projectRoot = props.projectRoot;
 
     // ─── DynamoDB Tables ───────────────────────────────────────────
 
@@ -183,7 +183,7 @@ export class InfraConstruct extends Construct {
       // ingestion. The AMAZON_BEDROCK_TEXT_CHUNK / AMAZON_BEDROCK_METADATA names
       // are an OpenSearch-backend convention, not applicable to S3 Vectors.
       const vectorBucket = new s3vectors.CfnVectorBucket(this, 'KbVectorBucket', {
-        vectorBucketName: `it-incident-kb-${stack.account}-${stack.region}`,
+        vectorBucketName: `it-${cdk.Names.uniqueId(this).toLowerCase().slice(-35)}-${stack.account}`, // fresh-stack scoped, not a shared fixed name
       });
       vectorBucket.applyRemovalPolicy(removalPolicy);
 
@@ -230,7 +230,7 @@ export class InfraConstruct extends Construct {
       });
 
       const kb = new bedrock.CfnKnowledgeBase(this, 'KnowledgeBase', {
-        name: 'it-incident-agent-kb',
+        name: `it-incident-${cdk.Names.uniqueId(this).slice(-32)}`,
         description: 'IT incident response runbooks and troubleshooting guides',
         roleArn: kbRole.roleArn,
         knowledgeBaseConfiguration: {
@@ -381,6 +381,9 @@ export class InfraConstruct extends Construct {
       logRetention: logs.RetentionDays.TWO_WEEKS,
     });
     changesTable.grantWriteData(createChangeRequestFn);
+    createChangeRequestFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem'], resources: [changesTable.tableArn],
+    }));
     usersTable.grantReadWriteData(createChangeRequestFn);
 
     // Build the ARN map (target name → Lambda ARN)

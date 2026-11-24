@@ -14,6 +14,11 @@ GATEWAY_URL = os.getenv("GATEWAY_URL") or os.getenv("AGENTCORE_GATEWAY_ITINCIDEN
 GATEWAY_AUTH_MODE = os.getenv("GATEWAY_AUTH_MODE", "AWS_IAM")
 GATEWAY_OAUTH_PROVIDER_NAME = os.getenv("GATEWAY_OAUTH_PROVIDER_NAME") or os.getenv("OAUTH_PROVIDER_NAME", "")
 GATEWAY_OAUTH_AUDIENCE = os.getenv("GATEWAY_OAUTH_AUDIENCE") or os.getenv("GATEWAY_AUDIENCE", "")
+GATEWAY_OAUTH_SCOPES = os.getenv("GATEWAY_OAUTH_SCOPES", "").split()
+if GATEWAY_AUTH_MODE not in ("AWS_IAM", "CUSTOM_JWT"):
+    raise ValueError("Unsupported GATEWAY_AUTH_MODE")
+if GATEWAY_AUTH_MODE == "CUSTOM_JWT" and not GATEWAY_OAUTH_SCOPES:
+    raise ValueError("CUSTOM_JWT requires explicit GATEWAY_OAUTH_SCOPES")
 
 # ─── Memory ──────────────────────────────────────────────────────────────────
 # The L3 construct uses MEMORY_{NAME}_ID naming convention.
@@ -37,7 +42,10 @@ GUARDRAIL_VERSION = os.getenv("GUARDRAIL_VERSION", "DRAFT")
 JIRA_MCP_URL = os.getenv("JIRA_MCP_URL")  # e.g. https://mcp.atlassian.com/v1/sse
 JIRA_OAUTH_PROVIDER_NAME = os.getenv("JIRA_OAUTH_PROVIDER_NAME")
 JIRA_SITE_URL = os.getenv("JIRA_SITE_URL", "")
+JIRA_CLOUD_ID = os.getenv("JIRA_CLOUD_ID", "")
 JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "INC")
+# Names must be reviewed against the external server's actual tool schemas.
+JIRA_ALLOWED_TOOLS = os.getenv("JIRA_ALLOWED_TOOLS", "").split()
 
 # ─── Model ───────────────────────────────────────────────────────────────────
 AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "us.anthropic.claude-sonnet-4-6")

@@ -4,11 +4,11 @@ Records a corrective action against a ticket and stamps the user's record.
 This is the agent's "make a change" action — demonstrating tool-driven mutation.
 """
 
+import hashlib
 import logging
 import os
 import re
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -80,17 +80,16 @@ def lambda_handler(event, context):
     if not ACTION_PATTERN.match(action):
         return _err("action contains invalid characters (allowed: alphanumeric, _, -, .)")
 
-    # Optional justification (see tool schema). Persisted on the change record and
-    # surfaced to the policy engine context so the RequireReasonForChangeRequest
-    # Cedar policy can evaluate it.
+    # Optional justification is persisted. LOG_ONLY is non-enforcing and this
+    # Lambda does not claim to supply a validated Cedar context.
     reason = event.get("reason", "")
     if not isinstance(reason, str):
         return _err("reason must be a string")
     if len(reason) > MAX_SUMMARY_LENGTH:
         return _err(f"reason exceeds maximum length of {MAX_SUMMARY_LENGTH} characters")
 
-    now = datetime.now(timezone.utc).isoformat()
-    change_id = f"CHG-{uuid.uuid4().hex[:8].upper()}"
+    now = datetime.now(UTC).isoformat()
+    change_id = "CHG-" + hashlib.sha256(f"{ticket_id}/{user_id}/{action}".encode()).hexdigest()[:24]
 
     # Atomic dual write: record the change AND stamp the user in one transaction.
     # A non-transactional pair could leave the change record written while the
@@ -99,33 +98,48 @@ def lambda_handler(event, context):
     # retry after a partial failure would create a duplicate change record.
     # transact_write_items uses the low-level client, so attribute values must
     # be DynamoDB-typed.
-    _ddb.transact_write_items(
-        TransactItems=[
-            {
-                "Put": {
-                    "TableName": CHANGES_TABLE,
-                    "Item": {
-                        "change_id": {"S": change_id},
-                        "ticket_id": {"S": ticket_id},
-                        "user_id": {"S": user_id},
-                        "summary": {"S": summary},
-                        "action": {"S": action},
-                        "reason": {"S": reason},
-                        "created_at": {"S": now},
-                        "status": {"S": "applied"},
-                    },
-                }
-            },
-            {
-                "Update": {
-                    "TableName": USERS_TABLE,
-                    "Key": {"user_id": {"S": user_id}},
-                    "UpdateExpression": "SET last_incident_at = :ts ADD incident_count :one",
-                    "ExpressionAttributeValues": {":ts": {"S": now}, ":one": {"N": "1"}},
-                }
-            },
-        ]
-    )
+    items = [
+        {
+            "Put": {
+                "TableName": CHANGES_TABLE,
+                "ConditionExpression": "attribute_not_exists(change_id)",
+                "Item": {
+                    "change_id": {"S": change_id},
+                    "ticket_id": {"S": ticket_id},
+                    "user_id": {"S": user_id},
+                    "summary": {"S": summary},
+                    "action": {"S": action},
+                    "reason": {"S": reason},
+                    "created_at": {"S": now},
+                    "status": {"S": "applied"},
+                },
+            }
+        },
+        {
+            "Update": {
+                "TableName": USERS_TABLE,
+                "Key": {"user_id": {"S": user_id}},
+                "UpdateExpression": "SET last_incident_at = :ts ADD incident_count :one",
+                "ConditionExpression": "attribute_exists(user_id)",
+                "ExpressionAttributeValues": {":ts": {"S": now}, ":one": {"N": "1"}},
+            }
+        },
+    ]
+    try:
+        _ddb.transact_write_items(TransactItems=items)
+    except _ddb.exceptions.TransactionCanceledException as error:
+        reasons = error.response.get("CancellationReasons", [])
+        if not reasons or reasons[0].get("Code") != "ConditionalCheckFailed":
+            raise
+        previous = _ddb.get_item(TableName=CHANGES_TABLE, Key={"change_id": {"S": change_id}}, ConsistentRead=True).get(
+            "Item", {}
+        )
+        if any(
+            previous.get(k, {}).get("S") != value
+            for k, value in {"ticket_id": ticket_id, "user_id": user_id, "action": action, "status": "applied"}.items()
+        ):
+            raise RuntimeError("Existing change does not match this retry") from None
+        now = previous["created_at"]["S"]
 
     return _ok(
         {

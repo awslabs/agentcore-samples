@@ -22,7 +22,7 @@ def _seed_table(table_name: str, items_json: bytes) -> int:
     table = _ddb.Table(table_name)
     items = json.loads(items_json)
     if not isinstance(items, list):
-        raise ValueError(f"Expected list in seed file for {table_name}, got {type(items).__name__}")
+        raise ValueError(f"Expected list in seed file for {table_name}, got {type(items).__name__}")  # noqa: TRY004 -- invalid file content
     with table.batch_writer() as batch:
         for item in items:
             batch.put_item(Item=item)

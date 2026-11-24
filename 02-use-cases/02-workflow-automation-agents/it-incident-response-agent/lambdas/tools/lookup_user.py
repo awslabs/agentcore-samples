@@ -8,7 +8,7 @@ import decimal
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -78,7 +78,7 @@ def lambda_handler(event, context):
         return _err(f"user_id {user_id} not found")
 
     # Query recent tickets (last 30 days)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=30)).isoformat()
     recent = _tickets.query(
         IndexName="byRequester",
         KeyConditionExpression=(Key("requester_id").eq(user_id) & Key("created_at").gte(cutoff)),

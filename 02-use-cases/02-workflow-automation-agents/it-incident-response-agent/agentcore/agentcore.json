@@ -1,6 +1,7 @@
 {
   "name": "ITIncidentAgent",
-  "version": 1,
+  "version": 2,
+  "migratedFrom": "v1",
   "managedBy": "CDK",
   "runtimes": [
     {
@@ -16,7 +17,7 @@
         { "name": "OTEL_EXPORTER_OTLP_PROTOCOL", "value": "http/protobuf" },
         { "name": "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED", "value": "true" },
         { "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" },
-        { "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "value": "true" },
+        { "name": "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "value": "false" },
         { "name": "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", "value": "true" },
         { "name": "OTEL_PROPAGATORS", "value": "baggage,tracecontext,xray" },
         { "name": "AGENT_MODEL_ID", "value": "us.anthropic.claude-sonnet-4-6" },
@@ -103,7 +104,7 @@
   "policyEngines": [
     {
       "name": "ITIncidentPolicyEngine",
-      "description": "Cedar policy engine for bounded autonomy — logs all tool calls, enforces on high-risk actions",
+      "description": "Cedar policy engine for audit-only bounded-autonomy demonstration (LOG_ONLY; does not block actions)",
       "policies": [
         {
           "name": "LogAllToolCalls",
@@ -113,7 +114,7 @@
         },
         {
           "name": "RequireReasonForChangeRequest",
-          "description": "Deny create-change-request calls without a reason field (LOG_ONLY mode logs violations)",
+          "description": "Audit-only missing-reason example; qualified action/context matching requires review and LOG_ONLY does not block calls",
           "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has \"toolName\" && context.toolName == \"create-change-request\" && !(context has \"reason\") };",
           "validationMode": "IGNORE_ALL_FINDINGS"
         }
