@@ -59,6 +59,17 @@ class Contracts(unittest.TestCase):
         """Run cdk synth FIRST. Missing templates are failures, not skipped checks."""
         res = json.loads((ROOT / "cdk/cdk.out/supportAgentDemo-AgentCoreStack.template.json").read_text())["Resources"]
         gateway_id, gateway = next((k, v) for k, v in res.items() if v["Type"] == "AWS::BedrockAgentCore::Gateway")
+        engine_policies = [
+            key
+            for key, resource in res.items()
+            if resource["Type"] == "AWS::IAM::Policy"
+            and any(
+                "bedrock-agentcore:GetPolicyEngine" in s["Action"]
+                for s in resource["Properties"]["PolicyDocument"]["Statement"]
+            )
+        ]
+        self.assertEqual(len(engine_policies), 1)
+        self.assertIn(engine_policies[0], gateway["DependsOn"])
         self.assertEqual(gateway["Properties"]["PolicyEngineConfiguration"]["Mode"], "ENFORCE")
         subjects = []
         for v in res.values():

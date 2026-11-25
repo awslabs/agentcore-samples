@@ -159,6 +159,9 @@ export class AgentCoreStack extends cdk.Stack {
         });
 
         // Customer Domain Target
+        // Gateway creation validates GetPolicyEngine before any target exists.
+        this.agentCoreGateway.node.addDependency(agentCoreGatewayRole);
+
         const customerTarget = new bedrockagentcore.CfnGatewayTarget(this, `${props.appName}-CustomerTarget`, {
             name: `${props.appName}-CustomerTarget`,
             gatewayIdentifier: this.agentCoreGateway.attrGatewayIdentifier,
