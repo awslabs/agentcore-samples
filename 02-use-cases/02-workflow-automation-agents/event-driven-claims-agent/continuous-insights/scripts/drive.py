@@ -1,9 +1,10 @@
 """Send claims to the deployed event-driven claims agent.
 
-Each session is one claim sent straight to the AgentCore Runtime (the same payload the sample's
-S3 -> EventBridge -> trigger Lambda path builds). The mix covers an approval, a claim that hits the
-Cedar limit, an oddly formatted policy number, a vague claim, an unknown policy, and a claim from an email
-that is not on the policy. Each claimant email is included so Phase 3 attempts the notification step too.
+The claims come from the AgentCore managed dataset that create_dataset.py creates. Each scenario in the
+dataset is one claim: the turn input is the claim text, and the claimant's email is in the scenario
+metadata. Each session is one claim sent straight to the AgentCore Runtime (the same payload the sample's
+S3 -> EventBridge -> trigger Lambda path builds). The claimant email is included so Phase 3 attempts the
+notification step too.
 
 Every invocation is a real Bedrock call (Claude Sonnet and Haiku) and takes 60 to 90 seconds.
 
@@ -24,12 +25,7 @@ from typing import NamedTuple
 
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
-from common import ROOT, load_state, session, validate_name
-
-FENDER_BENDER_CLAIM = (
-    "I need to file a claim. My policy is POL-12345. Parking-lot fender bender yesterday, "
-    + "rear bumper and tail light, repair quote is 2000 dollars."
-)
+from common import ROOT, evaluation_clients, load_state, session, validate_name
 
 
 class Scenario(NamedTuple):
@@ -38,39 +34,35 @@ class Scenario(NamedTuple):
     email: str  # the claimant's email; Phase 3 sends the notification to it
 
 
-# Emails match the policy holders that the claims agent's seed script creates, as a real claimant's would.
-# One scenario writes from an address that is not on the policy, so the identity checks have a case to catch.
-SCENARIOS: list[Scenario] = [
-    Scenario("approval-fender-bender", FENDER_BENDER_CLAIM, "john.smith@example.com"),
-    Scenario(
-        "large-house-fire",
-        "File a claim for POL-67890. Major house fire, fully documented by the fire department, $150,000 damage.",
-        "jane.doe@example.com",
-    ),
-    Scenario(
-        "lowercase-policy-number",
-        "my policy is pol-12345, hail dented my hood, repair estimate is $1,800",
-        "john.smith@example.com",
-    ),
-    Scenario(
-        "vague-claim",
-        "I think something happened to my car. POL-12345. Maybe $30,000, no photos.",
-        "john.smith@example.com",
-    ),
-    Scenario(
-        "unknown-policy", "POL-00000, I scratched my car in a parking lot, about $500 of damage.", "driver@example.com"
-    ),
-    Scenario(
-        "approval-storm-damage",
-        "Policy POL-11111. A tree branch fell on my roof during last night's storm. The contractor quote is $4,500.",
-        "bob.j@example.com",
-    ),
-    Scenario(
-        "email-not-on-policy",
-        "File a claim for POL-12345. Someone backed into my parked car, the repair estimate is $3,200.",
-        "stranger@example.com",
-    ),
-]
+def to_scenario(example: dict) -> Scenario:
+    """One dataset example as a claim. Raises ValueError when the example is not a single-turn claim."""
+    turns = example.get("turns") or []
+    prompt = turns[0].get("input") if turns else None
+    email = (example.get("metadata") or {}).get("claimant_email")
+    if not isinstance(prompt, str) or not prompt or not email:
+        raise ValueError(
+            f"Scenario {example.get('scenario_id')!r} needs one turn with a text input and metadata.claimant_email."
+        )
+    return Scenario(example["scenario_id"], prompt, email)
+
+
+def load_scenarios(control, dataset_id: str) -> list[Scenario]:
+    """The scenarios in the dataset's draft, in the order set by metadata.order (then by scenario ID)."""
+    examples, token = [], None
+    while True:
+        page = control.list_dataset_examples(datasetId=dataset_id, **({"nextToken": token} if token else {}))
+        examples.extend(page.get("examples", []))
+        token = page.get("nextToken")
+        if not token:
+            break
+    last = len(examples)  # scenarios without a whole-number metadata.order go after the ordered ones
+
+    def position(example: dict) -> tuple[int, str]:
+        order = (example.get("metadata") or {}).get("order")
+        return (order if isinstance(order, int) else last, example.get("scenario_id", ""))
+
+    examples.sort(key=position)
+    return [to_scenario(example) for example in examples]
 
 
 def run_session(client, runtime_arn: str, scenario: Scenario) -> str:
@@ -86,9 +78,9 @@ def run_session(client, runtime_arn: str, scenario: Scenario) -> str:
     return session_id
 
 
-def build_plan(count: int, offset: int = 0) -> list[Scenario]:
-    """The first `count` scenarios, cycling through SCENARIOS from index `offset`."""
-    return [SCENARIOS[(offset + i) % len(SCENARIOS)] for i in range(count)]
+def build_plan(scenarios: list[Scenario], count: int, offset: int = 0) -> list[Scenario]:
+    """The first `count` claims, cycling through `scenarios` from index `offset`."""
+    return [scenarios[(offset + i) % len(scenarios)] for i in range(count)]
 
 
 def main() -> int:
@@ -101,8 +93,19 @@ def main() -> int:
     args = parser.parse_args()
 
     state = load_state(validate_name(args.name))
-    plan = build_plan(args.count, args.offset)
-    print(f"{args.count} claims -> {state['runtime_arn']}")
+    if not state.get("dataset_id"):
+        sys.exit(f"No dataset recorded. Run: python scripts/create_dataset.py --name {args.name}")
+    control, _ = evaluation_clients(state["region"])
+    try:
+        scenarios = load_scenarios(control, state["dataset_id"])
+    except (ClientError, BotoCoreError, ValueError) as err:
+        sys.exit(f"Could not read the scenarios from dataset {state['dataset_id']}: {err}")
+    if not scenarios:
+        sys.exit(f"Dataset {state['dataset_id']} has no scenarios.")
+    plan = build_plan(scenarios, args.count, args.offset)
+    print(
+        f"{args.count} claims from {len(scenarios)} scenarios in dataset {state['dataset_id']} -> {state['runtime_arn']}"
+    )
     print("These make real Bedrock calls and cost money; each takes 60 to 90 seconds.")
     if not args.yes and input("Proceed? Type yes: ").strip().lower() != "yes":
         return 1

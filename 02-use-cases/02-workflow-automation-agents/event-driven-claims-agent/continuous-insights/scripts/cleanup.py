@@ -1,6 +1,7 @@
-"""Delete what setup_insights.py created for the claims agent.
+"""Delete what setup_insights.py and create_dataset.py created for the claims agent.
 
-Removes: the online evaluation config and the evaluation execution role (with its inline policies).
+Removes: the online evaluation config, the evaluation execution role (with its inline policies), and the
+scenario dataset.
 It does NOT touch the claims agent itself (use the agent's own ./scripts/destroy.sh), does NOT disable the
 account's Agent Insight Store (that deletes stored Insights for every application), and does NOT turn off
 CloudWatch Transaction Search. The last two are account-wide.
@@ -58,12 +59,14 @@ def main() -> int:
     region = state["region"]
     config_id = state.get("online_config_id")
     role = state.get("evaluation_role_name")
-    if not config_id and not role:
-        print("Nothing recorded to delete: no evaluation config or role in the state file.")
+    dataset_id = state.get("dataset_id")
+    if not config_id and not role and not dataset_id:
+        print("Nothing recorded to delete: no evaluation config, role, or dataset in the state file.")
         return 0
     if (
         not args.yes
-        and input(f"Delete the evaluation config and role for {name} in {region}? Type yes: ").strip().lower() != "yes"
+        and input(f"Delete the evaluation config, role, and dataset for {name} in {region}? Type yes: ").strip().lower()
+        != "yes"
     ):
         return 1
 
@@ -84,6 +87,8 @@ def main() -> int:
             attempt(f"log group {group}", lambda: client(region, "logs").delete_log_group(logGroupName=group))
     if role:
         delete_role(client(region, "iam"), role)
+    if dataset_id:
+        attempt(f"dataset {dataset_id}", lambda: control.delete_dataset(datasetId=dataset_id))
 
     print(f"\nDone. Remove {state_path(name).name} when you no longer need it.")
     return 0
