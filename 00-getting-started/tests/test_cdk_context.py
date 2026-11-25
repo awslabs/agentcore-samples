@@ -151,13 +151,15 @@ def test_documented_cli_install_reaches_subprocesses(tmp_path):
     global_cli = global_bin / "agentcore"
     global_cli.write_text("#!/bin/sh\necho unexpected-global-cli\n")
     global_cli.chmod(0o700)
+    npm = shutil.which("npm")
+    assert npm is not None, "Install Node/npm before running CLI setup tests"
     home = tmp_path / "home"
     home.mkdir()
     env = dict(
         os.environ,
         HOME=str(home),
         PATH=str(global_bin) + os.pathsep + os.environ["PATH"],
-        NPM_CONFIG_CACHE=subprocess.check_output(["npm", "config", "get", "cache"], text=True).strip(),
+        NPM_CONFIG_CACHE=subprocess.check_output([npm, "config", "get", "cache"], text=True, timeout=15).strip(),  # noqa: S603 -- resolved npm, fixed read-only query
         NPM_CONFIG_OFFLINE="true",
         AWS_CONFIG_FILE=os.devnull,
         AWS_SHARED_CREDENTIALS_FILE=os.devnull,
