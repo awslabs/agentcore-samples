@@ -111,7 +111,7 @@ for an HTTP agent (contrast Sample 1, where `@app.ping` is the whole point).
 
 ## Version warning: mcp 2.0 renamed FastMCP
 
-`requirements.txt` pins `mcp>=1.10.0,<2.0.0` deliberately. In **mcp 2.0.0**,
+[`agent/requirements.txt`](agent/requirements.txt) pins `mcp>=1.10.0,<2.0.0` deliberately. In **mcp 2.0.0**,
 `FastMCP` was renamed `MCPServer` and moved from `mcp.server.fastmcp` to
 `mcp.server.mcpserver`, with **no compatibility alias**. So
 `from mcp.server.fastmcp import FastMCP` raises `ImportError` on 2.x. If you drop
@@ -123,47 +123,35 @@ the pin, the import and constructor must be updated together.
 |---|---|
 | [agent/agent.py](agent/agent.py) | The MCP server: `add_numbers`, `greet`, `whoami`. |
 | [agent/requirements.txt](agent/requirements.txt) | Just `mcp` — pinned below 2.0. |
+| [requirements.txt](requirements.txt) | Local dependencies, including the pinned MCP 1.x client. |
 | [deploy.py](deploy.py) | IAM → zip→S3 → CapacityProvider → runtime with `serverProtocol=MCP`. |
 | [invoke.py](invoke.py) | JSON-RPC client: `initialize`, `tools/list`, `tools/call`. |
 | [cleanup.py](cleanup.py) | Deletes everything, including the EC2 fleet. |
 
-Zip only, no helper module and no service model to install. Two clients:
-`bedrock-agentcore-control` for the control plane and `bedrock-agentcore` for the
-data plane. No `endpoint_url` anywhere — endpoints resolve from the region.
+The server deploys as a zip. Deployment and cleanup use the boto3
+`bedrock-agentcore-control` client. Invocation uses the MCP SDK and a SigV4-signed
+`httpx` client.
 
 ## Calling it
 
-`InvokeAgentRuntime` models the MCP headers explicitly — `accept`, `mcpSessionId`
-(→ `Mcp-Session-Id`) and `mcpProtocolVersion` (→ `Mcp-Protocol-Version`):
+[`invoke.py`](invoke.py) opens one Streamable HTTP `ClientSession` and calls
+`initialize` before listing or calling tools. The MCP 1.x transport reads
+`Mcp-Session-Id` from the `initialize` response when AgentCore returns it, then
+echoes it on subsequent requests. The client also sends the cached runtime
+session ID in `X-Amzn-Bedrock-AgentCore-Runtime-Session-Id`.
 
-```python
-data.invoke_agent_runtime(
-    agentRuntimeArn=arn,
-    runtimeSessionId=session_id,
-    payload=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode(),
-    contentType="application/json",
-    accept="application/json, text/event-stream",   # transport requires both
-    mcpProtocolVersion="2024-11-05",
-)
-```
-
-`mcpSessionId` is for stateful servers. This one is stateless, so it is omitted.
-
-The response is an SSE frame, not bare JSON, so it needs unwrapping:
-
-```
-event: message
-data: {"jsonrpc":"2.0","id":1,"result":{...}}
-```
-
-`invoke.py` handles that in `parse_body()`, accepting a plain JSON body too in
-case the server negotiated `json_response` mode.
+The local `requirements.txt` keeps the client below MCP 2.0. MCP 2.x uses
+`httpx2`, which requires a different SigV4 auth adapter. When a 2.x client
+negotiates MCP `2026-07-28` through `server/discover`, it skips `initialize`
+and does not automatically echo `Mcp-Session-Id`. For a client using that
+protocol, send the same `X-Amzn-Bedrock-AgentCore-Runtime-Session-Id` on related
+requests. The [protocol example](../../03-advanced/09-mcp-e2e/04-protocol-e2e/README.md#the-runtime-session-header-picks-the-microvm)
+demonstrates the header on managed Runtime.
 
 ### The session is reused across runs
 
-`invoke.py` caches its `runtimeSessionId` in `.mcp_session.json` and reuses it on
-the next run, so only the first run pays the cold start and everything after it is
-genuinely warm. Two notes:
+`invoke.py` caches its runtime session ID in `.mcp_session.json` and reuses it
+on the next run so related requests can reuse the session. Two notes:
 
 * **Sending no session id is not the way to do this.** The service then mints one
   per request, so every call is a fresh session — the opposite of warm.

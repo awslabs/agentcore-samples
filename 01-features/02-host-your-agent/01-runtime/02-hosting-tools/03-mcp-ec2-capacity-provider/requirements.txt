@@ -9,7 +9,10 @@ boto3>=1.43.65        # first version carrying the CapacityProvider APIs
 
 # invoke.py drives the deployed server with a real MCP client rather than
 # hand-rolled JSON-RPC over boto3, so the transport handles the Mcp-Session-Id
-# echo, the protocol-version header and SSE unwrapping.
+# echo, the protocol-version header and SSE unwrapping. The 1.x transport
+# learns the session ID from the initialize response. A 2.x client that
+# negotiates the newer protocol with server/discover skips initialize and
+# does not automatically echo that header.
 #
 # Lower bound 1.24.0: `mcp.client.streamable_http.streamable_http_client`, the
 # entry point that accepts a pre-built httpx client, first appears there — 1.20.0
