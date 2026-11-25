@@ -379,11 +379,14 @@ aws bedrock-agentcore-control delete-oauth2-credential-provider \
 
 ### 2. Delete the runtime
 
+The AgentCore CLI has no `destroy` command. `agentcore deploy` created the runtime, its execution role and that role's policy in a CloudFormation stack, so delete the stack:
+
 ```bash
-cd agent/private-idp-ping-agent
-agentcore destroy -y
-cd ../..
+aws cloudformation delete-stack --stack-name AgentCore-PrivateIdpPingAgent-default
+aws cloudformation wait stack-delete-complete --stack-name AgentCore-PrivateIdpPingAgent-default
 ```
+
+Step 3 (`./cleanup_sample.sh`) also deletes this stack if it still exists, so you can skip this step and let the script do it.
 
 ### 3. Destroy CDK stacks
 
