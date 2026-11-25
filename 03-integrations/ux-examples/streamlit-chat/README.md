@@ -23,7 +23,7 @@ Unsupported objects, malformed or unfinished events, and oversized responses pro
 
 ## Optional streaming producer
 
-The [producer](example/agent.py) creates a request-local Strands agent, uses Bedrock and includes one explicitly simulated weather tool. No broad tools bundle or calculator is required. To try the producer locally, set `BEDROCK_MODEL_ID` and use your short-lived profile in a supported Region, then run `uv run --project example python example/agent.py`. A real invocation incurs inference charges. For a hosted producer, package `example/agent.py` and `example/pyproject.toml` in an operator-owned Python 3.13 Runtime with an execution role authorized for the selected model. The UI doesn't deploy or adopt it. The previous optional Toolkit deploy commands are retired.
+The [producer](example/agent.py) creates a request-local Strands agent, uses Bedrock and includes one explicitly simulated weather tool. No broad tools bundle or calculator is required. To try the producer locally, set `BEDROCK_MODEL_ID` and use your short-lived profile in a supported Region, then run `uv run --project example python example/agent.py`. A real invocation incurs inference charges. For a hosted producer, package `example/agent.py` and `example/pyproject.toml` in an operator-owned Python 3.13 Runtime with an execution role authorized for the selected model. Set `BEDROCK_MODEL_ID` in the **hosted Runtime environment**, not just in the UI shell. The UI doesn't deploy or adopt the Runtime. The previous optional Toolkit deploy commands are retired.
 
 ## Offline compatibility check
 

@@ -45,10 +45,12 @@ def main():
             parts = []
             try:
                 with (
-                    boto3.client(
-                        "bedrock-agentcore",
-                        region_name=region,
-                        config=Config(read_timeout=120, retries={"total_max_attempts": 1}),
+                    closing(
+                        boto3.client(
+                            "bedrock-agentcore",
+                            region_name=region,
+                            config=Config(read_timeout=120, retries={"total_max_attempts": 1}),
+                        )
                     ) as client,
                     closing(chunks(client, arn, st.session_state.runtime_session_id, prompt, show_tools)) as stream,
                 ):

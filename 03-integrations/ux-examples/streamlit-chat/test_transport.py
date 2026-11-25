@@ -5,6 +5,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
+import boto3
 import httpx
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from botocore.response import StreamingBody
@@ -109,17 +110,23 @@ class Contracts(unittest.TestCase):
 
     def test_streamlit_chat_state(self):
         self.assertEqual(region_for(ARN), "us-west-2")
-        client = Mock(invoke_agent_runtime=Mock(return_value=response(b'{"response":"hello"}', "application/json")))
-        from contextlib import nullcontext
+        client = boto3.client(
+            "bedrock-agentcore", region_name="us-west-2", aws_access_key_id="fixture", aws_secret_access_key="fixture"
+        )
 
         with (
             patch.dict(os.environ, {"AGENT_RUNTIME_ARN": ARN}),
-            patch("boto3.client", return_value=nullcontext(client)),
+            patch("boto3.client", return_value=client),
+            patch.object(
+                client, "invoke_agent_runtime", return_value=response(b'{"response":"hello"}', "application/json")
+            ),
+            patch.object(client, "close", wraps=client.close) as close,
         ):
             ui = AppTest.from_file("app.py").run()
             ui.chat_input[0].set_value("Hello").run()
             self.assertFalse(ui.exception)
             self.assertEqual(ui.session_state["messages"], [("user", "Hello"), ("assistant", "hello")])
+            close.assert_called_once_with()
             session = ui.session_state["runtime_session_id"]
             ui.button[0].click().run()
             self.assertNotEqual(ui.session_state["runtime_session_id"], session)
