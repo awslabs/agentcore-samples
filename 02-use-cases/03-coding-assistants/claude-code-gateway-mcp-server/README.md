@@ -20,13 +20,11 @@ Bring these **owner-approved** resources (the walkthrough does not create, updat
 From this sample directory, in a private terminal, set `AWS_PROFILE`, `AWS_REGION`, `GATEWAY_ROLE_ARN`, `COGNITO_POOL_ID`, `COGNITO_DOMAIN` (prefix, not URL), `COGNITO_CLIENT_ID` and `COGNITO_SCOPE` (e.g. `my-resource/invoke`). Verify the intended account with `aws sts get-caller-identity`. Never put keys or tokens in a notebook cell, shell argument, `.env` file or source control.
 
 ```bash
-set -euo pipefail
 sample=$PWD
-project=$(mktemp -d)
-cd "$project"; pwd  # keep this path and the receipt until cleanup has succeeded
-python3 -m venv .venv
-.venv/bin/python -m pip install -r "$sample/requirements.txt"
-.venv/bin/python "$sample/gateway.py" create
+project=$(mktemp -d) && cd "$project" && pwd  # keep this path and the receipt until cleanup has succeeded
+test "$PWD" = "$project" && python3 -m venv .venv &&
+  .venv/bin/python -m pip install -r "$sample/requirements.txt" &&
+  .venv/bin/python "$sample/gateway.py" create
 ```
 
 This creates a uniquely named JWT-authorized Gateway, waits for readiness, adds `https://knowledge-mcp.global.api.aws` as the target, and waits again. It writes `claude-gateway-receipt.json` and a **project-local** `.mcp.json`. Both should stay in this directory. If a receipt or config exists, start from a different fresh directory or reconcile the old deployment; do not overwrite it. The AWS Knowledge service is public and rate-limited. Do not send sensitive queries to it.
