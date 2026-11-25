@@ -149,5 +149,6 @@
 - Santhosh Kuriakose (kuriaks1)
 - Luis Barros
 - Phelipe Fabres (phelipefabres)
+- Venkata Moparthi (vmoparthi)
 - Joshua M. Smith (joshuamarksmith)
 - Max Tybar (maxtybar)
