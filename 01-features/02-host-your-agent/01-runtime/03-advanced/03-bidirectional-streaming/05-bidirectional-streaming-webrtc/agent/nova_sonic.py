@@ -20,6 +20,8 @@ from aws_sdk_bedrock_runtime.models import (
     InvokeModelWithBidirectionalStreamOperationInput,
 )
 from loguru import logger
+from smithy_aws_core.aio.identity.chain import AsyncIdentityChain
+from smithy_aws_core.identity.components import AWSCredentialsIdentity
 from smithy_http.aio.crt import AWSCRTHTTPClient
 
 MODEL_ID = "amazon.nova-2-sonic-v1:0"
@@ -157,15 +159,20 @@ async def run_session(audio_in, audio_out, region, pc_id):
     logger.info(f"Starting Nova Sonic session for {pc_id}")
 
     # --- Connect to Bedrock ---
-    async with (
-        AsyncBedrockRuntimeClient(
-            await AsyncBedrockRuntimeConfig.resolve(region=region, transport=AWSCRTHTTPClient())
-        ) as client,
-        await client.invoke_model_with_bidirectional_stream(
-            InvokeModelWithBidirectionalStreamOperationInput(model_id=MODEL_ID)
-        ) as stream,
-    ):
-        await exchange_audio(stream, audio_in, audio_out)
+    transport = AWSCRTHTTPClient()
+    chain = await AsyncIdentityChain.create(AWSCredentialsIdentity, region_override=region, http_client=transport)
+    async with asyncio.timeout(15):
+        await chain.get_identity(properties={})
+    config = await AsyncBedrockRuntimeConfig.resolve(
+        region=region, transport=transport, aws_credentials_identity_resolver=chain
+    )
+    async with AsyncBedrockRuntimeClient(config) as client:
+        async with asyncio.timeout(30):
+            stream = await client.invoke_model_with_bidirectional_stream(
+                InvokeModelWithBidirectionalStreamOperationInput(model_id=MODEL_ID)
+            )
+        async with stream:
+            await exchange_audio(stream, audio_in, audio_out)
 
 
 async def exchange_audio(stream, audio_in, audio_out):

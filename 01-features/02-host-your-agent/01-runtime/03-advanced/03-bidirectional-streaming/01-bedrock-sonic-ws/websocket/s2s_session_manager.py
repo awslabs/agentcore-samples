@@ -13,6 +13,8 @@ from aws_sdk_bedrock_runtime.models import (
     InvokeModelWithBidirectionalStreamOperationInput,
 )
 from s2s_events import S2sEvent
+from smithy_aws_core.aio.identity.chain import AsyncIdentityChain
+from smithy_aws_core.identity.components import AWSCredentialsIdentity
 from smithy_http.aio.crt import AWSCRTHTTPClient
 
 # Configure logging
@@ -49,7 +51,16 @@ class S2sSessionManager:
         self.tool_processing_tasks = set()
 
     async def _initialize_client(self):
-        config = await AsyncBedrockRuntimeConfig.resolve(region=self.region, transport=AWSCRTHTTPClient())
+        transport = AWSCRTHTTPClient()
+        chain = await AsyncIdentityChain.create(
+            AWSCredentialsIdentity, region_override=self.region, http_client=transport
+        )
+        # Resolve before opening the event stream: a failed signer must not leave the socket hanging.
+        async with asyncio.timeout(15):
+            await chain.get_identity(properties={})
+        config = await AsyncBedrockRuntimeConfig.resolve(
+            region=self.region, transport=transport, aws_credentials_identity_resolver=chain
+        )
         self.bedrock_client = AsyncBedrockRuntimeClient(config)
 
     def reset_session_state(self):
@@ -95,9 +106,10 @@ class S2sSessionManager:
 
         try:
             # Initialize the stream
-            self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
-                InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
-            )
+            async with asyncio.timeout(30):
+                self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
+                    InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
+                )
             self.is_active = True
 
             # Start listening for responses

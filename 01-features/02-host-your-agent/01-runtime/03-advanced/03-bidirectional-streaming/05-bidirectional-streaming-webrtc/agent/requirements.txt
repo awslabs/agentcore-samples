@@ -7,3 +7,5 @@ av>=17.1,<18
 # CRT supports the concurrent HTTP/2 request/response stream used by Nova Sonic.
 aws-sdk-bedrock-runtime[awscrt]>=0.13.1,<0.14
 smithy-http[awscrt]>=0.10,<0.11
+aws-credentials-http==0.5.0
+aws-credentials-imds==0.5.0
