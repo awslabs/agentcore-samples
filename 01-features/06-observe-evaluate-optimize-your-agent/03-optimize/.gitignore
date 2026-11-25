@@ -27,3 +27,5 @@ Thumbs.db
 agent_state_*.json
 optimize_state_*.json
 insights_result.json
+insight_sessions_*.jsonl
+continuous-insights-output/
