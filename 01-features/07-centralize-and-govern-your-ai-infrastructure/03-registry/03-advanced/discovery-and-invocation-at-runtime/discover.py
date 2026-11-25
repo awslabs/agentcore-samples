@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+from contextlib import closing
 
 import boto3
 
@@ -39,7 +40,7 @@ def discover(client, registry, query, limit=10):
                     "recordArn": arn,
                     "name": item["name"],
                     "descriptor": key,
-                    "version": item["recordVersion"],
+                    "version": item.get("recordVersion"),
                     "metadataKeys": sorted(metadata),
                 }
             )
@@ -51,7 +52,7 @@ def discover(client, registry, query, limit=10):
     raise RuntimeError("Search page limit reached; narrow the query")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry-arn", required=True)
     parser.add_argument("--query", required=True)
@@ -60,5 +61,9 @@ if __name__ == "__main__":
     if len(parts) != 6:
         parser.error("Use the Registry ARN")
     session = boto3.Session(region_name=parts[3])
-    with session.client("agent-registry") as registry_client:
+    with closing(session.client("agent-registry")) as registry_client:
         print(json.dumps(discover(registry_client, args.registry_arn, args.query), indent=2))
+
+
+if __name__ == "__main__":
+    main()

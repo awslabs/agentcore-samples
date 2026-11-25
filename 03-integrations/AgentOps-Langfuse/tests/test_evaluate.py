@@ -4,7 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from evaluate import DATA, coverage, destination, experiment, invoke, runtime_region
+import boto3
+from evaluate import DATA, coverage, destination, experiment, invoke, main, runtime_region
 from langfuse import Langfuse
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -50,6 +51,35 @@ class EvaluationTests(unittest.TestCase):
             )
         )
         self.assertTrue(stream.closed)
+
+    def test_cli_uses_real_runtime_client(self):
+        runtime = boto3.client(
+            "bedrock-agentcore", region_name="us-west-2", aws_access_key_id="fixture", aws_secret_access_key="fixture"
+        )
+        sts = Mock()
+        sts.get_caller_identity.return_value = {"Account": "111111111111"}
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "evaluate",
+                    "--runtime-arn",
+                    ARN,
+                    "--account",
+                    "111111111111",
+                    "--langfuse-origin",
+                    "https://example.com",
+                ],
+            ),
+            patch.dict("os.environ", LANGFUSE_PUBLIC_KEY="fixture", LANGFUSE_SECRET_KEY="fixture"),
+            patch("evaluate.boto3.Session", return_value=Mock(client=Mock(side_effect=[sts, runtime]))),
+            patch("evaluate.Langfuse"),
+            patch("evaluate.experiment", return_value=[1.0]) as run,
+            patch.object(runtime, "close", wraps=runtime.close) as close,
+        ):
+            main()
+        self.assertIs(run.call_args.args[1], runtime)
+        close.assert_called_once_with()
 
     def test_bad_response_is_closed(self):
         for body, content in [(b"{}", "application/json"), (b"not json", "text/plain"), (b'""', "application/json")]:

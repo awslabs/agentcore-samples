@@ -5,6 +5,7 @@ import json
 import os
 import re
 import uuid
+from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -132,8 +133,10 @@ def main():
     if aws.client("sts").get_caller_identity()["Account"] != args.account:
         cli.error("Wrong AWS account")
     # No control-plane client, CRUD, deployment, or runtime discovery by name.
-    with aws.client(
-        "bedrock-agentcore", config=Config(connect_timeout=5, read_timeout=120, retries={"total_max_attempts": 1})
+    with closing(
+        aws.client(
+            "bedrock-agentcore", config=Config(connect_timeout=5, read_timeout=120, retries={"total_max_attempts": 1})
+        )
     ) as runtime:
         client = Langfuse(
             base_url=origin, public_key=os.environ["LANGFUSE_PUBLIC_KEY"], secret_key=os.environ["LANGFUSE_SECRET_KEY"]
