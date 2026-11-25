@@ -127,7 +127,7 @@ installation and `PATH` export: a shell function alone is not visible to subproc
 Keep `uv`, Node/npm and Python 3.13 available as well. Before isolating HOME,
 the fixture asks `uv cache dir` and `uv python dir` for the caller's actual cache and managed
 Python locations, then passes those paths explicitly. No `UV_CACHE_DIR` or
-`UV_PYTHON_INSTALL_DIR` export is required when using uv's normal defaults.
+`UV_PYTHON_INSTALL_DIR` export is required when using uv's normal defaults. The offline CLI-install test likewise resolves `npm config get cache` before isolating HOME. Run the README's pinned CLI install once first, so the package is available in that cache.
 
 Run these tests under denied external networking with loopback available, private HOME/config/
 TMP/cache and no real credentials or saved target/state files. The fixture sets CLI telemetry

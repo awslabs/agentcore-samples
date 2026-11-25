@@ -157,6 +157,7 @@ def test_documented_cli_install_reaches_subprocesses(tmp_path):
         os.environ,
         HOME=str(home),
         PATH=str(global_bin) + os.pathsep + os.environ["PATH"],
+        NPM_CONFIG_CACHE=subprocess.check_output(["npm", "config", "get", "cache"], text=True).strip(),
         NPM_CONFIG_OFFLINE="true",
         AWS_CONFIG_FILE=os.devnull,
         AWS_SHARED_CREDENTIALS_FILE=os.devnull,

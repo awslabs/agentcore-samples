@@ -34,7 +34,7 @@ Amazon Bedrock AgentCore is both framework-agnostic and model-agnostic, giving y
 
 This collection provides examples and tutorials to help you understand, implement, and integrate Amazon Bedrock AgentCore capabilities into your applications.
 
-> **Starter Toolkit retirement:** For a new project, follow the [CLI v1 getting-started sample](./00-getting-started/). Some older examples still use Starter Toolkit; check the selected sample’s setup rather than installing it repository-wide. `bedrock-agentcore` is the supported Python Runtime SDK, distinct from both the deprecated Toolkit and the Node.js [AgentCore CLI](https://github.com/aws/agentcore-cli).
+> **Starter Toolkit retirement:** For a new project, follow the [CLI v1 getting-started sample](./00-getting-started/). The [migration guide](./MIGRATION.md) and some existing Harness labs target CLI v0; follow their version-specific prerequisites rather than mixing v0 and v1 commands. Some older examples still use Starter Toolkit; check the selected sample’s setup rather than installing it repository-wide. `bedrock-agentcore` is the supported Python Runtime SDK, distinct from both the deprecated Toolkit and the Node.js [AgentCore CLI](https://github.com/aws/agentcore-cli).
 
 ## 🎥 Video
 
