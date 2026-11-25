@@ -42,9 +42,7 @@ def _validate_scenario(example: dict[str, Any], line_number: int) -> ManagedScen
     for turn_number, turn in enumerate(raw_turns, start=1):
         prompt = turn.get("input") if isinstance(turn, dict) else None
         if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError(
-                f"Scenario {name!r} turn {turn_number} must have a non-empty string input"
-            )
+            raise ValueError(f"Scenario {name!r} turn {turn_number} must have a non-empty string input")
         turns.append(prompt)
 
     metadata = example.get("metadata", {})
@@ -53,9 +51,7 @@ def _validate_scenario(example: dict[str, Any], line_number: int) -> ManagedScen
     for preset in SUPPORTED_PRESETS:
         count = counts.get(preset) if isinstance(counts, dict) else None
         if not isinstance(count, int) or isinstance(count, bool) or count < 1:
-            raise ValueError(
-                f"Scenario {name!r} metadata.session_counts.{preset} must be a positive integer"
-            )
+            raise ValueError(f"Scenario {name!r} metadata.session_counts.{preset} must be a positive integer")
         session_counts[preset] = count
     return ManagedScenario(name=name, turns=tuple(turns), session_counts=session_counts)
 
@@ -96,8 +92,7 @@ def load_published_scenarios(
     )
     if dataset.get("status") != "ACTIVE":
         raise ValueError(
-            f"Dataset {dataset_id} version {dataset_version} is not ACTIVE: "
-            f"{dataset.get('status', 'UNKNOWN')}"
+            f"Dataset {dataset_id} version {dataset_version} is not ACTIVE: {dataset.get('status', 'UNKNOWN')}"
         )
     schema_type = dataset.get("schemaType")
     if schema_type not in (None, "AGENTCORE_EVALUATION_PREDEFINED_V1"):
@@ -126,9 +121,7 @@ def build_workload(
             selected = [scenarios[scenario_name]]
         except KeyError as error:
             available = ", ".join(sorted(scenarios))
-            raise ValueError(
-                f"Scenario {scenario_name!r} is not in the dataset. Available: {available}"
-            ) from error
+            raise ValueError(f"Scenario {scenario_name!r} is not in the dataset. Available: {available}") from error
 
     workload = []
     for scenario in selected:
@@ -170,9 +163,7 @@ def invoke_session(client, state: dict, scenario: ManagedScenario) -> dict:
                 qualifier="DEFAULT",
             )
             summary = decode_agentcore_response(response)[:500]
-            record["turn_results"].append(
-                {"input": prompt, "response_summary": summary}
-            )
+            record["turn_results"].append({"input": prompt, "response_summary": summary})
         record["response_summary"] = record["turn_results"][-1]["response_summary"]
     except Exception as error:  # noqa: BLE001 - every attempted session is recorded
         record["delivery_status"] = "failed"
@@ -247,10 +238,7 @@ def run_generation(
             record["dataset_id"] = dataset_id
             record["dataset_version"] = dataset_version
             records.append(record)
-            print(
-                f"[{completed:02d}/{len(workload):02d}] "
-                f"{record['scenario']:<24} {record['delivery_status']}"
-            )
+            print(f"[{completed:02d}/{len(workload):02d}] {record['scenario']:<24} {record['delivery_status']}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as output_file:
