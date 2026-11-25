@@ -56,10 +56,12 @@ def collect(client, engine_id, gateway_arn, generation_id):
     while True:
         page = client.list_policy_generation_assets(**params)
         for asset in page.get("policyGenerationAssets", []):
+            definition = asset.get("definition", {})
+            policy = definition.get("policy") or definition.get("cedar") or {}
             assets.append(
                 {
                     "id": asset["policyGenerationAssetId"],
-                    "statement": asset.get("definition", {}).get("cedar", {}).get("statement"),
+                    "statement": policy.get("statement"),
                     "findings": asset["findings"],
                 }
             )

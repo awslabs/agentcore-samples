@@ -85,7 +85,7 @@ class Preview(unittest.TestCase):
             "policyGenerationAssetId": "asset-1234567890",
             "rawTextFragment": "review",
             "definition": {
-                "cedar": {"statement": 'forbid(principal, action == AgentCore::Action::"Fixture", resource);'}
+                "policy": {"statement": 'forbid(principal, action == AgentCore::Action::"Fixture", resource);'}
             },
             "findings": [{"type": "WARNING", "description": "Review"}],
         }
@@ -97,7 +97,7 @@ class Preview(unittest.TestCase):
             result = collect(self.client, E, ARN, J)
         self.assertEqual(result["findings"], "Review required")
         self.assertEqual(result["drafts"][0]["findings"], asset["findings"])
-        self.assertEqual(result["drafts"][0]["statement"], asset["definition"]["cedar"]["statement"])
+        self.assertEqual(result["drafts"][0]["statement"], asset["definition"]["policy"]["statement"])
 
     def test_reject_other_attachment(self):
         self.preflight(ENGINE.replace("insurance", "another"))
