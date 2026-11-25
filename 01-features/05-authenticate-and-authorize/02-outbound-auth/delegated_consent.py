@@ -10,6 +10,7 @@ import secrets
 import threading
 import time
 import webbrowser
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -103,7 +104,7 @@ def main():
     jwt = getpass.getpass("User JWT from your configured inbound issuer (hidden): ").strip()
     if not jwt:
         parser.error("A user JWT is required")
-    with aws.client("bedrock-agentcore") as client:
+    with closing(aws.client("bedrock-agentcore")) as client:
         print(consent(client, args.workload, args.provider, args.resource, jwt, local_visit))
 
 

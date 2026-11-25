@@ -40,6 +40,30 @@ class TwoTokens(unittest.TestCase):
         with self.assertRaises(ValueError):
             agent_obo.token_headers(client, None, "owned", app)
 
+    def test_handler_closes_identity_on_failed_exchange(self):
+        client = boto3.client(
+            "bedrock-agentcore", region_name="us-west-2", aws_access_key_id="fixture", aws_secret_access_key="fixture"
+        )
+        with (
+            patch.dict(
+                "os.environ",
+                AWS_REGION="us-west-2",
+                MCP_RUNTIME_ARN="arn:aws:bedrock-agentcore:us-west-2:111111111111:runtime/demo-0123456789",
+                CREDENTIAL_PROVIDER_NAME="fixture",
+                ENTRA_MCP_CLIENT_ID="fixture",
+            ),
+            patch.object(agent_obo.boto3, "client", return_value=client),
+            patch.object(agent_obo.BedrockAgentCoreContext, "get_workload_access_token", return_value="fixture"),
+            patch.object(agent_obo, "token_headers", side_effect=ValueError("exchange failed")) as exchange,
+            patch.object(client, "close", wraps=client.close) as close,
+            patch.object(agent_obo, "MCPClient") as transport,
+            self.assertRaisesRegex(ValueError, "exchange failed"),
+        ):
+            agent_obo.handler({"prompt": "fixture"})
+        self.assertIs(exchange.call_args.args[0], client)
+        close.assert_called_once_with()
+        transport.assert_not_called()
+
     def test_endpoint_scope(self):
         arn = "arn:aws:bedrock-agentcore:us-east-1:111111111111:runtime/profile-1234567890"
         self.assertIn("runtime%2Fprofile", agent_obo.destination(arn, "us-east-1"))

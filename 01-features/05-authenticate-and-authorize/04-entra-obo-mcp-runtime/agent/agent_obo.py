@@ -3,6 +3,7 @@
 import os
 import re
 import uuid
+from contextlib import closing
 from urllib.parse import quote
 
 import boto3
@@ -49,7 +50,7 @@ def handler(payload):
         raise ValueError("Expected a nonempty prompt up to 4000 characters")
     region = os.environ["AWS_REGION"]
     url = destination(os.environ["MCP_RUNTIME_ARN"], region)
-    with boto3.client("bedrock-agentcore", region_name=region) as identity:
+    with closing(boto3.client("bedrock-agentcore", region_name=region)) as identity:
         headers = token_headers(
             identity,
             BedrockAgentCoreContext.get_workload_access_token(),

@@ -182,7 +182,7 @@ Supply only the non-secret IDs to the stack. The secret belongs exclusively in t
 
 ## How the pieces fit together at runtime
 
-- User signs in to the Agent app via MSAL device code flow. Entra issues a user JWT.
+- Your own sign-in client obtains the Entra user JWT for the Agent app. This sample does not implement interactive sign-in.
 - AgentCore Runtime validates the JWT and delivers the agent request. The agent calls `GetResourceOauth2Token` with `ON_BEHALF_OF_TOKEN_EXCHANGE`, and AgentCore Identity exchanges the user JWT for a Microsoft Graph delegation token on the agent's behalf.
 - Separately, AgentCore Identity fetches an M2M token for the agent (client_credentials against the same Agent app) audienced to the MCP Server app and carrying the `mcp_invoke` role.
 - The agent calls the MCP server with the M2M token in `Authorization` and the Graph delegation token in a custom request header. The MCP server's authorizer accepts the M2M token based on audience and role, and the tool uses the delegation token to call Graph.
@@ -214,8 +214,8 @@ If anything fails at runtime, open each app's **Manifest** (left nav) and verify
 | Sign-in: `AADSTS500011: resource principal does not exist` | Application ID URI not set, or user belongs to a different tenant | Verify step 1.4 saved; confirm `ENTRA_TENANT_ID` |
 | Sign-in: hangs on device code, never progresses | "Allow public client flows" is **No**, or `nativeclient` URI missing | Redo step 1.2 |
 | Agent returns 401 from the authorizer | Agent app's `allowedAudience` must be the bare GUID `<ENTRA_AGENT_CLIENT_ID>`, no `api://` prefix | Check `AgentRuntime.AuthorizerConfiguration` in `runtimes.yaml` |
-| OBO: `AADSTS500131: Assertion audience does not match the Client app` | MSAL scope must produce a JWT with `aud = <ENTRA_AGENT_CLIENT_ID>` | Check the MSAL sign-in cell |
-| Sign-in: `AADSTS90009: Application is requesting a token for itself. This scenario is supported only if resource is specified using the GUID based App Identifier.` | MSAL scope must use the bare-GUID form `<ENTRA_AGENT_CLIENT_ID>/.default`, not `api://` | Check the MSAL sign-in cell |
+| OBO: `AADSTS500131: Assertion audience does not match the Client app` | MSAL scope must produce a JWT with `aud = <ENTRA_AGENT_CLIENT_ID>` | Verify the audience requested by your sign-in client |
+| Sign-in: `AADSTS90009: Application is requesting a token for itself. This scenario is supported only if resource is specified using the GUID based App Identifier.` | MSAL scope must use the bare-GUID form `<ENTRA_AGENT_CLIENT_ID>/.default`, not `api://` | Check the scope requested by your sign-in client |
 | OBO: `AADSTS65001: user or administrator has not consented` | Graph delegated permissions exist but admin consent wasn't granted | Redo admin consent in step 1.5 |
 | MCP returns 401, or agent says tools are unavailable | M2M token missing `roles` claim - either `mcp_invoke`'s Allowed member types is wrong (must be **Applications**), or admin consent wasn't granted | Verify step 2.3 and the consent in Part 3 |
 

@@ -37,6 +37,37 @@ class Consent(unittest.TestCase):
         self.stub.add_response("get_resource_oauth2_token", response, params)
         return params
 
+    def test_cli_client_lifecycle(self):
+        client = boto3.client(
+            "bedrock-agentcore", region_name="us-west-2", aws_access_key_id="fixture", aws_secret_access_key="fixture"
+        )
+        sts = Mock()
+        sts.get_caller_identity.return_value = {"Account": "fixture"}
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "consent",
+                    "github",
+                    "--workload",
+                    "work",
+                    "--provider",
+                    "provider",
+                    "--region",
+                    "us-west-2",
+                    "--account",
+                    "fixture",
+                ],
+            ),
+            patch.object(demo.boto3, "Session", return_value=Mock(client=Mock(side_effect=[sts, client]))),
+            patch.object(demo.getpass, "getpass", return_value="fixture"),
+            patch.object(demo, "consent", return_value="completed") as flow,
+            patch.object(client, "close", wraps=client.close) as close,
+        ):
+            demo.main()
+        self.assertIs(flow.call_args.args[0], client)
+        close.assert_called_once_with()
+
     def test_cached(self):
         self.begin("github", {"accessToken": "hidden"})
         visit = Mock(side_effect=AssertionError("no callback required"))
