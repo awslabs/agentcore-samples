@@ -9,6 +9,17 @@ An assistant supporting a sandbox fleet can look up a device's model and firmwar
 - Bring an operator-approved Cognito user pool in the same Region, an app client and a dedicated resource-server scope such as `fleet/read`. The Gateway checks issuer via the pool's discovery URL, allowed client ID and required scope. Use your authorized client flow to obtain a short-lived **access token**. Do not use an ID token, commit app secrets, or place tokens on command lines. No pool, users or clients are created by this stack.
 - **Authorization granularity:** a caller with this client and scope can look up **any known device ID in the table**. This is a single-fleet service boundary, not per-user or per-tenant authorization. Don't point it at a mixed-tenant or production inventory.
 
+## Offline check
+
+From this directory in a fresh Python environment:
+
+```bash
+python -m pip install boto3 PyYAML
+python -m unittest -v test_inventory
+```
+
+These tests run the inline handler with controlled DynamoDB responses, not a hosted Gateway or JWT authorizer.
+
 ## Create and try the tool
 
 Set `REGION`, `STACK`, `GATEWAY_NAME`, `TABLE`, `POOL`, `CLIENT` and `SCOPE` to your sandbox values. Use a **new stack name** so the tutorial cannot update an existing stack. Save the returned full stack ID.
