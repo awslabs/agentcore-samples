@@ -1,5 +1,7 @@
 # Call Retrieve without a model
 
+The target binds the knowledge base ID and fixes the result limit at five. Callers supply only the query text.
+
 Create the [single-KB Gateway](../README.md) and set `GATEWAY_URL`, `REGION` and `TARGET_NAME=knowledge` from that stack. From the parent tutorial directory in a fresh Python 3.12 environment:
 
 ```bash

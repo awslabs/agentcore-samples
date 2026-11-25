@@ -55,8 +55,6 @@ Resources:
                 ParameterOverrides:
                   - Path: $.retrievalQuery.text
                     Visible: true
-                  - Path: $.knowledgeBaseId
-                    Visible: false
   # No KB creation/deletion, sync Lambda, broad model invocation or organization-wide discovery.
 Outputs:
   GatewayArn: {Value: !GetAtt Gateway.GatewayArn}
