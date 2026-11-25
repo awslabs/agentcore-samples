@@ -1,4 +1,8 @@
-"""Both supervisor Gateway clients, through real Strands/MCP and controlled HTTP."""
+"""Both supervisor Gateway clients, through real Strands/MCP and controlled HTTP.
+
+From the repo root with either supervisor's image dependencies installed:
+python -m unittest discover -s 05-blueprints/tests -p test_concierge_gateway.py
+"""
 
 import importlib.util
 import json
