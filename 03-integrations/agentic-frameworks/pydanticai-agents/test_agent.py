@@ -4,9 +4,9 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pydantic_bedrock_claude as example
-from pydantic import ValidationError
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.test import TestModel
+from starlette.exceptions import HTTPException
 
 
 class RuntimeTests(unittest.TestCase):
@@ -27,6 +27,7 @@ class RuntimeTests(unittest.TestCase):
         agent = example.build_agent(TestModel(call_tools=[], custom_output_text="fixture response"))
         with patch.object(example, "build_agent", return_value=agent) as factory:
             self.assertEqual(asyncio.run(example.pydantic_bedrock_claude_main({"prompt": "hello"})), "fixture response")
-            with self.assertRaises(ValidationError):
+            with self.assertRaises(HTTPException) as error:
                 asyncio.run(example.pydantic_bedrock_claude_main({"prompt": ""}))
+            self.assertEqual(error.exception.status_code, 400)
             factory.assert_called_once()

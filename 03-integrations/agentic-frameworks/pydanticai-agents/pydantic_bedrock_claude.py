@@ -4,9 +4,10 @@ import os
 from datetime import UTC, datetime
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.models.bedrock import BedrockConverseModel
+from starlette.exceptions import HTTPException
 
 app = BedrockAgentCoreApp()
 
@@ -37,7 +38,10 @@ def build_agent(model=None):
 
 @app.entrypoint
 async def pydantic_bedrock_claude_main(payload):
-    question = Question.model_validate(payload)
+    try:
+        question = Question.model_validate(payload)
+    except ValidationError:
+        raise HTTPException(400, "Send a JSON object with a nonempty prompt up to 8000 characters.") from None
     return (await build_agent().run(question.prompt)).output
 
 
