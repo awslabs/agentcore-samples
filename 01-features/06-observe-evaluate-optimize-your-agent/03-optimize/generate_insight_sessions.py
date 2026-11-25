@@ -99,7 +99,8 @@ def load_published_scenarios(
             f"Dataset {dataset_id} version {dataset_version} is not ACTIVE: "
             f"{dataset.get('status', 'UNKNOWN')}"
         )
-    if dataset.get("schemaType") != "AGENTCORE_EVALUATION_PREDEFINED_V1":
+    schema_type = dataset.get("schemaType")
+    if schema_type not in (None, "AGENTCORE_EVALUATION_PREDEFINED_V1"):
         raise ValueError("Continuous Insights traffic requires a predefined managed dataset")
     download_url = dataset.get("downloadUrl")
     if not download_url:
