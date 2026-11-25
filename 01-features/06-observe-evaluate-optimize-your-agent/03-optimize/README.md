@@ -6,7 +6,7 @@ Assistant on Amazon Bedrock AgentCore.
 | Workflow | Best for | Optimization path |
 | --- | --- | --- |
 | Batch Failure Insights evaluator | Bounded historical analysis and controlled experiments | Batch Evaluation -> recommendations -> configuration bundles -> A/B test |
-| Continuous Insights | Always-on discovery of recurring failures in completed sessions | Online Evaluation -> durable Insights -> evidence export -> coding assistant -> fixed Runtime -> replay |
+| Continuous Insights | Always-on discovery of recurring failures in completed sessions | Versioned managed dataset -> Online Evaluation -> durable Insights -> evidence export -> coding assistant -> fixed Runtime -> replay |
 
 The batch recommendation workflow uses configuration bundles and A/B testing
 to compare optimized configurations. Continuous Insights is a separate
@@ -19,6 +19,7 @@ bundles, or A/B testing.
 | Stage | Concepts Covered |
 |-------|-----------------|
 | **Insights** | `Builtin.FailureAnalysis` insight evaluator: failures grouped into insights with root causes, suggested fixes, and span-level findings |
+| **Managed datasets** | Published, immutable scenario versions used for reproducible baseline and fixed-runtime replays |
 | **Baseline evaluation** | Batch evaluations on agent sessions |
 | **Recommendations** | System prompt optimization, tool description optimization from production traces |
 | **Configuration Bundles** | Versioned config containers, runtime config hooks, baggage-based injection |
@@ -32,6 +33,7 @@ bundles, or A/B testing.
 | Component | Service | Purpose |
 |-----------|---------|---------|
 | AgentCore runtime | `bedrock-agentcore-control` | Hosts the HR Assistant container |
+| Managed dataset | `bedrock-agentcore-control` | Stores and versions Continuous Insights replay scenarios |
 | Configuration Bundle | `bedrock-agentcore-control` | Versioned system prompt and tool description storage |
 | Batch evaluation | `bedrock-agentcore` (DP) | Off-line scoring of historical sessions |
 | Batch insights | `bedrock-agentcore` (DP) | `Builtin.FailureAnalysis` in a batch evaluation: failure insights, root causes, suggested fixes |
@@ -48,6 +50,7 @@ bundles, or A/B testing.
   - `bedrock-agentcore:GetConfigurationBundle*`, `ListConfigurationBundleVersions`, `CreateConfigurationBundle`, `UpdateConfigurationBundle`, `DeleteConfigurationBundle`
   - `bedrock-agentcore:StartRecommendation`, `GetRecommendation`
   - `bedrock-agentcore:StartABTest`, `StopABTest`, `GetABTest`, `DeleteABTest`, `ListABTests`
+  - `bedrock-agentcore:CreateDataset`, `GetDataset`, `CreateDatasetVersion`, `DeleteDataset`
   - `logs:GetLogEvents`, `FilterLogEvents`, `StartQuery`, `GetQueryResults` on `runtimes/*` log groups
   - `iam:CreateRole`, `AttachRolePolicy`, `PassRole` to create the execution role for the A/B test
   - `bedrock:InvokeModel`, `s3:*`, `ecr:*`, `xray:*`
@@ -66,6 +69,7 @@ bundles, or A/B testing.
 
 ### Further Reading
 
+- [Manage AgentCore evaluation datasets](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/datasets-manage.html)
 - [Optimizing production agents with Amazon Bedrock AgentCore Observability](https://aws.amazon.com/blogs/machine-learning/optimizing-production-agents-with-amazon-bedrock-agentcore-observability/)
 - [Introducing Agent Quality Optimization in AgentCore (preview)](https://aws.amazon.com/blogs/machine-learning/introducing-agent-quality-optimization-in-agentcore-now-in-preview/)
 - [Optimizing agent system prompts with Amazon Bedrock AgentCore](https://aws.amazon.com/blogs/machine-learning/optimizing-agent-system-prompts-with-amazon-bedrock-agentcore/)
@@ -436,18 +440,51 @@ agentcore --region "$AWS_REGION" --json eval online-eval get \
 
 Continue when the configuration is `ACTIVE` and `ENABLED`.
 
-### 4. Generate baseline failure evidence
+### 4. Create and publish the scenario dataset
+
+The committed JSONL file uses the AgentCore predefined dataset schema. Create
+the managed dataset once, then publish its Draft as an immutable version:
+
+```bash
+export CONTINUOUS_INSIGHTS_DATASET_NAME="hr_assist_continuous_insights"
+
+agentcore --region "$AWS_REGION" --json eval dataset create \
+  --name "$CONTINUOUS_INSIGHTS_DATASET_NAME" \
+  --description "Versioned HR Assistant scenarios for Continuous Insights" \
+  --schema-type predefined \
+  --source file://datasets/continuous_insights_scenarios.jsonl
+
+export CONTINUOUS_INSIGHTS_DATASET_ID="<dataset-id-from-create>"
+
+agentcore --region "$AWS_REGION" --json eval dataset publish \
+  --id "$CONTINUOUS_INSIGHTS_DATASET_ID"
+
+export CONTINUOUS_INSIGHTS_DATASET_VERSION="<dataset-version-from-publish>"
+
+agentcore --region "$AWS_REGION" --json eval dataset get \
+  --id "$CONTINUOUS_INSIGHTS_DATASET_ID" \
+  --version "$CONTINUOUS_INSIGHTS_DATASET_VERSION"
+```
+
+The Draft remains mutable, while the published version is immutable. Pin both
+the baseline and fixed Runtime replays to this exact dataset ID and version so
+the comparison uses the same scenarios.
+
+### 5. Generate baseline failure evidence
 
 ```bash
 python continuous_insights.py \
   --name "$RUNTIME_NAME" \
   --region "$AWS_REGION" \
   generate \
+  --dataset-id "$CONTINUOUS_INSIGHTS_DATASET_ID" \
+  --dataset-version "$CONTINUOUS_INSIGHTS_DATASET_VERSION" \
   --preset insights \
   --output continuous-insights-output/baseline-sessions.jsonl
 ```
 
-The deterministic preset creates 54 independent sessions: four successful PTO
+The published dataset contains five deterministic scenarios. Its `insights`
+session-count metadata creates 54 independent sessions: four successful PTO
 lookups and repeated unknown-employee, missing-pay-stub, unsupported-policy,
 and unsupported-benefit scenarios.
 
@@ -466,7 +503,7 @@ agentcore --region "$AWS_REGION" --json eval insight list \
 
 An empty list is normal while the service accumulates repeated evidence.
 
-### 5. Inspect, archive, and restore an Insight
+### 6. Inspect, archive, and restore an Insight
 
 ```bash
 export AGENT_INSIGHT_ID="<id-from-the-list>"
@@ -489,7 +526,7 @@ agentcore --region "$AWS_REGION" --json eval insight update \
 Archiving hides the Insight from the active list without deleting its generated
 content.
 
-### 6. Export evidence for a coding assistant
+### 7. Export evidence for a coding assistant
 
 ```bash
 python continuous_insights.py \
@@ -515,7 +552,7 @@ Ask a coding assistant to validate the evidence against the implementation,
 make the smallest supported change, add regression tests, and leave deployment
 to the user.
 
-### 7. Deploy and replay a separate fixed Runtime
+### 8. Deploy and replay a separate fixed Runtime
 
 This repository includes an example prompt remediation. It preserves the
 original agent and tool code and changes only the system prompt:
@@ -561,6 +598,8 @@ python continuous_insights.py \
   --name "$FIXED_RUNTIME_NAME" \
   --region "$AWS_REGION" \
   generate \
+  --dataset-id "$CONTINUOUS_INSIGHTS_DATASET_ID" \
+  --dataset-version "$CONTINUOUS_INSIGHTS_DATASET_VERSION" \
   --preset insights \
   --output continuous-insights-output/fixed-sessions.jsonl
 ```
@@ -586,7 +625,7 @@ agentcore --region "$AWS_REGION" --json eval insight list \
 Other deliberate failure groups can remain; success means the selected failure
 mode no longer recurs in responses or in a new stable Insight.
 
-### 8. Continuous Insights cleanup
+### 9. Continuous Insights cleanup
 
 Pause and delete each Continuous Insights Online Evaluation:
 
@@ -606,6 +645,14 @@ agentcore --region "$AWS_REGION" eval online-eval delete \
 
 Then run `cleanup.py` once for each Runtime name. Preserve the account-level
 Agent Insight Store.
+
+The managed dataset can be reused for later comparisons. If it is no longer
+needed, delete it after both replays are complete:
+
+```bash
+agentcore --region "$AWS_REGION" eval dataset delete \
+  --id "$CONTINUOUS_INSIGHTS_DATASET_ID"
+```
 
 ## How It Works
 

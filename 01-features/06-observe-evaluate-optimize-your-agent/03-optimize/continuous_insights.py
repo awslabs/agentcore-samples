@@ -114,6 +114,8 @@ def generate(args: argparse.Namespace) -> int:
     """Generate traffic through the shared typed driver."""
     return generate_insight_sessions.run_generation(
         runtime_name=args.name,
+        dataset_id=args.dataset_id,
+        dataset_version=args.dataset_version,
         preset=args.preset,
         scenario=args.scenario,
         sessions=args.sessions,
@@ -160,12 +162,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--region", default=os.environ.get("AWS_REGION"))
     subparsers = parser.add_subparsers(dest="command", required=True)
     generate_parser = subparsers.add_parser("generate")
+    generate_parser.add_argument("--dataset-id", required=True)
+    generate_parser.add_argument("--dataset-version", required=True)
     generate_parser.add_argument("--preset", choices=["quick", "insights"], default="insights")
-    generate_parser.add_argument(
-        "--scenario",
-        choices=["all", *generate_insight_sessions.SCENARIOS],
-        default="all",
-    )
+    generate_parser.add_argument("--scenario", default="all")
     generate_parser.add_argument("--sessions", type=int)
     generate_parser.add_argument("--concurrency", type=int, default=4)
     generate_parser.add_argument("--output", type=Path)

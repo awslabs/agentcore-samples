@@ -6,7 +6,6 @@ import argparse
 import json
 from pathlib import Path
 
-from generate_insight_sessions import SCENARIOS
 from utils.quality_checks import quality_gate_failures, summarize_records
 
 
@@ -15,7 +14,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="+", type=Path)
     parser.add_argument("--minimum-rate", type=float, default=0.95)
-    parser.add_argument("--scenario", action="append", choices=sorted(SCENARIOS))
+    parser.add_argument(
+        "--scenario",
+        action="append",
+        help="Only evaluate records with this managed-dataset scenario_id",
+    )
     args = parser.parse_args()
     if not 0 <= args.minimum_rate <= 1:
         parser.error("--minimum-rate must be between 0 and 1")
