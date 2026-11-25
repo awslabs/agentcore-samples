@@ -255,7 +255,7 @@ def main() -> None:
         name,
         {**state, "evaluation_role_name": role_name, "evaluation_role_arn": role_arn, "online_config_id": config_id},
     )
-    print("\nContinuous Insights is on. Next: python scripts/drive.py --name", name, "--count 100 --concurrency 20")
+    print("\nContinuous Insights is on. Next: python scripts/create_dataset.py --name", name)
 
 
 if __name__ == "__main__":

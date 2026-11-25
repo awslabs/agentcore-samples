@@ -36,7 +36,7 @@ An insurance company runs a claims agent. A Claims Processor agent decides each 
 5. You export the Insights, and a coding assistant fixes the causes in the prompts, the tool descriptions, or the code.
 6. You redeploy, send the same claims, and compare the counts with your export.
 
-![Architecture: the claims agent runs on AgentCore Runtime and emits spans to CloudWatch; online evaluation runs Failure Analysis and publishes Agent Insights; a coding assistant reads the exported Insights; the next run is compared with the first. Numbered circles match the steps of the walkthrough.](docs/architecture.png)
+![Architecture: the claims agent runs on AgentCore Runtime and emits spans to CloudWatch; scripts create a managed dataset of claim scenarios and send the claims from it; online evaluation runs Failure Analysis and publishes Agent Insights; a coding assistant reads the exported Insights; the next run is compared with the first. Numbered circles match the steps of the walkthrough.](docs/architecture.png)
 
 [docs/architecture.md](docs/architecture.md) describes the components, the IAM role, and the design decisions.
 
@@ -48,6 +48,7 @@ An insurance company runs a claims agent. A Claims Processor agent decides each 
 | **Application name** | The `service.name` your agent emits. On AgentCore Runtime it is `<runtime name>.DEFAULT`, here `ClaimsAgent_claimsagent.DEFAULT`. Insights belong to an application name. |
 | **Agent Insight Store** | Where your account keeps its Insights, one store for each account and Region. |
 | **Online evaluation configuration** | The rule that selects live sessions and runs evaluators on them. Continuous Insights uses the built-in `Builtin.FailureAnalysis` evaluator. |
+| **Managed dataset** | A named set of evaluation scenarios that AgentCore stores for you. This sample keeps its claim scenarios in one, so the test traffic is defined in one place. |
 | **Session idle timeout** | How long a session stays quiet before it counts as finished and gets evaluated. This sample uses 2 minutes. |
 
 ## Prerequisites
@@ -141,22 +142,25 @@ The claims agent has its own online evaluation configuration, `ClaimsEvaluation`
 **What you should see.** The script prints the Store state, `Application name confirmed: ClaimsAgent_claimsagent.DEFAULT`, the role and configuration it created, and ends with:
 
 ```text
-Continuous Insights is on. Next: python scripts/drive.py --name ClaimsAgent --count 100 --concurrency 20
+Continuous Insights is on. Next: python scripts/create_dataset.py --name ClaimsAgent
 ```
 
 **If it does not match.** If the script says the application name has no spans yet, invoke the claims agent once, wait two minutes, and run the script again.
 
 ### Step 4: Send claims and wait for Insights
 
-**What this step does.** It sends 100 scripted claims to the runtime. Each claim is one session. The online evaluation runs Failure Analysis on each session after it goes idle. Continuous Insights then groups the failures.
+**What this step does.** It stores the claim scenarios in an AgentCore managed dataset, then sends 100 claims from that dataset to the runtime. Each claim is one session. The online evaluation runs Failure Analysis on each session after it goes idle. Continuous Insights then groups the failures.
 
 **Run.**
 
 ```bash
+python scripts/create_dataset.py --name ClaimsAgent
 python scripts/drive.py --name ClaimsAgent --count 100 --concurrency 20
 ```
 
-The script asks you to type `yes` before it starts. Add `--yes` to skip the prompt. It cycles through seven scenarios:
+`create_dataset.py` creates the dataset `ClaimsAgent_claim_scenarios` with seven scenarios and saves its ID in the state file. Each scenario is a single-turn example: the claim text is the turn `input`, and the claimant's email is in the scenario `metadata`. You run it once. To add or change claims later, edit the dataset in the console or with `aws bedrock-agentcore-control add-dataset-examples`; `drive.py` reads the scenarios from the dataset each time it runs. See [Manage datasets](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/datasets-manage.html).
+
+`drive.py` asks you to type `yes` before it starts. Add `--yes` to skip the prompt. It cycles through the seven scenarios:
 
 | Scenario | Claim |
 |---|---|
@@ -172,7 +176,7 @@ Each claim carries the policy holder's email address, except `email-not-on-polic
 
 #### Sample prompts
 
-These are the claims `drive.py` sends, with the claimant email in the payload. Each one shows a different behavior of the claims agent:
+These are the claims in the dataset. `drive.py` sends each one with the claimant email in the payload. Each one shows a different behavior of the claims agent:
 
 | Prompt | Claimant email | What it tests |
 |---|---|---|
@@ -399,7 +403,7 @@ cd <claims-agent-dir>
 ./scripts/destroy.sh us-east-1
 ```
 
-`cleanup.py` asks you to type `yes` (`--yes` skips the prompt). It removes the online evaluation configuration, the evaluation role with its inline policies, and, with `--delete-logs`, the evaluation results log group. Delete `agent_state_ClaimsAgent.json`, `sessions_ClaimsAgent.jsonl`, and `insights/` from `<sample-dir>` when you no longer need them.
+`cleanup.py` asks you to type `yes` (`--yes` skips the prompt). It removes the online evaluation configuration, the evaluation role with its inline policies, the scenario dataset, and, with `--delete-logs`, the evaluation results log group. Delete `agent_state_ClaimsAgent.json`, `sessions_ClaimsAgent.jsonl`, and `insights/` from `<sample-dir>` when you no longer need them.
 
 Two account-wide settings stay in place:
 
