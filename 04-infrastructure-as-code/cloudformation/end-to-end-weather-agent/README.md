@@ -331,6 +331,10 @@ BUCKET_NAME=$(aws cloudformation describe-stacks \
 # Review versions and delete markers. Use S3's Empty action only after verifying
 # this is the dedicated stack bucket and nothing in it needs to be retained.
 aws s3api list-object-versions --bucket "$BUCKET_NAME" --region us-west-2
+# For each reviewed results.md version or delete marker that belongs to this run:
+# aws s3api delete-object --bucket "$BUCKET_NAME" --key results.md --version-id "$VERSION_ID" --region us-west-2
+# List again and verify both Versions and DeleteMarkers are empty before stack deletion.
+# Stop if other keys remain; do not delete unrelated objects.
 
 # Step 2: Terminate any active browser sessions
 # Get the Browser ID

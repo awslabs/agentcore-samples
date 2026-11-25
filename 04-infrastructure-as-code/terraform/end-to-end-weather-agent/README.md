@@ -261,6 +261,7 @@ This pattern uses **IAM-based authentication with workload identity tokens**:
 From the repository root, with the sample's `agent-code/requirements.txt` installed in a Python 3.11 environment:
 
 ```bash
+python -m pip install PyYAML  # shared tests parse the standalone CloudFormation template
 python -m unittest discover -s 04-infrastructure-as-code/tests -v
 ```
 
