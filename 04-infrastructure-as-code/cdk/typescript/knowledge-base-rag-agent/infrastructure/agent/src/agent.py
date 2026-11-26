@@ -22,7 +22,7 @@ def create_agent() -> Agent:
         Configured Strands Agent instance
     """
     # Get model configuration from environment
-    model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+    model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     region = os.environ.get("AWS_REGION", "us-east-1")
 
     logger.info(f"Creating agent with model: {model_id} in region: {region}")

@@ -12,7 +12,7 @@ from strands.models.bedrock import BedrockModel
 def create_agent():
     """Create the coding assistant agent."""
     model = BedrockModel(
-        model_id="us.anthropic.claude-sonnet-4-20250514",
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
     )
 

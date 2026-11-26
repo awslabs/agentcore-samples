@@ -11,7 +11,7 @@ bedrock_client = boto3.client("bedrock-runtime")
 secrets_client = boto3.client("secretsmanager")
 
 # Configuration
-BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "rtp-overlay/db-credentials")
 
 

@@ -10,7 +10,7 @@ policy_engine:
 
 runtime:
   name: coding-assistant-runtime
-  model_id: us.anthropic.claude-sonnet-4-20250514
+  model_id: us.anthropic.claude-sonnet-4-5-20250929-v1:0
 
 scenarios:
   # --- File System: ALLOW (within workspace) ---

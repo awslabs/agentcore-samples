@@ -22,7 +22,7 @@ Required environment variables:
 ```bash
 GATEWAY_URL=<AgentCore Gateway URL>
 DATABASE_SECRET_ARN=<RDS credentials ARN>
-BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 RTP_API_URL=<Backend API URL>
 ```
 

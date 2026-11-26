@@ -25,7 +25,7 @@ lambda_client = boto3.client("lambda", region_name="us-east-1")
 
 # Environment variables
 GATEWAY_URL = os.environ.get("GATEWAY_URL")
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ISO20022_LAMBDA_ARN = os.environ.get("ISO20022_LAMBDA_ARN")
 
 # Create Bedrock Model for agent

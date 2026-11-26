@@ -18,7 +18,7 @@ While MCP has been advantageous for net new use cases, organizations also naviga
 - [AgentCore CLI](https://www.npmjs.com/package/@aws/agentcore): `npm install -g @aws/agentcore@0.30.0`
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials (`aws configure`)
 - [IAM permissions](https://github.com/aws/agentcore-cli/blob/main/docs/PERMISSIONS.md)
-- Bedrock model access for `us.anthropic.claude-sonnet-4-20250514-v1:0` (if using Strands demo)
+- Bedrock model access for `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (if using Strands demo)
 
 ## Deployment Steps
 

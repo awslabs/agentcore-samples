@@ -28,7 +28,7 @@ python setup_gateway.py --gateway-name langchain-web-search-gw
 source .env.web-search
 
 # 3. (Optional) Override the default model
-export BEDROCK_MODEL_ID="us.anthropic.claude-sonnet-4-20250514-v1:0"
+export BEDROCK_MODEL_ID="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 # 4. Run the agent
 python web_search_langchain.py
