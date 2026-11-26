@@ -3,20 +3,21 @@ Gateway client utilities for AgentCore Gateway integration.
 Handles OAuth2 authentication and MCP client creation.
 """
 
+import logging
 import os
+import re
+from datetime import datetime, timedelta
+from urllib.parse import urlsplit
+
 import boto3
 import requests
-import logging
-from datetime import datetime, timedelta
-from typing import Optional
 from strands.tools.mcp import MCPClient
-from mcp.client.streamable_http import streamablehttp_client
 
 logger = logging.getLogger(__name__)
 
 # Token cache
-_token_cache: Optional[str] = None
-_token_expiry: Optional[datetime] = None
+_token_cache: str | None = None
+_token_expiry: datetime | None = None
 
 
 def get_ssm_parameter(parameter_name: str, region: str) -> str:
@@ -36,8 +37,8 @@ def get_ssm_parameter(parameter_name: str, region: str) -> str:
         return response["Parameter"]["Value"]
     except ssm.exceptions.ParameterNotFound:
         raise ValueError(f"SSM parameter not found: {parameter_name}")
-    except Exception as e:
-        raise ValueError(f"Failed to retrieve SSM parameter {parameter_name}: {e}")
+    finally:
+        ssm.close()
 
 
 def get_gateway_access_token() -> str:
@@ -91,7 +92,10 @@ def get_gateway_access_token() -> str:
                 "scope": scope,
             },
             timeout=10,
+            allow_redirects=False,  # Never repost the client secret to a redirect target.
         )
+        if token_response.is_redirect:
+            raise ValueError("Unexpected Cognito token endpoint redirect")
         token_response.raise_for_status()
 
         data = token_response.json()
@@ -104,9 +108,8 @@ def get_gateway_access_token() -> str:
         logger.info(f"✅ Gateway token acquired, expires in {expires_in}s")
         return _token_cache
 
-    except Exception as e:
-        logger.error(f"❌ Failed to get gateway token: {e}")
-        raise
+    except (requests.RequestException, KeyError, ValueError):
+        raise RuntimeError("Unable to obtain a Gateway access token from Cognito.") from None
 
 
 def get_gateway_client(tool_filter_pattern: str, prefix: str = "gateway") -> MCPClient:
@@ -123,12 +126,27 @@ def get_gateway_client(tool_filter_pattern: str, prefix: str = "gateway") -> MCP
     Example:
         cart_client = get_gateway_client("^carttools___")
     """
-    import re
-
     region = os.environ.get("AWS_REGION", "us-east-1")
     deployment_id = os.getenv("DEPLOYMENT_ID", "default")
 
     gateway_url = get_ssm_parameter(f"/concierge-agent/{deployment_id}/gateway-url", region)
+    # Infrastructure writes the Gateway's service URL into this SSM parameter.
+    # Don't acquire or attach an access token to an arbitrary destination.
+    endpoint = urlsplit(gateway_url)
+    suffix = f".gateway.bedrock-agentcore.{region}.amazonaws.com"
+    if not (
+        endpoint.scheme == "https"
+        and endpoint.hostname
+        and endpoint.hostname.endswith(suffix)
+        and re.fullmatch(r"[a-z0-9-]+", endpoint.hostname[: -len(suffix)])
+        and endpoint.port in (None, 443)
+        and endpoint.path == "/mcp"
+        and not endpoint.username
+        and not endpoint.password
+        and not endpoint.query
+        and not endpoint.fragment
+    ):
+        raise ValueError("Expected this Region's HTTPS AgentCore Gateway MCP URL.")
     access_token = get_gateway_access_token()
 
     logger.info(f"Creating Gateway MCP client with filter: {tool_filter_pattern}, prefix: {prefix}")
@@ -136,7 +154,8 @@ def get_gateway_client(tool_filter_pattern: str, prefix: str = "gateway") -> MCP
     tool_filters = {"allowed": [re.compile(tool_filter_pattern)]}
 
     client = MCPClient(
-        lambda: streamablehttp_client(url=gateway_url, headers={"Authorization": f"Bearer {access_token}"}),
+        url=gateway_url,
+        headers={"Authorization": f"Bearer {access_token}"},
         prefix=prefix,
         tool_filters=tool_filters,
     )
