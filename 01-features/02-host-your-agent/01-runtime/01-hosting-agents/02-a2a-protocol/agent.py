@@ -96,7 +96,7 @@ async def ping():
     return JSONResponse({"status": "ok"})
 
 
-@app.get("/.well-known/agent.json")
+@app.get("/.well-known/agent-card.json")
 async def agent_card():
     """A2A agent card for discovery."""
     return JSONResponse(AGENT_CARD)
@@ -137,5 +137,5 @@ async def invocations(request: Request):
 
 if __name__ == "__main__":
     host = os.environ.get("AGENT_RUNTIME_HOST", "0.0.0.0")  # nosec B104
-    port = int(os.environ.get("AGENT_PORT", 9000))  # A2A uses port 9000
+    port = int(os.environ.get("AGENT_PORT", "9000"))  # A2A uses port 9000
     uvicorn.run(app, host=host, port=port, log_level="info")

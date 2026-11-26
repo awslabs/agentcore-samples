@@ -101,7 +101,7 @@ Each protocol changes how clients communicate with your agent:
 |:---------|:------|:-----------------|:---------|
 | HTTP | `HTTP` | `POST /invocations` + `GET /ping` on port 8080 | Standard request/response agents |
 | MCP | `MCP` | `POST /mcp` on port 8000 (JSON-RPC) | Tool servers for LLM tool use |
-| A2A | `A2A` | `POST /` (JSON-RPC) + `GET /.well-known/agent.json` on port 9000 | Agent-to-agent orchestration |
+| A2A | `A2A` | `POST /` (JSON-RPC) + `GET /.well-known/agent-card.json` on port 9000 | Agent-to-agent orchestration |
 | AG-UI | `AGUI` | `POST /invocations` + `GET /ws` on port 8080 | Real-time streaming to UIs |
 
 You set the protocol once when creating the runtime via `protocolConfiguration.serverProtocol`.
