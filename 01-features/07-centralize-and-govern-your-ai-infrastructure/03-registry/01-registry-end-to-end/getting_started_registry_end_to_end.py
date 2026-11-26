@@ -12,7 +12,7 @@ Usage:
     python getting_started_registry_end_to_end.py
 
 Prerequisites:
-    - boto3 >= 1.42.87  (pip install boto3)
+    - boto3 >= 1.43.66  (pip install boto3)
     - AWS credentials with IAM management + STS + agent-registry permissions
     - AWS_DEFAULT_REGION set (default: us-west-2)
 
@@ -199,7 +199,7 @@ CONSUMER_POLICY = {
             "Action": [
                 "agent-registry:SearchDiscoverableRegistryRecords",
                 "agent-registry:ListDiscoverableRegistryRecords",
-                "agent-registry:BatchGetDiscoverableRegistryRecords",
+                "agent-registry:GetDiscoverableRegistryRecord",
             ],
             "Resource": [f"arn:aws:agent-registry:{AWS_REGION}:{ACCOUNT_ID}:*"],
         },
@@ -516,7 +516,7 @@ for q in queries:
 # Batch get
 print("\n── Batch Get Verification ──")
 all_record_ids = list(RECORD_IDS.values())
-batch_resp = dp_client.batch_get_discoverable_registry_records(
+batch_resp = dp_client.batch_get_discoverable_registry_record(
     entries=[{"registryId": REGISTRY_ID, "recordIds": all_record_ids}]
 )
 for r in batch_resp.get("registryRecords", []):
