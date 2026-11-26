@@ -65,11 +65,11 @@ AWS Agent registry provides a governance-first approach where every record must 
 
   | Service | Permissions |
   |:--------|:------------|
-  | **AWS Agent registry** | `CreateRegistry`, `DeleteRegistry`, `GetRegistry`, `ListRegistries`, `CreateRegistryRecord`, `DeleteRegistryRecord`, `GetRegistryRecord`, `ListRegistryRecords`, `UpdateRegistryRecord`, `SubmitRegistryRecordForApproval`, `UpdateRegistryRecordStatus`, `SearchRegistryRecords` |
+  | **AWS Agent registry** | `CreateRegistry`, `DeleteRegistry`, `GetRegistry`, `ListRegistries`, `CreateRegistryRecord`, `DeleteRegistryRecord`, `GetRegistryRecord`, `ListRegistryRecords`, `UpdateRegistryRecord`, `SubmitRegistryRecordForApproval`, `UpdateRegistryRecordStatus`, `SearchDiscoverableRegistryRecords`, `GetDiscoverableRegistryRecord` |
   | **AWS IAM** | `CreateUser`, `DeleteUser`, `PutUserPolicy`, `DeleteUserPolicy`, `CreateAccessKey`, `DeleteAccessKey`, `ListAccessKeys` |
   | **AWS STS** | `GetCallerIdentity` |
 
-- Python 3.8+ with `boto3 >= 1.42.87` installed
+- Python 3.8+ with `boto3 >= 1.43.66` installed
 - AWS CLI configured with a default region (`us-west-2`)
 
 ## AWS Resources Created
