@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Read-only device inventory MCP tool for a dedicated sandbox fleet
+Parameters:
+  GatewayName:
+    Type: String
+    AllowedPattern: '[a-z][a-z0-9-]{2,39}'
+  TableName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9._-]{3,255}'
+  UserPoolId:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+_[A-Za-z0-9]+'
+  AppClientId:
+    Type: String
+    AllowedPattern: '[a-z0-9]{1,128}'
+  ReadScope:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9._/-]+/[A-Za-z0-9._-]+'
+Resources:
+  HandlerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+  HandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadOneInventoryTable
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt HandlerLogs.Arn
+  Handler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt HandlerRole.Arn
+      Timeout: 10
+      LoggingConfig:
+        LogGroup: !Ref HandlerLogs
+      Environment:
+        Variables: {TABLE_NAME: !Ref TableName}
+      Code:
+        ZipFile: |
+          import os
+          import re
+          import boto3
+
+          def handler(event, context):
+              tool = context.client_context.custom.get('bedrockAgentCoreToolName')
+              if tool != 'inventory___get_device' or set(event) != {'device_id'}:
+                  raise ValueError('Expected one inventory lookup')
+              device = event['device_id']
+              if not isinstance(device, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', device):
+                  raise ValueError('Invalid device ID')
+              item = boto3.client('dynamodb').get_item(
+                  TableName=os.environ['TABLE_NAME'], Key={'device_id': {'S': device}},
+                  ProjectionExpression='#id, #model, #fw',
+                  ExpressionAttributeNames={'#id': 'device_id', '#model': 'model', '#fw': 'firmware_version'},
+              ).get('Item')
+              if not item:
+                  return {'found': False}
+              return {'found': True, 'device': {k: item[k]['S'] for k in ('device_id', 'model', 'firmware_version') if k in item}}
+  GatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {'aws:SourceAccount': !Ref 'AWS::AccountId'}
+              ArnLike: {'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*'}
+      Policies:
+        - PolicyName: InvokeInventoryHandler
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Handler.Arn
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Ref GatewayName
+      ProtocolType: MCP
+      AuthorizerType: CUSTOM_JWT
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPoolId}/.well-known/openid-configuration'
+          AllowedClients: [!Ref AppClientId]
+          AllowedScopes: [!Ref ReadScope]
+      RoleArn: !GetAtt GatewayRole.Arn
+  Target:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      Name: inventory
+      GatewayIdentifier: !GetAtt Gateway.GatewayIdentifier
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE
+      TargetConfiguration:
+        Mcp:
+          Lambda:
+            LambdaArn: !GetAtt Handler.Arn
+            ToolSchema:
+              InlinePayload:
+                - Name: get_device
+                  Description: Read model and firmware for a device in this sandbox fleet.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      device_id: {Type: string, Description: Device identifier from this fleet}
+                    Required: [device_id]
+Outputs:
+  GatewayUrl:
+    Value: !GetAtt Gateway.GatewayUrl
