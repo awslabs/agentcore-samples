@@ -1,5 +1,2 @@
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
-botocore
-boto3
-python-dotenv
+boto3==1.44.9
+requests==2.34.2
