@@ -168,7 +168,13 @@ try:
     time.sleep(10)
 
     HARNESS_NAME = f"TravelGuideAgent_{uuid.uuid4().hex[:8]}"
-    resp = control.create_harness(harnessName=HARNESS_NAME, executionRoleArn=role_arn)
+    # Omitting memory provisions managed memory; Part 4's own memory would
+    # disassociate it, and DeleteHarness would then leave it behind.
+    resp = control.create_harness(
+        harnessName=HARNESS_NAME,
+        executionRoleArn=role_arn,
+        memory={"disabled": {}},
+    )
     harness = resp["harness"]
     harness_id = harness["harnessId"]
     harness_arn = harness["arn"]

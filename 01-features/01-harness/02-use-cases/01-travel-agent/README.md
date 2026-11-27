@@ -20,7 +20,7 @@ web data, and combining Exa search with Code Interpreter for data visualization.
 ```
 travel_agent.py
 │
-├── Part 1: create_harness (control plane)
+├── Part 1: create_harness (control plane, memory disabled)
 │
 ├── Part 2: invoke_harness → HTML travel guide
 │              └─ file_operations + shell tools (built-in)
