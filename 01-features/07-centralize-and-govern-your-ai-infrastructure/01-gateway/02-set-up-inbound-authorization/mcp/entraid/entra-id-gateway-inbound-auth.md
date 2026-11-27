@@ -208,8 +208,14 @@ GATEWAY_URL=$(aws bedrock-agentcore-control get-gateway \
   --gateway-identifier "$GATEWAY_ID" --region <REGION> \
   --query 'gatewayUrl' --output text)
 
+# get-gateway returns a URL that already ends in /mcp. Strip it once here;
+# later steps append /mcp (or /.well-known/...) explicitly.
+GATEWAY_URL=${GATEWAY_URL%/mcp}
+
 echo "Gateway URL: $GATEWAY_URL"
 ```
+
+`GATEWAY_URL` now holds the gateway base URL without the `/mcp` suffix, for example `https://<GATEWAY_ID>.gateway.bedrock-agentcore.<REGION>.amazonaws.com`.
 
 ### Understanding the authorizer fields
 
@@ -378,7 +384,7 @@ Before connecting the MCP client, verify the gateway is configured correctly:
 
 ### Check the PRM
 
-Make sure the `GATEWAY_URL` is without `/mcp`,
+This uses the `GATEWAY_URL` you saved in Step 3b, which has no `/mcp` suffix.
 
 ```bash
 curl -s "${GATEWAY_URL}/.well-known/oauth-protected-resource" | python3 -m json.tool
