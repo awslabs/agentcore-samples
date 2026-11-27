@@ -1,14 +1,13 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["boto3"]
+# dependencies = ["boto3==1.43.36", "botocore==1.43.36", "jmespath==1.0.1", "s3transfer==0.19.0", "python-dateutil==2.9.0.post0", "six==1.17.0", "urllib3==2.5.0"]
 # ///
 """
 Create the gateway IAM role, policy engine, gateway, MCP server target,
 and base permits for the banking assistant temporal policies sample.
 
-The script is idempotent — re-running it safely skips resources that
-already exist. State is saved to setup_config.json so each step can
-reference the IDs from previous steps.
+The script reconciles resources recorded in setup_config.json. It refuses to
+adopt an unrecorded role; keep this file through partial failures and cleanup.
 
 Usage:
     uv run setup.py
@@ -33,15 +32,25 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+from oauth_provider import STATE_FILE as OAUTH_STATE_FILE
+from oauth_provider import verify_provider
+from policy_contract import (
+    API_VERSION,
+    policy_statement,
+    require_policy_client_model,
+    require_policy_model,
+    verified_policy_session,
+)
+from resource_state import OWNER_TAG, absent, atomic_save, require_equal, verify_resources
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 REGION = os.environ.get("REGION", "us-east-1")
-GATEWAY_ROLE_NAME = "banking-gateway-role"
-GATEWAY_NAME = "banking-gateway"
-ENGINE_NAME = "banking_policy_engine"
+GATEWAY_ROLE_NAME = os.environ.get("GATEWAY_ROLE_NAME", "banking-gateway-role")
+GATEWAY_NAME = os.environ.get("GATEWAY_NAME", "banking-gateway")
+ENGINE_NAME = os.environ.get("ENGINE_NAME", "banking_policy_engine")
 TARGET_NAME = "banking-assistant-tools"
 CONFIG_FILE = Path(__file__).parent / "setup_config.json"
 
@@ -84,7 +93,54 @@ def load_config() -> dict:
 def save_config(data: dict) -> None:
     cfg = load_config()
     cfg.update(data)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    atomic_save(CONFIG_FILE, cfg)
+
+
+def ownership_id() -> str:
+    owner = load_config().get("ownership_id")
+    if not owner:
+        owner = str(uuid.uuid4())
+        save_config({"ownership_id": owner})
+    return owner
+
+
+def create_intent(key: str, params: dict) -> str:
+    """Persist request and stable token BEFORE sending; never reuse for drift."""
+    intents = load_config().get("create_intents", {})
+    if key in intents:
+        require_equal(intents[key]["params"], params, key + " create intent")
+    else:
+        intents[key] = {"clientToken": str(uuid.uuid4()), "params": params}
+        save_config({"create_intents": intents})
+    return intents[key]["clientToken"]
+
+
+def check_environment(cfg: dict, account_id: str) -> None:
+    expected = {
+        "account_id": account_id,
+        "region": REGION,
+        "role_name": GATEWAY_ROLE_NAME,
+        "gateway_name": GATEWAY_NAME,
+        "engine_name": ENGINE_NAME,
+    }
+    if cfg and any(cfg.get(key) != value for key, value in expected.items()):
+        raise RuntimeError(
+            "setup_config.json does not match this account/region/resource names. "
+            "Legacy state requires a separate reviewed migration; do not edit it to adopt resources. "
+            + json.dumps(expected)
+        )
+
+
+def wait_ready(get_resource, ready: str, label: str, attempts: int = 60) -> dict:
+    for _ in range(attempts):
+        resource = get_resource()
+        status = resource.get("status")
+        if status == ready:
+            return resource
+        if "FAILED" in str(status):
+            raise RuntimeError(f"{label} failed: {resource}")
+        time.sleep(5)
+    raise TimeoutError(f"{label} did not reach {ready}; keep setup_config.json and retry")
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +148,29 @@ def save_config(data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def ensure_gateway_role(iam, account_id: str) -> str:
+def ensure_gateway_role(iam, account_id: str, cfg: dict) -> str:
     try:
-        arn = iam.get_role(RoleName=GATEWAY_ROLE_NAME)["Role"]["Arn"]
+        role = iam.get_role(RoleName=GATEWAY_ROLE_NAME)["Role"]
+        arn = role["Arn"]
+        tags = {t["Key"]: t["Value"] for t in role.get("Tags", [])}
+        intent = load_config().get("create_intents", {}).get("role")
+        if not intent or not cfg.get("ownership_id") or tags.get(OWNER_TAG) != cfg["ownership_id"]:
+            raise RuntimeError(f"Refusing to adopt unrecorded IAM role {arn}")
+        require_equal(intent["params"]["RoleName"], GATEWAY_ROLE_NAME, "role intent")
+        require_equal(arn, f"arn:aws:iam::{account_id}:role/{GATEWAY_ROLE_NAME}", "role ARN")
+        if cfg.get("role_arn"):
+            require_equal(arn, cfg["role_arn"], "recorded role ARN")
+        if cfg.get("role_id"):
+            require_equal(role["RoleId"], cfg["role_id"], "recorded role ID")
+        # An accepted IAM create with a lost response is recoverable only via
+        # our pre-existing intent AND the unique tag placed by that request.
+        save_config({"role_arn": arn, "role_id": role["RoleId"]})
         print(f"  Gateway role already exists: {arn}")
-    except iam.exceptions.NoSuchEntityException:
+    except ClientError as error:
+        if not absent(error):
+            raise
+        if cfg.get("role_arn"):
+            raise RuntimeError("Recorded IAM role is absent; retain state and audit") from error
         trust = json.dumps(
             {
                 "Version": "2012-10-17",
@@ -105,92 +179,88 @@ def ensure_gateway_role(iam, account_id: str) -> str:
                         "Effect": "Allow",
                         "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
                         "Action": "sts:AssumeRole",
-                        "Condition": {
-                            "StringEquals": {"aws:SourceAccount": account_id}
-                        },
+                        "Condition": {"StringEquals": {"aws:SourceAccount": account_id}},
                     }
                 ],
             }
         )
-        arn = iam.create_role(
-            RoleName=GATEWAY_ROLE_NAME,
-            AssumeRolePolicyDocument=trust,
-        )["Role"]["Arn"]
+        params = {
+            "RoleName": GATEWAY_ROLE_NAME,
+            "AssumeRolePolicyDocument": trust,
+            "Tags": [{"Key": OWNER_TAG, "Value": ownership_id()}],
+        }
+        create_intent("role", params)  # IAM has no clientToken: recovery uses tags.
+        role = iam.create_role(**params)["Role"]
+        arn = role["Arn"]
+        save_config({"role_arn": arn, "role_id": role["RoleId"]})
         print(f"  Created gateway role: {arn}")
 
-    iam.put_role_policy(
-        RoleName=GATEWAY_ROLE_NAME,
-        PolicyName="GatewayExecutionPolicy",
-        PolicyDocument=json.dumps(
-            {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Sid": "PolicyEngineConfiguration",
-                        "Effect": "Allow",
-                        "Action": "bedrock-agentcore:GetPolicyEngine",
-                        "Resource": f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:policy-engine/*",
-                    },
-                    {
-                        "Sid": "PolicyEngineAuthorization",
-                        "Effect": "Allow",
-                        "Action": [
-                            "bedrock-agentcore:AuthorizeAction",
-                            "bedrock-agentcore:PartiallyAuthorizeActions",
-                        ],
-                        "Resource": [
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:policy-engine/*",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:gateway/*",
-                        ],
-                    },
-                    {
-                        "Sid": "GetWorkloadAccessToken",
-                        "Effect": "Allow",
-                        "Action": [
-                            "bedrock-agentcore:GetWorkloadAccessToken",
-                            "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
-                            "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
-                        ],
-                        "Resource": [
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default/workload-identity/banking-gateway-*",
-                        ],
-                    },
-                    {
-                        "Sid": "CompleteResourceTokenAuth",
-                        "Effect": "Allow",
-                        "Action": "bedrock-agentcore:CompleteResourceTokenAuth",
-                        "Resource": [
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:token-vault/default",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:token-vault/default/oauth2credentialprovider/*",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default/workload-identity/banking-gateway-*",
-                        ],
-                    },
-                    {
-                        "Sid": "GetResourceOauth2Token",
-                        "Effect": "Allow",
-                        "Action": "bedrock-agentcore:GetResourceOauth2Token",
-                        "Resource": [
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:token-vault/default",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:token-vault/default/oauth2credentialprovider/*",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default",
-                            f"arn:aws:bedrock-agentcore:{REGION}:{account_id}:workload-identity-directory/default/workload-identity/banking-gateway-*",
-                        ],
-                    },
-                    {
-                        "Sid": "GetSecretValue",
-                        "Effect": "Allow",
-                        "Action": "secretsmanager:GetSecretValue",
-                        "Resource": f"arn:aws:secretsmanager:{REGION}:{account_id}:secret:bedrock-agentcore-identity!default/oauth2/*",
-                    },
-                ],
-            }
-        ),
-    )
-    print("  GatewayExecutionPolicy applied — waiting 15s for IAM propagation...")
-    time.sleep(15)
     return arn
+
+
+def apply_gateway_policy(iam, cfg: dict, provider: dict) -> None:
+    """Two phases: exact engine before gateway create; exact OAuth resources after.
+
+    Authorization action set follows @aws/agentcore-cdk 1.0.3 grantAuthorizeAll.
+    Directory/vault roots follow aws-cdk-lib 2.269.0 OAuth grants (see README).
+    No wildcard engine, gateway, workload identity, provider or secret grants.
+    """
+    resources = [cfg["engine_arn"]]
+    if cfg.get("gateway_arn"):
+        resources.append(cfg["gateway_arn"])
+    statements = [
+        {
+            "Sid": "PolicyEngineAuthorization",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock-agentcore:GetPolicyEngine",
+                "bedrock-agentcore:CheckAuthorizePermissions",
+                "bedrock-agentcore:AuthorizeAction",
+                "bedrock-agentcore:PartiallyAuthorizeActions",
+            ],
+            "Resource": resources,
+        }
+    ]
+    if cfg.get("workload_identity_arn"):
+        prefix = f"arn:aws:bedrock-agentcore:{cfg['region']}:{cfg['account_id']}:"
+        directory = prefix + "workload-identity-directory/default"
+        identity = cfg["workload_identity_arn"]
+        statements.extend(
+            [
+                {
+                    "Sid": "GetWorkloadAccessToken",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock-agentcore:GetWorkloadAccessToken",
+                        "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                        "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
+                    ],
+                    "Resource": [directory, identity],
+                },
+                {
+                    "Sid": "ResourceOauth2Token",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock-agentcore:CompleteResourceTokenAuth",
+                        "bedrock-agentcore:GetResourceOauth2Token",
+                    ],
+                    "Resource": [prefix + "token-vault/default", provider["provider_arn"], directory, identity],
+                },
+                {
+                    "Sid": "GetSecretValue",
+                    "Effect": "Allow",
+                    "Action": "secretsmanager:GetSecretValue",
+                    "Resource": provider["secret_arn"],
+                },
+            ]
+        )
+    iam.put_role_policy(
+        RoleName=cfg["role_name"],
+        PolicyName="GatewayExecutionPolicy",
+        PolicyDocument=json.dumps({"Version": "2012-10-17", "Statement": statements}),
+    )
+    print("  Bounded GatewayExecutionPolicy applied — waiting 15s for IAM propagation...")
+    time.sleep(15)
 
 
 def update_role_trust_with_gateway(iam, account_id: str, gateway_arn: str) -> None:
@@ -225,31 +295,23 @@ def update_role_trust_with_gateway(iam, account_id: str, gateway_arn: str) -> No
 
 def ensure_policy_engine(ctrl, cfg: dict) -> tuple[str, str]:
     if cfg.get("engine_id"):
-        print(f"  Policy engine already exists: {cfg['engine_id']} (skipped)")
+        wait_ready(lambda: ctrl.get_policy_engine(policyEngineId=cfg["engine_id"]), "ACTIVE", "Policy engine")
         return cfg["engine_id"], cfg["engine_arn"]
 
     print(f"  Creating policy engine '{ENGINE_NAME}'...")
-    resp = ctrl.create_policy_engine(
-        name=ENGINE_NAME,
-        description="Temporal policies for the banking assistant",
-        clientToken=str(uuid.uuid4()),
-    )
+    params = {
+        "name": ENGINE_NAME,
+        "description": "Temporal policies for the banking assistant",
+        "tags": {OWNER_TAG: ownership_id()},
+    }
+    token = create_intent("engine", params)
+    resp = ctrl.create_policy_engine(**params, clientToken=token)
     engine_id = resp["policyEngineId"]
     engine_arn = resp["policyEngineArn"]
 
-    print("  Waiting for engine ACTIVE...", end="", flush=True)
-    for _ in range(40):
-        status = ctrl.get_policy_engine(policyEngineId=engine_id).get("status")
-        if status == "ACTIVE":
-            print(" active")
-            break
-        if status in ("CREATE_FAILED", "UPDATE_FAILED"):
-            print(f" FAILED ({status})")
-            sys.exit(1)
-        print(".", end="", flush=True)
-        time.sleep(5)
-
+    # Persist immediately so failed/slow creates can be retried or cleaned up.
     save_config({"engine_id": engine_id, "engine_arn": engine_arn})
+    wait_ready(lambda: ctrl.get_policy_engine(policyEngineId=engine_id), "ACTIVE", "Policy engine")
     return engine_id, engine_arn
 
 
@@ -258,9 +320,7 @@ def ensure_policy_engine(ctrl, cfg: dict) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def gateway_params(
-    role_arn: str, engine_arn: str, discovery_url: str, client_id: str
-) -> dict:
+def gateway_params(role_arn: str, engine_arn: str, discovery_url: str, client_id: str) -> dict:
     """
     The full gateway configuration, shared by create_gateway and
     update_gateway.
@@ -296,19 +356,7 @@ def gateway_params(
 
 
 def wait_gateway_ready(ctrl, gateway_id: str) -> dict:
-    print("  Waiting for gateway READY...", end="", flush=True)
-    for _ in range(60):
-        gw = ctrl.get_gateway(gatewayIdentifier=gateway_id)
-        status = gw.get("status")
-        if status == "READY":
-            print(" ready")
-            return gw
-        if status in ("FAILED", "CREATE_FAILED", "UPDATE_FAILED"):
-            print(f" FAILED ({status})")
-            sys.exit(1)
-        print(".", end="", flush=True)
-        time.sleep(5)
-    return ctrl.get_gateway(gatewayIdentifier=gateway_id)
+    return wait_ready(lambda: ctrl.get_gateway(gatewayIdentifier=gateway_id), "READY", "Gateway")
 
 
 def ensure_gateway(
@@ -322,14 +370,20 @@ def ensure_gateway(
         ctrl.update_gateway(gatewayIdentifier=gateway_id, **params)
     else:
         print(f"  Creating gateway '{GATEWAY_NAME}'...")
-        gateway_id = ctrl.create_gateway(**params)["gatewayId"]
+        create_params = {**params, "tags": {OWNER_TAG: ownership_id()}}
+        token = create_intent("gateway", create_params)
+        gateway_id = ctrl.create_gateway(**create_params, clientToken=token)["gatewayId"]
+        save_config({"gateway_id": gateway_id})
 
     gw = wait_gateway_ready(ctrl, gateway_id)
 
-    gateway_arn = gw.get(
-        "gatewayArn",
-        f"arn:aws:bedrock-agentcore:{REGION}:{boto3.client('sts').get_caller_identity()['Account']}:gateway/{gateway_id}",
-    )
+    gateway_arn = gw["gatewayArn"]
+    identity = gw.get("workloadIdentityDetails", {}).get("workloadIdentityArn", "")
+    prefix = gateway_arn.split(":gateway/")[0] + ":workload-identity-directory/default/workload-identity/"
+    if not identity.startswith(prefix) or not identity[len(prefix) :] or any(c in identity for c in "*?"):
+        raise RuntimeError("Gateway did not return an exact account/region workload identity ARN")
+    if cfg.get("workload_identity_arn"):
+        require_equal(identity, cfg["workload_identity_arn"], "Gateway workload identity")
     gateway_url = gw.get("gatewayUrl", "")
     print(f"  Gateway ARN:  {gateway_arn}")
     print(f"  Gateway URL:  {gateway_url}")
@@ -338,6 +392,7 @@ def ensure_gateway(
             "gateway_id": gateway_id,
             "gateway_arn": gateway_arn,
             "gateway_url": gateway_url,
+            "workload_identity_arn": identity,
         }
     )
     return gateway_id, gateway_arn
@@ -348,70 +403,36 @@ def ensure_gateway(
 # ---------------------------------------------------------------------------
 
 
-def ensure_mcp_target(
-    ctrl, gateway_id: str, mcp_server_url: str, credential_provider_arn: str, cfg: dict
-) -> str:
+def ensure_mcp_target(ctrl, gateway_id: str, mcp_server_url: str, credential_provider_arn: str, cfg: dict) -> str:
     key = f"target_id_{TARGET_NAME}"
+    params = {
+        "gatewayIdentifier": gateway_id,
+        "name": TARGET_NAME,
+        "description": "Banking assistant MCP server (all tools)",
+        "credentialProviderConfigurations": [
+            {
+                "credentialProviderType": "OAUTH",
+                "credentialProvider": {
+                    "oauthCredentialProvider": {"providerArn": credential_provider_arn, "scopes": ["api/mcp"]}
+                },
+            }
+        ],
+        "targetConfiguration": {"mcp": {"mcpServer": {"endpoint": mcp_server_url}}},
+    }
     if cfg.get(key):
-        print(f"  Target '{TARGET_NAME}' already exists: {cfg[key]} (skipped)")
-        return cfg[key]
-
-    print(f"  Creating MCP server target '{TARGET_NAME}' -> {mcp_server_url}...")
-    try:
-        resp = ctrl.create_gateway_target(
-            gatewayIdentifier=gateway_id,
-            name=TARGET_NAME,
-            description="Banking assistant MCP server (all tools)",
-            credentialProviderConfigurations=[
-                {
-                    "credentialProviderType": "OAUTH",
-                    "credentialProvider": {
-                        "oauthCredentialProvider": {
-                            "providerArn": credential_provider_arn,
-                            "scopes": ["api/mcp"],
-                        }
-                    },
-                }
-            ],
-            targetConfiguration={
-                "mcp": {
-                    "mcpServer": {
-                        "endpoint": mcp_server_url,
-                    }
-                }
-            },
-        )
+        target_id = cfg[key]
+    else:
+        token = create_intent("target", params)
+        # Conflict/timeout/access errors are not absence or proof of ownership.
+        resp = ctrl.create_gateway_target(**params, clientToken=token)
         target_id = resp["targetId"]
-    except ClientError as e:
-        if e.response["Error"]["Code"] != "ConflictException":
-            raise
-        existing = ctrl.list_gateway_targets(
-            gatewayIdentifier=gateway_id, maxResults=50
-        )
-        target_id = next(
-            t["targetId"]
-            for t in existing.get("items", [])
-            if t.get("name") == TARGET_NAME
-        )
-        print(f"  Target already exists: {target_id}")
         save_config({key: target_id})
-        return target_id
-
-    print("  Waiting for target READY...", end="", flush=True)
-    for _ in range(30):
-        status = ctrl.get_gateway_target(
-            gatewayIdentifier=gateway_id, targetId=target_id
-        ).get("status")
-        if status == "READY":
-            print(" ready")
-            break
-        if status in ("FAILED", "CREATE_FAILED"):
-            print(f" FAILED ({status})")
-            sys.exit(1)
-        print(".", end="", flush=True)
-        time.sleep(5)
-
-    save_config({key: target_id})
+    current = wait_ready(
+        lambda: ctrl.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id), "READY", "MCP target"
+    )
+    for field in ("name", "targetConfiguration", "credentialProviderConfigurations"):
+        require_equal(current.get(field), params[field], "MCP target " + field)
+    require_equal(current.get("targetId"), target_id, "MCP target ID")
     return target_id
 
 
@@ -421,35 +442,68 @@ def ensure_mcp_target(
 
 
 def ensure_base_permits(ctrl, engine_id: str, gateway_arn: str, cfg: dict) -> None:
-    created = set(cfg.get("base_permits", []))
+    require_policy_model()  # Also protect direct/helper callers from shadowed SDK models.
+    require_policy_client_model(ctrl)
+    recorded = dict(cfg.get("base_policy_ids", {}))
+    verified = set()
     for target, tool in BASE_PERMITS:
-        # Policy names are limited to 48 chars. Use a short prefix.
         name = f"permit_{tool}"
-        if name in created:
-            print(f"  Base permit '{name}' already recorded (skipped)")
-            continue
-
         action = f"{target}___{tool}"
         statement = (
             f'permit(principal, action == AgentCore::Action::"{action}", '
             f'resource == AgentCore::Gateway::"{gateway_arn}");'
         )
-        try:
-            ctrl.create_policy(
-                policyEngineId=engine_id,
-                name=name,
-                description=f"Base permit for {action}",
-                validationMode="IGNORE_ALL_FINDINGS",
-                definition={"policy": {"statement": statement}},
-            )
-            print(f"  Created base permit: {name}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] != "ConflictException":
-                raise
-            print(f"  Base permit already exists: {name}")
-
-        created.add(name)
-        save_config({"base_permits": sorted(created)})
+        definition = {"cedar": {"statement": statement}}
+        params = {
+            "policyEngineId": engine_id,
+            "name": name,
+            "description": f"Base permit for {action}",
+            "validationMode": "IGNORE_ALL_FINDINGS",
+            "enforcementMode": "ACTIVE",
+            "definition": definition,
+        }
+        policy_id = recorded.get(name)
+        if not policy_id:
+            token = create_intent("policy:" + name, params)
+            try:
+                policy_id = ctrl.create_policy(**params, clientToken=token)["policyId"]
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "ConflictException":
+                    raise
+                # Dedicated, ownership-verified engine only. Name conflicts
+                # still require full definition/mode verification below.
+                matches, token_next = [], None
+                while True:
+                    page = ctrl.list_policies(
+                        policyEngineId=engine_id, **({"nextToken": token_next} if token_next else {})
+                    )
+                    matches.extend(p["policyId"] for p in page["policies"] if p["name"] == name)
+                    token_next = page.get("nextToken")
+                    if not token_next:
+                        break
+                if len(matches) != 1:
+                    raise RuntimeError(f"Cannot uniquely reconcile conflicting policy {name}") from error
+                policy_id = matches[0]
+            recorded[name] = policy_id
+            save_config({"base_policy_ids": recorded})
+        current = wait_ready(
+            lambda policy_id=policy_id: ctrl.get_policy(policyEngineId=engine_id, policyId=policy_id),
+            "ACTIVE",
+            "Base policy " + name,
+        )
+        for field, expected in (
+            ("policyId", policy_id),
+            ("policyEngineId", engine_id),
+            ("name", name),
+            ("enforcementMode", "ACTIVE"),
+        ):
+            require_equal(current.get(field), expected, name + " " + field)
+        # The published service can return either plain-statement wrapper.
+        # Compare the exact statement, not a generated/ambiguous union.
+        require_equal(policy_statement(current.get("definition")), statement, name + " definition")
+        verified.add(name)
+        save_config({"base_permits": sorted(verified)})
+        print(f"  Verified ACTIVE base permit: {name}")
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +512,7 @@ def ensure_base_permits(ctrl, engine_id: str, gateway_arn: str, cfg: dict) -> No
 
 
 def main() -> None:
+    sdk = verified_policy_session()  # Before even STS or resource clients/provisioning.
     discovery_url = os.environ.get("DISCOVERY_URL", "")
     gateway_client_id = os.environ.get("GATEWAY_CLIENT_ID", "")
     mcp_server_url = os.environ.get("MCP_SERVER_URL", "")
@@ -480,35 +535,55 @@ def main() -> None:
         )
         sys.exit(1)
 
-    session = boto3.Session(region_name=REGION)
+    session = boto3.Session(botocore_session=sdk, region_name=REGION)
     account_id = session.client("sts").get_caller_identity()["Account"]
     iam = session.client("iam")
-    ctrl = session.client("bedrock-agentcore-control", region_name=REGION)
+    ctrl = session.client("bedrock-agentcore-control", region_name=REGION, api_version=API_VERSION)
 
     cfg = load_config()
+    check_environment(cfg, account_id)
+    # Step 2 must have reserved and recorded this exact tagged provider before CLI upsert.
+    oauth_state = json.loads(OAUTH_STATE_FILE.read_text())
+    require_equal(oauth_state["account_id"], account_id, "OAuth account")
+    require_equal(oauth_state["region"], REGION, "OAuth region")
+    provider = verify_provider(ctrl, oauth_state)
+    require_equal(provider["provider_arn"], credential_provider_arn, "Target OAuth provider")
+    # Unresolved response-lost intents are recovered by the same create below.
+    # Recorded identities are checked read-only before any updates.
+    if any(cfg.get(k) for k in ("engine_id", "gateway_id")):
+        verify_resources(ctrl, iam, cfg, allow_unresolved_intents=True)
+    save_config(
+        {
+            "account_id": account_id,
+            "region": REGION,
+            "role_name": GATEWAY_ROLE_NAME,
+            "gateway_name": GATEWAY_NAME,
+            "engine_name": ENGINE_NAME,
+        }
+    )
 
     print("=== Banking Assistant — Setup ===\n")
 
     print("Step 1: Gateway IAM role")
-    role_arn = ensure_gateway_role(iam, account_id)
+    role_arn = ensure_gateway_role(iam, account_id, cfg)
     cfg = load_config()
+    # Ownership/immutable RoleId was validated above, never use trust_scoped as proof.
+    if cfg.get("gateway_arn"):
+        update_role_trust_with_gateway(iam, account_id, cfg["gateway_arn"])
 
     print("\nStep 2: Policy engine")
     engine_id, engine_arn = ensure_policy_engine(ctrl, cfg)
     cfg = load_config()
+    apply_gateway_policy(iam, cfg, provider)
 
     print("\nStep 3: Gateway")
-    gateway_id, gateway_arn = ensure_gateway(
-        ctrl, role_arn, engine_arn, discovery_url, gateway_client_id, cfg
-    )
+    gateway_id, gateway_arn = ensure_gateway(ctrl, role_arn, engine_arn, discovery_url, gateway_client_id, cfg)
     cfg = load_config()
 
     print("\nStep 4: Scope role trust to gateway ARN")
-    if not cfg.get("trust_scoped"):
-        update_role_trust_with_gateway(iam, account_id, gateway_arn)
-        save_config({"trust_scoped": True})
-    else:
-        print("  Already scoped (skipped)")
+    update_role_trust_with_gateway(iam, account_id, gateway_arn)
+    save_config({"trust_scoped": True})  # Historical checkpoint only, never a retry guard.
+    apply_gateway_policy(iam, load_config(), provider)
 
     print("\nStep 5: MCP server target")
     cfg = load_config()

@@ -2,4 +2,4 @@
 name = "banking_assistant_tools"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastmcp >= 2.10.0"]
+dependencies = ["fastmcp==4.2.4", "aws-opentelemetry-distro[patch]==0.24.0"]

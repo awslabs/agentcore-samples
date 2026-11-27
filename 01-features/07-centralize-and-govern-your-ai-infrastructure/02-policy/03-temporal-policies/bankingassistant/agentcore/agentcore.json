@@ -1,7 +1,7 @@
 {
-  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
   "name": "bankingassistant",
-  "version": 1,
+  "version": 2,
+  "migratedFrom": "v1",
   "managedBy": "CDK",
   "tags": {
     "agentcore:created-by": "agentcore-cli",
@@ -9,15 +9,12 @@
   },
   "runtimes": [],
   "memories": [],
-  "knowledgeBases": [],
   "credentials": [],
   "evaluators": [],
   "onlineEvalConfigs": [],
   "agentCoreGateways": [],
   "policyEngines": [],
   "configBundles": [],
-  "abTests": [],
   "harnesses": [],
-  "datasets": [],
   "payments": []
 }
