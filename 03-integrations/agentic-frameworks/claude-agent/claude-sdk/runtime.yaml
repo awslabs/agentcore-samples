@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: One IAM-authenticated Claude Agent SDK Runtime using a prepared image and role
+Parameters:
+  RuntimeName:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+  RepositoryName:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9._/-]+'
+  ImageDigest:
+    Type: String
+    AllowedPattern: 'sha256:[0-9a-f]{64}'
+  RolePathAndName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9_+=,.@/-]+'
+  BedrockModelId:
+    Type: String
+    MinLength: 1
+Resources:
+  Runtime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref RuntimeName
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${RepositoryName}@${ImageDigest}'
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePathAndName}'
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+Outputs:
+  RuntimeArn:
+    Value: !GetAtt Runtime.AgentRuntimeArn

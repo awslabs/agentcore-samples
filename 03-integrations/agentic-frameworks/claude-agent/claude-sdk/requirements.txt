@@ -1,3 +1,2 @@
-claude-agent-sdk
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
+claude-agent-sdk==0.2.187
+bedrock-agentcore==1.27.0

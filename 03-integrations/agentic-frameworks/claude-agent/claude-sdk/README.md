@@ -1,162 +1,48 @@
-# Claude Agent SDK with Bedrock AgentCore Integration
+# Host a tool-free Claude Agent SDK request on Runtime
 
-| Information         | Details                                                                      |
-|---------------------|------------------------------------------------------------------------------|
-| Agent type          | Asynchronous with Streaming                                                 |
-| Agentic Framework   | Claude Agent SDK                                                           |
-| LLM model           | Anthropic Claude (via Bedrock)                                              |
-| Components          | AgentCore Runtime                                |
-| Example complexity  | Easy                                                                 |
-| SDK used            | Amazon BedrockAgentCore Python SDK, Claude Agent SDK                        |
+The Python Claude Agent SDK starts its bundled native CLI as a child process. This example shows how to package it in a Linux ARM64 image, use **Bedrock role credentials** rather than a model API key, and return `{"response":"..."}`. Each invocation gets an empty temporary working directory, isolated CLI configuration, one model turn and a two-minute deadline. No built-in tools, shell, filesystem tools, subagents or MCP servers are enabled. This is a text-generation example, not a coding sandbox. A system prompt alone is not an authorization boundary.
 
-This example demonstrates how to integrate Claude Agent SDK with AWS Bedrock AgentCore, enabling you to deploy your Claude-powered agent as a managed service with streaming support. You can use the `agentcore` CLI to configure and launch this agent.
+## Local check
 
-## Prerequisites
-
-- Python 3.10+
-- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver
-- AWS account with Bedrock AgentCore access
-- Node.js and npm (for Claude Code CLI)
-
-## Setup Instructions
-
-### 1. Create a Python Environment with uv
+From this directory with Python 3.12:
 
 ```bash
-# Install uv if you don't have it already
-
-# Create and activate a virtual environment
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m unittest -v test_agent
 ```
 
-### 2. Install Requirements
+To invoke locally, set `BEDROCK_MODEL_ID` to a Claude model or inference profile you are authorized to use and select a temporary AWS profile and Region. Run `python agent.py` and POST `{"prompt":"Explain rainbows in one sentence"}` to `http://localhost:8080/invocations`. Real answers cost money. Do not set Anthropic API keys, OAuth tokens, or Bedrock bearer tokens for this sample.
+
+## Deploy the container
+
+Use a sandbox with Runtime and the selected Bedrock model available. Bring a private ECR repository and a prepared [Runtime execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html). Trust `bedrock-agentcore.amazonaws.com` with source account/Runtime restrictions. Scope pull permissions to your repository, logging to the Runtime, and Bedrock inference permissions to the chosen model or inference profile and its required destination models. No credentials are template parameters. Confirm account and Region with `aws sts get-caller-identity` before continuing.
+
+Set `AWS_REGION`, `REPO`, `ROLE_PATH_AND_NAME`, `BEDROCK_MODEL_ID`, `STACK` and `RUNTIME_NAME`. Choose new stack and Runtime names; the template creates only the Runtime, never a repository or role. From this directory:
 
 ```bash
-uv pip install -r requirements.txt
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+TAG="claude-$(date -u +%Y%m%dT%H%M%SZ)"
+aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+docker buildx build --platform linux/arm64 --provenance=false -t "$REGISTRY/$REPO:$TAG" --push .
+DIGEST=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$REPO" --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
+STACK_ID=$(aws cloudformation create-stack --region "$AWS_REGION" --stack-name "$STACK" --template-body file://runtime.yaml \
+  --parameters ParameterKey=RuntimeName,ParameterValue="$RUNTIME_NAME" ParameterKey=RepositoryName,ParameterValue="$REPO" \
+  ParameterKey=ImageDigest,ParameterValue="$DIGEST" ParameterKey=RolePathAndName,ParameterValue="$ROLE_PATH_AND_NAME" \
+  ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" --query StackId --output text)
+aws cloudformation wait stack-create-complete --region "$AWS_REGION" --stack-name "$STACK_ID"
+ARN=$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$STACK_ID" --query 'Stacks[0].Outputs[?OutputKey==`RuntimeArn`].OutputValue' --output text)
+aws bedrock-agentcore invoke-agent-runtime --region "$AWS_REGION" --agent-runtime-arn "$ARN" --content-type application/json \
+  --payload fileb://prompt.json answer.json
 ```
 
-### 3. Understanding the Agent Code
-
-The `agent.py` file contains a Claude Agent SDK implementation with streaming support, integrated with Bedrock AgentCore:
-
-```python
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    ResultMessage,
-    TextBlock,
-    query,
-)
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-
-app = BedrockAgentCoreApp()
-
-async def basic_example(prompt):
-    """Basic example with streaming."""
-    async for message in query(prompt=prompt):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    print(f"Claude: {block.text}")
-        yield message
-
-@app.entrypoint
-async def run_main(payload):
-    """Handler for agent invocation with streaming support"""
-    async for message in basic_example(payload["prompt"]):
-        yield message
-
-app.run()
-```
-
-The agent supports three modes:
-- **Mode 1**: Basic example - simple question answering
-- **Mode 2**: With custom options - customized system prompt and max turns
-- **Mode 3**: With tools - file reading and writing capabilities
-
-### 4. Configure and Launch with Bedrock AgentCore Toolkit
+Create `prompt.json` containing a synthetic JSON prompt as above before invocation. The examples use commercial AWS, one new immutable image tag and an operator with permission to pass the specific role. Do not replace or adopt another deployment by name. Keep the full stack ID. On completion, verify your account and delete **only** that stack:
 
 ```bash
-# Configure your agent for deployment (without memory)
-agentcore configure -e agent.py --disable-memory
-
-# Deploy your agent with environment variables
-agentcore launch --env CLAUDE_CODE_USE_BEDROCK=1 --env AWS_BEARER_TOKEN_BEDROCK=<your-token>
+aws cloudformation delete-stack --region "$AWS_REGION" --stack-name "$STACK_ID"
+aws cloudformation wait stack-delete-complete --region "$AWS_REGION" --stack-name "$STACK_ID"
 ```
 
-**Note**: The Claude Agent SDK requires either `ANTHROPIC_API_KEY` or AWS Bedrock access configured as environment variables. This example uses:
-- `CLAUDE_CODE_USE_BEDROCK=1` to enable Bedrock integration
-- `AWS_BEARER_TOKEN_BEDROCK` for authentication with Bedrock
-
-You can provide these environment variables either in the Dockerfile or inline with the `--env` option as shown above. For more details on configuration options, see the [Claude Agent SDK documentation](https://docs.claude.com/en/api/agent-sdk/overview#core-concepts).
-
-### 5. Testing Your Agent
-
-Once deployed, you can test your agent using:
-
-```bash
-# Basic query (mode 1)
-agentcore invoke '{"prompt":"What is the capital of France?", "mode":1}'
-
-# With custom options (mode 2)
-agentcore invoke '{"prompt":"Explain quantum computing", "mode":2}'
-
-# With tools (mode 3)
-agentcore invoke '{"prompt":"Read the contents of test.txt", "mode":3}'
-```
-
-## Key Features
-
-- **Streaming Support**: Real-time response streaming for better user experience
-- **Multiple Modes**: Three operational modes for different use cases
-- **Tool Integration**: Built-in support for Read and Write tools
-- **Async/Await**: Full asynchronous processing for optimal performance
-- **BedrockAgentCore Integration**: Seamless deployment as a managed AWS service
-
-## Architecture
-
-The agent uses a layered architecture:
-1. **Claude Agent SDK**: Handles LLM interactions via `query()` function
-2. **Example Functions**: Process messages and yield them for streaming
-3. **Main Function**: Routes requests based on mode parameter
-4. **BedrockAgentCoreApp**: Provides runtime environment and handles deployment
-
-## Customization
-
-You can customize the agent by:
-- Adding more tools to the `allowed_tools` list
-- Modifying the `system_prompt` in `ClaudeAgentOptions`
-- Adjusting `max_turns` for conversation length
-- Creating new example functions for additional use cases
-
-## Clean Up
-
-When you're done with the agent, you can clean up the deployed resources.
-
-### Memory
-Since this example is configured with `--disable-memory`, no memory resources were created, so there's nothing to remove for memory.
-
-### Agent Runtime
-To destroy the agent and all its associated AWS resources, use the `agentcore destroy` command:
-
-```bash
-agentcore destroy
-```
-
-You'll see output similar to:
-
-```
-⚠️  About to destroy resources for agent 'claudesdkagent'
-
-Current deployment:
-  • Agent ARN: arn:aws:bedrock-agentcore:us-east-1:XXXXXXXXXXXX:runtime/claudesdkagent-XXXXXXXXXX
-  • Agent ID: claudesdkagent-XXXXXXXXXX
-  • ECR Repository: XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-claudesdkagent
-  • Execution Role: arn:aws:iam::XXXXXXXXXXXX:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-XXXXXXXXXX
-
-This will permanently delete AWS resources and cannot be undone!
-Are you sure you want to destroy the agent 'claudesdkagent' and all its resources? [y/N]:
-```
-
-Type `y` to confirm and permanently delete the agent and all its associated resources including the ECR repository and execution role.
+Review any logs and images you own separately; shared resources remain. The [old three-mode sample](https://github.com/awslabs/agentcore-samples/tree/5cca7e89f8109115766b9f7df3f0b7e98ca9eab1/03-integrations/agentic-frameworks/claude-agent/claude-sdk) exposed read/write tools and returned raw SDK messages. Those modes, payload contract and Toolkit deployment are intentionally not retained.

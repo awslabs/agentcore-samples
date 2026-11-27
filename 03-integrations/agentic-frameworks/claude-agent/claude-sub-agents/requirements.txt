@@ -1,3 +1,0 @@
-claude-agent-sdk
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
