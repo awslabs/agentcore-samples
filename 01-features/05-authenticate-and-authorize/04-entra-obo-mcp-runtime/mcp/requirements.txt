@@ -1,5 +1,3 @@
-# MCP server container dependencies. Installed into the image that runs
-# mcp_server_obo.py
-bedrock-agentcore
-mcp>=1.0.0
-httpx>=0.27.0
+mcp==2.3.0
+httpx>=0.28,<1
+uvicorn>=0.34,<1

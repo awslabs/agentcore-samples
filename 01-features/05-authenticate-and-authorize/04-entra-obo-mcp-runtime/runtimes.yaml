@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Entra OBO via two separately authorized AgentCore Runtimes
+Parameters:
+  TenantId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  AgentClientId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  McpClientId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  AgentName:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+  McpName:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+  AgentImage:
+    Type: String
+    Description: Same-region ECR repository name and immutable digest (no registry prefix)
+    AllowedPattern: '[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}'
+  McpImage:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}'
+  AgentRole:
+    Type: String
+    Description: Approved same-account execution role path and name
+  McpRole:
+    Type: String
+    Description: Approved same-account execution role path and name
+  ProviderName:
+    Type: String
+    Description: Existing approved Microsoft OAuth provider name (not a secret)
+  ModelId:
+    Type: String
+Resources:
+  McpRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref McpName
+      ProtocolConfiguration: MCP
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${McpImage}'
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${McpRole}'
+      RequestHeaderConfiguration:
+        RequestHeaderAllowlist: [X-Amzn-Bedrock-AgentCore-Runtime-Custom-Graph-Token]
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub 'https://login.microsoftonline.com/${TenantId}/.well-known/openid-configuration'
+          AllowedAudience: [!Sub 'api://${McpClientId}']
+          CustomClaims:
+            - InboundTokenClaimName: roles
+              InboundTokenClaimValueType: STRING_ARRAY
+              AuthorizingClaimMatchValue:
+                ClaimMatchOperator: CONTAINS
+                ClaimMatchValue: {MatchValueString: mcp_invoke}
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref AgentName
+      ProtocolConfiguration: HTTP
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${AgentImage}'
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AgentRole}'
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub 'https://login.microsoftonline.com/${TenantId}/.well-known/openid-configuration'
+          AllowedAudience: [!Ref AgentClientId]
+      EnvironmentVariables:
+        MCP_RUNTIME_ARN: !GetAtt McpRuntime.AgentRuntimeArn
+        ENTRA_MCP_CLIENT_ID: !Ref McpClientId
+        CREDENTIAL_PROVIDER_NAME: !Ref ProviderName
+        BEDROCK_MODEL_ID: !Ref ModelId
+Outputs:
+  AgentArn: {Value: !GetAtt AgentRuntime.AgentRuntimeArn}
+  McpArn: {Value: !GetAtt McpRuntime.AgentRuntimeArn}

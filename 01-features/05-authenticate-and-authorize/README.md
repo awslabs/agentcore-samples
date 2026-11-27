@@ -89,7 +89,7 @@ AgentCore identity integrates seamlessly with other AgentCore components:
 | `07-consent-portal-auth-code-flow-targets/` | Managed consent dashboard end-to-end: FastAPI BFF → agent on Runtime → Gateway → GitHub MCP server over the authorization code flow (3LO). Users connect GitHub themselves on the AWS-hosted consent portal (Entra ID or Okta) |
 | `08-okta-xaa-delegation-chain/` | Okta **Cross App Access** (ID-JAG) performed by a **gateway interceptor** rather than the agent: user → BFF → Runtime → Gateway → API, with an OBO exchange on the way in and a two-leg ID-JAG on the way out. The API receives a token whose `sub` is the human and whose `act` is the agent |
 | `obo-training/` | On-Behalf-Of training curriculum: concept guides plus worked Entra and Okta examples for agent-to-downstream and agent-via-gateway |
-| `okta-auth-three-tier-end-to-end-demo/` | End-to-end Okta OAuth2 three-tier demo: per-tier JWT isolation across User → Runtime → Gateway → MCP Server with RBAC |
+| [Historical Okta three-tier demo](okta-auth-three-tier-end-to-end-demo/) | Choosing between inbound authentication, workload authorization and delegated user access; replacement paths and ownership notes |
 | `auth0-multi-agent-obo/` | Multi-agent RFC 8693 On-Behalf-Of token exchange via Auth0: coordinator mints attenuated tokens per sub-agent rather than forwarding the user JWT |
 
 ## How this section is organized
@@ -110,8 +110,8 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 | Custom JWT (Okta) | 01-inbound-auth/03 | Protect runtime/gateway with Okta JWT + scope enforcement |
 | Custom JWT (PingFederate) | 01-inbound-auth/04 | Protect gateway with self-hosted PingFederate (CDK deploy) |
 | API Key outbound | 02-outbound-auth/01 | Agent calls OpenAI with stored API key |
-| 3LO outbound (Google) | 02-outbound-auth/02 | Agent calls Google Calendar with user consent flow |
-| 3LO outbound (GitHub) | 02-outbound-auth/03 | Agent calls GitHub API with user consent flow |
+| 3LO outbound (Google) | 02-outbound-auth/02 | Confirm a read-only Calendar user grant (no calendar query) |
+| 3LO outbound (GitHub) | 02-outbound-auth/03 | Confirm a GitHub user grant (no repository query) |
 | M2M outbound | 02-outbound-auth/04 | Agent calls self-hosted resource server with client credentials |
 | M2M + 3LO combined | 03-m2m-3lo/ | Single agent with both M2M and Auth Code outbound flows |
 | Entra OBO | 04-entra-obo-mcp-runtime/ | Agent calls MCP server carrying user-delegated Graph token |
@@ -133,8 +133,8 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 **By external API:**
 - OpenAI → `02-outbound-auth/01-outbound-auth-openai/`
 - Google Calendar → `02-outbound-auth/02-outbound-auth-3lo/`, `03-m2m-3lo/`
-- GitHub → `02-outbound-auth/03-outbound-auth-github/` (REST API), `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/` (MCP server via Gateway)
-- Microsoft Graph → `01-inbound-auth/02-inbound-auth-EntraID/` (OneNote), `04-entra-obo-mcp-runtime/`, `obo-training/`
+- GitHub → `02-outbound-auth/03-outbound-auth-github/` (consent check), `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/` (MCP server via Gateway)
+- Microsoft Graph → `04-entra-obo-mcp-runtime/`, `obo-training/`
 
 **By deployment method:**
 - AgentCore CLI (`agentcore create/deploy`) → `03-m2m-3lo/`, `07-consent-portal-auth-code-flow-targets/`, `obo-training/3-examples/`
@@ -143,7 +143,7 @@ followed by combined multi-flow examples in `03-m2m-3lo/` and `04-entra-obo-mcp-
 
 **By end-user experience:**
 - Hosted consent dashboard (AWS-managed, no consent UI to build) → `07-consent-portal-auth-code-flow-targets/`
-- Local callback server you run → `02-outbound-auth/02-outbound-auth-3lo/`, `02-outbound-auth/03-outbound-auth-github/`
+- Single-user loopback consent check → [Google Calendar or GitHub](02-outbound-auth/DELEGATED_CONSENT.md)
 - No user interaction (M2M / OBO) → `03-m2m-3lo/`, `04-entra-obo-mcp-runtime/`, `obo-training/`
 
 ## Prerequisites
@@ -168,10 +168,9 @@ python inbound_auth_runtime.py
 
 # Inbound auth — Entra ID
 cd 01-inbound-auth/02-inbound-auth-EntraID/
-pip install -r requirements.txt
-python entra_id_inbound_auth.py       # Tutorial 1: runtime
-python entra_gateway_m2m.py           # Tutorial 2: gateway M2M
-python entra_gateway_auth_code.py     # Tutorial 3: gateway 3LO
+python -m pip install -r requirements.txt
+python check_inbound.py --help  # checks a supplied Runtime; no deployment
+
 
 # Inbound auth — Okta
 cd 01-inbound-auth/03-inbound-auth-okta/
@@ -185,16 +184,11 @@ pip install -r requirements.txt
 python outbound_auth_runtime.py
 
 # Outbound auth — Google 3LO
-cd 02-outbound-auth/02-outbound-auth-3lo/
-pip install -r requirements.txt
-python outbound_auth_3lo.py
+cd 02-outbound-auth/
+# See DELEGATED_CONSENT.md for owner-managed provider prerequisites
+python delegated_consent.py --help
 
-# Outbound auth — GitHub 3LO
-cd 02-outbound-auth/03-outbound-auth-github/
-pip install -r requirements.txt
-python outbound_auth_github.py
-
-# Outbound auth — Self-hosted OAuth2
+# Self-hosted OAuth example (from the auth tutorial root)
 cd 02-outbound-auth/04-outbound-auth-self-hosted/
 pip install -r requirements.txt
 bash create_cognito.sh
@@ -208,8 +202,7 @@ python setup_cognito.py
 
 # Entra OBO + MCP runtime
 cd 04-entra-obo-mcp-runtime/
-pip install -r requirements.txt
-python entra_obo_mcp_runtime.py
+# See README.md: build the two ARM64 images and create a fresh runtimes.yaml stack.
 
 # Consent portal + GitHub MCP server (multi-step; see its README)
 cd 07-consent-portal-auth-code-flow-targets/
