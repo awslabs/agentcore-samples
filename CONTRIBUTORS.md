@@ -152,3 +152,4 @@
 - Venkata Moparthi (vmoparthi)
 - Joshua M. Smith (joshuamarksmith)
 - Max Tybar (maxtybar)
+- Avneet Bansal (avneetbansal-aws)

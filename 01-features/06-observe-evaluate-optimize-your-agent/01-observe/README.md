@@ -25,9 +25,8 @@ The scripts in this folder add instrumentation *on top of* this automatic baseli
 | `span_filters.py` | Span Filtering | Selectively drop spans using `FilterSpanProcessor` (post-record, attribute/duration-based) and `FilterSpanSampler` (pre-record, name-based) to reduce CloudWatch ingestion costs |
 | `attribute_redaction.py` | Attribute Redaction | Strip PII from spans before export using a custom `SensitiveDataRedactor` processor; propagate safe tenant context via `BaggageSpanProcessor` |
 | `baggage_context.py` | Baggage Context | Enrich every span with per-session metadata (tenant.id, environment) using `BaggageSpanProcessor`; toggle between CloudWatch and third-party OTLP endpoints without code changes |
-| `memory_observability.py` | memory + observability | Combine AgentCore memory (long-term user preferences) with `BaggageSpanProcessor` and the ADOT/3P OTLP toggle in a deployed culinary assistant |
 
-The travel agent scripts (`custom_span_creation.py`, `span_filters.py`, `attribute_redaction.py`, `baggage_context.py`) share a Strands agent with `web_search` and `get_weather` tools, so you can focus on each observability concept in isolation. `data_protection.py` and `memory_observability.py` deploy full runtimes to demonstrate integration with additional AWS services.
+The travel agent scripts (`custom_span_creation.py`, `span_filters.py`, `attribute_redaction.py`, `baggage_context.py`) share a Strands agent with `web_search` and `get_weather` tools, so you can focus on each observability concept in isolation. `data_protection.py` deploys a full runtime to demonstrate integration with additional AWS services.
 
 ## Prerequisites
 
@@ -307,60 +306,6 @@ ctx = baggage.set_baggage("session.id", session_id, context=ctx)
 token = context.attach(ctx)
 # ... run agent ...
 context.detach(token)
-```
-
-## memory + observability
-
-Combines AgentCore memory (long-term user preferences) with `BaggageSpanProcessor` and
-the ADOT/3P OTLP toggle in a single deployable culinary assistant. The script:
-
-1. Creates an AgentCore memory resource with a summarization strategy that extracts
-   preferences into `/users/{actorId}/preferences`
-2. Deploys the agent to AgentCore runtime (zip deploy, no Docker)
-3. Hydrates memory with a sample culinary conversation (vegetarian Italian, lactose intolerant)
-4. Invokes the agent — it retrieves stored preferences via `AgentCoreMemoryToolProvider`
-   and personalises restaurant recommendations accordingly
-
-The `actor_id` is extracted from the `X-Amzn-Bedrock-AgentCore-runtime-User-Id` request
-header, enabling per-user memory isolation in multi-user deployments.
-
-**Run (creates AWS resources):**
-
-```bash
-# Requires uv for arm64 packaging
-python memory_observability.py
-
-# Cleanup
-python memory_observability.py --cleanup
-```
-
-**Key API:**
-
-```python
-from bedrock_agentcore.memory import MemoryClient
-from bedrock_agentcore.memory.constants import StrategyType
-from strands_tools.agent_core_memory import AgentCoreMemoryToolProvider
-
-# Create memory with LTM extraction strategy
-client = MemoryClient(region_name=region)
-memory = client.create_memory_and_wait(
-    name="culinary_prefs",
-    strategies=[{StrategyType.SUMMARIZATION.value: {
-        "name": "UserCulinaryPreferences",
-        "namespaces": ["/users/{actorId}/preferences"],
-    }}],
-    event_expiry_days=30,
-)
-
-# In the agent entrypoint — per-user memory scoped to actor/session
-memory_provider = AgentCoreMemoryToolProvider(
-    memory_id=memory["id"],
-    actor_id=actor_id,          # from X-Amzn-Bedrock-AgentCore-runtime-User-Id header
-    session_id=session_id,
-    namespace=f"/users/{actor_id}/preferences",
-    region=region,
-)
-agent = Agent(tools=[web_search] + memory_provider.tools, ...)
 ```
 
 ## Additional Resources
