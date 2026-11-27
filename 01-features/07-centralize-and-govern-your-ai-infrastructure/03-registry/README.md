@@ -80,3 +80,7 @@ cd 03-advanced/custom-metadata-in-registry && ./setup.sh && ./00_setup.sh && ./0
 ## Documentation
 
 - [AWS Agent registry Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/registry.html)
+
+### Entitlement-based discovery
+
+Use IAM role tags and Cognito JWT claims to filter discovery in a shared registry. [Walkthrough](03-advanced/entitlement-based-discovery/README.md).
