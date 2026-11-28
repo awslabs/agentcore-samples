@@ -1,0 +1,19 @@
+# Local credentials, environments, deployment state and generated artifacts.
+.env
+.env.*
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.tools/
+agentcore/aws-targets.json
+agentcore/.env*
+agentcore/.cache/
+agentcore/.cli/
+agentcore/cdk/cdk.out/
+agentcore/cdk/dist/
+*.zip
+# The repository-wide Python ignore otherwise hides this reviewed CDK source.
+!agentcore/cdk/lib/
+!agentcore/cdk/lib/*.ts

@@ -118,6 +118,7 @@
 - Renya Kujirada (ren8k)
 - Cristiano Scandura (scandura)
 - palbiren
+- Vivek Dalal (vivdalal)
 - Gui Ruggiero (guiruggiero)
 - Julia Furst Morgado (juliafmorgado)
 - Visakh Madathil (vmmadathil)

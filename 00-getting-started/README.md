@@ -1,399 +1,192 @@
-# Getting Started with Amazon Bedrock AgentCore
+# A customer-support agent on AgentCore Runtime
 
-Build, test, and deploy an AI agent to AgentCore in under 10 minutes.
+Run a small Strands agent locally, then deploy the same Python code with **AgentCore CLI v1**.
+It answers questions about five fictional products and three return policies. Its two tools
+only read dictionaries: they cannot access customer records, change orders, or issue refunds.
+This is a learning example, **not a production customer-support system**.
 
+```text
+Your terminal → AgentCore Runtime (IAM-authenticated) → Python agent → Amazon Bedrock
+                                                        ↓
+                                            product and policy lookups
+```
 
-Amazon Bedrock AgentCore supports various interfaces for developing and deploying your agent code. At the lowest level, you can interact with the AgentCore APIs directly or through the [AWS SDKs](https://docs.aws.amazon.com/sdkref/latest/guide/overview.html) (such as [boto3](https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-agentcore.html)). For a simpler development experience, the [AgentCore Python SDK](https://github.com/aws/bedrock-agentcore-sdk-python) and [AgentCore Typescript SDK](https://github.com/aws/bedrock-agentcore-sdk-typescript) provide higher-level abstractions for integrating with AgentCore services like runtime, memory, and tools. The [AgentCore CLI](https://github.com/aws/agentcore-cli) builds on top of these, offering the best developer experience that lets you quickly scaffold, configure, and deploy agents. The AgentCore CLI is the easiest way to get started, and continues to be the best developer experience as you iterate on your agents. 
-
-In this sample, we use the AgentCore CLI to walk through one simple example — a customer support agent with custom tools — but AgentCore supports much more: persistent memory, centralized tool management via MCP Gateway, identity and auth, observability, evaluations, and multi-framework support (Strands, LangGraph, CrewAI, OpenAI Agents SDK, Google ADK, and others).
-
-## What You'll Build
-
-A customer support agent that can:
-
-- Look up product information and specifications
-- Answer questions about return policies
-- Combine tool results with LLM reasoning to provide helpful responses
-
-By the end, your agent will be running both locally (for development) and in the cloud (for production).
-
-## Architecture
-
-![Architecture diagram](images/architecture.png)
+Each request is independent: no conversation history is retained, even with a reused Runtime
+session ID. The entrypoint constructs a fresh Agent, validates input and filters model output.
 
 ## Prerequisites
 
-| Requirement | Minimum Version | Install |
-|---|---|---|
-| Node.js | 20.x | [nodejs.org](https://nodejs.org/) |
-| uv | 0.4+ | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| AWS CLI | 2.x | [AWS CLI install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
-| Git | 2.x | [git-scm.com](https://git-scm.com/) |
+- A **sandbox AWS account** and an approved short-lived AWS profile; AWS CLI v2.
+- Node.js **20.12+** (supported LTS recommended), npm and Git.
+- Python **3.13**, managed by [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- A Region with AgentCore Runtime CodeZip support and on-demand **Amazon Nova Lite v1** access
+  (`amazon.nova-lite-v1:0`); start with `us-west-2`.
 
-### Install the AgentCore CLI
+Local and cloud model invocations incur Bedrock charges; deployments create billable resources.
+Read [cleanup](#cleanup) before deploying. Use fictional data only.
+
+## 1. Install and test
 
 ```bash
-npm install -g @aws/agentcore@0.30.0
-node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' \
-  || { echo "ERROR: Node.js 20+ required by the AgentCore CLI (found $(node -v))"; exit 1; }
-agentcore --version | grep -q '^0\.' \
-  || { echo "ERROR: these samples need AgentCore CLI v0. Run: npm install -g @aws/agentcore@0.30.0"; exit 1; }
-agentcore --version
+git clone https://github.com/awslabs/agentcore-samples.git
+cd agentcore-samples/00-getting-started
+# Install the tested CLI locally; do not replace your global version.
+npm install --prefix .tools --no-save --ignore-scripts @aws/agentcore@1.0.3
+# Repeat this export in each tutorial shell so subprocesses use the same CLI.
+export PATH="$PWD/.tools/node_modules/.bin:$PATH"
+agentcore --version  # expect 1.0.3
+uv python install 3.13
+uv sync --project app/agent --frozen
+npm ci --prefix agentcore/cdk --ignore-scripts
+uv run --project app/agent --frozen pytest
+uv run --project app/agent --frozen ruff check .
+uv run --project app/agent --frozen ruff format --check .
 ```
 
-### Configure AWS credentials
+An “Update available” notice is expected for this deliberately tested CLI version.
+Keep the local 1.0.3 executable for this walkthrough; revalidate the custom CDK adapter before upgrading.
 
-You need an AWS account with Amazon Bedrock model access enabled (this sample uses Claude Sonnet via Bedrock).
+The repository-root `requirements.txt` is for optional notebook tooling, not this app.
+Use the sample’s locked Python environment above. `bedrock-agentcore` is the supported Runtime SDK, not the deprecated Starter Toolkit.
+
+Tests exercise the actual Strands tool loop and AgentCore HTTP adapter with scripted responses,
+not live inference. Infra/ZIP checks skip without a build; native context tests are opt-in.
+See [repeatable checks](DEPLOYMENT.md#repeatable-checks); a source-only pass is not a full build pass.
+
+| File | Purpose |
+|---|---|
+| [`app/agent/main.py`](app/agent/main.py) | Fictional catalog/policies, two tools, model and request handler |
+| [`app/agent/pyproject.toml`](app/agent/pyproject.toml), `uv.lock` | Python requirements and locked graph |
+| [`agentcore/agentcore.json`](agentcore/agentcore.json) | One HTTP Runtime, `support`, using Python 3.13 CodeZip |
+| [`agentcore/cdk/lib/cdk-stack.ts`](agentcore/cdk/lib/cdk-stack.ts) | CDK application and execution-role boundary |
+| [`agentcore/cdk/cdk.json`](agentcore/cdk/cdk.json) | Persistent asset KMS context; review before deployment |
+| [`tests/`](tests/) | Application, real SDK retry-path and infrastructure regressions |
+
+## 2. Run locally
+
+In **each** terminal that calls AWS, select and verify your sandbox identity:
 
 ```bash
-aws configure
-# Or set environment variables:
-# export AWS_ACCESS_KEY_ID=<your-key>
-# export AWS_SECRET_ACCESS_KEY=<your-secret>
-# export AWS_DEFAULT_REGION=us-east-1
-```
-
-Verify your credentials:
-
-```bash
+export AWS_PROFILE=your-sandbox-profile
+export AWS_REGION=us-west-2
+export AWS_DEFAULT_REGION="$AWS_REGION"
+aws sso login --profile "$AWS_PROFILE"  # or your organization's login mechanism
 aws sts get-caller-identity
 ```
 
-### Required IAM permissions
+Never put access keys in source, JSON or `.env` files. Local inference uses your profile's
+Bedrock permissions; the deployed agent uses its own execution role.
 
-Your IAM user/role needs permissions for CloudFormation, S3, IAM role management, Lambda, CloudWatch Logs, and Bedrock AgentCore. 
-
----
-
-## Step 1: Create the Project (~1 min)
-
-Scaffold a new AgentCore project using the CLI:
+In terminal A, from the sample directory:
 
 ```bash
-agentcore create \
-  --name CustomerSupport \
-  --framework Strands \
-  --model-provider Bedrock \
-  --memory none \
-  --defaults
+agentcore dev --agent support --mode headless --no-traces
 ```
 
-You should see:
+Leave it running on port 8080. The local endpoint is **unauthenticated**: keep it on loopback,
+never behind a tunnel or on a shared host. Browser `Origin` headers and non-JSON POSTs are
+rejected to stop websites/forms abusing local credentials; this is not end-user authentication.
 
-```
-[done]  Create CustomerSupport/ project directory
-[done]  Prepare agentcore/ directory
-[done]  Initialize git repository
-[done]  Add agent to project
-[done]  Set up Python environment
-
-Created:
-  CustomerSupport/
-    app/CustomerSupport/  Python agent (Strands)
-    agentcore/            Config and CDK project
-
-Project created successfully!
-```
-
-Navigate into the project:
+In terminal B, from the same directory:
 
 ```bash
-cd CustomerSupport
+agentcore invoke --runtime support --local \
+  --payload '{"prompt":"What is the price of PROD-002 in USD? Use the product tool."}'
+agentcore invoke --runtime support --local \
+  --payload '{"prompt":"For PROD-002, what is the return window and does it require original packaging? Look up both product and policy."}'
 ```
 
-### What was generated?
-
-```
-CustomerSupport/
-├── agentcore/
-│   ├── agentcore.json          # Project configuration (agents, memories, etc.)
-│   ├── aws-targets.json        # Deployment targets (region, account)
-│   ├── .env.local              # API keys (gitignored)
-│   └── cdk/                    # CDK infrastructure (auto-managed)
-└── app/
-    └── CustomerSupport/
-        ├── main.py             # Agent entry point
-        ├── model/load.py       # Model configuration (Claude on Bedrock)
-        ├── mcp_client/         # MCP client for external tool servers
-        └── pyproject.toml      # Python dependencies
-```
-
-Key files:
-- **`app/CustomerSupport/main.py`** — Your agent code. This is where you define tools and the system prompt.
-- **`app/CustomerSupport/model/load.py`** — Model configuration. Defaults to Claude Sonnet via Amazon Bedrock.
-- **`agentcore/agentcore.json`** — Project config that defines agents, memories, and other AgentCore resources.
-
----
-
-## Step 2: Add Custom Tools (~3 min)
-
-The generated project comes with a sample `add_numbers` tool. Let's replace it with customer support tools.
-
-Open `app/CustomerSupport/main.py` and replace the entire contents with:
-
-```python
-from strands import Agent, tool
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from model.load import load_model
-
-app = BedrockAgentCoreApp()
-log = app.logger
-
-# --- Product & Policy Data ---
-
-RETURN_POLICIES = {
-    "electronics": {
-        "window": "30 days",
-        "condition": "Original packaging required, must be unused or defective",
-        "refund": "Full refund to original payment method",
-    },
-    "accessories": {
-        "window": "14 days",
-        "condition": "Must be in original packaging, unused",
-        "refund": "Store credit or exchange",
-    },
-    "audio": {
-        "window": "30 days",
-        "condition": "Defective items only after 15 days",
-        "refund": "Full refund within 15 days, replacement after",
-    },
-}
-
-PRODUCTS = {
-    "PROD-001": {"name": "Wireless Headphones", "price": 79.99, "category": "audio",
-                 "description": "Noise-cancelling Bluetooth headphones with 30h battery life", "warranty_months": 12},
-    "PROD-002": {"name": "Smart Watch", "price": 249.99, "category": "electronics",
-                 "description": "Fitness tracker with heart rate monitor, GPS, and 5-day battery", "warranty_months": 24},
-    "PROD-003": {"name": "Laptop Stand", "price": 39.99, "category": "accessories",
-                 "description": "Adjustable aluminum laptop stand for ergonomic desk setup", "warranty_months": 6},
-    "PROD-004": {"name": "USB-C Hub", "price": 54.99, "category": "accessories",
-                 "description": "7-in-1 USB-C hub with HDMI, USB-A, SD card reader, and ethernet", "warranty_months": 12},
-    "PROD-005": {"name": "Mechanical Keyboard", "price": 129.99, "category": "electronics",
-                 "description": "RGB mechanical keyboard with Cherry MX switches", "warranty_months": 24},
-}
-
-
-# --- Tools ---
-
-@tool
-def get_return_policy(product_category: str) -> str:
-    """Get return policy information for a specific product category.
-
-    Args:
-        product_category: Product category (e.g., 'electronics', 'accessories', 'audio')
-
-    Returns:
-        Formatted return policy details including timeframes and conditions
-    """
-    category = product_category.lower()
-    if category in RETURN_POLICIES:
-        policy = RETURN_POLICIES[category]
-        return (f"Return policy for {category}: Window: {policy['window']}, "
-                f"Condition: {policy['condition']}, Refund: {policy['refund']}")
-    return f"No specific return policy found for '{product_category}'. Please contact support."
-
-
-@tool
-def get_product_info(query: str) -> str:
-    """Search for product information by name, ID, or keyword.
-
-    Args:
-        query: Product name, ID (e.g., 'PROD-001'), or search keyword
-
-    Returns:
-        Product details including name, price, category, and description
-    """
-    query_lower = query.lower()
-    # Search by product ID
-    if query.upper() in PRODUCTS:
-        p = PRODUCTS[query.upper()]
-        return (f"{p['name']} ({query.upper()}): ${p['price']}, Category: {p['category']}, "
-                f"{p['description']}, Warranty: {p['warranty_months']} months")
-    # Search by keyword
-    results = [
-        f"{pid}: {p['name']} - ${p['price']} - {p['description']}"
-        for pid, p in PRODUCTS.items()
-        if query_lower in p['name'].lower() or query_lower in p['description'].lower()
-           or query_lower in p['category'].lower()
-    ]
-    if results:
-        return "Found products:\n" + "\n".join(results)
-    return f"No products found matching '{query}'."
-
-
-# --- Agent Setup ---
-
-SYSTEM_PROMPT = """You are a helpful and professional customer support assistant for an e-commerce company.
-
-Your role is to:
-- Provide accurate information using the tools available to you
-- Be friendly, patient, and understanding with customers
-- Always offer additional help after answering questions
-
-You have access to:
-1. get_return_policy() - Look up return policies by product category
-2. get_product_info() - Search product information by name, ID, or keyword
-
-Always use the appropriate tool rather than guessing."""
-
-_agent = None
-
-def get_or_create_agent():
-    global _agent
-    if _agent is None:
-        _agent = Agent(
-            model=load_model(),
-            system_prompt=SYSTEM_PROMPT,
-            tools=[get_return_policy, get_product_info],
-        )
-    return _agent
-
-
-@app.entrypoint
-async def invoke(payload, context):
-    log.info("Invoking Agent...")
-    agent = get_or_create_agent()
-    stream = agent.stream_async(payload.get("prompt"))
-    async for event in stream:
-        if "data" in event and isinstance(event["data"], str):
-            yield event["data"]
-
-
-if __name__ == "__main__":
-    app.run()
-```
-
-### What's happening here?
-
-This code creates a customer support agent with two local tools (`get_return_policy` and `get_product_info`) using the [Strands Agents SDK](https://strandsagents.com/). The `BedrockAgentCoreApp` from the AgentCore SDK wraps the agent with the runtime entrypoint (`@app.entrypoint`), making it deployable to AgentCore Runtime — both locally via `agentcore dev` and in the cloud via `agentcore deploy`. The `@tool` decorator turns plain Python functions into tools the LLM can call, using the docstring as the tool description the model reads to decide when and how to invoke each tool.
-
----
-
-## Step 3: Test Locally (~2 min)
-
-Start the local development server:
+Check facts, not exact phrasing: **Smart Watch, $249.99**, category **electronics**, **30 days**,
+original packaging, unused or defective, full refund to the original payment method.
+The second question should use both lookups; model wording and tool choices can vary.
 
 ```bash
-agentcore dev
+curl --fail-with-body http://127.0.0.1:8080/invocations \
+  -H 'Content-Type: application/json' -d '{"prompt":""}'
 ```
 
-This starts an interactive chat interface in your terminal. The CLI automatically:
-1. Creates a Python virtual environment (`.venv`) if needed
-2. Installs dependencies via `uv sync`
-3. Starts a local server on port 8080 with hot reload
+Expect HTTP **400**, an explanation and a nonzero curl exit, without a model call.
+Stop terminal A with **Ctrl-C** when finished.
 
-### Try these queries
+## 3. Build, deploy and invoke
 
-**Product lookup:**
-```
-Tell me about the Wireless Headphones
-```
-→ The agent calls `get_product_info("headphones")` and returns product details.
+Before building or deploying:
 
-**Return policy:**
-```
-What's the return policy for electronics?
-```
-→ The agent calls `get_return_policy("electronics")` and explains the 30-day window.
-
-**Multi-tool query:**
-```
-I bought a Smart Watch (PROD-002) and want to return it. What's the policy?
-```
-→ The agent calls both `get_product_info("PROD-002")` to identify the category, then `get_return_policy("electronics")` for the policy.
-
-Press `Esc` to exit the dev server.
-
-### CLI invocation (non-interactive)
-
-You can also invoke the agent from the command line. In one terminal:
+- Confirm your sandbox account, Region and any saved `agentcore/aws-targets.json`. Start from
+  a clean sample, not another deployment's state. Use approved bootstrap permissions; if your
+  environment is already bootstrapped and changes are prohibited, add `--skip-bootstrap` to deploy.
+- Ask the bootstrap bucket owner how assets are encrypted. For a customer-managed key, set
+  `context.agentcoreSampleAssetKmsKeyArn` in `agentcore/cdk/cdk.json` to its exact key ARN
+  **before building**; otherwise leave it `null`. See [KMS details](DEPLOYMENT.md#persistent-asset-kms-setting).
+- Skip account-level CloudWatch Transaction Search setup; the tutorial doesn't need it. Note
+  your existing CLI preference (`agentcore config transactionSearch`), then run
+  `agentcore config transactionSearch false`. This is a user-wide CLI setting, not an AWS
+  account change. Keep it disabled through cleanup; restore your previous preference afterwards.
 
 ```bash
-agentcore dev --logs
+agentcore build --json
+uv run --project app/agent --frozen pytest
 ```
 
-In another terminal:
+The build packages Linux ARM64 dependencies and synthesizes CloudFormation; it does not deploy.
+Review `agentcore/cdk/cdk.out/*.template.json`: expect one Runtime, role/policy and permissions
+boundary, possibly CDK metadata—not a Gateway, Memory, CodeBuild project, NAT or customer store.
+The post-build tests verify the current source bytes and native architecture inside the ZIP.
+
+Confirm your account with `aws sts get-caller-identity` again. Never deploy over a project you
+do not own. If `CustomerSupport` is taken, change only the project `name` in
+`agentcore/agentcore.json`: alphanumeric, starts with a letter, at most **23 characters**.
+Keep Runtime name `support`; the reviewed boundary binds to it.
 
 ```bash
-agentcore dev "What products do you have?" --stream
+agentcore deploy --region "$AWS_REGION"
+agentcore status --json
+agentcore invoke --runtime support \
+  --payload '{"prompt":"What is the price of PROD-002 in USD? Use the product tool."}'
+agentcore invoke --runtime support \
+  --payload '{"prompt":"For PROD-002, what is the return window and does it require original packaging? Look up both product and policy."}'
+agentcore logs runtime --name support --since 10m --limit 20
 ```
 
----
+Wait for Runtime readiness before invoking. Check the same product/policy facts and fixed tool
+completion logs. Cloud invocation is **IAM-authenticated**; `PUBLIC` means public **outbound**
+networking, not anonymous inbound access. No public API or JWT authorizer is created.
 
-## Step 4: Deploy to AWS (~4 min)
+The sample bounds prompts to 2,000 characters, four logical model steps and a 60-second deadline.
+Botocore allows one retry per step (at most **eight transport attempts**); Strands retries stay
+disabled. Output filtering and safe logs are intentional safeguards, not production guarantees.
+See [limits and permissions](DEPLOYMENT.md#security-boundary-and-limits) before customization.
 
-Deploy your agent to AgentCore Runtime with a single command:
+## Cleanup
+
+**Only inside this dedicated sample project**, using its original target/account:
 
 ```bash
-agentcore deploy
+agentcore remove all --yes
+agentcore deploy --yes
+agentcore status --json
 ```
 
-The CLI handles everything:
-- Packages your code and dependencies
-- Provisions IAM roles and the runtime environment via CDK
-- Deploys to a fully managed, serverless endpoint
+`remove all` edits local configuration; `deploy` applies removal and deletes the empty stack.
+The boundary is omitted when `support` is removed. Confirm stack deletion and Runtime absence.
+Shared `CDKToolkit` resources remain, and uploaded ZIPs/service-created logs may remain too.
+Follow [artifact cleanup](DEPLOYMENT.md#cleanup-and-retention); never empty a shared bucket or
+delete shared bootstrap resources. To rerun after confirmed cleanup, restore the example's
+local declaration with `git restore agentcore/agentcore.json` (this discards edits to that file).
+Recheck the project name and saved target before deploying again.
 
-Check the deployment status:
+## Troubleshooting and next steps
 
-```bash
-agentcore status
-```
+- Wrong flags? Confirm CLI **1.0.3**, not the Toolkit executable earlier in `PATH`.
+- HTTP 400? Send only `{"prompt":"non-empty text"}`, at most 2,000 characters.
+- Model failure? Check profile/Region/model access locally, role and boundary in AWS.
+- HTTP 504? Check service health before retrying; retries cost money.
+- Port busy? Use `agentcore dev --agent support --mode headless --port 8081 --no-traces`;
+  add `--port 8081` to local invokes.
+- Deployment failure? Inspect CloudFormation events; do not bypass IAM controls.
+- Audits or model changes? See [DEPLOYMENT.md](DEPLOYMENT.md), not a blanket `Resource: "*"` grant.
 
-You should see:
-
-```
-AgentCore Status (target: default, us-east-1)
-
-Agents
-  CustomerSupport: Deployed - Runtime: READY (arn:aws:bedrock-agentcore:...)
-```
-
-### Invoke the deployed agent
-
-```bash
-agentcore invoke "What's the return policy for audio products?" --stream
-```
-
-The response streams directly from your cloud-deployed agent.
-
-Try a few more:
-
-```bash
-agentcore invoke "Tell me about product PROD-004" --stream
-agentcore invoke "What can you help me with?" --stream
-```
-
----
-
-## What's Next?
-
-You now have a working agent running locally and in the cloud. Here are the next steps to make it production-ready:
-
-| Feature | CLI Command | What It Does |
-|---|---|---|
-| **Add Memory** | `agentcore add memory --name SharedMemory --strategies SEMANTIC,SUMMARIZATION --expiry 30` | Agent remembers users across sessions |
-| **Add Gateway** | `agentcore add gateway --name my-gateway --runtimes CustomerSupport` | Centralize and share tools across agents via MCP |
-| **Add Evaluations** | `agentcore add online-eval --name QualityMonitor --agent CustomerSupport --evaluator Builtin.GoalSuccessRate --sampling-rate 100 --enable-on-create` | Continuous quality monitoring |
-| **View Logs** | `agentcore logs` | Stream live logs from your deployed agent |
-| **View Traces** | `agentcore traces list --limit 10` | Inspect OpenTelemetry traces in CloudWatch |
-
-For a full walkthrough of all these features, see the [AgentCore CLI Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77).
-
-### Useful resources
-
-- [AgentCore CLI documentation](https://github.com/aws/agentcore-cli)
-- [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
-- [Strands Agents SDK](https://strandsagents.com/)
-
----
-
-## Clean Up
-
-To tear down all deployed resources:
-
-```bash
-agentcore remove all
-agentcore deploy
-```
-
-This deletes the AgentCore Runtime and all associated AWS resources (IAM roles, S3 artifacts, CloudFormation stack).
+Continue with [AgentCore CLI](https://github.com/aws/agentcore-cli),
+[Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html)
+and [Strands](https://strandsagents.com/). Persistence or real business actions need separate
+authorization, threat assessment and tests—not silent expansion of this example.

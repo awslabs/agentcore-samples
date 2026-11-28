@@ -1,19 +1,4 @@
-strands-agents
-strands-agents-tools
-strands-agents[litellm]
-uv
-boto3
-langchain[aws]
-langgraph
-langsmith[otel]
-duckduckgo-search
-langchain-community
-opentelemetry-instrumentation-langchain
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
-ipython
-ipykernel
-pandas
-jupyterlab
-openpyxl
-mcp>=1.9.0
+# Notebook tooling only. Install the selected sample's dependencies separately
+# in its own environment; deployment CLIs and model frameworks are not shared.
+jupyterlab>=4,<5
+ipykernel>=6,<8

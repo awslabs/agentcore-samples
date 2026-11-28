@@ -1,0 +1,9 @@
+line-length = 120
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+
+[lint.per-file-ignores]
+# Also match when --config is invoked from the repository root.
+"**/tests/**/*.py" = ["S101"]
