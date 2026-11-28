@@ -9,15 +9,16 @@ fetch — it auto-detects async/sync context and manages the event loop
 correctly. The agent never sees the client_secret.
 
 First-time setup: Atlassian 3LO requires a real user to grant consent once.
-On the first invocation, the on_auth_url callback logs the consent URL.
+Consent must be completed through an authorized user-facing Identity flow.
+The event-driven agent never logs a bearer-like consent URL.
 After consent, AgentCore caches the refresh token for all future invocations.
 """
 
 import logging
 from typing import Optional
 
-from strands.tools.mcp.mcp_client import MCPClient
 from config import JIRA_MCP_URL, JIRA_OAUTH_PROVIDER_NAME
+from strands.tools.mcp.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def _is_jira_configured() -> bool:
     return bool(JIRA_MCP_URL and JIRA_OAUTH_PROVIDER_NAME)
 
 
-def get_jira_mcp_client_sync() -> Optional[MCPClient]:
+def get_jira_mcp_client_sync() -> MCPClient | None:
     """Returns an MCP Client connected to the Atlassian Remote MCP server.
 
     STEP: IDENTITY — Uses @requires_access_token(auth_flow="USER_FEDERATION")
@@ -62,7 +63,9 @@ def get_jira_mcp_client_sync() -> Optional[MCPClient]:
         provider_name=JIRA_OAUTH_PROVIDER_NAME,
         auth_flow="USER_FEDERATION",
         scopes=JIRA_SCOPES,
-        on_auth_url=lambda url: logger.warning("Atlassian consent required (one-time). Visit: %s", url),
+        on_auth_url=lambda url: logger.warning(
+            "Atlassian user consent required; use the authorized Identity consent flow (URL not logged)"
+        ),
     )
     def _build_client(*, access_token: str) -> MCPClient:
         """Decorated — token injected by @requires_access_token."""
@@ -79,6 +82,5 @@ def get_jira_mcp_client_sync() -> Optional[MCPClient]:
         # access_token is injected by the @requires_access_token decorator at call time;
         # pylint cannot see the decorator's signature transformation.
         return _build_client()  # pylint: disable=missing-kwoa
-    except Exception as exc:
-        logger.warning("Jira MCP client creation failed: %s (Jira tools unavailable)", exc)
-        return None
+    except Exception:  # noqa: BLE001 -- fail closed without logging tokens, consent URLs or SDK responses
+        raise RuntimeError("Jira credentials or user consent unavailable") from None

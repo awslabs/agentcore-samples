@@ -1,34 +1,28 @@
-# IT Incident Response Agent — Runtime Code
+# Runtime source
 
-This directory contains the agent code deployed to AgentCore Runtime as a container.
+`main.py` is the HTTP/SSE AgentCore Runtime entrypoint. It handles synthetic full
+incidents and optional Jira issue-key incidents, emitting real stage markers and
+a final result. Free-form prompt mode is for local development only, not deployed
+incident processing. Guardrail configuration is required even in prompt mode.
 
-## Entrypoint
+| Module | Responsibility |
+| --- | --- |
+| `config.py` | non-secret runtime settings and JWT scope validation |
+| `model/load.py` | Haiku for LOW, Sonnet for higher priorities |
+| `mcp_client/client.py` | Gateway SigV4 or scoped Identity M2M |
+| `mcp_client/jira.py` | optional USER_FEDERATION and direct SSE MCP |
+| `memory/session.py` | per-Runtime-session conversation persistence |
+| `memory/enrichment.py` | cross-session parent-namespace retrieval |
 
-`main.py` — Handles two modes:
-- **Prompt mode** (dev/testing): Responds to `{"prompt": "..."}` payloads
-- **Ticket mode** (production): Processes full ticket payloads from the trigger Lambda
+Use `uv sync --frozen --no-dev` with Python 3.12. `Dockerfile` installs this exact
+lock and starts `opentelemetry-instrument python -m main` as a non-root user.
+The deployed image must run on Linux ARM64. AMD64 checks do not establish that.
 
-## Modules
+For offline startup, use dummy credentials, metadata disabled, private HOME/config
+and a network namespace with loopback only; test `/ping`, not `/invocations`.
+No model or tool call is needed for an import/startup check. Local invocation is
+not an offline test: it can call real AWS/IdP services if credentials are present.
 
-| Module | Purpose |
-|--------|---------|
-| `model/load.py` | Loads Bedrock model from `AGENT_MODEL_ID` env var |
-| `mcp_client/client.py` | Connects to AgentCore Gateway (MCP) via `GATEWAY_URL` |
-| `memory/session.py` | AgentCore Memory session manager for episodic recall |
-
-## Environment Variables (injected by CDK)
-
-| Variable | Description |
-|----------|-------------|
-| `GATEWAY_URL` | AgentCore Gateway MCP endpoint |
-| `MEMORY_ITINCIDENTAGENTMEMORY_ID` | Memory resource ID |
-| `AGENT_MODEL_ID` | Bedrock model ID |
-| `TICKETS_TABLE` | DynamoDB tickets table name |
-| `AWS_REGION` | AWS region |
-
-## Local Development
-
-```bash
-agentcore dev                    # Web UI on :8081, runtime container on :8082
-agentcore dev "Hello"            # Test with a prompt
-```
+[Main tutorial](../../README.md) · [Workflow safety](../../docs/ARCHITECTURE.md) ·
+[Authentication](../../docs/authentication-guide.md) ·
+[Evaluation/privacy](../../docs/online-evaluation.md)

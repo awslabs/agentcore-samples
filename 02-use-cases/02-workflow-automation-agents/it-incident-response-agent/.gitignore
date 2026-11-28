@@ -51,9 +51,19 @@ agentcore/cdk/cdk.out/
 agentcore/cdk/node_modules/
 cdk.out/
 
+# Local pinned CLI installation
+.tools/
+
 # AgentCore CLI
-agentcore/.cli/deployed-state.json
+agentcore/.cli/
 agentcore/aws-targets.json
+.sample-deployment.json
+.sample-operation.lock
+.sample-cli-home/
+.sample-deployment.json.*.tmp
+.e2e/
+.lambda-sdk/
+it-sdk-*/
 
 # Developer-only files (not for consumers)
 DEPLOY_TEST.sh

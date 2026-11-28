@@ -1,103 +1,74 @@
-# Online Evaluation Configuration
+# Observability and online evaluation
 
-Online evaluation is configured declaratively in `agentcore/agentcore.json` under `onlineEvalConfigs[]`:
+The preserved evaluation configuration samples 100% of eligible Runtime traces
+with `Builtin.Correctness`, `Builtin.Helpfulness`, `Builtin.ToolSelectionAccuracy`
+and `Builtin.GoalSuccessRate`. These are online outcomes, not an on-demand test
+runner and not a guarantee of correctness.
 
-```json
-"onlineEvalConfigs": [{
-  "name": "ITIncidentAgentEval",
-  "agent": "ITIncidentAgent",
-  "evaluators": [
-    "Builtin.Correctness",
-    "Builtin.Helpfulness",
-    "Builtin.ToolSelectionAccuracy",
-    "Builtin.GoalSuccessRate"
-  ],
-  "samplingRate": 100,
-  "description": "Online evaluation for IT incident response agent (4 built-in evaluators)"
-}]
-```
+## Account-owner prerequisite
 
-The `AgentCoreApplication` L3 construct handles the full lifecycle:
-- Creates an IAM execution role with least-privilege permissions
-- Creates the `OnlineEvaluationConfig` CloudFormation resource
-- Adds dependency ordering on the Runtime (ensuring the log group exists first)
+Transaction Search is shared **account/region state**. The account owner must
+prepare the Logs delivery/resource policy and route X-Ray trace segments to
+CloudWatch Logs. `aws/spans` has no leading slash. Sampling must be configured and
+actually applied at the requested percentage (100 by default).
 
-## Prerequisite: CloudWatch Transaction Search (auto-enabled)
+By default the custom resource is read-only: it checks destination **ACTIVE**,
+desired indexing and **actual** indexing, with bounded polling. A pending setting,
+missing actual percentage, API denial or timeout fails deployment. Required
+indexing errors are not warnings and never produce a claimed 100% result.
+Evaluators depend on that readiness resource.
 
-Online evaluation requires **CloudWatch Transaction Search** so OTEL spans are
-ingested into the `aws/spans` log group. The stack **enables this automatically**:
-when `onlineEvalConfigs` is non-empty, a custom resource
-(`lambdas/infra/transaction_search.py`, wired via `enableTransactionSearch()` in
-`cdk-stack.ts`) calls the X-Ray control plane to route trace segments to
-CloudWatch Logs and set the span indexing percentage (100% by default, override
-with `TXN_SEARCH_INDEXING_PERCENTAGE`).
+CLI 1.2.0 has no deploy flag for Transaction Search. The wrapper uses the real
+`transactionSearch: false` global preference in a **private sample CLI HOME** and
+verifies the CLI reads it, so its separate best-effort setup does not bypass this
+contract. It does not change the operator's global CLI preferences. No permission to change
+real account settings is implied by this sample or its tests.
 
-On stack delete, Transaction Search is intentionally **left enabled** — it is an
-account/region-level setting other agents may depend on.
+Only if the account owner separately authorizes mutation may the operator set
+both `TXN_SEARCH_ALLOW_MUTATION=true` and
+`TXN_SEARCH_ACCOUNT_OWNER_APPROVAL=ACCOUNT/REGION`. Only that mode receives X-Ray
+write grants. The Logs delivery policy remains the account owner's prerequisite.
+Delete deliberately retains all shared settings; it never disables or resets
+them on behalf of this stack.
 
-The first deploy may take 10-15 minutes for the log group to provision. Verify:
-```bash
-aws logs describe-log-groups --log-group-name-prefix "/aws/spans" --region us-west-2
-# Should return a log group; if empty, wait longer
-```
+## Content and privacy
 
-> Manual enablement (`aws application-signals start-monitoring`) is not
-> required; it remains available as a fallback if you deploy with
-> `onlineEvalConfigs: []` and later enable eval out of band.
+Message-content capture is off in the committed runtime defaults. Deploying the
+preserved online-evaluation mode requires the explicit
+`IT_SAMPLE_EVALUATION_CONTENT=synthetic-only` acknowledgment, which enables the
+content that evaluators need. Use synthetic profiles, incidents, runbooks and
+Jira issues only. Instrumentation can capture input before application redaction;
+the Guardrail is **not** a blanket PII guarantee for traces or stores.
 
-## Required Runtime Environment Variables
+Requester IDs must be opaque, not email addresses. The app no longer writes a
+requester span attribute or logs Jira consent URLs. Tool results, recalled
+summaries, incident text and final resolution are guarded; unavailable/blocked
+guardrails fail the workflow. Access and retention policies for logs, Memory,
+DynamoDB and evaluation results still need operator review.
 
-The agent runtime **must** emit `gen_ai` semantic spans (with `session.id`) for the
-online evaluator to have data to score. These are enabled via env vars in
-`agentcore/agentcore.json` → `runtimes[].envVars[]` (OTEL auto-instrumentation is
-provided by the Dockerfile `CMD ["opentelemetry-instrument", "python", "-m", "main"]`):
+## Retrieve and verify
 
-| Variable | Purpose |
-|----------|---------|
-| `AGENT_OBSERVABILITY_ENABLED` | Enables the AgentCore observability pipeline that emits `gen_ai` spans tagged with `session.id` |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Captures model input/output so evaluators can assess correctness/helpfulness |
-| `OTEL_AWS_APPLICATION_SIGNALS_ENABLED` | Enables AWS Application Signals (session correlation) |
-| `OTEL_TRACES_EXPORTER=otlp` | Exports traces via OTLP |
-| `OTEL_PROPAGATORS=baggage,tracecontext,xray` | Propagates trace headers across the SNS → trigger Lambda → runtime hops |
-
-> **Failure mode:** If these are missing, the runtime still emits low-level HTTP
-> spans (IMDS/credential calls) but **no `gen_ai` spans with `session.id`**. The
-> online eval config deploys fine and `aws/spans` fills up, but evaluations never
-> trigger because there are no agent sessions to score. The four variables
-> above are required for evaluations to run.
-
-## Verifying evaluations are running
-
-After invoking the agent (e.g., via `scripts/test-e2e.sh`), online eval results
-take **~10-15 minutes** to appear (5-min session timeout + backend processing):
+Use the binding defined in the README:
 
 ```bash
-# 1. Confirm gen_ai spans with session.id are flowing
-aws logs filter-log-events --log-group-name "aws/spans" \
-  --filter-pattern "session.id" --limit 5 --region us-west-2
-
-# 2. Check the eval results log group for scored sessions
-aws logs filter-log-events \
-  --log-group-name-prefix "/aws/bedrock-agentcore/evaluations/results/ITIncidentAgent_ITIncidentAgentEval" \
-  --limit 20 --region us-west-2
+python scripts/evaluate.py "${BIND[@]}" --hours 1 --summary
+./scripts/test-e2e.sh "${BIND[@]}"
 ```
 
-## Disabling Online Evaluation
+The results helper resolves the owned evaluation resource's actual output log
+group, not a latest-name match. Logs Insights uses epoch seconds, bounded polls
+and propagated query errors. The display is exploratory; it is not full E2E proof.
 
-To deploy without online evaluation (e.g., if Transaction Search is not enabled):
+A Jira-enabled stack additionally requires the explicit three-issue fixture
+(`--jira-events`); DDB-only results cannot certify that optional mode.
+The E2E suite requires unique current-run sessions and trace IDs, completed tool
+results, EventBridge acceptance, a resolution, cross-session **Memory** record
+IDs/namespaces and every evaluator outcome for each session/trace. A DynamoDB
+recurrence count is not Memory proof. Old, empty, nonnumeric, error or incomplete
+results cannot pass. It waits for configured session inactivity plus bounded
+processing time, retaining `.e2e/` evidence on failure.
 
-1. Set `onlineEvalConfigs` to `[]` in `agentcore/agentcore.json`
-2. Redeploy: `./scripts/deploy.sh`
-
-## Evaluators
-
-| Evaluator                | What it measures                         |
-|--------------------------|------------------------------------------|
-| `GoalSuccessRate`        | Did the agent achieve its stated goal?   |
-| `Correctness`            | Was the information provided accurate?   |
-| `Helpfulness`            | Was the response useful to the user?     |
-| `ToolSelectionAccuracy`  | Did the agent pick the right tools?      |
-
-## Cost
-
-Typical workload (100 requests/day): **$5-15/month** for CloudWatch Transaction Search + evaluation.
+All four scores need human interpretation. A zero score is a complete but poor
+outcome, not a hidden pass on quality. LOG_ONLY policies remain non-enforcing,
+regardless of an evaluator score. Optional features skipped by an operator must
+be labeled NOT RUN, not removed to obtain a successful full-suite status.

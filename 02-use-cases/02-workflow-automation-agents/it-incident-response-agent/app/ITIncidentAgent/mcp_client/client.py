@@ -15,15 +15,16 @@ The Gateway URL is injected via environment variable at runtime.
 import logging
 from typing import Optional
 
-from mcp.client.streamable_http import streamablehttp_client
-from strands.tools.mcp.mcp_client import MCPClient
 from config import (
-    GATEWAY_URL,
     GATEWAY_AUTH_MODE,
-    GATEWAY_OAUTH_PROVIDER_NAME,
     GATEWAY_OAUTH_AUDIENCE,
+    GATEWAY_OAUTH_PROVIDER_NAME,
+    GATEWAY_OAUTH_SCOPES,
+    GATEWAY_URL,
     REGION,
 )
+from mcp.client.streamable_http import streamablehttp_client
+from strands.tools.mcp.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,8 @@ def _create_sigv4_auth():
     (not a one-shot pre-sign) so it works correctly for multi-request
     MCP sessions (tool listing, multiple tool calls, etc.).
     """
-    import httpx
     import botocore.session
+    import httpx
     from botocore.auth import SigV4Auth
     from botocore.awsrequest import AWSRequest
 
@@ -89,7 +90,7 @@ def _create_sigv4_auth():
 # The token flows directly into the closure — no module-level cache needed.
 
 
-def _create_custom_jwt_client() -> Optional[MCPClient]:
+def _create_custom_jwt_client() -> MCPClient | None:
     """Create Gateway MCP client with CUSTOM_JWT auth.
 
     STEP: IDENTITY — Uses @requires_access_token to fetch an M2M token
@@ -104,7 +105,7 @@ def _create_custom_jwt_client() -> Optional[MCPClient]:
     @requires_access_token(
         provider_name=GATEWAY_OAUTH_PROVIDER_NAME,
         auth_flow="M2M",
-        scopes=[],
+        scopes=GATEWAY_OAUTH_SCOPES,
         custom_parameters={"audience": GATEWAY_OAUTH_AUDIENCE} if GATEWAY_OAUTH_AUDIENCE else {},
     )
     def _build_client(*, access_token: str) -> MCPClient:
@@ -121,7 +122,7 @@ def _create_custom_jwt_client() -> Optional[MCPClient]:
     return _build_client()  # pylint: disable=missing-kwoa
 
 
-def get_streamable_http_mcp_client() -> Optional[MCPClient]:
+def get_streamable_http_mcp_client() -> MCPClient | None:
     """Returns an MCP Client connected to the AgentCore Gateway.
 
     Auth mode is determined by GATEWAY_AUTH_MODE:
@@ -147,7 +148,7 @@ def get_streamable_http_mcp_client() -> Optional[MCPClient]:
     return MCPClient(lambda: streamablehttp_client(GATEWAY_URL, auth=sigv4_auth))
 
 
-def get_all_mcp_clients_safe() -> tuple[list[MCPClient], list[str]]:
+def get_all_mcp_clients_safe(include_jira: bool = False) -> tuple[list[MCPClient], list[str]]:
     """Returns MCP clients with graceful degradation for unavailable tools.
 
     STEP: SAFE TOOL LOADING — Wraps tool provider initialization in error
@@ -177,22 +178,24 @@ def get_all_mcp_clients_safe() -> tuple[list[MCPClient], list[str]]:
             clients.append(gateway_client)
             logger.info("Gateway MCP client loaded successfully")
         else:
-            logger.info("Gateway URL not configured — tools unavailable in local dev")
-    except Exception as exc:
-        msg = f"Gateway MCP client failed to initialize: {type(exc).__name__}: {exc}"
+            warnings.append("Gateway URL not configured")
+    except Exception as exc:  # noqa: BLE001 -- incident mode rejects warnings; redact provider errors
+        msg = f"Gateway MCP client failed to initialize: {type(exc).__name__}"
         logger.warning(msg)
         warnings.append(msg)
 
-    # Optional: Atlassian Remote MCP (Jira tools)
-    try:
-        jira_client = get_jira_mcp_client_sync()
-        if jira_client:
+    # Only issue-key mode may load Jira tools or request a federation token.
+    if include_jira:
+        try:
+            jira_client = get_jira_mcp_client_sync()
+            if not jira_client:
+                raise RuntimeError("Required Jira provider is not configured")
             clients.append(jira_client)
             logger.info("Jira MCP client loaded successfully")
-    except Exception as exc:
-        msg = f"Jira MCP client failed to initialize: {type(exc).__name__}: {exc}"
-        logger.warning(msg)
-        warnings.append(msg)
+        except Exception as exc:  # noqa: BLE001 -- required Jira cannot silently fall back; redact errors
+            msg = f"Jira MCP client failed to initialize: {type(exc).__name__}"
+            logger.warning(msg)
+            warnings.append(msg)
 
     logger.info("Assembled %d MCP client(s); %d tool(s) unavailable", len(clients), len(warnings))
     return clients, warnings

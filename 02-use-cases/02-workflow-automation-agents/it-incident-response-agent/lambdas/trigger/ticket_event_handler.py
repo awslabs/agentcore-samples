@@ -4,8 +4,8 @@ Supports two payload formats:
   1. Full ticket (DDB mock): {ticket_id, requester_id, title, description, priority}
      - Validates, persists to DDB, invokes Runtime with full payload.
   2. Jira issue key: {issue_key, requester_id}
-     - Thin pass-through; Jira is the system of record.
-     - Does NOT persist to DDB (the agent reads from Jira via MCP).
+     - Jira remains the issue system of record (read via MCP).
+     - A DDB processing marker lets the Runtime reject duplicate actions.
 
 The handler detects the mode based on the presence of `issue_key` vs `ticket_id`.
 """
@@ -13,8 +13,9 @@ The handler detects the mode based on the presence of `issue_key` vs `ticket_id`
 import json
 import logging
 import os
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -38,10 +39,8 @@ _agentcore = boto3.client("bedrock-agentcore", region_name=_REGION)
 # Full-ticket mode requires these fields
 REQUIRED_TICKET_FIELDS = {"ticket_id", "title", "description", "requester_id"}
 # Issue-key mode requires these fields
-# Note: requester_id is optional for issue-key mode — defaults to the issue_key
-# itself, which means Memory will namespace by issue rather than by user. Include
-# requester_id in the payload for proper per-user incident tracking.
-REQUIRED_ISSUE_FIELDS = {"issue_key"}
+# The requester must be the explicitly configured synthetic federation user.
+REQUIRED_ISSUE_FIELDS = {"issue_key", "requester_id"}
 
 
 def _is_jira_mode(payload: dict) -> bool:
@@ -51,6 +50,12 @@ def _is_jira_mode(payload: dict) -> bool:
 
 def _validate_ticket(ticket: dict) -> str | None:
     """Returns error message if invalid, None if valid."""
+    error = _validate_common(ticket)
+    if error:
+        return error
+    for field in ("title", "description"):
+        if not isinstance(ticket.get(field), str) or not 1 <= len(ticket[field]) <= 8000:
+            return f"{field} must be nonempty bounded text"
     missing = REQUIRED_TICKET_FIELDS - set(ticket.keys())
     if missing:
         return f"Missing required fields: {sorted(missing)}"
@@ -59,21 +64,34 @@ def _validate_ticket(ticket: dict) -> str | None:
 
 def _validate_issue(payload: dict) -> str | None:
     """Returns error message if invalid, None if valid."""
+    error = _validate_common(payload)
+    if error:
+        return error
     missing = REQUIRED_ISSUE_FIELDS - set(payload.keys())
     if missing:
         return f"Missing required fields: {sorted(missing)}"
     return None
 
 
+def _validate_common(payload):
+    if not isinstance(payload, dict) or payload.get("synthetic") is not True:
+        return "Only synthetic JSON incident objects are supported"
+    for key in ("requester_id", "issue_key" if _is_jira_mode(payload) else "ticket_id"):
+        if not isinstance(payload.get(key), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", payload[key]):
+            return "Use opaque identifiers, not PII or namespace paths"
+    if payload.get("priority", "MEDIUM") not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+        return "Invalid priority"
+    return None
+
+
 def _persist_ticket(ticket: dict) -> None:
-    """Idempotent write to DynamoDB (full-ticket mode only).
+    """Idempotent incident/processing-marker write before dispatch.
 
     Sanitizes the payload to only persist expected fields, preventing
     unexpected attributes from being written to the table.
     """
     if not TICKETS_TABLE:
-        logger.warning("TICKETS_TABLE not set — skipping DDB persist")
-        return
+        raise RuntimeError("TICKETS_TABLE is required before dispatch")
 
     # Whitelist allowed fields to prevent unexpected attribute injection
     ALLOWED_FIELDS = {
@@ -83,19 +101,17 @@ def _persist_ticket(ticket: dict) -> None:
         "requester_id",
         "priority",
         "category",
-        "status",
-        "created_at",
-        "updated_at",
+        "synthetic",
     }
     sanitized = {k: v for k, v in ticket.items() if k in ALLOWED_FIELDS}
 
     tickets_table = _ddb.Table(TICKETS_TABLE)
     ticket_id = sanitized["ticket_id"]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     sanitized.setdefault("priority", "MEDIUM")
-    sanitized.setdefault("status", "Open")
-    sanitized.setdefault("created_at", now)
+    sanitized["status"] = "Open"
+    sanitized["created_at"] = now
 
     try:
         tickets_table.put_item(
@@ -110,9 +126,16 @@ def _persist_ticket(ticket: dict) -> None:
 def _invoke_runtime(payload: dict, event_id: str) -> None:
     """Invoke AgentCore Runtime with the payload."""
     # runtimeSessionId must be at least 33 characters
-    session_id = f"event-{event_id}-{uuid.uuid4().hex}"
+    session_id = f"event-{uuid.uuid5(uuid.NAMESPACE_URL, AGENT_RUNTIME_ARN + '/' + event_id).hex}"
+    user_args = {}
+    if _is_jira_mode(payload):
+        user = os.environ.get("JIRA_RUNTIME_USER_ID")
+        if not user or payload["requester_id"] != user:
+            raise ValueError("Jira requires the configured, approved federation user")
+        user_args["runtimeUserId"] = user
     try:
         _agentcore.invoke_agent_runtime(
+            **user_args,
             agentRuntimeArn=AGENT_RUNTIME_ARN,
             runtimeSessionId=session_id,
             payload=json.dumps(payload).encode("utf-8"),
@@ -146,9 +169,12 @@ def lambda_handler(event, context):
             continue
 
         try:
+            if not isinstance(payload, dict):
+                failures.append("Payload must be an object")
+                continue
             if _is_jira_mode(payload):
                 # ─── Jira issue-key mode ─────────────────────────────
-                # Thin pass-through: no DDB persist, Jira is system of record.
+                # Jira is system of record; DDB holds only a processing marker.
                 error = _validate_issue(payload)
                 if error:
                     logger.error("Validation failed for issue event: %s", error)
@@ -156,9 +182,10 @@ def lambda_handler(event, context):
                     continue
 
                 issue_key = payload["issue_key"]
-                # Ensure requester_id has a fallback for memory actor_id
-                payload.setdefault("requester_id", issue_key)
-                logger.info("Dispatching Jira issue %s (requester=%s)", issue_key, payload["requester_id"])
+                logger.info("Dispatching synthetic Jira issue")
+                # Processing marker prevents repeated SNS delivery from repeating
+                # Jira writes. Jira remains the issue system of record.
+                _persist_ticket({**payload, "ticket_id": issue_key})
                 _invoke_runtime(payload, issue_key)
 
             else:

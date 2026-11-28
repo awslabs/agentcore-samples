@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { AgentCoreStack } from '../lib/cdk-stack';
-import { ConfigIO, type AwsDeploymentTarget } from '@aws/agentcore-cdk';
-import { App, Aspects, type Environment } from 'aws-cdk-lib';
+import { AgentCoreProjectSpecSchema, readAgentCoreProject, type AwsDeploymentTarget } from '@aws/agentcore-cdk';
+import { App, Aspects, CfnRule, Fn, type Environment } from 'aws-cdk-lib';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+
 
 function toEnvironment(target: AwsDeploymentTarget): Environment {
   return {
@@ -22,76 +23,20 @@ function toStackName(projectName: string, targetName: string): string {
 }
 
 async function main() {
-  // Config root is parent of cdk/ directory. The CLI sets process.cwd() to agentcore/cdk/.
-  const configRoot = path.resolve(process.cwd(), '..');
-  const configIO = new ConfigIO({ baseDir: configRoot });
+  const { agentCoreJson, targets, deployedState, projectRoot } = readAgentCoreProject();
+  const spec = AgentCoreProjectSpecSchema.parse(agentCoreJson);
 
-  const spec = await configIO.readProjectSpec();
-  const targets = await configIO.readAWSDeploymentTargets();
-
-  // Extract MCP configuration from project spec.
-  // Gateway fields are stored in agentcore.json but may not yet be on the
-  // AgentCoreProjectSpec type from @aws/agentcore-cdk, so we read them
-  // dynamically and cast the resulting object.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const specAny = spec as any;
-  const mcpSpec = specAny.agentCoreGateways?.length
-    ? {
-        agentCoreGateways: specAny.agentCoreGateways,
-        mcpRuntimeTools: specAny.mcpRuntimeTools,
-        unassignedTargets: specAny.unassignedTargets,
-      }
-    : undefined;
-
-  // Read deployed state for credential ARNs (populated by pre-deploy identity setup)
-  let deployedState: Record<string, unknown> | undefined;
-  try {
-    deployedState = JSON.parse(fs.readFileSync(path.join(configRoot, '.cli', 'deployed-state.json'), 'utf8'));
-  } catch {
-    // Deployed state may not exist on first deploy
+  if (targets.length !== 1) {
+    throw new Error('This fresh-only example requires exactly one explicit deployment target');
   }
-
-  if (targets.length === 0) {
-    throw new Error('No deployment targets configured. Please define targets in agentcore/aws-targets.json');
-  }
-
-  // Read harness configs for role creation.
-  // Harness fields may not yet be on the AgentCoreProjectSpec type from @aws/agentcore-cdk,
-  // so we read them dynamically via specAny (same pattern as gateways above).
-  // Harness paths in agentcore.json are relative to the project root (parent of agentcore/).
-  const projectRoot = path.resolve(configRoot, '..');
-  const harnessConfigs: {
-    name: string;
-    executionRoleArn?: string;
-    memoryName?: string;
-    containerUri?: string;
-    hasDockerfile?: boolean;
-    dockerfileName?: string;
-    harnessDir?: string;
-    tools?: { type: string; name: string }[];
-    apiKeyArn?: string;
-  }[] = [];
-  for (const entry of specAny.harnesses ?? []) {
-    const harnessDir = path.resolve(projectRoot, entry.path);
-    const harnessPath = path.resolve(harnessDir, 'harness.json');
-    try {
-      const harnessSpec = JSON.parse(fs.readFileSync(harnessPath, 'utf-8'));
-      harnessConfigs.push({
-        name: entry.name,
-        executionRoleArn: harnessSpec.executionRoleArn,
-        memoryName: harnessSpec.memory?.name,
-        containerUri: harnessSpec.containerUri,
-        hasDockerfile: !!harnessSpec.dockerfile,
-        dockerfileName: harnessSpec.dockerfile,
-        harnessDir,
-        tools: harnessSpec.tools,
-        apiKeyArn: harnessSpec.model?.apiKeyArn,
-      });
-    } catch (err) {
-      throw new Error(
-        `Could not read harness.json for "${entry.name}" at ${harnessPath}: ${err instanceof Error ? err.message : err}`
-      );
-    }
+  const preview = process.env.IT_SAMPLE_SYNTH_ONLY === 'true';
+  const ledgerPath = path.join(projectRoot, '.sample-deployment.json');
+  const ledger = fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) : undefined;
+  if (!preview && (!ledger?.stack_id || ledger.binding.project !== spec.name ||
+      ledger.binding.target !== targets[0]!.name || ledger.binding.account !== targets[0]!.account ||
+      ledger.binding.region !== targets[0]!.region || ledger.nonce !== process.env.IT_SAMPLE_OWNER ||
+      process.env.IT_SAMPLE_TARGET !== targets[0]!.name)) {
+    throw new Error('Use scripts/deploy.sh for a verified fresh reservation; IT_SAMPLE_SYNTH_ONLY=true is for offline template preview only');
   }
 
   const app = new App();
@@ -101,19 +46,13 @@ async function main() {
     const stackName = toStackName(spec.name, target.name);
 
     // Extract credentials from deployed state for this target
-    const targetState = (deployedState as Record<string, unknown>)?.targets as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-    const targetResources = targetState?.[target.name]?.resources as Record<string, unknown> | undefined;
-    const credentials = targetResources?.credentials as
-      | Record<string, { credentialProviderArn: string; clientSecretArn?: string }>
-      | undefined;
+    const credentials = deployedState?.targets[target.name]?.resources?.credentials;
 
     const stack = new AgentCoreStack(app, stackName, {
       spec,
-      mcpSpec,
+      projectRoot,
+      targetName: target.name,
       credentials,
-      harnesses: harnessConfigs.length > 0 ? harnessConfigs : undefined,
       kbId: process.env.KB_ID || app.node.tryGetContext('kbId') || undefined,
       destroyOnDelete: (process.env.DESTROY_ON_DELETE ?? 'true').toLowerCase() === 'true',
       env,
@@ -121,17 +60,26 @@ async function main() {
       tags: {
         'agentcore:project-name': spec.name,
         'agentcore:target-name': target.name,
+        'it-sample:owner': ledger?.nonce ?? 'offline-preview-not-deployable',
       },
     });
 
-    // cdk-nag: AWS Solutions checks (report as warnings for sample flexibility)
+    if (preview) {
+      new CfnRule(stack, 'OfflinePreviewOnly', { assertions: [{
+        assert: Fn.conditionEquals('offline-preview', 'authorized-deployment'),
+        assertDescription: 'This is a non-deployable offline preview. Use the fresh reservation entrypoint.',
+      }] });
+    }
+
+    // cdk-nag runs with retained scaffold waivers below, not security acceptance.
+    // Review generated policies and service requirements before cloud deployment.
     Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: false }));
     NagSuppressions.addStackSuppressions(
       stack,
       [
-        { id: 'AwsSolutions-IAM4', reason: 'AWS managed policies acceptable for sample' },
+        { id: 'AwsSolutions-IAM4', reason: 'Generated managed policies require separate effective-IAM review; not least-privilege acceptance' },
         { id: 'AwsSolutions-IAM5', reason: 'Wildcard resources used for sample simplicity; restrict in production' },
-        { id: 'AwsSolutions-L1', reason: 'Python 3.11 Lambda runtime acceptable for sample' },
+        { id: 'AwsSolutions-L1', reason: 'Review the explicitly selected Lambda runtime separately from this scaffold waiver' },
         { id: 'AwsSolutions-S1', reason: 'S3 access logging not required for sample' },
         { id: 'AwsSolutions-DDB3', reason: 'PITR enabled; backup not required for sample data' },
         { id: 'AwsSolutions-SNS2', reason: 'SNS encryption-in-transit only for sample' },

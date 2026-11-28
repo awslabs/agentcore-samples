@@ -1,8 +1,8 @@
 """Memory enrichment: retrieve past-incident context for the system prompt.
 
-Uses AgentCore Memory's `retrieve_memories` to pull semantically-relevant
+Uses AgentCore Memory's data-plane retrieval to pull semantically-relevant
 summaries of past incidents for a given requester. The configured
-`summary_memory_strategy` (SUMMARIZATION type, namespace "incidents/{actorId}")
+`summary_memory_strategy` (SUMMARIZATION at "incidents/{actorId}/{sessionId}")
 rolls each session into a summary; this function searches those summaries.
 
 This transforms Memory from a passive session logger into an active
@@ -11,6 +11,7 @@ enabling it to detect recurring incidents and escalate appropriately.
 """
 
 import logging
+import re
 import threading
 from typing import Optional
 
@@ -19,11 +20,11 @@ from config import MEMORY_ID, REGION
 
 logger = logging.getLogger(__name__)
 
-_memory_client: Optional[MemoryClient] = None
+_memory_client: MemoryClient | None = None
 _memory_client_lock = threading.Lock()
 
 
-def _get_memory_client() -> Optional[MemoryClient]:
+def _get_memory_client() -> MemoryClient | None:
     """Lazy-init the MemoryClient (thread-safe, avoids import-time failures in local dev)."""
     global _memory_client
     if _memory_client is None and MEMORY_ID:
@@ -33,7 +34,7 @@ def _get_memory_client() -> Optional[MemoryClient]:
     return _memory_client
 
 
-def retrieve_past_incidents(requester_id: str, query: str, top_k: int = 5) -> list[str]:
+def retrieve_past_incident_records(requester_id: str, query: str, top_k: int = 5) -> list[dict]:
     """Pull summarized past-incident episodes for this requester.
 
     The Memory resource is configured with a `summary_memory_strategy`
@@ -43,14 +44,14 @@ def retrieve_past_incidents(requester_id: str, query: str, top_k: int = 5) -> li
     all of a requester's session summaries by querying the `incidents/{actorId}`
     path prefix (via `namespace_path`).
 
-    Returns a list of summary strings (most relevant first), or empty
-    list on failure (graceful degradation — the agent just won't have
-    prior context).
+    Returns records with content and Memory record IDs (most relevant first).
+    Retrieval failures propagate: missing history must not masquerade as none.
     """
+    if not isinstance(requester_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", requester_id):
+        raise ValueError("Requester must be an opaque identifier, not PII or a namespace path")
     client = _get_memory_client()
     if not client:
-        logger.info("Memory not configured (MEMORY_ID unset) — no past-incident context")
-        return []
+        raise RuntimeError("Memory is required for incident enrichment")
 
     # The summary strategy stores records at "incidents/{actorId}/{sessionId}"
     # ({sessionId} is mandatory for SUMMARIZATION strategies). Retrieve with a
@@ -59,24 +60,21 @@ def retrieve_past_incidents(requester_id: str, query: str, top_k: int = 5) -> li
     # session-scoped leaf namespaces and would silently return nothing.
     namespace_path = f"incidents/{requester_id}"
     try:
-        hits = client.retrieve_memories(
-            memory_id=MEMORY_ID,
+        # The high-level retrieve_memories helper swallows ClientError and returns
+        # []. Use the SDK's forwarded data-plane operation so denial is not 'no history'.
+        hits = client.retrieve_memory_records(
+            memoryId=MEMORY_ID,
             namespace_path=namespace_path,
-            query=query,
-            top_k=top_k,
-        )
-    except Exception as exc:
-        logger.warning("Memory retrieve_memories failed for actor=%s: %s", requester_id, exc)
-        return []
+            searchCriteria={"searchQuery": query, "topK": top_k},
+        )["memoryRecordSummaries"]
+    except Exception:  # noqa: BLE001 -- require review on any unknown Memory failure; redact response
+        raise RuntimeError("Memory retrieval failed; incident requires retry/review") from None
+    return [hit for hit in hits or [] if (hit.get("content") or {}).get("text")]
 
-    summaries = []
-    for hit in hits or []:
-        text = (hit.get("content") or {}).get("text") or ""
-        if text:
-            summaries.append(text)
 
-    logger.info("Retrieved %d past-incident summaries for %s", len(summaries), requester_id)
-    return summaries
+def retrieve_past_incidents(requester_id: str, query: str, top_k: int = 5) -> list[str]:
+    """Compatibility helper, keeping the same cross-session request."""
+    return [hit["content"]["text"] for hit in retrieve_past_incident_records(requester_id, query, top_k)]
 
 
 def format_past_incidents_block(past_incidents: list[str]) -> str:
