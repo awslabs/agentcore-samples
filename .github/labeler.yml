@@ -5,8 +5,6 @@
   - "03-integrations/**"
 asynchronous-shopping-assistant:
   - "02-use-cases/asynchronous-shopping-assistant/**"
-AWS-operations-agent:
-  - "02-use-cases/AWS-operations-agent/**"
 customer-support-assistant:
   - "02-use-cases/customer-support-assistant/**"
 DB-performance-analyzer:
