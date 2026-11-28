@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 
 from mcp.client.session import ClientSession
@@ -16,12 +17,17 @@ from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
 
 
 async def run(prompt: str, gateway_url: str, region: str, target_name: str) -> int:
+    if not re.fullmatch(
+        rf"https://[A-Za-z0-9-]+\.gateway\.bedrock-agentcore\.{re.escape(region)}\.amazonaws\.com/mcp", gateway_url
+    ):
+        raise ValueError("Use the approved regional Gateway URL")
     tool_name = f"{target_name}___Retrieve"
     async with aws_iam_streamablehttp_client(
         endpoint=gateway_url,
         aws_service="bedrock-agentcore",
         aws_region=region,
-    ) as (read, write, _):
+    ) as streams:
+        read, write = streams[:2]
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -30,6 +36,8 @@ async def run(prompt: str, gateway_url: str, region: str, target_name: str) -> i
                 print(f"tool {tool_name!r} not found. Available: {names}", file=sys.stderr)
                 return 2
             result = await session.call_tool(tool_name, {"retrievalQuery": {"text": prompt}})
+            if result.is_error:
+                raise RuntimeError("Gateway retrieval failed; check the target, role and source")
             for c in result.content:
                 if hasattr(c, "text"):
                     try:
@@ -60,7 +68,7 @@ def main() -> int:
 
     missing = [k for k in ("GATEWAY_URL", "REGION", "TARGET_NAME") if not os.environ.get(k)]
     if missing:
-        sys.exit(f"missing env vars {missing}; did you `source .env.fmkb-gateway`?")
+        sys.exit(f"missing env vars {missing}; use the selected stack outputs")
 
     return asyncio.run(
         run(

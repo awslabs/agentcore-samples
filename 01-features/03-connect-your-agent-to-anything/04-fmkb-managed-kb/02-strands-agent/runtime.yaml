@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional IAM-authenticated knowledge-base assistant using the existing Gateway
+Parameters:
+  GatewayUrl:
+    Type: String
+    AllowedPattern: 'https://[a-zA-Z0-9-]+\.gateway\.bedrock-agentcore\.[a-z0-9-]+\.amazonaws\.com/mcp'
+  RuntimeName:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+  RepositoryName:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9._/-]+'
+  ImageDigest:
+    Type: String
+    AllowedPattern: 'sha256:[0-9a-f]{64}'
+  RolePathAndName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9_+=,.@/-]+'
+  BedrockModelId:
+    Type: String
+    MinLength: 1
+Resources:
+  Runtime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref RuntimeName
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${RepositoryName}@${ImageDigest}'
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePathAndName}'
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        MODEL_ID: !Ref BedrockModelId
+        GATEWAY_URL: !Ref GatewayUrl
+        AWS_REGION: !Ref AWS::Region
+Outputs:
+  RuntimeArn:
+    Value: !GetAtt Runtime.AgentRuntimeArn

@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Expose Retrieve for one existing Bedrock Managed Knowledge Base on an IAM Gateway
+Parameters:
+  GatewayName:
+    Type: String
+    AllowedPattern: '[a-z][a-z0-9-]{2,39}'
+  KnowledgeBaseId:
+    Type: String
+    AllowedPattern: '[0-9A-Za-z]{10}'
+Resources:
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Condition:
+              StringEquals: {'aws:SourceAccount': !Ref 'AWS::AccountId'}
+              ArnLike: {'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*'}
+      Policies:
+        - PolicyName: RetrieveFromSelectedKnowledgeBase
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:Retrieve, bedrock:GetKnowledgeBase]
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBaseId}'
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Ref GatewayName
+      RoleArn: !GetAtt Role.Arn
+      AuthorizerType: AWS_IAM
+      ProtocolType: MCP
+  Target:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      Name: knowledge
+      GatewayIdentifier: !GetAtt Gateway.GatewayIdentifier
+      CredentialProviderConfigurations: [{CredentialProviderType: GATEWAY_IAM_ROLE}]
+      TargetConfiguration:
+        Mcp:
+          Connector:
+            Source: {ConnectorId: bedrock-knowledge-bases}
+            Enabled: [Retrieve]
+            Configurations:
+              - Name: Retrieve
+                Description: Search this sandbox knowledge base.
+                ParameterValues:
+                  knowledgeBaseId: !Ref KnowledgeBaseId
+                  retrievalConfiguration: {managedSearchConfiguration: {numberOfResults: 5}}
+                ParameterOverrides:
+                  - Path: $.retrievalQuery.text
+                    Visible: true
+  # No KB creation/deletion, sync Lambda, broad model invocation or organization-wide discovery.
+Outputs:
+  GatewayArn: {Value: !GetAtt Gateway.GatewayArn}
+  GatewayUrl: {Value: !GetAtt Gateway.GatewayUrl}
