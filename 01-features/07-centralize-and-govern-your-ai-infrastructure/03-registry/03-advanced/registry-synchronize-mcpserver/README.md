@@ -1,94 +1,51 @@
-# Synchronize MCP Server Metadata to AWS Agent registry
+# Synchronize an MCP server's metadata to AWS Agent Registry
 
-## Overview
+Create one **draft** MCP record by URL. Registry connects to the endpoint and extracts its descriptor; you don't have to maintain a duplicate tool schema. The example stops at DRAFT. It does not approve records, invoke tools, deploy a Runtime, or create an identity provider.
 
-This tutorial demonstrates how to use AWS Agent registry's URL-based synchronization to automatically extract and register MCP server metadata (server schema, tools, descriptions, and versions) from both externally hosted and AgentCore runtime-hosted MCP servers.
+![Public and protected MCP sources for Registry](registry-synchronize-mcpserver-arch.png)
 
-Instead of manually defining tool schemas, you provide the MCP server URL and the registry connects to the server, discovers its capabilities, and creates a registry record with the extracted metadata.
+## Prepare
 
-## Getting Started
+Use Python 3.12+, short-lived AWS credentials, and an existing **READY sandbox registry with no automatic approval rules**. For registry administration, see [the separate setup and governance tutorial](../../01-registry-end-to-end/). This example uses boto3's `agent-registry-control` client, not preview APIs. Before attempting to use old preview records, consult the [namespace migration guide](../../04-migrate-to-new-namespace/).
 
-To get started with this tutorial, open and follow the step-by-step guide in the Jupyter notebook:
+From the sample directory, set `AWS_PROFILE`, `AWS_DEFAULT_REGION` and `REGISTRY_ID`, then verify the account with `aws sts get-caller-identity`. Ask the registry owner for permission to get this registry and create/get/delete **your sample record**. You do not need to create IAM roles, Cognito identities, ECR repositories or AgentCore Runtimes. Work in a new private directory per record:
 
-**[📓 registry_synchronize_mcpserver.ipynb](registry_synchronize_mcpserver.ipynb)**
+```bash
+set -euo pipefail
+sample=$PWD
+cd "$(mktemp -d)"; pwd  # retain this path until cleanup succeeds
+python3 -m venv .venv
+.venv/bin/python -m pip install -r "$sample/requirements.txt"
+```
 
-The notebook contains all the code examples, configurations, and detailed instructions needed to complete this tutorial.
+## Choose one source
 
-## What You'll Learn
+**Public server (simplest):** synchronize the AWS Knowledge MCP server. There are no outbound credentials.
 
-* How to list available registries and create a new registry with IAM authorization
-* How to synchronize a **public unprotected** MCP server to the registry
-* How to synchronize an **OAuth-protected** MCP server deployed on AgentCore runtime
-* How to synchronize an **IAM-protected** MCP server deployed on AgentCore runtime
-                             |
-### Tutorial Architecture
+```bash
+.venv/bin/python "$sample/registry_synchronize_mcpserver.py" sync --registry-id "$REGISTRY_ID" --mode public
+```
 
-The diagram below shows how AWS Agent registry synchronizes metadata from OAuth-protected and IAM-protected MCP Servers.
+**IAM-protected server:** use an existing MCP Runtime in your account and Region. `INVOKE_ROLE_ARN` is an owner-approved role trusted by **`agent-registry.amazonaws.com`**, limited to invoking that Runtime. It is not the Runtime's execution role. See the [Registry synchronization role guidance](../../04-migrate-to-new-namespace/docs/iam.md#synchronized-records-update-the-roles-trust-policy). The script does not modify the role or assume it locally.
 
-![registry Synchronize MCP Server Architecture](registry-synchronize-mcpserver-arch.png)
+```bash
+.venv/bin/python "$sample/registry_synchronize_mcpserver.py" sync --registry-id "$REGISTRY_ID" \
+  --mode iam --runtime-arn "$RUNTIME_ARN" --role-arn "$INVOKE_ROLE_ARN"
+```
 
-After synchronization, the record will be created in CREATING status. After about ten seconds, the record transitions to DRAFT status and contains descriptors extracted from the MCP server, including server descriptor and tools descriptor. The registry also updates the record name, description, and version if those values are found when connecting to the MCP server.
+**OAuth-protected server:** use an existing JWT-protected MCP Runtime, an authorized AgentCore Identity OAuth provider for its issuer, and a client-credentials scope accepted by that Runtime. The owner must authorize Registry to use the provider. Pass its ARN, **not** a token or client secret. Each `--scope` supplies one scope. Use only those needed for tool discovery.
 
-### Tutorial Key Features
+```bash
+.venv/bin/python "$sample/registry_synchronize_mcpserver.py" sync --registry-id "$REGISTRY_ID" \
+  --mode oauth --runtime-arn "$RUNTIME_ARN" --provider-arn "$PROVIDER_ARN" --scope mcp-server/invoke
+```
 
-* URL-based synchronization (pull-based metadata extraction)
-* Public MCP server synchronization
-* OAuth-protected MCP server synchronization with Cognito
-* IAM-protected MCP server synchronization with role-based access
-
-## Prerequisites
-
-- AWS account with IAM credentials that have permissions for AWS Agent registry, AgentCore runtime, Cognito, and IAM role management
-- Python 3.10+ with boto3 >= 1.42.87 (with `agent-registry-control` service support)
-- AWS CLI v2 configured with an appropriate profile
-- `bedrock-agentcore-starter-toolkit` for deploying MCP servers to AgentCore runtime
-
-## Notebook Sections
-
-| Section | What It Does |
-|---------|--------------|
-| Setup | Installs dependencies, initializes AWS session and clients, creates helper functions for waiting on async operations. |
-| 1. List Registries | Lists all available registries in the account. |
-| 2. Create registry | Creates a new registry with IAM authorization and `autoApproval: False`. |
-| 3. Synchronize from Public MCP Server | Synchronizes metadata from a public unprotected MCP server (e.g., AWS Knowledge MCP Server) using URL-based sync. |
-| 4. Synchronize from OAuth-Protected MCP Server | Creates a Cognito user pool and OAuth provider, deploys an MCP server with JWT authorization to AgentCore runtime, and synchronizes using OAuth credentials. |
-| 5. Synchronize from IAM-Protected MCP Server | Deploys an MCP server with default IAM auth to AgentCore runtime, creates an IAM role for registry-to-runtime invocation, and synchronizes using IAM credentials. |
-| 6. List All Records | Lists all synchronized records in the registry. |
-| 7. Cleanup | Deletes all created resources: registry records, registry, runtimes, OAuth providers, Cognito resources, IAM roles, and local files. |
-
-## AWS Services Used
-
-| Service | Purpose |
-|---------|---------|
-| **AWS Agent registry** | Stores MCP server records with extracted tool schemas and metadata. |
-| **AgentCore runtime** | Hosts MCP servers with OAuth or IAM authentication. |
-| **Amazon Cognito** | Provides OAuth2 authentication for MCP server access (client credentials flow). |
-| **IAM** | Provides role-based access for registry-to-runtime invocation. |
+All three paths print the new record ARN after Registry returns DRAFT with descriptor data. Inspect the record in Registry; a published or approved record is **not** created by this tutorial. A timeout or authorization failure is not a successful sync. Retry `status` from the same directory after fixing the source, or clean up.
 
 ## Cleanup
 
-The notebook includes a cleanup section (Section 7) that removes all resources created during the tutorial:
-
-- registry records and registry
-- AgentCore runtime deployments
-- OAuth2 credential providers
-- Cognito user pools and domains
-- IAM roles and policies
-- Local files generated by `%%writefile`
-
-Run the cleanup cell to avoid incurring ongoing charges.
-
-## Running the Python Scripts
-
 ```bash
-pip install -r requirements.txt
+.venv/bin/python "$sample/registry_synchronize_mcpserver.py" cleanup
 ```
 
-```bash
-python registry_synchronize_mcpserver.py
-```
-
-> **Note:** The script deploys two AgentCore runtime containers (OAuth-protected and
-> IAM-protected MCP servers). Full deployment takes 5–10 minutes per runtime.
-> Cleanup is performed at the end of the script.
-
+Keep `registry-sync-receipt.json` private and use the original account. The script acts only on the returned record ID/ARN and will not delete pending or promoted records. It never enumerates or deletes other records, the registry, or the source resources. Don't change or promote the record concurrently. If AWS may have accepted a create but no record ID was received, reconcile its unique name, client token and registry with your operation history; do not fill in an ID by guessing. After an abrupt interruption, remove the local `.lock` only after verifying no operation is active. Older Toolkit deployments must be reconciled separately using their original identifiers.

@@ -1,5 +1,0 @@
-strands-agents[a2a]
-fastapi
-uvicorn
-mcp
-requests

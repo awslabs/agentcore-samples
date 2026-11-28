@@ -1,4 +1,3 @@
-bedrock_agentcore_starter_toolkit
-langfuse
-autoevals
-openai
+# Experiment host only; the agent image has separate requirements.
+boto3==1.44.9
+langfuse==5.2.0

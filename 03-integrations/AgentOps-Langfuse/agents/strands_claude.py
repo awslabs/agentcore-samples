@@ -1,15 +1,12 @@
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
 import os
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from langfuse import get_client
 from strands import Agent
 from strands.models import BedrockModel
-from strands.telemetry import StrandsTelemetry
+from strands.tools.mcp import MCPClient
 
-from mcp.client.streamable_http import streamablehttp_client
-from strands.tools.mcp.mcp_client import MCPClient
-from langfuse import get_client
-
-
-streamable_http_mcp_client = MCPClient(lambda: streamablehttp_client("https://langfuse.com/api/mcp"))
+DOCS_MCP_URL = "https://langfuse.com/api/mcp"
 
 
 # Function to initialize Bedrock model
@@ -40,25 +37,22 @@ def strands_agent_bedrock(payload):
     user_input = payload.get("prompt")
     trace_id = payload.get("trace_id")
     parent_obs_id = payload.get("parent_obs_id")
-    print("User input:", user_input)
 
-    # Initialize Strands telemetry and setup OTLP exporter
-    strands_telemetry = StrandsTelemetry()
-    strands_telemetry.setup_otlp_exporter()
-
+    # Langfuse's process-level provider exports observations. Do not install an
+    # additional global OTLP provider/processor for every invocation.
     # Create an agent with MCP tools
-    with streamable_http_mcp_client:
-        mcp_tools = streamable_http_mcp_client.list_tools_sync()
+    with MCPClient(url=DOCS_MCP_URL) as client:
+        mcp_tools = client.list_tools_sync()
 
         # Create the agent
-        agent = Agent(model=bedrock_model, system_prompt=system_prompt, tools=mcp_tools)
+        agent = Agent(model=bedrock_model, system_prompt=system_prompt, tools=mcp_tools, callback_handler=None)
         # Reopen span for OTEL distributed tracing in DEV and TST environments to consolidate traces from AgentCore and Langfuse experiments
         if env == "DEV" or env == "TST":
             with get_client().start_as_current_observation(
                 name="strands-agent",
                 trace_context={
                     "trace_id": trace_id,
-                    "parent_observation_id": parent_obs_id,
+                    "parent_span_id": parent_obs_id,
                 },
             ):
                 response = agent(user_input)

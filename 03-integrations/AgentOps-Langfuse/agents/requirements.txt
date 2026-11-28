@@ -1,9 +1,3 @@
-uv
-ddgs
-boto3
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
-strands-agents[otel]
-strands-agents-tools
-mcp
-langfuse
+bedrock-agentcore==1.27.0
+strands-agents[otel]==1.65.0
+langfuse==5.2.0
