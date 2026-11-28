@@ -1,27 +1,8 @@
-
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "supportAgentDemo"
-version = "0.1.0"
-requires-python = ">=3.10"
-
-dependencies = [
-    "bedrock-agentcore >= 1.2.1",
-    "botocore[crt]",
-    "mcp >= 1.19.0",
-    "pyjwt>=2.11.0",
-    "pytest >= 7.0.0",
-    "pytest-asyncio >= 0.21.0",
-    "chardet >= 3.0.2, < 6.0.0",
-    "requests >= 2.32.5",
-    "strands-agents >= 1.25.0",
-    "strands-agents-tools >= 0.2.20",
-]
+name = "support-agent-refund-demo"
+version = "0.2.0"
+requires-python = ">=3.13,<3.14"
+dependencies = ["bedrock-agentcore[strands-agents]==1.27.0", "strands-agents==1.66.0", "PyJWT>=2.12,<3"]
 
 [dependency-groups]
-dev = [
-    "bedrock-agentcore-starter-toolkit>=0.3.2",
-]
+test = ["cedarpy==4.12.2"]
