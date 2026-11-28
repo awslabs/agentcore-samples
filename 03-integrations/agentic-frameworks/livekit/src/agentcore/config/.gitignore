@@ -1,2 +1,0 @@
-# Ignore gateway config with sensitive credentials
-gateway_config.json
