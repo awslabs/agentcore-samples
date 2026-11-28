@@ -7,7 +7,6 @@ This folder contains framework and protocol integrations that demonstrate how to
 ## 🤖 Agentic Frameworks
 
 * **[ADK](./agentic-frameworks/adk/)**: Agent Development Kit integration with Google Search
-* **[AutoGen](./agentic-frameworks/autogen/)**: Multi-agent conversation frameworks
 * **[CrewAI](./agentic-frameworks/crewai/)**: Collaborative AI agent orchestration — includes [observability examples](./agentic-frameworks/crewai/observability/)
 * **[LangChain](./agentic-frameworks/langchain/)**: Chain-based agent workflows and tool integration
 * **[LangGraph](./agentic-frameworks/langgraph/)**: Multi-agent workflows with web search capabilities — includes [observability examples](./agentic-frameworks/langgraph/observability/)
