@@ -10,7 +10,7 @@ This folder contains framework and protocol integrations that demonstrate how to
 * **[AutoGen](./agentic-frameworks/autogen/)**: Multi-agent conversation frameworks
 * **[CrewAI](./agentic-frameworks/crewai/)**: Collaborative AI agent orchestration — includes [observability examples](./agentic-frameworks/crewai/observability/)
 * **[LangChain](./agentic-frameworks/langchain/)**: Chain-based agent workflows and tool integration
-* **[LangGraph](./agentic-frameworks/langgraph/)**: Multi-agent workflows with web search capabilities — includes [observability examples](./agentic-frameworks/langgraph/observability/)
+* **[LangGraph](./agentic-frameworks/langgraph/)**: Runtime tool routing, conversation checkpoints, and cross-session memory — includes [observability examples](./agentic-frameworks/langgraph/observability/)
 * **[LlamaIndex](./agentic-frameworks/llamaindex/)**: Document processing and retrieval-augmented generation — includes [observability examples](./agentic-frameworks/llamaindex/observability/)
 * **[OpenAI Agents](./agentic-frameworks/openai-agents/)**: OpenAI Assistant API integration with handoff patterns
 * **[PydanticAI](./agentic-frameworks/pydanticai-agents/)**: Type-safe agent development with Bedrock models

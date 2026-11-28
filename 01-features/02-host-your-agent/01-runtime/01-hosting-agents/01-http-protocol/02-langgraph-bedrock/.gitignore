@@ -1,0 +1,2 @@
+# Local lock for the deployment receipt, never shared across checkouts.
+/runtime_config.lock

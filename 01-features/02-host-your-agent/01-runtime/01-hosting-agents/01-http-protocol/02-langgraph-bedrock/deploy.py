@@ -22,13 +22,15 @@ import shutil
 import subprocess
 import sys
 import time
+from uuid import uuid4
 
 import boto3
-from boto3.session import Session
+from botocore.exceptions import ClientError
+from deployment_state import creating, exclusive_operation, reserve
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-AGENT_NAME = f"langgraph_bedrock_{int(time.time()) % 100000}"
+AGENT_NAME = f"langgraph_bedrock_{uuid4().hex[:20]}"
 PROTOCOL = "HTTP"
 
 # AgentCore Runtime platform version. "V2" prepares the execution environment
@@ -42,28 +44,16 @@ ENTRY_POINT = "agent.py"
 # Agent source files to include in the zip (alongside pre-compiled deps)
 AGENT_FILES = ["agent.py"]
 
-# ── AWS Setup ────────────────────────────────────────────────────────────────
-
-session = Session()
-REGION = session.region_name
-ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
-S3_BUCKET = f"agentcore-code-{ACCOUNT_ID}-{REGION}"
-S3_PREFIX = f"{AGENT_NAME}/code.zip"
-
-print(f"Region:     {REGION}")
-print(f"Account:    {ACCOUNT_ID}")
-print(f"Agent:      {AGENT_NAME}")
-
-
 # ── Step 1: Create IAM Execution Role ────────────────────────────────────────
 
 
-def create_execution_role() -> str:
+def create_execution_role(state) -> str:
     """Create the IAM execution role with the permissions AgentCore needs.
 
     Uses the official 'AgentCore direct deploy execution role' policy.
     See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html
     """
+    REGION, ACCOUNT_ID = state["region"], state["account_id"]
     iam = boto3.client("iam", region_name=REGION)
     role_name = f"agentcore-{AGENT_NAME}-role"
 
@@ -74,7 +64,12 @@ def create_execution_role() -> str:
                 "Effect": "Allow",
                 "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
                 "Action": "sts:AssumeRole",
-                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT_ID}},
+                "Condition": {
+                    "StringEquals": {"aws:SourceAccount": ACCOUNT_ID},
+                    "ArnLike": {
+                        "aws:SourceArn": f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT_ID}:runtime/{AGENT_NAME}-*"
+                    },
+                },
             }
         ],
     }
@@ -126,6 +121,12 @@ def create_execution_role() -> str:
                 "Condition": {"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
             },
             {
+                "Sid": "ReadDeploymentZip",
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+                "Resource": f"arn:aws:s3:::{state['bucket']}/{state['key']}",
+            },
+            {
                 "Sid": "BedrockModelInvocation",
                 "Effect": "Allow",
                 "Action": [
@@ -133,24 +134,22 @@ def create_execution_role() -> str:
                     "bedrock:InvokeModelWithResponseStream",
                 ],
                 "Resource": [
-                    "arn:aws:bedrock:*::foundation-model/*",
-                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:*",
+                    "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0",
                 ],
             },
         ],
     }
 
-    try:
+    with creating(state, "IAM role"):
         resp = iam.create_role(
             RoleName=role_name,
             AssumeRolePolicyDocument=json.dumps(trust_policy),
             Description=f"Execution role for {AGENT_NAME}",
         )
         role_arn = resp["Role"]["Arn"]
-        print(f"\n✓ Created IAM role: {role_arn}")
-    except iam.exceptions.EntityAlreadyExistsException:
-        role_arn = f"arn:aws:iam::{ACCOUNT_ID}:role/{role_name}"
-        print(f"\n✓ IAM role exists: {role_arn}")
+        state["role_id"] = resp["Role"]["RoleId"]
+    print(f"\n✓ Created IAM role: {role_arn}")
 
     iam.put_role_policy(
         RoleName=role_name,
@@ -166,7 +165,7 @@ def create_execution_role() -> str:
 # ── Step 2: Build arm64 deployment package and upload to S3 ──────────────────
 
 
-def build_and_upload_package():
+def build_and_upload_package(state):
     """Build a deployment zip with pre-compiled arm64 dependencies.
 
     AgentCore Runtime runs on arm64 (Graviton) microVMs. When you use direct
@@ -184,12 +183,17 @@ def build_and_upload_package():
 
     See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-code-deploy-python.html
     """
+    REGION, S3_BUCKET, S3_PREFIX = state["region"], state["bucket"], state["key"]
     s3 = boto3.client("s3", region_name=REGION)
     pkg_dir = "deployment_package"
     zip_file = "deployment_package.zip"
 
     # Create S3 bucket if needed
     try:
+        s3.head_bucket(Bucket=S3_BUCKET, ExpectedBucketOwner=state["account_id"])
+    except ClientError as error:
+        if error.response["ResponseMetadata"]["HTTPStatusCode"] != 404:
+            raise
         if REGION == "us-east-1":
             s3.create_bucket(Bucket=S3_BUCKET)
         else:
@@ -198,14 +202,9 @@ def build_and_upload_package():
                 CreateBucketConfiguration={"LocationConstraint": REGION},
             )
         print(f"\n✓ Created S3 bucket: {S3_BUCKET}")
-    except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
-        print(f"\n✓ S3 bucket exists: {S3_BUCKET}")
 
-    # Clean previous build artifacts
-    if os.path.isdir(pkg_dir):
-        shutil.rmtree(pkg_dir)
-    if os.path.exists(zip_file):
-        os.remove(zip_file)
+    if os.path.lexists(pkg_dir) or os.path.lexists(zip_file):
+        raise FileExistsError("Move previous deployment_package artifacts aside before building.")
 
     # Download arm64-compatible wheels into a staging directory.
     # --python-platform aarch64-manylinux2014 : targets ARM64 Linux (Graviton)
@@ -249,7 +248,13 @@ def build_and_upload_package():
 
     # Upload to S3
     print(f"  Uploading to s3://{S3_BUCKET}/{S3_PREFIX}...")
-    s3.upload_file(zip_file, S3_BUCKET, S3_PREFIX)
+    with open(zip_file, "rb") as package, creating(state, "code ZIP"):
+        upload = s3.put_object(
+            Bucket=S3_BUCKET, Key=S3_PREFIX, Body=package, ExpectedBucketOwner=state["account_id"], IfNoneMatch="*"
+        )
+        state["etag"] = upload["ETag"]
+        if "VersionId" in upload:
+            state["version_id"] = upload["VersionId"]
     print("  ✓ Uploaded")
 
     # Clean up local build artifacts
@@ -260,25 +265,31 @@ def build_and_upload_package():
 # ── Step 3: Create AgentCore Runtime ─────────────────────────────────────────
 
 
-def create_runtime(role_arn: str) -> dict:
-    control = boto3.client("bedrock-agentcore-control", region_name=REGION)
+def create_runtime(role_arn: str, state) -> dict:
+    control = boto3.client("bedrock-agentcore-control", region_name=state["region"])
 
     print(f"\n  Creating AgentCore Runtime '{AGENT_NAME}'...")
-    response = control.create_agent_runtime(
-        agentRuntimeName=AGENT_NAME,
-        agentRuntimeArtifact={
-            "codeConfiguration": {
-                "code": {"s3": {"bucket": S3_BUCKET, "prefix": S3_PREFIX}},
-                "runtime": PYTHON_RUNTIME,
-                "entryPoint": [ENTRY_POINT],
-            }
-        },
-        roleArn=role_arn,
-        networkConfiguration={"networkMode": "PUBLIC"},
-        protocolConfiguration={"serverProtocol": PROTOCOL},
-        platformVersion=PLATFORM_VERSION,
-        description="LangGraph agent with Bedrock model on New Runtime — tutorial example",
-    )
+    artifact = {"bucket": state["bucket"], "prefix": state["key"]}
+    if "version_id" in state:
+        artifact["versionId"] = state["version_id"]
+    with creating(state, "Runtime"):
+        response = control.create_agent_runtime(
+            agentRuntimeName=AGENT_NAME,
+            agentRuntimeArtifact={
+                "codeConfiguration": {
+                    "code": {"s3": artifact},
+                    "runtime": PYTHON_RUNTIME,
+                    "entryPoint": [ENTRY_POINT],
+                }
+            },
+            roleArn=role_arn,
+            networkConfiguration={"networkMode": "PUBLIC"},
+            protocolConfiguration={"serverProtocol": PROTOCOL},
+            platformVersion=PLATFORM_VERSION,
+            description="LangGraph agent with Bedrock model on New Runtime — tutorial example",
+        )
+
+        state.update(runtime_id=response["agentRuntimeId"], runtime_arn=response["agentRuntimeArn"])
 
     runtime_id = response["agentRuntimeId"]
     runtime_arn = response["agentRuntimeArn"]
@@ -317,14 +328,16 @@ def create_runtime(role_arn: str) -> dict:
 # ── Step 4: Create Endpoint ──────────────────────────────────────────────────
 
 
-def create_endpoint(runtime_id: str) -> dict:
-    control = boto3.client("bedrock-agentcore-control", region_name=REGION)
+def create_endpoint(runtime_id: str, state) -> dict:
+    control = boto3.client("bedrock-agentcore-control", region_name=state["region"])
 
     print("\n  Creating endpoint 'default'...")
-    response = control.create_agent_runtime_endpoint(
-        agentRuntimeId=runtime_id,
-        name="default",
-    )
+    with creating(state, "endpoint"):
+        response = control.create_agent_runtime_endpoint(
+            agentRuntimeId=runtime_id,
+            name="default",
+        )
+        state["endpoint_created_at"] = response["createdAt"].isoformat()
     print(f"  ✓ Endpoint created: {response['agentRuntimeEndpointArn']}")
 
     print("  Waiting for endpoint to be ready (also longer on New Runtime)...")
@@ -345,6 +358,7 @@ def create_endpoint(runtime_id: str) -> dict:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
+@exclusive_operation()
 def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     print("=" * 60)
@@ -352,19 +366,23 @@ def main():
     print("  (direct code deployment — no Docker required)")
     print("=" * 60)
 
-    role_arn = create_execution_role()
-    build_and_upload_package()
-    runtime = create_runtime(role_arn)
-    create_endpoint(runtime["runtime_id"])
-
-    config = {
+    session = boto3.Session()
+    region = session.region_name
+    if not region:
+        raise SystemExit("Select an AWS Region before deploying.")
+    account = session.client("sts").get_caller_identity()["Account"]
+    state = {
         "agent_name": AGENT_NAME,
-        "runtime_id": runtime["runtime_id"],
-        "runtime_arn": runtime["runtime_arn"],
-        "region": REGION,
+        "account_id": account,
+        "region": region,
+        "bucket": f"agentcore-code-{account}-{region}",
+        "key": f"{AGENT_NAME}/code.zip",
     }
-    with open("runtime_config.json", "w") as f:
-        json.dump(config, f, indent=2)
+    reserve(state)
+    role_arn = create_execution_role(state)
+    build_and_upload_package(state)
+    runtime = create_runtime(role_arn, state)
+    create_endpoint(runtime["runtime_id"], state)
 
     print("\n" + "=" * 60)
     print("✓ Deployment complete!")

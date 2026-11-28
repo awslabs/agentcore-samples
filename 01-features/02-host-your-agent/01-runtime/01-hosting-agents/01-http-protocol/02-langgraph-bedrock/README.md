@@ -39,6 +39,18 @@ The trade-off: **create and update take minutes rather than seconds**, because t
 - Access to Amazon Bedrock models (Claude) in your region
 - An AWS account and region where New Runtime is enabled (an account without it returns `ValidationException: platformVersion is not enabled for this account.`)
 
+### Deployment caller versus execution role
+
+The **deployment caller** builds and uploads the ZIP, provisions the Runtime and endpoint, invokes the deployed agent, and cleans up. The **execution role** is assumed by AgentCore to read the ZIP and invoke the model. The caller does not need administrator access or direct Bedrock model access. Have the sandbox owner provision the caller separately. To scope permissions to one run, agree on the generated sample name before granting access.
+
+A hosted test against an existing code bucket exposed three additional authorization checks during `CreateAgentRuntime`:
+
+- The service checked `bedrock-agentcore:CreateAgentRuntimeEndpoint` against `runtime/*` in the selected account and Region, not just the final Runtime ARN. This is broader than a single Runtime; use a dedicated sandbox if that permission is inappropriate in a shared account.
+- The caller needed read access to the uploaded ZIP, not only permission to write it. Scope object access to that key. The test used an unversioned bucket; it did not validate a KMS-encrypted or versioned artifact.
+- `bedrock-agentcore:CreateWorkloadIdentity` was checked against **both** the default workload identity directory and the Runtime-generated identity under it. Restrict the latter to the unique sample name and generated suffix. Do not grant all identity operations.
+
+Scope `iam:PassRole` to the one execution role and `iam:PassedToService = bedrock-agentcore.amazonaws.com`. Scope role and policy management to that role, object operations to the deployment key, and Runtime operations to the selected Region and sample wherever supported. If creation is denied after the upload, keep the receipt: a pending create intentionally blocks automatic deletion. Verify service-side absence and the recorded role identity and object ETag before reconciling. Do not clear the pending marker or widen access to administrator just to retry.
+
 ## Step 1: Write the Agent (`agent.py`)
 
 LangGraph uses an explicit **state graph** to define the agent loop — unlike Strands where the loop is automatic. You define nodes (functions), edges (routing), and state (typed dict):
@@ -46,17 +58,18 @@ LangGraph uses an explicit **state graph** to define the agent loop — unlike S
 ```python
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_aws import ChatBedrock
+from langchain_aws import ChatBedrockConverse
+from typing import Literal
 from langchain_core.tools import tool
 
 @tool
-def calculator(expression: str) -> str:
-    """Calculate the result of a mathematical expression."""
+def calculator(operation: Literal["add", "subtract", "multiply", "divide", "sqrt"], left: float, right: float | None = None) -> str:
+    """Apply a single operation to finite numbers; never evaluate a Python expression."""
     ...
 
-llm = ChatBedrock(
-    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-    model_kwargs={"temperature": 0.1},
+llm = ChatBedrockConverse(
+    model="global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    temperature=0.1,
 )
 llm_with_tools = llm.bind_tools([calculator, weather])
 
@@ -77,7 +90,7 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 def langgraph_bedrock(payload):
     response = agent.invoke({"messages": [HumanMessage(content=payload.get("prompt"))]})
-    return response["messages"][-1].content
+    return response["messages"][-1].text
 ```
 
 Test locally:
@@ -95,7 +108,7 @@ curl -X POST http://localhost:8080/invocations \
 
 ### Graph compilation and the snapshot
 
-`graph_builder.compile()` runs at **import time**, which on New Runtime is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is precisely the kind of startup cost New Runtime pre-pays. Note the dependency tree here is not the larger one: this sample's deployment zip measures 43.1 MB against 46.9 MB for the Strands example, so if anything there is slightly less import cost to move.
+`graph_builder.compile()` runs at **import time**, which on New Runtime is exactly where you want it. Import-time work happens once, before the snapshot is taken, and every resumed environment inherits the already-compiled graph rather than rebuilding it on each cold start. Graph construction is one of the startup costs New Runtime pre-pays. Package sizes depend on the resolved wheels.
 
 The graph in this sample is snapshot-safe because it is pure in-process state — nodes, edges and a bound LLM client, with no I/O until `invoke()` is called. Two things to watch if you extend it:
 
@@ -107,9 +120,9 @@ Note that this sample's entrypoint passes a single `HumanMessage` per call and c
 
 ## Step 2: Create an IAM Execution Role (`deploy.py`)
 
-The IAM role uses the official [AgentCore direct deploy execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) policy. This includes permissions for CloudWatch Logs, X-Ray tracing, CloudWatch Metrics, and Bedrock model invocation. Without all of these, the runtime fails to initialize.
+The IAM role uses the official [AgentCore direct deploy execution role](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html) guidance, with access to the sample’s exact S3 ZIP and selected Bedrock inference profile and destination model. CloudWatch Logs, X-Ray and CloudWatch Metrics support Runtime observability. This tutorial assumes the code object does not require a customer-managed KMS grant. If you use such a key, have its owner review an exact-key, S3-mediated grant and the key policy before deploying; do not grant unrestricted decryption.
 
-`platformVersion` introduces no new IAM actions or resource types. The deploy script creates the role automatically — see `create_execution_role()` in `deploy.py`.
+`platformVersion` introduces no new IAM actions or resource types. The deploy script creates a fresh role and records the IAM `RoleId` in `runtime_config.json`. It never adopts an existing role or overwrites a previous deployment receipt. Use one working directory per deployment and keep the receipt for cleanup.
 
 ## Step 3: Build Deployment Package and Upload to S3 (`deploy.py`)
 
@@ -157,7 +170,7 @@ control.create_agent_runtime(
 )
 ```
 
-The runtime name must use **alphanumeric characters and underscores only** (no hyphens). The deploy script appends a timestamp for uniqueness.
+The runtime name must use **alphanumeric characters and underscores only** (no hyphens). The deploy script appends a random suffix for uniqueness.
 
 Then poll `get_agent_runtime` until the status is `READY` — **minutes on New Runtime**, because the snapshot is prepared during create — and read `platformVersion` back from that same response to confirm it took effect. From boto3 1.43.95 the response models `platformVersion`, so an absent field means the service returned none rather than your SDK having dropped it — either way it means "unknown" rather than a specific version. `deploy.py` treats confirmed, mismatched and unconfirmable as three distinct outcomes and only fails on a genuine mismatch.
 
@@ -188,7 +201,9 @@ If you pass `runtimeSessionId` explicitly, note it must be **33–256 characters
 
 ## Step 7: Clean Up (`cleanup.py`)
 
-Delete in reverse order: endpoints → runtime → S3 artifact → IAM role. There is no snapshot to tear down separately; deleting the runtime disposes of it.
+Run `python cleanup.py` with the original account and receipt. It removes the recorded endpoint, Runtime, ZIP and execution role in that order. The bucket is retained; deleting the Runtime also disposes of its snapshot. The caller needs `iam:GetRole` to verify identity and, for a versioned ZIP, `s3:DeleteObjectVersion`. Deployment checks the code bucket with `HeadBucket` (requires `s3:ListBucket` on an existing bucket).
+
+If a deletion fails, keep `runtime_config.json` and retry after resolving the error. Cleanup stops on a replaced role or unexpected inline policies; it does not detach unrelated policies. Do not modify or reuse these resources concurrently. For an older receipt without a role ID or an interrupted create marked `pending`, verify what was actually created against your deployment and CloudTrail records and reconcile manually. Do not fill in a missing ID from a same-name role. After a hard process interruption, remove `runtime_config.lock` only after confirming no deploy or cleanup is running.
 
 ## What's Different from the Strands Example
 
@@ -197,7 +212,7 @@ The **deployment and invocation code is identical**, including the `platformVers
 | Aspect | Strands Example | This Example |
 |:-------|:----------------|:-------------|
 | Framework | `strands.Agent` | `langgraph.StateGraph` |
-| Model | `strands.models.BedrockModel` | `langchain_aws.ChatBedrock` |
+| Model | `strands.models.BedrockModel` | `langchain_aws.ChatBedrockConverse` |
 | Tool definition | `@tool` (Strands) | `@tool` (LangChain) |
 | Agent loop | Automatic | Explicit graph with nodes and edges |
 | Dependencies | `strands-agents` | `langgraph`, `langchain-aws`, `langchain-core` |
