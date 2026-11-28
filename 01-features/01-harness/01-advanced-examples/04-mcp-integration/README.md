@@ -71,6 +71,32 @@ stream. The sample catches it, records it, and carries on to the next part.
 
 Which header name to use is the MCP server's choice, not AgentCore's — check your server's docs. Whatever you pick, redact the value before printing the config; secrets in sample output end up in scrollback, CI logs and screenshots.
 
+**Search a team knowledge base**: [ClickHouse Loom](https://github.com/ClickHouse/loom)
+is a self-hosted MCP server for agent memory and document search. If the harness can
+reach the team's Loom server, add this tool alongside the web search example. Set
+`LOOM_MCP_URL` to the HTTPS URL ending in `/mcp` and `LOOM_TOKEN` to a token with
+read access to the team's knowledge namespace.
+
+```python
+import os
+
+loom_tool = {
+    "type": "remote_mcp",
+    "name": "loom",
+    "config": {
+        "remoteMcp": {
+            "url": os.environ["LOOM_MCP_URL"],
+            "headers": {"Authorization": f"Bearer {os.environ['LOOM_TOKEN']}"},
+        }
+    },
+}
+```
+
+Pass `loom_tool` in the harness tools list. With a deployment checklist already
+indexed in Loom, ask the agent to find the checklist and cite the source. See the
+[Loom MCP reference](https://github.com/ClickHouse/loom/blob/main/docs/reference/mcp.md)
+for authentication and available tools.
+
 **Multiple MCP tools**: Pass multiple tools in the same `invoke_harness` call. The agent decides which to use based on the task.
 
 **timeoutSeconds**: Always set for MCP calls — web searches can take 10-30 seconds. Use `timeoutSeconds=300` for complex research tasks.
