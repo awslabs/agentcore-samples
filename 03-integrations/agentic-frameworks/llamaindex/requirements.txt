@@ -1,3 +1,0 @@
-llama-index
-llama-index-tools-yahoo-finance
-bedrock-agentcore
