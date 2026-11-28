@@ -1,164 +1,35 @@
-# Bedrock AgentCore Chat Interface
+# Chat with a selected AgentCore Runtime in Streamlit
 
-A Streamlit web application for interacting with AI agents deployed on Amazon Bedrock AgentCore Runtime. This application provides an intuitive chat interface to communicate with your deployed agents in real-time.
-
-## About Amazon Bedrock AgentCore
-
-Amazon Bedrock AgentCore is a comprehensive service that enables you to deploy and operate highly effective AI agents securely at scale using any framework and model. AgentCore Runtime is a secure, serverless runtime purpose-built for deploying and scaling dynamic AI agents and tools using popular open-source frameworks like LangGraph, CrewAI, and Strands Agents.
-
-## Features
-
-- **Real-time Chat Interface**: Interactive chat with deployed AgentCore agents
-- **Agent Discovery**: Automatically discover and select from available agents in your AWS account
-- **Version Management**: Choose specific versions of your deployed agents
-- **Multi-Region Support**: Connect to agents deployed in different AWS regions
-- **Streaming Responses**: Real-time streaming of agent responses
-- **Response Formatting**: Auto-format responses with options to view raw output
-- **Session Management**: Maintain conversation context with unique session IDs
-- **Tool Visibility**: Optional display of tools used by agents during execution
-- **Thinking Process**: Optional display of agent reasoning (when available)
-
-## Architecture
-
-![Architecture diagram](static/arch.png)
-
-## Prerequisites
-
-- Python 3.11 or higher
-- [uv package manager](https://docs.astral.sh/uv/getting-started/installation/)
-- AWS CLI configured with appropriate credentials
-- Access to Amazon Bedrock AgentCore service
-- Deployed agents on Bedrock AgentCore Runtime
-
-### Required AWS Permissions
-
-Your AWS credentials need the following permissions:
-
-- `bedrock-agentcore-control:ListAgentRuntimes`
-- `bedrock-agentcore-control:ListAgentRuntimeVersions`
-- `bedrock-agentcore:InvokeAgentRuntime`
-
-## Installation
-
-1. **Clone the repository**:
-
-   ```bash
-   git clone https://github.com/awslabs/amazon-bedrock-agentcore-samples.git
-   cd amazon-bedrock-agentcore-samples/03-integrations/ux-examples/streamlit-chat
-   ```
-
-2. **Install dependencies using uv**:
-
-   ```bash
-   uv sync
-   ```
-
-## (Optional) Deploy the Example Agent
-
-1. **Install dev dependencies using uv** (recommended):
+This **single-user, loopback UI** sends `{"prompt":"..."}` to one existing IAM-authenticated AgentCore Runtime. Use a short-lived AWS profile authorized to invoke only that Runtime. No account-wide runtime/version listing, deployment, model key or cleanup permission is required. The user's browser never receives AWS credentials.
 
 ```bash
-uv sync --dev
+# From this directory, with Python 3.13 and uv
+uv sync --frozen
+export AWS_PROFILE=my-sandbox
+export AGENT_RUNTIME_ARN='arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/replace-with-your-id'
+uv run --frozen streamlit run app.py --server.address 127.0.0.1
 ```
 
-2. **Configure the agent**:
+Replace the ARN with the full ARN from the owner. Each browser session gets a new Runtime session ID; **New conversation** rotates it and clears the local chat. The server derives the Region from the ARN and uses the default endpoint. Do not publish this local app as a multi-user service or forward its port. Calls to the selected agent and its tools may incur charges. The chat shows the current exchange history; whether the agent remembers earlier turns is the agent's decision, not a guarantee of this UI.
+
+## Which responses work?
+
+| Runtime response | What the UI displays |
+|---|---|
+| `application/json`: `{"response":"answer"}` or `"answer"` | One completed message. This does **not** demonstrate streaming. |
+| `text/event-stream`: SDK `data:` events containing JSON strings | Text as events arrive. The optional producer emits `🔧 Using tool: weather` as a separate string; uncheck **Show tool-use markers** to hide it. |
+
+Unsupported objects, malformed or unfinished events, and oversized responses produce an error, not a fabricated assistant message. Text is rendered as text, not HTML. The app does not log raw prompts, response bodies or provider exceptions.
+
+## Optional streaming producer
+
+The [producer](example/agent.py) creates a request-local Strands agent, uses Bedrock and includes one explicitly simulated weather tool. No broad tools bundle or calculator is required. To try the producer locally, set `BEDROCK_MODEL_ID` and use your short-lived profile in a supported Region, then run `uv run --project example python example/agent.py`. A real invocation incurs inference charges. For a hosted producer, package `example/agent.py` and `example/pyproject.toml` in an operator-owned Python 3.13 Runtime with an execution role authorized for the selected model. Set `BEDROCK_MODEL_ID` in the **hosted Runtime environment**, not just in the UI shell. The UI doesn't deploy or adopt the Runtime. The previous optional Toolkit deploy commands are retired.
+
+## Offline compatibility check
 
 ```bash
-cd example
-uv run agentcore configure -e agent.py
+uv sync --frozen --group test
+uv run --frozen --group test python -m unittest -v test_transport
 ```
 
-3. **Deploy to AgentCore Runtime**:
-
-```bash
-uv run agentcore launch
-cd ..
-```
-
-## Running the Application
-
-### Using uv (recommended)
-
-```bash
-uv run streamlit run app.py
-```
-
-The application will start and be available at `http://localhost:8501`.
-
-## Usage
-
-1. **Configure AWS Region**: Select your preferred AWS region from the sidebar
-2. **Select Agent**: Choose from automatically discovered agents in your account
-3. **Choose Version**: Select the specific version of your agent to use
-4. **Start Chatting**: Type your message in the chat input and press Enter
-
-### Configuration Options
-
-- **Auto-format responses**: Clean and format agent responses for better readability
-- **Show raw response**: Display the unprocessed response from the agent
-- **Show tools**: Display when agents use tools during execution
-- **Show thinking**: Display agent reasoning process (when available)
-- **Session Management**: Generate new session IDs to start fresh conversations
-
-## Project Structure
-
-```
-streamlit-chat/
-├── app.py                    # Main Streamlit application
-├── example.py                # Example agent
-├── static/                   # UI assets (fonts, icons, logos)
-├── pyproject.toml            # Project dependencies
-└── README.md                 # This file
-```
-
-## Configuration Files
-
-- **`pyproject.toml`**: Defines project dependencies and metadata
-- **`.streamlit/config.toml`**: Streamlit-specific configuration
-
-## Troubleshooting
-
-### Common Issues
-
-1. **No agents found**: Ensure you have deployed agents in the selected region and have proper AWS permissions
-2. **Connection errors**: Verify your AWS credentials and network connectivity
-3. **Permission denied**: Check that your IAM user/role has the required Bedrock AgentCore permissions
-
-### Debug Mode
-
-Enable debug logging by setting the Streamlit logger level in the application or check the browser console for additional error information.
-
-## Development
-
-### Adding New Features
-
-The application is built with modularity in mind. Key areas for extension:
-
-- **Response Processing**: Modify `clean_response_text()` for custom formatting
-- **Agent Selection**: Extend `fetch_agent_runtimes()` for custom filtering
-- **UI Components**: Add new Streamlit components in the sidebar or main area
-
-### Dependencies
-
-- **boto3**: AWS SDK for Python
-- **streamlit**: Web application framework
-- **uv**: Fast Python package installer and resolver
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-This project is licensed under the terms specified in the repository license file.
-
-## Resources
-
-- [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/)
-- [Bedrock AgentCore Samples](https://github.com/awslabs/amazon-bedrock-agentcore-samples/)
-- [Streamlit Documentation](https://docs.streamlit.io/)
-- [Strands Agents Framework](https://github.com/awslabs/strands-agents)
+Tests exercise the actual AgentCore HTTP adapter, a controlled Strands model that calls the real demo tool, SSE chunk boundaries, completed JSON, and Streamlit chat/reset behavior. They don't require an AWS account. For a completed-response agent, see the [customer-support getting-started sample](../../../00-getting-started/); the sample above is the streaming counterpart.
