@@ -6,7 +6,7 @@ Three integration patterns matching the LlamaIndex model.
 |---|---|---|
 | **Built-in memory block** — a custom `BaseMemoryBlock` wired into the `Memory` class; the framework calls it automatically (retrieve every turn, persist on flush) | [`01-built-in-memory-block/`](./01-built-in-memory-block/) | Personal Knowledge Assistant — recall user facts across sessions |
 | **Custom memory block** — a sophisticated block that owns its extraction: conditional storage, client-side distillation, score-filtered retrieval | [`02-custom-memory-block/`](./02-custom-memory-block/) | Customer Support Assistant — self-managed extraction in-process |
-| **memory-as-tool** — memory ops exposed as LlamaIndex tools the LLM invokes | [`03-memory-tool/`](./03-memory-tool/) | Four domain examples: academic research, investment advisor, legal doc analyzer, medical knowledge |
+| **memory-as-tool** — memory ops exposed as LlamaIndex tools the LLM invokes | [`03-memory-tool/`](./03-memory-tool/) | A research assistant recalls prior facts via one actor-scoped search tool |
 
 > **API note:** the block-based patterns (01, 02) use LlamaIndex's current `Memory` +
 > `BaseMemoryBlock` API. `ChatMemoryBuffer` is **deprecated** and not used. Each block
@@ -36,8 +36,6 @@ python llamaindex-ltm-custom-memory-block.py
 # 03-memory-tool/
 cd 03-memory-tool
 pip install -r requirements.txt
-python academic-research-assistant-long-term-memory-tutorial.py
-python investment-portfolio-advisor-long-term-memory-tutorial.py
-python medical-knowledge-assistant-long-term-memory-tutorial.py
+python research_memory.py --help  # see the folder README for init, seed, recall, ask and cleanup
 ```
 

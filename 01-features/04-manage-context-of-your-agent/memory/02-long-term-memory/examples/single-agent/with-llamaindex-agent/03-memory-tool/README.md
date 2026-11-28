@@ -1,64 +1,44 @@
-# LlamaIndex + AgentCore memory — long-term (memory-as-tool)
+# Recall cross-session research facts with a LlamaIndex tool
 
-Four domain-specific notebooks showing how to expose AgentCore's long-term memory search as a LlamaIndex `FunctionTool` the LLM can call. Cross-session persistence is achieved by reusing `actor_id` + `memory_id` across different `session_id`s, with a `SemanticStrategy` for automatic extraction.
+How can an agent remember facts from a previous session **without adding every memory to every prompt**? This example writes a fictional research conversation to AgentCore Memory, lets a semantic strategy extract facts, and gives a new LlamaIndex `FunctionAgent` one read-only `FunctionTool` for recall. The model can supply a search string, not the memory ID, actor, strategy or namespace.
 
-| Notebook | Domain | Cross-session use case |
-|---|---|---|
-| `academic-research-assistant-long-term-memory-tutorial.py` | Academic research | Research evolution, grant-proposal support over months |
-| `legal-document-analyzer-long-term-memory-tutorial.py` | Legal | Multi-case precedent tracking, 12-month retention |
-| `medical-knowledge-assistant-long-term-memory-tutorial.py` | Medical | Longitudinal patient care, treatment outcomes |
-| `investment-portfolio-advisor-long-term-memory-tutorial.py` | Finance | Multi-quarter performance tracking |
+Four older scripts repeated the same pattern with research, legal, medical and investment prompts. This tutorial keeps one small research example, not domain-specific advice or a set of simulated month-long conversations. No Starter Toolkit, notebook, CLI deployment project or automatic teardown is required.
 
-## Integration pattern
+## Run the example
 
-```python
-from llama_index.memory.bedrock_agentcore import AgentCoreMemory, AgentCoreMemoryContext
-from bedrock_agentcore_starter_toolkit.operations.memory.manager import MemoryManager
-from bedrock_agentcore_starter_toolkit.operations.memory.models.strategies import SemanticStrategy
+Use Python 3.13, a short-lived sandbox AWS profile, and a Region supporting AgentCore Memory and the selected Bedrock model. Set `AWS_PROFILE` and `AWS_DEFAULT_REGION`; check your account with `aws sts get-caller-identity`. Use fictional data only. Memory and Bedrock calls incur charges.
 
-memory = memory_manager.get_or_create_memory(
-    name="DomainLongTerm",
-    strategies=[SemanticStrategy(name="domainLongTerm")],
-    event_expiry_days=365,
-)
-
-# Same actor across sessions, different session_id per interaction
-context = AgentCoreMemoryContext(
-    actor_id="advisor-id",
-    memory_id=memory.id,
-    session_id="q1-session",
-    namespace="/domain/",
-)
-```
-
-Memory search is exposed as a `FunctionTool` wrapping `search_long_term_memories()`. Extracted records are available ~90–120 s after events are written.
-
-## Prerequisites
-
-- Python 3.10+
-- AWS credentials with AgentCore memory permissions
-- Bedrock model access (default: `us.anthropic.claude-haiku-4-5-20251001-v1:0`, matching `MODEL_ID` in the scripts)
-- `pip install -r requirements.txt`
-
-## See also
-
-- [AgentCore memory documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html)
-- Short-term counterparts: [`../../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/`](../../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/)
-- Built-in strategies primer: [`../../../../01-built-in-strategies/`](../../../../01-built-in-strategies/)
-
-## Running the Python Scripts
-
-Install dependencies (if a `requirements.txt` is present):
+From the sample directory:
 
 ```bash
-pip install -r requirements.txt
+sample=$PWD
+cd "$(mktemp -d)"; pwd  # keep the directory and receipt until cleanup succeeds
+python3 -m venv .venv
+.venv/bin/python -m pip install -r "$sample/requirements.txt"
+.venv/bin/python "$sample/research_memory.py" init
+.venv/bin/python "$sample/research_memory.py" seed
 ```
 
-Run each script directly:
+`init` creates a uniquely named memory with the semantic namespace `/research/{actorId}/` and retains its returned ID in `research-memory.json`. It does not adopt a fixed-name memory. The 30-day setting is **event** retention, not a lifetime guarantee for extracted records. `seed` writes one fictional user/assistant turn via LlamaIndex `AgentCoreMemory` using a new session ID.
 
 ```bash
-python academic-research-assistant-long-term-memory-tutorial.py
-python investment-portfolio-advisor-long-term-memory-tutorial.py
-python legal-document-analyzer-long-term-memory-tutorial.py
-python medical-knowledge-assistant-long-term-memory-tutorial.py
+.venv/bin/python "$sample/research_memory.py" recall --prompt 'orchard varieties'
+.venv/bin/python "$sample/research_memory.py" ask --prompt 'Which varieties did we choose, and what do we measure?'
 ```
+
+- `recall` calls the same LlamaIndex tool directly, **without** model inference. It searches the exact actor namespace `/research/demo-researcher/`, including its trailing slash. If no facts are available yet, check the memory strategy and retry later. Do not repeatedly seed data or assume a fixed sleep proves extraction completed.
+- `ask` starts a fresh workflow with no previous chat messages. It uses Bedrock Converse and `search_research_memory` to answer from tool results; the example facts are Fuji and Gala apples and weekly rainfall in millimeters. Literal phrasing and model tool choices are not guaranteed. `demo-researcher` is a single-user fixture, not authentication. In a real app derive the actor from trusted identity and enforce access at the data plane.
+
+The caller needs read/write event access and semantic retrieval for this memory (`CreateEvent`, `RetrieveMemoryRecords`); `ask` also needs model access to the indicated Haiku 4.5 inference profile and its foundation model destinations. `init`/`cleanup` additionally require Memory control-plane permissions. Do not grant administrator access.
+
+## Reuse or clean up
+
+To keep learning across sessions, keep the receipt and rerun `recall` or `ask`. Alternatively, use **a separate directory** and pass `--memory-id <approved-id>` to `seed`, `recall`, or `ask`. Use only a resource your owner approved for this data, with the same actor namespace and strategy. Supplying an ID never grants permission to delete it.
+
+When finished, run `.venv/bin/python "$sample/research_memory.py" cleanup` in the **original** directory. Only the receipt's exact memory in the original account and Region is deleted, with a bounded wait. Do not delete by name or prefix. A failed/ambiguous create or teardown requires reconciliation with the original records; keep the receipt. If a process was killed, verify no operation is active before clearing the local `.lock`.
+
+## Offline check and adjacent patterns
+
+From the source directory, after installing the requirements, run `python -m unittest -v test_research_memory`. Tests use the real LlamaIndex adapter, agent/tool loop and SDK with controlled service responses. They don't demonstrate real background extraction.
+
+For automatic retrieval on every turn, see [built-in memory blocks](../01-built-in-memory-block/) or [custom memory blocks](../02-custom-memory-block/). For only the current conversation, see the [short-term LlamaIndex examples](../../../../../01-short-term-memory/examples/single-agent/with-llamaindex-agent/). The [historical scripts](https://github.com/awslabs/agentcore-samples/tree/5cca7e89f8109115766b9f7df3f0b7e98ca9eab1/01-features/04-manage-context-of-your-agent/memory/02-long-term-memory/examples/single-agent/with-llamaindex-agent/03-memory-tool) are available for reference; do not run their teardown on reused resources.

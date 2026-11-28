@@ -387,7 +387,7 @@ async def main():
     #
     # You've seen how `AgentCoreMemoryContext` gives a LlamaIndex `FunctionAgent` session-scoped memory: papers and findings added during a session are recalled, cross-referenced, and synthesized; a fresh `session_id` isolates the context.
     #
-    # For cross-session persistence, add a strategy (e.g. `SemanticStrategy`) — see the [long-term counterpart](../../../../02-long-term-memory/examples/single-agent/with-llamaindex-agent/03-memory-tool/academic-research-assistant-long-term-memory-tutorial.py). Full API reference: [AgentCore Memory docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html).
+    # For cross-session persistence, add a strategy (e.g. `SemanticStrategy`) — see the [long-term counterpart](../../../../02-long-term-memory/examples/single-agent/with-llamaindex-agent/03-memory-tool/README.md). Full API reference: [AgentCore Memory docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html).
 
 
 if __name__ == "__main__":
