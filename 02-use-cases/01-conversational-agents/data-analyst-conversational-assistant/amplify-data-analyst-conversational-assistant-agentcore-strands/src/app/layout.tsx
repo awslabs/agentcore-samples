@@ -1,19 +1,10 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import { AmplifyProvider } from './components/AmplifyProvider';
 import './globals.css';
 import '@aws-amplify/ui-react/styles.css';
 import './amplify-theme.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
+// Use system fonts: production builds must not depend on a Google Fonts request.
 
 export const metadata: Metadata = {
   title: process.env.APP_NAME || 'Next.js + Amplify Gen 2 Reference App',
@@ -23,7 +14,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body>
         {/* AmplifyProvider is a client component that configures Amplify
             with the generated outputs so auth works in the browser */}
         <AmplifyProvider>{children}</AmplifyProvider>

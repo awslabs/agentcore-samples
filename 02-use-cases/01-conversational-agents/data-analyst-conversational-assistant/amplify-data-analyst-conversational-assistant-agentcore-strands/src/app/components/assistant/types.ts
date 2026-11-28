@@ -1,4 +1,6 @@
 // ─── Assistant Component Types ───────────────────────────────────────────────
+import type { ChartConfig, ChartRationale } from './chart-contract';
+export type { ChartConfig, ChartRationale } from './chart-contract';
 
 export interface ToolItem {
   type: 'tool';
@@ -18,19 +20,6 @@ export interface QueryResult {
   query: string;
   query_results: Record<string, unknown>[];
   query_description: string;
-}
-
-export interface ChartConfig {
-  chart_type: string;
-  chart_configuration: {
-    options: ApexCharts.ApexOptions;
-    series: ApexCharts.ApexOptions['series'];
-  };
-  caption: string;
-}
-
-export interface ChartRationale {
-  rationale: string;
 }
 
 export type ChartData = ChartConfig | ChartRationale | 'loading';

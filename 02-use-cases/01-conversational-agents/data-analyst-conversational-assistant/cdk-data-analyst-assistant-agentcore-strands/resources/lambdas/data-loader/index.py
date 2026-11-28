@@ -12,35 +12,23 @@ This eliminates the need for manual 'python create-sales-database.py' steps.
 
 import json
 import os
-import urllib.request
+import re
 
 import boto3
 
-rds_data = boto3.client("rds-data")
-secrets_client = boto3.client("secretsmanager")
-s3_client = boto3.client("s3")
-
 
 def handler(event, context):
-    """CloudFormation Custom Resource handler."""
-    request_type = event.get("RequestType", "")
-    response_url = event.get("ResponseURL", "")
-
-    try:
-        if request_type in ("Create", "Update"):
-            setup_database(event)
-            send_response(event, context, "SUCCESS", {"Message": "Database initialized"})
-        elif request_type == "Delete":
-            send_response(event, context, "SUCCESS", {"Message": "Nothing to clean up"})
-        else:
-            send_response(event, context, "SUCCESS", {"Message": f"No-op for {request_type}"})
-    except Exception as e:
-        print(f"Error: {e}")
-        send_response(event, context, "FAILED", {"Error": str(e)[:200]})
+    """CDK Provider onEvent contract; the Provider sends the CFN response."""
+    physical_id = event.get("PhysicalResourceId", "video-games-data-v1")
+    if event["RequestType"] in ("Create", "Update"):
+        setup_database(event)
+    return {"PhysicalResourceId": physical_id}
 
 
 def setup_database(event):
     """Create table, import data, and set up read-only user."""
+    rds_data = boto3.client("rds-data")
+    secrets_client = boto3.client("secretsmanager")
     props = event.get("ResourceProperties", {})
     cluster_arn = props["ClusterArn"]
     admin_secret_arn = props["AdminSecretArn"]
@@ -50,6 +38,8 @@ def setup_database(event):
     s3_file_key = props["S3FileKey"]
     table_name = props.get("TableName", "video_games_sales_units")
     region = os.environ.get("AWS_REGION", "us-east-1")
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", table_name):
+        raise ValueError("Invalid table name")
 
     def execute_sql(sql):
         return rds_data.execute_statement(
@@ -106,7 +96,7 @@ def setup_database(event):
     # Step 4: Create read-only user
     print("Setting up read-only user...")
     resp = secrets_client.get_secret_value(SecretId=readonly_secret_arn)
-    readonly_password = json.loads(resp["SecretString"])["password"]
+    readonly_password = json.loads(resp["SecretString"])["password"].replace("'", "''")
 
     # Check if user exists
     result = execute_sql("SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'readonly_user';")
@@ -117,33 +107,6 @@ def setup_database(event):
 
     execute_sql("GRANT USAGE ON SCHEMA public TO readonly_user;")
     execute_sql(f"GRANT SELECT ON TABLE {table_name} TO readonly_user;")
-    execute_sql("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly_user;")
+    execute_sql("ALTER USER readonly_user SET default_transaction_read_only = on;")
+    execute_sql("ALTER USER readonly_user SET statement_timeout = '30000';")
     print("Read-only user configured successfully")
-
-
-def send_response(event, context, status, data):
-    """Send response back to CloudFormation."""
-    response_body = json.dumps(
-        {
-            "Status": status,
-            "Reason": data.get("Error", data.get("Message", "")),
-            "PhysicalResourceId": context.log_stream_name if context else "data-loader",
-            "StackId": event.get("StackId", ""),
-            "RequestId": event.get("RequestId", ""),
-            "LogicalResourceId": event.get("LogicalResourceId", ""),
-            "Data": data,
-        }
-    )
-
-    response_url = event.get("ResponseURL", "")
-    if not response_url:
-        print(f"No ResponseURL, status={status}, data={data}")
-        return
-
-    req = urllib.request.Request(
-        response_url,
-        data=response_body.encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="PUT",
-    )
-    urllib.request.urlopen(req)

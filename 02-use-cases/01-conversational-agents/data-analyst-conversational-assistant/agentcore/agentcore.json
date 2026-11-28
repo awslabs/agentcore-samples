@@ -1,46 +1,39 @@
 {
-  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
-  "name": "data-analyst-conversational-assistant",
-  "version": 1,
+  "name": "DataAnalyst",
+  "version": 2,
   "managedBy": "CDK",
-  "tags": {
-    "agentcore:project-name": "data-analyst-conversational-assistant"
-  },
   "runtimes": [
     {
-      "name": "DataAnalystConversationalAgent",
+      "name": "DataAnalystRuntime",
       "protocol": "HTTP",
       "build": "Container",
-      "description": "Strands agent for conversational data analysis with PostgreSQL"
+      "entrypoint": "app.py",
+      "codeLocation": "cdk-data-analyst-assistant-agentcore-strands/data-analyst-assistant-agentcore-strands",
+      "authorizerType": "AWS_IAM",
+      "networkMode": "PUBLIC",
+      "instrumentation": {
+        "enableOtel": true
+      },
+      "description": "Strands conversational data analyst; custom CDK owns infrastructure wiring",
+      "dockerfile": "Dockerfile"
     }
   ],
   "memories": [
     {
-      "name": "DataAnalystMemory",
-      "type": "longAndShortTerm",
-      "description": "STM for session continuity + LTM semantic facts per user"
+      "name": "DataAnalystAssistantMemory",
+      "eventExpiryDuration": 90,
+      "strategies": [
+        {
+          "type": "SEMANTIC",
+          "name": "Facts",
+          "namespaces": [
+            "/facts/{actorId}"
+          ]
+        }
+      ]
     }
   ],
-  "agentCoreGateways": [
-    {
-      "name": "DataAnalystToolsGateway",
-      "description": "Gateway exposing PostgreSQL query tools as Lambda targets"
-    }
-  ],
-  "evaluators": [
-    {
-      "name": "SQLAccuracyEvaluator",
-      "description": "Checks SQL generation accuracy against ground truth"
-    },
-    {
-      "name": "ResponseQualityEvaluator",
-      "description": "Measures natural language response quality"
-    }
-  ],
-  "onlineEvalConfigs": [],
-  "credentials": [],
-  "policyEngines": [],
-  "configBundles": [],
-  "abTests": [],
-  "httpGateways": []
+  "agentCoreGateways": [],
+  "evaluators": [],
+  "credentials": []
 }

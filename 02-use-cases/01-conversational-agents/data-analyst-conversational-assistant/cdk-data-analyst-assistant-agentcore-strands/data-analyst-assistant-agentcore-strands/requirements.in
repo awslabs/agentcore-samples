@@ -1,0 +1,8 @@
+strands-agents==1.66.0
+bedrock-agentcore[strands-agents,datasets]==1.27.0
+boto3==1.44.10
+botocore==1.44.10
+mcp==1.30.0
+httpx==0.28.1
+PyJWT[crypto]==2.15.1
+aws-opentelemetry-distro[patch]==0.24.0

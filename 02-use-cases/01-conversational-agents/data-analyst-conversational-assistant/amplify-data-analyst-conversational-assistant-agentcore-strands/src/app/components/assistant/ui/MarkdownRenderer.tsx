@@ -2,7 +2,6 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 
 interface MarkdownRendererProps {
   content: string;
@@ -13,7 +12,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
     <div className="assistant-markdown max-w-full break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        skipHtml
         components={{
           h1: ({ ...props }) => <h1 className="text-[1.4em] font-semibold mt-3 mb-3 leading-tight text-gray-900" {...props} />,
           h2: ({ ...props }) => <h2 className="text-[1.25em] font-semibold mt-2.5 mb-2.5 leading-tight text-gray-900" {...props} />,
@@ -41,7 +40,8 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
           hr: () => <hr className="h-px my-4 bg-gray-200 border-0" />,
           strong: ({ ...props }) => <strong className="font-semibold" {...props} />,
           em: ({ ...props }) => <em className="italic" {...props} />,
-          img: ({ alt, ...props }) => <img className="max-w-full" alt={alt || ''} {...props} />,
+          // Model-generated image URLs must not trigger requests from the user's browser.
+          img: ({ alt }) => <span>{alt || '[image omitted]'}</span>,
         }}
       >
         {content}

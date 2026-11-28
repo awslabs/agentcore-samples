@@ -18,6 +18,7 @@ Environment variables (set via CDK/deploy.py):
 
 import json
 import os
+import re
 from decimal import Decimal
 
 import boto3
@@ -93,10 +94,20 @@ def handle_execute_sql_query(event):
     sql_query = event.get("sql_query", "")
     description = event.get("description", "")
 
-    if not sql_query:
-        return {"error": "sql_query parameter is required"}
-
+    if not isinstance(sql_query, str) or not 1 <= len(sql_query) <= 16000:
+        return {"error": "sql_query must be 1-16000 characters"}
+    # Defense in depth; database SELECT-only grants remain the authority.
+    # Deliberately reject multi-statements/comments rather than pretend this is a SQL parser.
+    sql_query = sql_query.strip().removesuffix(";")
     sql_lower = sql_query.lower()
+    if (
+        not re.match(r"^select\b", sql_lower)
+        or any(x in sql_lower for x in (";", "--", "/*"))
+        or re.search(
+            r"\b(insert|update|delete|drop|alter|create|grant|revoke|copy|into|pg_sleep|set_config)\b", sql_lower
+        )
+    ):
+        return {"error": "Only a single read-only SELECT statement is allowed"}
     for pattern in BLOCKED_PII_PATTERNS:
         if pattern in sql_lower:
             return {"error": f"Query blocked: access to PII-related fields ({pattern}) is not permitted"}
@@ -107,7 +118,7 @@ def handle_execute_sql_query(event):
     readonly_secret_arn = os.environ.get("READONLY_SECRET_ARN", "")
     aurora_resource_arn = os.environ.get("AURORA_RESOURCE_ARN", "")
     database_name = os.environ.get("DATABASE_NAME", "")
-    max_response_size = int(os.environ.get("MAX_RESPONSE_SIZE_BYTES", "1048576"))
+    max_response_size = min(int(os.environ.get("MAX_RESPONSE_SIZE_BYTES", "250000")), 250000)
 
     if not aurora_resource_arn or not readonly_secret_arn or not database_name:
         return {"error": "Missing database configuration (READONLY_SECRET_ARN, AURORA_RESOURCE_ARN, DATABASE_NAME)"}
@@ -122,7 +133,7 @@ def handle_execute_sql_query(event):
             includeResultMetadata=True,
         )
     except ClientError as e:
-        return {"error": f"Query execution failed: {e!s}"}
+        return {"error": "Query execution failed"}
 
     if "error" in response:
         return {"error": f"Query execution failed: {response['error']}"}
@@ -138,7 +149,9 @@ def handle_execute_sql_query(event):
             record = {}
             for i, value in enumerate(row):
                 for value_type, actual_value in value.items():
-                    if value_type == "numberValue" and isinstance(actual_value, Decimal):
+                    if value_type == "isNull":
+                        record[column_names[i]] = None
+                    elif value_type == "numberValue" and isinstance(actual_value, Decimal):
                         record[column_names[i]] = float(actual_value)
                     else:
                         record[column_names[i]] = actual_value
@@ -148,8 +161,9 @@ def handle_execute_sql_query(event):
         if len(serialized.encode("utf-8")) > max_response_size:
             records_to_return = []
             for item in records:
-                if len(json.dumps(records_to_return).encode("utf-8")) <= max_response_size:
-                    records_to_return.append(item)
+                if len(json.dumps(records_to_return + [item]).encode("utf-8")) > max_response_size:
+                    break
+                records_to_return.append(item)
             message = f"Data truncated from {len(records)} to {len(records_to_return)} rows."
             records = records_to_return
 

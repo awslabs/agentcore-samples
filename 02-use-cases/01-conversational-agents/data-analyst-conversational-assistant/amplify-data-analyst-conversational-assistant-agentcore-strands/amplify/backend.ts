@@ -1,129 +1,37 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
-import { Policy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Policy, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Stack } from 'aws-cdk-lib';
 
-export const backend = defineBackend({
-  auth,
-});
-
-// ─── Environment variables ──────────────────────────────────────────────────
-// Read from the shell at CDK synth time.
-// Local dev:   DYNAMODB_TABLE_NAME=... pnpm amplify sandbox
-// Hosting:     Set in Amplify Console → Environment variables
-const QUESTION_ANSWERS_TABLE_NAME    = process.env.QUESTION_ANSWERS_TABLE_NAME || '*';
-const AGENT_RUNTIME_ARN              = process.env.AGENT_RUNTIME_ARN || '';
-const MODEL_ID_FOR_CHART             = process.env.MODEL_ID_FOR_CHART || 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
-
-const authenticatedRole = backend.auth.resources.authenticatedUserIamRole;
-const stack = Stack.of(authenticatedRole);
-const region = stack.region;
-const account = stack.account;
-
-// ─── DynamoDB: read access to the query results table ───────────────────────
-const dynamoTableArns: string[] = [];
-if (QUESTION_ANSWERS_TABLE_NAME) {
-  dynamoTableArns.push(`arn:aws:dynamodb:${region}:${account}:table/${QUESTION_ANSWERS_TABLE_NAME}`);
-  dynamoTableArns.push(`arn:aws:dynamodb:${region}:${account}:table/${QUESTION_ANSWERS_TABLE_NAME}/index/*`);
+export const backend = defineBackend({ auth });
+const role = backend.auth.resources.authenticatedUserIamRole;
+const stack = Stack.of(role);
+const runtimeArn = process.env.AGENT_RUNTIME_ARN;
+// First deploy auth alone, then bind the exact backend output. Never a wildcard fallback.
+if (runtimeArn) {
+  if (!/^arn:aws:bedrock-agentcore:[a-z0-9-]+:\d{12}:runtime\/[A-Za-z0-9_-]+$/.test(runtimeArn)) {
+    throw new Error('AGENT_RUNTIME_ARN must be an exact Runtime ARN');
+  }
+  role.attachInlinePolicy(new Policy(stack, 'BedrockAgentCorePolicy', {
+    statements: [new PolicyStatement({
+      actions: ['bedrock-agentcore:InvokeAgentRuntime'],
+      resources: [runtimeArn, `${runtimeArn}/runtime-endpoint/*`],
+    })],
+  }));
 }
-
-authenticatedRole.attachInlinePolicy(
-  new Policy(stack, 'DynamoDBReadPolicy', {
-    statements: [
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'dynamodb:GetItem',
-          'dynamodb:Query',
-          'dynamodb:Scan',
-          'dynamodb:DescribeTable',
-          'dynamodb:BatchGetItem',
-        ],
-        resources: dynamoTableArns,
-      }),
-    ],
-  })
-);
-
-// ─── Bedrock AgentCore: invoke the agent runtime ────────────────────────────
-if (AGENT_RUNTIME_ARN) {
-  authenticatedRole.attachInlinePolicy(
-    new Policy(stack, 'BedrockAgentCorePolicy', {
-      statements: [
-        new PolicyStatement({
-          effect: Effect.ALLOW,
-          actions: [
-            'bedrock-agentcore:InvokeAgentRuntime',
-          ],
-          resources: [
-            AGENT_RUNTIME_ARN,
-            `${AGENT_RUNTIME_ARN}/*`,
-          ],
-        }),
-      ],
-    })
-  );
-} else {
-  // Fallback: grant access to all AgentCore runtimes in the account
-  // Remove or scope this down for production
-  authenticatedRole.attachInlinePolicy(
-    new Policy(stack, 'BedrockAgentCorePolicy', {
-      statements: [
-        new PolicyStatement({
-          effect: Effect.ALLOW,
-          actions: [
-            'bedrock-agentcore:InvokeAgentRuntime',
-          ],
-          resources: [
-            `arn:aws:bedrock-agentcore:${region}:${account}:runtime/*`,
-          ],
-        }),
-      ],
-    })
-  );
+// No browser DynamoDB or Memory grants. Authenticated Runtime operations bind
+// result keys and Memory namespaces to a verified Cognito subject.
+const model = process.env.MODEL_ID_FOR_CHART || 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+if (model !== 'us.anthropic.claude-haiku-4-5-20251001-v1:0') {
+  throw new Error('Review chart model permissions before changing the model');
 }
-
-// ─── Bedrock AgentCore Memory: read long-term memory facts ──────────────────
-authenticatedRole.attachInlinePolicy(
-  new Policy(stack, 'BedrockAgentCoreMemoryPolicy', {
-    statements: [
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'bedrock-agentcore:ListMemoryRecords',
-          'bedrock-agentcore:RetrieveMemoryRecords',
-        ],
-        resources: ['*'],
-      }),
+role.attachInlinePolicy(new Policy(stack, 'BedrockInvokeModelPolicy', {
+  statements: [new PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [
+      `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/${model}`,
+      ...['us-east-1', 'us-east-2', 'us-west-2'].map(region =>
+        `arn:aws:bedrock:${region}::foundation-model/${model.replace(/^us\./, '')}`),
     ],
-  })
-);
-
-// ─── Bedrock: invoke model for chart generation ─────────────────────────────
-// Cross-region inference profiles (us.anthropic.*) route requests to multiple
-// regions. The policy must cover all regions the profile may use.
-// Strip the "us." prefix to get the base model ID for foundation-model ARNs.
-const baseModelId = MODEL_ID_FOR_CHART.replace(/^us\./, '');
-const bedrockRegions = ['us-east-1', 'us-east-2', 'us-west-2'];
-
-const bedrockResources: string[] = [];
-for (const r of bedrockRegions) {
-  // Inference profile ARN (cross-region)
-  bedrockResources.push(`arn:aws:bedrock:${r}:${account}:inference-profile/${MODEL_ID_FOR_CHART}`);
-  // Foundation model ARN (base model without us. prefix)
-  bedrockResources.push(`arn:aws:bedrock:${r}::foundation-model/${baseModelId}`);
-}
-
-authenticatedRole.attachInlinePolicy(
-  new Policy(stack, 'BedrockInvokeModelPolicy', {
-    statements: [
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'bedrock:InvokeModel',
-        ],
-        resources: bedrockResources,
-      }),
-    ],
-  })
-);
+  })],
+}));

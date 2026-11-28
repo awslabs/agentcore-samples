@@ -10,7 +10,8 @@
  *   const s3     = await getAwsClient(S3Client,       { idToken, identityPoolId, userPoolId, region });
  */
 
-import { fromCognitoIdentityPool } from '@aws-sdk/credential-providers';
+// Import the browser provider directly; the aggregate also exports Node login providers.
+import { fromCognitoIdentityPool } from '@aws-sdk/credential-provider-cognito-identity';
 
 export interface CognitoAuthParams {
   /** Cognito ID token (JWT) from fetchAuthSession() */
