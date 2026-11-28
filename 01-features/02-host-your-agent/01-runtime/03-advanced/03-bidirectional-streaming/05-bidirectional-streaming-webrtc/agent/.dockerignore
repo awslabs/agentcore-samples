@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!requirements.txt
+!bot.py
+!audio.py
+!kvs.py
+!nova_sonic.py

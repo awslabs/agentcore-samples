@@ -1,6 +1,4 @@
-uvicorn[standard]
-fastapi
-requests
-python-dotenv>=1.0.0
-pipecat-ai[aws-nova-sonic,silero,websocket]>=0.0.105
-aioboto3>=13.0.0
+uvicorn[standard]>=0.34,<1
+fastapi>=0.133,<1
+pipecat-ai[aws-nova-sonic,silero,websocket]==1.17.0
+boto3>=1.44.9,<2

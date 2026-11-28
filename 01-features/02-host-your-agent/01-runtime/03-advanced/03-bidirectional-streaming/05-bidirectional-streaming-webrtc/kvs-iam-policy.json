@@ -5,7 +5,6 @@
             "Effect": "Allow",
             "Action": [
                 "kinesisvideo:DescribeSignalingChannel",
-                "kinesisvideo:CreateSignalingChannel",
                 "kinesisvideo:GetSignalingChannelEndpoint",
                 "kinesisvideo:GetIceServerConfig"
             ],

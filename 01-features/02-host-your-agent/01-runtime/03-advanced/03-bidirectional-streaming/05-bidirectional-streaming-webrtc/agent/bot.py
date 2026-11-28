@@ -9,21 +9,18 @@ import argparse
 import os
 import sys
 import time
+import uuid
 from contextlib import asynccontextmanager
 
+import kvs
 import uvicorn
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.sdp import candidate_from_sdp
-from dotenv import load_dotenv
+from audio import OutputTrack
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-
-import kvs
-from audio import OutputTrack
 from nova_sonic import run_session
-
-load_dotenv(override=True)
 
 CHANNEL_NAME = os.getenv("KVS_CHANNEL_NAME", "voice-agent-minimal")
 AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
@@ -48,7 +45,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Set ALLOWED_ORIGINS env var (comma-separated) to restrict in production
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:7860,http://127.0.0.1:7860").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -114,7 +111,7 @@ async def _handle_offer(data, background_tasks):
     audio_out = OutputTrack()
     pc.addTrack(audio_out)
 
-    pc_id = f"pc_{len(peer_connections)}"
+    pc_id = str(uuid.uuid4())
     peer_connections[pc_id] = pc
 
     # When browser's audio track arrives, start Nova Sonic session

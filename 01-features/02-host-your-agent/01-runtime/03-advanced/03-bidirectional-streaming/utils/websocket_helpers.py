@@ -1,90 +1,63 @@
-#!/usr/bin/env python3
-"""
-WebSocket Helper Functions for AWS Bedrock AgentCore
+"""Local browser signer for the commercial AgentCore Runtime WebSocket endpoint."""
 
-This module provides utilities for creating WebSocket connections to AWS Bedrock AgentCore
-with various authentication methods (SigV4 headers, SigV4 query parameters, OAuth).
-"""
-
-import secrets
-import string
 import os
-from urllib.parse import urlparse
+import re
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
+
 import boto3
-from botocore.auth import SigV4Auth, SigV4QueryAuth
+from botocore.auth import SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 
 
-def create_signed_headers(url, region=None, service="bedrock-agentcore"):
-    """Create AWS SigV4 signed headers for WebSocket connection"""
-    if region is None:
-        region = os.getenv("AWS_REGION", "us-west-2")
-    session = boto3.Session()
-    credentials = session.get_credentials()
+class LocalHandler(BaseHTTPRequestHandler):
+    """Do not serve presigned URLs to rebinding hosts or cross-site browser requests."""
 
-    parsed_url = urlparse(url)
-    request = AWSRequest(method="GET", url=url, headers={"Host": parsed_url.netloc})
-    SigV4Auth(credentials, service, region).add_auth(request)
-    return dict(request.headers)
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        hosts = {f"{name}:{self.server.server_port}" for name in ("localhost", "127.0.0.1")}
+        if self.headers.get("Host") not in hosts or self.headers.get("Sec-Fetch-Site") == "cross-site":
+            self.send_error(403)
+            return False
+        return True
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Frame-Options", "DENY")
+        super().end_headers()
+
+    def log_message(self, fmt, *args):
+        # A malformed request can contain a credential in its URL. Do not log request targets.
+        pass
 
 
 def create_presigned_url(url, region=None, service="bedrock-agentcore", expires=300):
-    """Create AWS SigV4 presigned URL for WebSocket connection"""
-    if region is None:
-        region = os.getenv("AWS_REGION", "us-west-2")
-    session = boto3.Session()
-    credentials = session.get_credentials()
-
-    https_url = url.replace("wss://", "https://")
-    parsed_url = urlparse(https_url)
-
-    request = AWSRequest(method="GET", url=https_url, headers={"Host": parsed_url.netloc})
-    SigV4QueryAuth(credentials, service, region, expires=expires).add_auth(request)
-
-    return request.url.replace("https://", "wss://")
-
-
-def create_websocket_headers(session_id):
-    """Create WebSocket-specific headers"""
-    return {
-        "Connection": "Upgrade",
-        "Upgrade": "websocket",
-        "Sec-WebSocket-Version": "13",
-        "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
-        "User-Agent": "AWS-SigV4-WebSocket-Client/1.0",
-        "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": session_id,
-    }
-
-
-def prepare_connection(runtime_arn, auth_type="headers", session_id=None):
-    """Prepare WebSocket URI and headers for connection"""
-    region = os.getenv("AWS_REGION", "us-east-1")
-
-    if session_id is None:
-        session_id = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
-
-    uri = f"wss://bedrock-agentcore.{region}.amazonaws.com/runtimes/{runtime_arn}/ws?qualifier=DEFAULT"
-
-    if auth_type == "query":
-        uri = create_presigned_url(uri)
-        headers = create_websocket_headers(session_id)
-    elif auth_type == "oauth":
-        token = os.getenv("BEARER_TOKEN")
-        if not token:
-            raise ValueError("BEARER_TOKEN environment variable required for OAuth")
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": session_id,
-            "Connection": "Upgrade",
-            "Upgrade": "websocket",
-            "Sec-WebSocket-Version": "13",
-            "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
-            "User-Agent": "OAuth-WebSocket-Client/1.0",
-        }
-    else:
-        signed_headers = create_signed_headers(uri)
-        ws_headers = create_websocket_headers(session_id)
-        headers = {**signed_headers, **ws_headers}
-
-    return uri, headers
+    region = region or os.getenv("AWS_REGION", "us-west-2")
+    parts = urlsplit(url)
+    host = f"bedrock-agentcore.{region}.amazonaws.com"
+    arn = re.fullmatch(
+        r"/runtimes/(arn:aws:bedrock-agentcore:([a-z0-9-]+):[0-9]{12}:runtime/[A-Za-z][A-Za-z0-9_]{0,47}-[A-Za-z0-9]{10})/ws",
+        unquote(parts.path),
+    )
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if (
+        service != "bedrock-agentcore"
+        or parts.scheme != "wss"
+        or parts.netloc != host
+        or parts.fragment
+        or not arn
+        or arn[2] != region
+        or len(query) != 1
+        or query[0][0] != "qualifier"
+        or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,47}", query[0][1])
+        or not 1 <= expires <= 3600
+    ):
+        raise ValueError("Expected an AgentCore Runtime WebSocket ARN and qualifier in the selected Region")
+    creds = boto3.Session().get_credentials()
+    if creds is None:
+        raise ValueError("Configure your AWS credential chain")
+    https_url = f"https://{host}/runtimes/{quote(arn[1], safe='')}/ws?qualifier={query[0][1]}"
+    request = AWSRequest(method="GET", url=https_url, headers={"Host": host})
+    SigV4QueryAuth(creds.get_frozen_credentials(), service, region, expires=expires).add_auth(request)
+    return request.url.replace("https://", "wss://", 1)

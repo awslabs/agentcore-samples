@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BidiAgent WebSocket</title>
     <!-- AWS SDK v3 for SigV4 signing -->
-    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-bedrock-agent-runtime@3/dist-browser/index.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/credential-providers@3/dist-browser/index.js"></script>
     <style>
         * {
             margin: 0;
@@ -1165,7 +1163,7 @@
                 };
                 
                 ws.send(JSON.stringify(configPayload));
-                addEvent('sent', 'config', configPayload);
+                addEvent('sent', 'config', { model_id: agentConfig.modelId });
                 
                 const modelConfig = MODEL_CONFIGS[agentConfig.modelId];
                 addMessage(`🤖 Model: ${modelConfig.displayName}`, 'system');

@@ -1,23 +1,21 @@
 import asyncio
 import json
-import warnings
-import uuid
 import logging
-from s2s_events import S2sEvent
 import time
-from aws_sdk_bedrock_runtime.client import (
-    BedrockRuntimeClient,
+import uuid
+from datetime import UTC
+
+from aws_sdk_bedrock_runtime.aio.client import AsyncBedrockRuntimeClient
+from aws_sdk_bedrock_runtime.aio.config import AsyncBedrockRuntimeConfig
+from aws_sdk_bedrock_runtime.models import (
+    BidirectionalInputPayloadPart,
+    InvokeModelWithBidirectionalStreamInputChunk,
     InvokeModelWithBidirectionalStreamOperationInput,
 )
-from aws_sdk_bedrock_runtime.models import (
-    InvokeModelWithBidirectionalStreamInputChunk,
-    BidirectionalInputPayloadPart,
-)
-from aws_sdk_bedrock_runtime.config import Config
-from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
+from s2s_events import S2sEvent
+from smithy_aws_core.aio.identity.chain import AsyncIdentityChain
+from smithy_aws_core.identity.components import AWSCredentialsIdentity
+from smithy_http.aio.crt import AWSCRTHTTPClient
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -35,6 +33,7 @@ class S2sSessionManager:
         self.audio_input_queue = asyncio.Queue(maxsize=100)  # Limit to 100 audio chunks (~2-3 seconds of audio)
         self.output_queue = asyncio.Queue(maxsize=200)  # Larger output queue for responses
 
+        self.audio_task = None
         self.response_task = None
         self.stream = None
         self.is_active = False
@@ -51,23 +50,18 @@ class S2sSessionManager:
         # Track active tool processing tasks
         self.tool_processing_tasks = set()
 
-    def _initialize_client(self):
-        """
-        Initialize the Bedrock client using EnvironmentCredentialsResolver.
-
-        Credentials are managed by server.py which either:
-        - Uses existing environment variables (local mode)
-        - Fetches and refreshes credentials from IMDS (EC2 mode)
-        """
-        logger.info("Initializing Bedrock client with EnvironmentCredentialsResolver")
-
-        config = Config(
-            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
-            region=self.region,
-            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+    async def _initialize_client(self):
+        transport = AWSCRTHTTPClient()
+        chain = await AsyncIdentityChain.create(
+            AWSCredentialsIdentity, region_override=self.region, http_client=transport
         )
-        self.bedrock_client = BedrockRuntimeClient(config=config)
-        logger.info("Bedrock client initialized successfully")
+        # Resolve before opening the event stream: a failed signer must not leave the socket hanging.
+        async with asyncio.timeout(15):
+            await chain.get_identity(properties={})
+        config = await AsyncBedrockRuntimeConfig.resolve(
+            region=self.region, transport=transport, aws_credentials_identity_resolver=chain
+        )
+        self.bedrock_client = AsyncBedrockRuntimeClient(config)
 
     def reset_session_state(self):
         """Reset session state for a new session."""
@@ -104,7 +98,7 @@ class S2sSessionManager:
         """Initialize the bidirectional stream with Bedrock."""
         try:
             if not self.bedrock_client:
-                self._initialize_client()
+                await self._initialize_client()
         except Exception:
             self.is_active = False
             logger.error("Failed to initialize Bedrock client")
@@ -112,16 +106,17 @@ class S2sSessionManager:
 
         try:
             # Initialize the stream
-            self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
-                InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
-            )
+            async with asyncio.timeout(30):
+                self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
+                    InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
+                )
             self.is_active = True
 
             # Start listening for responses
             self.response_task = asyncio.create_task(self._process_responses())
 
             # Start processing audio input
-            asyncio.create_task(self._process_audio_input())
+            self.audio_task = asyncio.create_task(self._process_audio_input())
 
             # Wait a bit to ensure everything is set up
             await asyncio.sleep(0.1)
@@ -130,6 +125,8 @@ class S2sSessionManager:
             return self
         except Exception:
             self.is_active = False
+            await self.bedrock_client.close()
+            self.bedrock_client = None
             logger.error("Failed to initialize stream.")
             raise
 
@@ -203,7 +200,6 @@ class S2sSessionManager:
             # Queue is full - drop this chunk to prevent backpressure
             # This is acceptable for real-time audio streaming
             logger.warning("Audio input queue full, dropping audio chunk to prevent backpressure")
-            pass
 
     async def _process_responses(self):
         """Process incoming responses from Bedrock."""
@@ -212,16 +208,17 @@ class S2sSessionManager:
                 output = await self.stream.await_output()
                 result = await output[1].receive()
 
+                if result is None:
+                    break
                 if result.value and result.value.bytes_:
                     response_data = result.value.bytes_.decode("utf-8")
-                    logger.debug(f"Received event: {response_data}")
 
                     json_data = json.loads(response_data)
                     json_data["timestamp"] = int(time.time() * 1000)  # Milliseconds since epoch
 
                     event_name = None
                     if "event" in json_data:
-                        event_name = list(json_data["event"].keys())[0]
+                        event_name = next(iter(json_data["event"].keys()))
 
                         # Log contentEnd events for debugging
                         if event_name == "contentEnd":
@@ -281,7 +278,7 @@ class S2sSessionManager:
                     await self.output_queue.put({"event": {"error": {"message": f"Validation error: {error_str}"}}})
                     continue
                 else:
-                    logger.error(f"Error receiving response from Bedrock: {e}", exc_info=True)
+                    logger.error("Bedrock receive failed (%s)", type(e).__name__)
                     # Only break on serious errors
                     break
 
@@ -331,7 +328,7 @@ class S2sSessionManager:
             await self.output_queue.put(tool_content_end_event_copy)
 
         except Exception as e:
-            logger.error(f"Error in tool processing: {e}", exc_info=True)
+            logger.error("Tool processing failed (%s)", type(e).__name__)
 
     async def processToolUse(self, toolName, toolUseContent):
         """Return the tool result"""
@@ -343,13 +340,13 @@ class S2sSessionManager:
             if toolUseContent.get("content"):
                 # Parse the JSON string in the content field
                 content = toolUseContent.get("content")  # Pass the JSON string directly to the agent
-                logger.debug(f"Extracted query: {content}")
+                logger.debug("Received tool input")
 
             # Simple toolUse to get system time in UTC
             if toolName == "getdatetool":
-                from datetime import datetime, timezone
+                from datetime import datetime
 
-                result = datetime.now(timezone.utc).strftime("%A, %Y-%m-%d %H:%M:%S") + " in UTC"
+                result = datetime.now(UTC).strftime("%A, %Y-%m-%d %H:%M:%S") + " in UTC"
 
             if not result:
                 result = "no result found"
@@ -357,8 +354,8 @@ class S2sSessionManager:
             return {"result": result}
         except Exception as ex:
             logger.error(
-                f"[Tool Error] Exception in processToolUse for {toolName}: {ex}",
-                exc_info=True,
+                "Tool invocation failed (%s)",
+                type(ex).__name__,
             )
             return {
                 "result": "An error occurred while attempting to retrieve information related to the toolUse event."
@@ -366,7 +363,7 @@ class S2sSessionManager:
 
     async def close(self):
         """Close the stream properly."""
-        if not self.is_active:
+        if not self.stream and not self.bedrock_client:
             logger.debug("Stream already closed, skipping cleanup")
             return
 
@@ -413,6 +410,11 @@ class S2sSessionManager:
             except Exception as e:
                 logger.debug(f"Error closing stream: {e}")
 
+        if self.audio_task:
+            self.audio_task.cancel()
+            await asyncio.gather(self.audio_task, return_exceptions=True)
+            self.audio_task = None
+
         if self.response_task and not self.response_task.done():
             self.response_task.cancel()
             try:
@@ -423,5 +425,8 @@ class S2sSessionManager:
         # Set stream to None to ensure it's properly cleaned up
         self.stream = None
         self.response_task = None
+        if self.bedrock_client:
+            await self.bedrock_client.close()
+            self.bedrock_client = None
 
         logger.info("Bedrock stream closed successfully")

@@ -118,7 +118,7 @@ async function connect() {
     if (!data.ws_url) {
       throw new Error("Server did not return ws_url");
     }
-    log("WebSocket URL: " + data.ws_url, "log-system");
+    log("Received WebSocket connection details", "log-system");
 
     await pcClient.connect({ wsUrl: data.ws_url });
     log("Connection complete", "log-system");

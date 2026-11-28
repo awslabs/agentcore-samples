@@ -12,17 +12,17 @@ import json
 import uuid
 
 from audio import INPUT_SAMPLE_RATE, OUTPUT_SAMPLE_RATE, convert_to_16khz, new_resampler
-from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
-from aws_sdk_bedrock_runtime.config import Config
+from aws_sdk_bedrock_runtime.aio.client import AsyncBedrockRuntimeClient
+from aws_sdk_bedrock_runtime.aio.config import AsyncBedrockRuntimeConfig
 from aws_sdk_bedrock_runtime.models import (
     BidirectionalInputPayloadPart,
     InvokeModelWithBidirectionalStreamInputChunk,
     InvokeModelWithBidirectionalStreamOperationInput,
 )
 from loguru import logger
-from smithy_aws_core.auth.sigv4 import SigV4AuthScheme
-from smithy_aws_core.identity.chain import create_default_chain
-from smithy_http.aio.aiohttp import AIOHTTPClient
+from smithy_aws_core.aio.identity.chain import AsyncIdentityChain
+from smithy_aws_core.identity.components import AWSCredentialsIdentity
+from smithy_http.aio.crt import AWSCRTHTTPClient
 
 MODEL_ID = "amazon.nova-2-sonic-v1:0"
 VOICE_ID = "matthew"
@@ -159,17 +159,23 @@ async def run_session(audio_in, audio_out, region, pc_id):
     logger.info(f"Starting Nova Sonic session for {pc_id}")
 
     # --- Connect to Bedrock ---
-    client = BedrockRuntimeClient(
-        Config(
-            endpoint_uri=f"https://bedrock-runtime.{region}.amazonaws.com",
-            region=region,
-            aws_credentials_identity_resolver=create_default_chain(AIOHTTPClient()),
-            auth_schemes={"aws.auth#sigv4": SigV4AuthScheme(service="bedrock")},
-        )
+    transport = AWSCRTHTTPClient()
+    chain = await AsyncIdentityChain.create(AWSCredentialsIdentity, region_override=region, http_client=transport)
+    async with asyncio.timeout(15):
+        await chain.get_identity(properties={})
+    config = await AsyncBedrockRuntimeConfig.resolve(
+        region=region, transport=transport, aws_credentials_identity_resolver=chain
     )
-    stream = await client.invoke_model_with_bidirectional_stream(
-        InvokeModelWithBidirectionalStreamOperationInput(model_id=MODEL_ID)
-    )
+    async with AsyncBedrockRuntimeClient(config) as client:
+        async with asyncio.timeout(30):
+            stream = await client.invoke_model_with_bidirectional_stream(
+                InvokeModelWithBidirectionalStreamOperationInput(model_id=MODEL_ID)
+            )
+        async with stream:
+            await exchange_audio(stream, audio_in, audio_out)
+
+
+async def exchange_audio(stream, audio_in, audio_out):
 
     # --- Configure session ---
     prompt_name = str(uuid.uuid4())
@@ -188,6 +194,8 @@ async def run_session(audio_in, audio_out, region, pc_id):
             while True:
                 output = await stream.await_output()
                 result = await output[1].receive()
+                if result is None:
+                    return
                 if not (result.value and result.value.bytes_):
                     continue
 
@@ -211,8 +219,7 @@ async def run_session(audio_in, audio_out, region, pc_id):
                         logger.info("Barge-in detected, clearing audio queue")
                         audio_out.clear()
                     else:
-                        label = "User" if role == "USER" else "Nova Sonic"
-                        logger.info(f"{label}: {content}")
+                        logger.debug("Received {} transcript event", role)
                 elif "contentEnd" in event:
                     ce = event["contentEnd"]
                     if ce.get("stopReason") == "INTERRUPTED":
@@ -223,14 +230,12 @@ async def run_session(audio_in, audio_out, region, pc_id):
 
     recv_task = asyncio.create_task(receive_responses())
 
-    await asyncio.sleep(0.5)
-    if not ready.is_set():
-        ready.set()
-    await ready.wait()
-    logger.info("Session ready, streaming audio")
-
     # --- Stream microphone audio to Nova Sonic ---
     try:
+        try:
+            await asyncio.wait_for(ready.wait(), timeout=0.5)
+        except TimeoutError:
+            pass  # Some sessions don't return an event until audio starts.
         frame_count = 0
         resampler = new_resampler()  # built per session, never at import -- see audio.new_resampler
         while True:
@@ -258,7 +263,4 @@ async def run_session(audio_in, audio_out, region, pc_id):
         logger.error(f"Audio send error: {e}")
     finally:
         recv_task.cancel()
-        try:
-            await stream.close()
-        except Exception as e:
-            logger.debug(f"Error closing Nova Sonic stream during teardown: {e}")
+        await asyncio.gather(recv_task, return_exceptions=True)

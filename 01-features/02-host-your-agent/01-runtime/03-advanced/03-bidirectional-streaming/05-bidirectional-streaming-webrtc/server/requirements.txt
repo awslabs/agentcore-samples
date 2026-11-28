@@ -1,2 +1,3 @@
+boto3>=1.43.95,<2
 fastapi
 uvicorn

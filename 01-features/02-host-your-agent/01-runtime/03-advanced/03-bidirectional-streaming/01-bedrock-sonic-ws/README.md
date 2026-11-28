@@ -4,61 +4,7 @@ A bidirectional voice agent using the **Nova Sonic S2S API directly** via the AW
 
 ## Deploy to AgentCore
 
-```bash
-# Navigate to the bidirectional streaming tutorial root
-cd 01-features/02-host-your-agent/01-runtime/03-advanced/03-bidirectional-streaming
-
-# Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\Scripts\activate         # Windows
-
-# Install deployment dependencies
-pip install -r utils/requirements.txt
-
-# Set your AWS account ID
-export ACCOUNT_ID=123456789012
-
-# Set AWS credentials (Option A: environment variables)
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
-export AWS_REGION=us-east-1
-
-# Set AWS credentials (Option B: named profile)
-export AWS_PROFILE=your-profile
-export AWS_REGION=us-east-1
-
-# Deploy
-python utils/deploy.py 01-bedrock-sonic-ws
-
-# Start the web client
-./utils/start_client.sh 01-bedrock-sonic-ws
-```
-
-The agent is deployed to **AgentCore Runtime V2**, which requires `boto3>=1.43.95`. Install the deployment dependencies with `pip install -r utils/requirements.txt`. See [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2) for what V2 changes.
-
-### Try It Out
-
-- Speak naturally — the agent responds in real time
-- Interrupt the agent mid-response (barge-in)
-- Ask "What's the date today?" to test tool integration
-- Use text input as an alternative to speaking, in a separate session
-
-> **Keep audio flowing during a voice session.** Nova Sonic ends the stream with a
-> `ValidationException` ("Timed out waiting for audio bytes or interactive content")
-> if there is a long gap in audio input. This sample does not re-establish the stream
-> afterwards, so the session stops responding and further audio is logged as
-> `Received event audioInput but no active stream manager`.
->
-> In practice: start speaking within a few seconds of connecting, and don't switch to
-> the text box mid-conversation. If a session does go quiet, click **End Conversation**
-> and start a new one.
-
-### Cleanup
-
-```bash
-python ./utils/cleanup.py 01-bedrock-sonic-ws
-```
+Follow the [shared WebSocket deployment and cleanup guide](../WEBSOCKET_DEPLOYMENT.md) with `SAMPLE=01-bedrock-sonic-ws`. It creates one Runtime V2 from a prepared image and role.
 
 ## Local Testing
 
@@ -69,8 +15,7 @@ No external dependencies beyond AWS credentials — the Sonic agent talks direct
 pip install -r 01-bedrock-sonic-ws/websocket/requirements.txt
 
 # 2. Set AWS credentials
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_PROFILE=my-sandbox
 export AWS_REGION=us-east-1
 
 # 3. Start the server (port 8080)
@@ -95,7 +40,7 @@ The client sends Nova Sonic protocol events (sessionStart, promptStart, audioInp
 
 | File | Purpose |
 |------|---------|
-| `websocket/server.py` | FastAPI server, IMDS credentials, WebSocket endpoint, large event splitting, response forwarding |
+| `websocket/server.py` | FastAPI server, session-scoped SDK credentials, WebSocket endpoint, large event splitting, response forwarding |
 | `websocket/s2s_session_manager.py` | Manages the raw bidirectional stream to Bedrock — sends events, processes responses, handles tool use |
 | `websocket/s2s_events.py` | Event factory for the Nova Sonic protocol (sessionStart, promptStart, audioInput, toolResult, etc.) |
 | `client/client.py` | HTTP server that serves the HTML client with optional SigV4 presigned URL generation |
@@ -161,13 +106,6 @@ This agent speaks the raw Nova Sonic bidirectional streaming protocol. Events ar
 | `toolUse` | Tool invocation request with tool name, ID, and parameters |
 | `contentStart` / `contentEnd` | Content block boundaries with type and role metadata |
 
-## Credential Management
+## Credential management
 
-The server supports two modes:
-
-- **Local mode**: Uses `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from environment variables
-- **EC2 mode**: Fetches credentials from IMDS (IMDSv2 preferred, falls back to IMDSv1) with automatic background refresh before expiration
-
-The `S2sSessionManager` uses `EnvironmentCredentialsResolver` from the AWS SDK, which reads credentials from environment variables that the server keeps up to date.
-
-**Credentials are also refreshed at the start of every session**, not only at application startup. This is required on AgentCore Runtime V2, where anything captured at startup is frozen into the deploy-time snapshot -- see [Running on AgentCore Runtime V2](../README.md#running-on-agentcore-runtime-v2).
+Each streaming connection constructs a fresh async Bedrock SDK client with its default AWS credential chain and HTTP/2 transport. The server does not copy instance metadata credentials into process-wide environment variables. Use a short-lived local profile or the Runtime execution role.

@@ -17,20 +17,17 @@ import argparse
 import json
 import os
 import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../utils"))
-from websocket_helpers import create_presigned_url
+from websocket_helpers import LocalHandler, create_presigned_url
 
 
-class SigningHandler(BaseHTTPRequestHandler):
+class SigningHandler(LocalHandler):
     runtime_arn = None
     region = None
     expires = 3600
     qualifier = "DEFAULT"
-
-    def log_message(self, fmt, *args):
-        sys.stderr.write(f"[signing-server] {fmt % args}\n")
 
     def do_POST(self):
         if self.path == "/start":
@@ -67,7 +64,6 @@ class SigningHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(body))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -98,7 +94,7 @@ def main():
     print("  Press Ctrl+C to stop.")
     print("=" * 60)
 
-    httpd = HTTPServer(("", args.port), SigningHandler)
+    httpd = HTTPServer(("127.0.0.1", args.port), SigningHandler)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

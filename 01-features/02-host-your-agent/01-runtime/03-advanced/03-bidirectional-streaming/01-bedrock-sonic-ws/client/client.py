@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 import argparse
-import os
-import sys
-import webbrowser
 import json
+import os
 import secrets
 import string
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import sys
+import webbrowser
+from http.server import HTTPServer
 from urllib.parse import urlparse
 
 # Import from utils folder websocket_helpers
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../utils"))
-from websocket_helpers import create_presigned_url
+from websocket_helpers import LocalHandler, create_presigned_url
 
 
-class SonicClientHandler(BaseHTTPRequestHandler):
+class SonicClientHandler(LocalHandler):
     """HTTP request handler that serves the Nova Sonic client"""
 
     # Class variables to store connection details
@@ -28,10 +28,6 @@ class SonicClientHandler(BaseHTTPRequestHandler):
     service = None
     expires = None
     qualifier = None
-
-    def log_message(self, format, *args):
-        """Override to provide cleaner logging"""
-        sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
     def do_GET(self):
         """Handle GET requests"""
@@ -77,7 +73,7 @@ class SonicClientHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(404, "sonic-client.html not found")
         except Exception as e:
-            self.send_error(500, f"Internal server error: {str(e)}")
+            self.send_error(500, f"Internal server error: {e!s}")
 
     def serve_connection_info(self):
         """Serve the connection information as JSON"""
@@ -214,9 +210,8 @@ Examples:
         parser.error("Cannot specify both --runtime-arn and --ws-url")
 
     # Validate required parameters for AWS Bedrock connection
-    if args.runtime_arn:
-        if not args.region:
-            parser.error("--region or AWS_REGION env var is required when using --runtime-arn")
+    if args.runtime_arn and not args.region:
+        parser.error("--region or AWS_REGION env var is required when using --runtime-arn")
 
     print("=" * 70)
     print("🎙️ Nova Sonic Client Web Service")
@@ -248,7 +243,7 @@ Examples:
         # Use provided WebSocket URL for local connections
         else:
             websocket_url = args.ws_url
-            print(f"🔗 WebSocket URL: {websocket_url}")
+            print("Using supplied local WebSocket URL")
             print("💡 Using local WebSocket connection (no authentication)")
 
         print(f"🌐 Web Server Port: {args.port}")
@@ -268,7 +263,7 @@ Examples:
             SonicClientHandler.qualifier = args.qualifier
 
         # Start web server
-        server_address = ("", args.port)
+        server_address = ("127.0.0.1", args.port)
         httpd = HTTPServer(server_address, SonicClientHandler)
 
         server_url = f"http://localhost:{args.port}"
