@@ -1,0 +1,11 @@
+[project]
+name = "pydantic-bedrock-runtime-example"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "bedrock-agentcore==1.27.0",
+  "pydantic-ai-slim[bedrock]==2.71.0",
+]
+
+[tool.agentcore]
+entrypoint = "pydantic_bedrock_claude.py"

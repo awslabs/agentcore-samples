@@ -1,5 +1,0 @@
-pydantic-ai
-uv
-boto3
-bedrock-agentcore
-bedrock-agentcore-starter-toolkit
