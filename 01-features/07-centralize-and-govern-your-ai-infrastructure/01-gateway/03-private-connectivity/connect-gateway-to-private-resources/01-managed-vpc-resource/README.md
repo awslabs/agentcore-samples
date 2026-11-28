@@ -60,7 +60,7 @@ The security group controls what **outbound traffic** the Resource gateway ENIs 
 
 **Always pass a security group** that allows outbound traffic on the port your resource listens on (e.g., port 443 for HTTPS). The simplest approach is to pass the same security group used by your load balancer or VPC endpoint.
 
-Example from the [Getting Started lab](./01-getting-started.ipynb):
+Example from the [Getting Started lab](./01-getting-started.md):
 ```python
 "securityGroupIds": [VPCE_SG_ID]  # VPCE SG allows inbound 443 from VPC CIDR
 ```

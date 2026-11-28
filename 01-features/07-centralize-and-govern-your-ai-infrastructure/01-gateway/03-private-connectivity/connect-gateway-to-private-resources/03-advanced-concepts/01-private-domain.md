@@ -24,9 +24,9 @@ VPC Lattice's managed Resource Gateway uses your VPC's DNS resolver to look up t
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
-- An [ACM public certificate](../00-prerequisites/create-acm-public-certificate.md) for a domain you own
+- An [ACM public certificate](../00-prerequisites/concepts/create-acm-public-certificate.md) for a domain you own
 
 ## Deployment Steps
 
@@ -88,24 +88,23 @@ The target URL is `https://$DOMAIN` — resolves to the ALB's private IPs via th
 export VPC_USW2_ID=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['VpcId'])")
 export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
 
+python3 scripts/configure_gateway_permissions.py --credential private-domain-api-key
+agentcore deploy --yes --skip-bootstrap
+
 python3 scripts/create_target.py \
   --name private-domain \
+  --openapi-schema-file openapi-schemas/openapi-private.json \
   --endpoint "https://$DOMAIN" \
   --vpc-id $VPC_USW2_ID \
   --subnet-ids $VPC_USW2_PRIVATE_SUBNETS \
   --security-group-ids $ALB_SG_ID \
-  --credential-provider-arn $(python3 -c "
-import boto3
-account = boto3.client('sts').get_caller_identity()['Account']
-region = boto3.Session().region_name
-print(f'arn:aws:bedrock-agentcore:{region}:{account}:token-vault/default/apikeycredentialprovider/private-domain-api-key')
-")
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-private-domain-api-key.json'))['arn'])")"
 ```
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 5: Invoke the API through AgentCore Gateway
 
@@ -171,7 +170,7 @@ curl -s -X POST $GATEWAY_URL \
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name private-domain
+python3 scripts/delete_target.py --name private-domain &&
 python3 scripts/delete_credential.py --name private-domain-api-key --type api-key
 ```
 

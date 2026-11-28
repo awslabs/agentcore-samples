@@ -1,0 +1,5 @@
+# Optional project-local CLI installation
+.tools/
+.env
+.vpc-state/
+__pycache__/

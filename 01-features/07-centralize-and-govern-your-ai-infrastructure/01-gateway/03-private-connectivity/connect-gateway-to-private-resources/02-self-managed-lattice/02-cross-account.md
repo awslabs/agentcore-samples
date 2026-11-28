@@ -20,7 +20,7 @@ This is the standard enterprise pattern for cross-account connectivity: the reso
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC us-west-2 + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC us-west-2 + AgentCore Gateway deployed)
 - **Account B configured**: In Lab 0, complete Step 8 (Account B credentials, bootstrap, VPC deployment)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
 - `ACCOUNT_B_PROFILE` and `ACCOUNT_B_ID` exported
@@ -33,7 +33,7 @@ This is the standard enterprise pattern for cross-account connectivity: the reso
 ### Step 1: Deploy Private API Gateway in Account B — from project root
 
 ```bash
-cdk deploy CrossAccountApigw \
+cdk deploy CrossAccountApigw-AccountB \
   --profile $ACCOUNT_B_PROFILE \
   --require-approval never \
   --outputs-file cross-account-outputs.json
@@ -42,10 +42,10 @@ cdk deploy CrossAccountApigw \
 Capture outputs:
 
 ```bash
-export CROSS_API_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw']['ApiId'])")
-export CROSS_VPCE_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw']['VpceId'])")
-export CROSS_VPCE_SG_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw']['VpceSgId'])")
-export CROSS_API_KEY_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw']['ApiKeyId'])")
+export CROSS_API_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw-AccountB']['ApiId'])")
+export CROSS_VPCE_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw-AccountB']['VpceId'])")
+export CROSS_VPCE_SG_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw-AccountB']['VpceSgId'])")
+export CROSS_API_KEY_ID=$(python3 -c "import json; print(json.load(open('cross-account-outputs.json'))['CrossAccountApigw-AccountB']['ApiKeyId'])")
 
 export CROSS_API_VPCE_DNS="${CROSS_API_ID}-${CROSS_VPCE_ID}.execute-api.us-west-2.amazonaws.com"
 export API_KEY_VALUE=$(aws apigateway get-api-key --api-key $CROSS_API_KEY_ID --include-value --profile $ACCOUNT_B_PROFILE --query 'value' --output text)
@@ -61,38 +61,14 @@ Create Resource Gateway and Resource Configuration in Account B's VPC:
 export VPC_ACCB_ID=$(python3 -c "import json; print(json.load(open('vpc-outputs-account-b.json'))['VpcegressStack-USWest2-AccountB']['VpcId'])")
 export VPC_ACCB_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('vpc-outputs-account-b.json'))['VpcegressStack-USWest2-AccountB']['PrivateSubnetIds'])")
 
-export RG_ID=$(aws vpc-lattice create-resource-gateway \
-  --name cross-account-rg \
-  --vpc-identifier $VPC_ACCB_ID \
-  --subnet-ids $(echo $VPC_ACCB_PRIVATE_SUBNETS | tr ',' ' ') \
-  --security-group-ids $CROSS_VPCE_SG_ID \
-  --ip-address-type IPV4 \
-  --profile $ACCOUNT_B_PROFILE \
-  --query 'id' --output text)
+AWS_PROFILE="$ACCOUNT_B_PROFILE" python3 vpcegress/scripts/lattice_resources.py \
+  --name cross-account \
+  --vpc-id "$VPC_ACCB_ID" \
+  --subnet-ids "$VPC_ACCB_PRIVATE_SUBNETS" \
+  --security-group-ids "$CROSS_VPCE_SG_ID" \
+  --dns-name "$CROSS_API_VPCE_DNS"
 
-echo "Resource Gateway ID: $RG_ID"
-```
-
-Wait for ACTIVE, then create Resource Configuration:
-
-```bash
-while true; do
-  STATUS=$(aws vpc-lattice get-resource-gateway --resource-gateway-identifier $RG_ID --profile $ACCOUNT_B_PROFILE --query 'status' --output text)
-  echo "RG Status: $STATUS"
-  [ "$STATUS" = "ACTIVE" ] && break
-  sleep 15
-done
-
-export RC_ARN=$(aws vpc-lattice create-resource-configuration \
-  --name cross-account-rc \
-  --type SINGLE \
-  --resource-gateway-identifier $RG_ID \
-  --resource-configuration-definition '{"dnsResource":{"domainName":"'$CROSS_API_VPCE_DNS'","ipAddressType":"IPV4"}}' \
-  --port-ranges '["443"]' \
-  --profile $ACCOUNT_B_PROFILE \
-  --query 'arn' --output text)
-
-echo "Resource Configuration ARN: $RC_ARN"
+export RC_ARN=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/lattice-cross-account.json'))['resourceConfigurationArn'])")
 ```
 
 ### Step 3: Share Resource Configuration via AWS RAM — from project root
@@ -104,18 +80,20 @@ Account B shares the Resource Configuration with Account A:
 ```bash
 export ACCOUNT_A_ID=$(aws sts get-caller-identity --query Account --output text)
 
-aws ram create-resource-share \
+export SHARE_ARN=$(aws ram create-resource-share \
   --name "cross-account-lattice-share" \
-  --resource-arns $RC_ARN \
-  --principals $ACCOUNT_A_ID \
-  --profile $ACCOUNT_B_PROFILE
+  --resource-arns "$RC_ARN" \
+  --principals "$ACCOUNT_A_ID" \
+  --profile "$ACCOUNT_B_PROFILE" \
+  --query 'resourceShare.resourceShareArn' --output text)
+printf '%s\n' "$SHARE_ARN" > vpcegress/.vpc-state/cross-account-share-arn.txt
 ```
 
 Account A accepts the RAM share:
 
 ```bash
 export INVITATION_ARN=$(aws ram get-resource-share-invitations \
-  --query 'resourceShareInvitations[?status==`PENDING`].resourceShareInvitationArn | [0]' --output text)
+  --query "resourceShareInvitations[?resourceShareArn=='$SHARE_ARN' && status=='PENDING'].resourceShareInvitationArn | [0]" --output text)
 
 aws ram accept-resource-share-invitation \
   --resource-share-invitation-arn $INVITATION_ARN
@@ -138,22 +116,21 @@ python3 scripts/create_credential.py \
 Account A creates a target pointing to the shared Resource Configuration from Account B:
 
 ```bash
+python3 scripts/configure_gateway_permissions.py --credential cross-account-apigw-api-key
+agentcore deploy --yes --skip-bootstrap
+
 python3 scripts/create_target.py \
   --name cross-account-apigw \
+  --openapi-schema-file openapi-schemas/openapi-private-apigw.json \
   --endpoint "https://$CROSS_API_VPCE_DNS/prod" \
-  --resource-gateway-arn $RC_ARN \
-  --credential-provider-arn $(python3 -c "
-import boto3
-a=boto3.client('sts').get_caller_identity()['Account']
-r=boto3.Session().region_name
-print(f'arn:aws:bedrock-agentcore:{r}:{a}:token-vault/default/apikeycredentialprovider/cross-account-apigw-api-key')
-")
+  --resource-configuration-identifier "$RC_ARN" \
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-cross-account-apigw-api-key.json'))['arn'])")"
 ```
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 6: Invoke the API through AgentCore Gateway
 
@@ -171,37 +148,25 @@ curl -s -X POST $GATEWAY_URL \
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name cross-account-apigw
+python3 scripts/delete_target.py --name cross-account-apigw &&
 python3 scripts/delete_credential.py --name cross-account-apigw-api-key --type api-key
 ```
 
-Delete VPC Lattice resources in Account B (from project root):
+Delete only the recorded RAM share, then VPC Lattice resources in Account B (from project root):
 
 ```bash
-export RC_ID=$(echo $RC_ARN | awk -F/ '{print $NF}')
-
-aws vpc-lattice delete-resource-configuration \
-  --resource-configuration-identifier $RC_ID \
-  --profile $ACCOUNT_B_PROFILE
-
-aws vpc-lattice delete-resource-gateway \
-  --resource-gateway-identifier $RG_ID \
-  --profile $ACCOUNT_B_PROFILE
+export SHARE_ARN=$(python3 -c "from pathlib import Path; print(Path('vpcegress/.vpc-state/cross-account-share-arn.txt').read_text().strip())")
+aws ram delete-resource-share --resource-share-arn "$SHARE_ARN" --profile "$ACCOUNT_B_PROFILE" &&
+AWS_PROFILE="$ACCOUNT_B_PROFILE" python3 vpcegress/scripts/lattice_resources.py --name cross-account --delete
 ```
 
-Delete the RAM share:
-
-```bash
-export SHARE_ARN=$(aws ram get-resource-shares --resource-owner SELF --profile $ACCOUNT_B_PROFILE \
-  --query 'resourceShares[?name==`cross-account-lattice-share`].resourceShareArn | [0]' --output text)
-
-aws ram delete-resource-share --resource-share-arn $SHARE_ARN --profile $ACCOUNT_B_PROFILE
-```
+The helper waits for association conflicts to clear with a bounded retry. On
+failure stop here and keep the ledger; do not delete the VPC or assume cleanup.
 
 Destroy the CDK stack:
 
 ```bash
-cdk destroy CrossAccountApigw --profile $ACCOUNT_B_PROFILE --force
+cdk destroy CrossAccountApigw-AccountB --profile $ACCOUNT_B_PROFILE --force
 ```
 
 ## Documentation

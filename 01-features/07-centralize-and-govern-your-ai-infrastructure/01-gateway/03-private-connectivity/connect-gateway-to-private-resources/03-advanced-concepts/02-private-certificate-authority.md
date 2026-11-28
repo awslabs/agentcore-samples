@@ -23,9 +23,9 @@ Connect [Amazon Bedrock AgentCore Gateway](https://docs.aws.amazon.com/bedrock-a
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
-- An [ACM public certificate](../00-prerequisites/create-acm-public-certificate.md) for a domain you own
+- An [ACM public certificate](../00-prerequisites/concepts/create-acm-public-certificate.md) for a domain you own
 
 > [!WARNING]
 > This lab deploys an AWS Private CA ($50/month). Delete it during cleanup to avoid ongoing charges.
@@ -71,20 +71,18 @@ export DOMAIN="api.external.yourcompany.com"
 The proxy ALB terminates TLS with your public cert and forwards to the backend over HTTPS with a host header transform.
 
 ```bash
-cdk deploy PublicCertProxy \
-  -c "publicCertArn=$CERT_ARN" \
-  -c "publicDomain=$DOMAIN" \
-  -c "backendIp=$BACKEND_IP" \
-  -c "backendDomain=$CERT_DOMAIN" \
-  --require-approval never \
-  --outputs-file proxy-outputs.json
+python3 vpcegress/scripts/proxy_backend.py \
+  --name private-ca-proxy \
+  --vpc-id "$VPC_USW2_ID" --subnet-ids "$VPC_USW2_PRIVATE_SUBNETS" \
+  --certificate-arn "$CERT_ARN" \
+  --backend-ip "$BACKEND_IP" --backend-domain "$CERT_DOMAIN"
 ```
 
 Capture the proxy ALB DNS (this becomes the `routingDomain`):
 
 ```bash
-export PROXY_ALB_DNS=$(python3 -c "import json; print(json.load(open('proxy-outputs.json'))['PublicCertProxy']['AlbDnsName'])")
-export PROXY_ALB_SG_ID=$(python3 -c "import json; print(json.load(open('proxy-outputs.json'))['PublicCertProxy']['AlbSgId'])")
+export PROXY_ALB_DNS=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/proxy-private-ca-proxy.json'))['dnsName'])")
+export PROXY_ALB_SG_ID=$(python3 -c "import json; print(json.load(open('vpcegress/.vpc-state/proxy-private-ca-proxy.json'))['securityGroupId'])")
 
 echo "Proxy ALB DNS (routingDomain): $PROXY_ALB_DNS"
 ```
@@ -103,52 +101,27 @@ python3 scripts/create_credential.py \
 
 The target URL uses your public domain. The `routingDomain` routes traffic to the proxy ALB.
 
-> [!NOTE]
-> The `create_target.py` script does not yet support `routingDomain`. Use the [notebook](./02-private-certificate-authority.ipynb) for the full boto3 target creation with `routingDomain`, or run directly:
+The helper preserves the original **SDK-owned** proxy: internal ALB, public TLS
+listener, host-header rewrite and HTTPS backend. It writes every returned ID
+before continuing. There is no `PublicCertProxy` stack in the parent CDK app.
 
 ```bash
-export VPC_USW2_ID=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['VpcId'])")
-export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
+python3 scripts/configure_gateway_permissions.py --credential private-ca-api-key
+agentcore deploy --yes --skip-bootstrap
 
-python3 -c "
-import boto3, json, os
-control = boto3.client('bedrock-agentcore-control')
-
-with open('../vpcegress/openapi-schemas/openapi-private.json') as f:
-    schema = json.load(f)
-schema['servers'] = [{'url': f\"https://${DOMAIN}\"}]
-
-response = control.create_gateway_target(
-    gatewayIdentifier=os.environ['GATEWAY_ID'],
-    name='private-ca-proxy',
-    targetConfiguration={'mcp': {'openApiSchema': {'inlinePayload': json.dumps(schema)}}},
-    credentialProviderConfigurations=[{
-        'credentialProviderType': 'API_KEY',
-        'credentialProvider': {'apiKeyCredentialProvider': {
-            'providerArn': '$(python3 -c \"import boto3; a=boto3.client(\\\"sts\\\").get_caller_identity()[\\\"Account\\\"]; r=boto3.Session().region_name; print(f\\\"arn:aws:bedrock-agentcore:{r}:{a}:token-vault/default/apikeycredentialprovider/private-ca-api-key\\\")\")',
-            'credentialParameterName': 'x-api-key',
-            'credentialLocation': 'HEADER',
-        }}
-    }],
-    privateEndpoint={
-        'managedVpcResource': {
-            'vpcIdentifier': os.environ['VPC_USW2_ID'],
-            'subnetIds': os.environ['VPC_USW2_PRIVATE_SUBNETS'].split(','),
-            'endpointIpAddressType': 'IPV4',
-            'securityGroupIds': [os.environ['PROXY_ALB_SG_ID']],
-            'routingDomain': os.environ['PROXY_ALB_DNS'],
-        }
-    },
-)
-print(f\"Target ID: {response['targetId']}\")
-print(f\"Status: {response['status']}\")
-"
+python3 scripts/create_target.py \
+  --name private-ca-proxy \
+  --openapi-schema-file openapi-schemas/openapi-private.json \
+  --endpoint "https://$DOMAIN" \
+  --vpc-id "$VPC_USW2_ID" --subnet-ids "$VPC_USW2_PRIVATE_SUBNETS" \
+  --security-group-ids "$PROXY_ALB_SG_ID" --routing-domain "$PROXY_ALB_DNS" \
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-private-ca-api-key.json'))['arn'])")"
 ```
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 6: Invoke the API through AgentCore Gateway
 
@@ -184,17 +157,14 @@ curl -s -X POST $GATEWAY_URL \
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name private-ca-proxy
-python3 scripts/delete_credential.py --name private-ca-api-key --type api-key
+python3 scripts/delete_target.py --name private-ca-proxy &&
+python3 scripts/delete_credential.py --name private-ca-api-key --type api-key &&
+python3 scripts/proxy_backend.py --name private-ca-proxy --delete
 ```
 
 Destroy CDK stacks (from project root):
 
 ```bash
-cdk destroy PublicCertProxy \
-  -c "publicCertArn=$CERT_ARN" -c "publicDomain=$DOMAIN" \
-  -c "backendIp=$BACKEND_IP" -c "backendDomain=$CERT_DOMAIN" --force
-
 cdk destroy PrivateCaBackend --force
 cdk destroy ShortLivedPrivateCa --force
 ```

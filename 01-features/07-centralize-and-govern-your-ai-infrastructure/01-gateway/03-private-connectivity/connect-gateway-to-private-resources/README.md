@@ -1,86 +1,116 @@
 <!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Configure Amazon Bedrock AgentCore gateway VPC Egress for gateway Targets using VPC Lattice
+# Connect AgentCore Gateway to a private API
 
-Learn about connecting [private resources in your VPC using Amazon VPC Lattice](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc-egress-private-endpoints.html) and [configuring Amazon Bedrock AgentCore gateway VPC Egress for gateway Targets](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-vpc-egress.html).
+Give an agent access to a private API or MCP server without exposing the backend
+to the public internet. These labs connect AgentCore Gateway to resources in a
+VPC through VPC Lattice, with separate exercises for managed connectivity,
+self-managed resource configurations, certificates and cross-account access.
 
-Amazon Bedrock AgentCore supports private connectivity to resources hosted inside your AWS VPC or on-premises environments connected to your VPC, such as private MCP servers, and internal REST APIs, without exposing those services to the public internet.
+![Private connectivity architecture](./images/architecture.png)
 
-![arch](./images/architecture.png)
+## Start with one path
 
-Private connectivity is established using [Amazon VPC Lattice](https://docs.aws.amazon.com/vpc-lattice/latest/ug/what-is-vpc-lattice.html) resource gateways and resource configurations. Two modes are supported for configuring this connectivity:
+For a fresh deployment, start with the **same-account private API** example:
 
-- Managed VPC Resource - In this mode, AgentCore gateway handles everything on your behalf. You provide your VPC ID, subnet IDs, and security groups as part of your target configuration, and AgentCore automatically creates and manages the VPC Resource in your account. This mode integrates with existing network architectures, whether you use VPC peering for same-region or cross-region connectivity or a hub-and-spoke model with AWS Transit Gateways for multi-VPC and hybrid environments.
+1. Follow [prerequisites](00-prerequisites/README.md) for that path only.
+2. Use the nested [`vpcegress/`](vpcegress/README.md) CLI-v1 project for the Gateway.
+   The parent CDK project supplies the selected network/backend infrastructure;
+   it does not create another Gateway.
+3. Follow [connect to a private API](01-managed-vpc-resource/01-getting-started.md),
+   including invocation and cleanup. Verify both the Gateway result and the
+   backend response; successful synthesis is not private-network connectivity.
+4. Remove only the resources owned by that lab and verify their absence.
 
-![managed](./images/managed.png)
+**Do not deploy all stacks.** Peering, a second account, EKS, Private CA and static
+IP egress are separate exercises—not prerequisites for this first path. Use a
+fresh project and unique resource names; do not overwrite an existing deployed
+v0 checkout or erase its ownership records.
 
-- Self-managed Lattice - In this mode, you create and manage the VPC Lattice Resource gateway before referencing it during target creation on AgentCore gateway. This gives you full visibility and control over the Resource gateway configuration, including the number of IPv4 addresses per ENI, subnet placement, and security group rules. More importantly, it gives you direct visibility into the resource configuration itself — with the ability to view it, share it using AWS RAM, see all associations tied to it, and retain the ability to revoke those associations at any time. Through this mode you can avoid using VPC Peering or AWS Transit Gateways and enable networking access directly to the resource VPC.
+## Choose a connectivity mode
 
-![selfmanaged](./images/self-managed.png)
+| Mode | What you provide | Ownership |
+|---|---|---|
+| Managed VPC resource | VPC, subnet and security-group configuration | AgentCore manages the Lattice resource infrastructure for the target |
+| Self-managed Lattice | A Resource Configuration ARN or ID | You manage the Resource Gateway and Resource Configuration, including sharing and cleanup |
+
+AgentCore manages the service-network association in both modes. A Resource
+Configuration identifies a particular endpoint; it is not blanket access to a VPC.
+See the [managed](./images/managed.png) and [self-managed](./images/self-managed.png)
+illustrations and the [service guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-vpc-egress.html).
 
 ## Key Terms
 
-- Resource VPC: The [Amazon VPC](https://docs.aws.amazon.com/vpc/latest/userguide/what-is-amazon-vpc.html) where your private resource lives, for example, the VPC containing your privately hosted MCP server or API endpoint. This is the VPC that AgentCore gateway needs to reach.
-
-- gateway account: The AWS account that owns Amazon Bedrock AgentCore gateway. Resource VPC can either be in the same AWS account as gateway account or be in a different account.
-
-- Resource gateway: [Resource gateway in VPC Lattice](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-gateway.html) acts as the private entry point into your Resource VPC. When created, it provisions one Elastic Network Interface (ENI) per subnet you specify, each sitting inside your VPC. All traffic from AgentCore gateway to your private resource arrives through these ENIs.
-
-- Resource Configuration: [Resource configuration for VPC resources](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-configuration.html) defines the specific resource AgentCore gateway is allowed to reach through the Resource gateway, identified by a domain name, IP address, or AWS ARN. Rather than granting access to your entire VPC, a Resource Configuration scopes connectivity to a single endpoint.
-
-- Service Network Resource Association: A service network resource association connects a resource configuration to the AgentCore service network, enabling the AgentCore gateway service to invoke your private endpoint. AgentCore always creates and manages this association on your behalf, regardless of which mode you use.
+- **Resource VPC:** the VPC containing the private backend.
+- **Gateway account:** the account owning AgentCore Gateway; it can differ from
+  the resource account in the explicitly selected cross-account lab.
+- **Resource Gateway:** the VPC Lattice entry point with ENIs in the selected subnets.
+- **Resource Configuration:** the endpoint configuration reached through that
+  Resource Gateway. Pass this ARN/ID—not the Resource Gateway ARN—to a self-managed target.
+- **Service-network association:** the AgentCore-managed connection to the configuration.
 
 ## Labs
 
-> **Note:** In these labs, AgentCore gateway is configured with **Cognito for inbound authentication** and **no authorization between the AgentCore gateway and targets**. This is done to keep the focus on VPC connectivity patterns. For production workloads, you can configure any OAuth 2.0 compliant identity provider for inbound authentication (e.g., Entra ID, Auth0, Okta): see [identity provider setup](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-idps.html). For outbound authorization between AgentCore gateway and your targets, we recommend setting up [AgentCore gateway identity credential management](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-identity.html).
+| Lab | Purpose |
+|---|---|
+| [Prerequisites](00-prerequisites/) | Prepare only the identity, network and backend resources required by your selected path |
+| [Managed VPC resource](01-managed-vpc-resource/) | First private API connection; optional VPC peering exercise |
+| [Self-managed Lattice](02-self-managed-lattice/) | Explicit resource configuration ownership; optional cross-account sharing |
+| [Advanced concepts](03-advanced-concepts/) | Private domains/certificates and static IP egress |
+| [ECS deployment](04-ecs-deployment/) | Two simulated MCP backends behind an internal ALB |
+| [EKS deployment](05-eks-deployment/) | Historical Kubernetes examples requiring a separate permissions and lifecycle review |
 
-### Cost Warnings
+The labs use Cognito for inbound Gateway authentication. MCP demo backends have
+no outbound authentication; private API examples use API-key providers. These
+are focused connectivity demonstrations, not production authentication patterns.
 
-| Resource | Cost | Labs |
-|----------|------|------|
-| **AWS Private CA** (short-lived mode) | $50/month | 02-private-certificate-authority |
-| **Internal ALB** | ~$0.0225/hour + LCU charges | All labs |
-| **EC2 instance** (t3.micro) | ~$0.0104/hour | All labs |
-| **NAT gateway** | ~$0.045/hour + data processing | All labs (via VPC stack), 04-static-gateway-ip |
-| **Elastic IP** (associated) | No charge | 04-static-gateway-ip |
+## Prerequisites for all labs
 
-Make sure to run the **Cleanup** section in each notebook after completing the lab to avoid ongoing charges.
+- AWS CLI v2, Node.js 22+ and npm, Python 3.12+, and the sample's locally installed CLI.
+- A sandbox identity with **project-specific** deployment permissions. Inspect the
+  CDK/CloudFormation execution-role chain as well as the caller's permissions;
+  a non-admin caller can still delegate to an administrator-level execution role.
+- An account/Region already bootstrapped by its owner, or a separately authorized
+  bootstrap step. Preserve shared resources and use `--skip-bootstrap` where appropriate.
+- Docker only for the selected image-based workloads and their local checks.
 
-| Lab | Folder | Description |
-|-----|--------|-------------|
-| **Prerequisites** | [`00-prerequisites/`](./00-prerequisites/) | Deploy VPCs across accounts and regions, bootstrap CDK, and set up the shared AgentCore gateway with Cognito M2M authentication. All subsequent labs depend on this. |
-| **Managed VPC Resource** | [`01-managed-vpc-resource/`](./01-managed-vpc-resource/) | Getting started with AgentCore gateway managed VPC resource. AgentCore automatically creates the Resource gateway, Resource Configuration, and service network association. Includes a VPC peering example. |
-| **Self-Managed Lattice** | [`02-self-managed-lattice/`](./02-self-managed-lattice/) | Create and manage VPC Lattice Resource Gateways and Resource Configurations yourself. Includes cross-account connectivity via AWS Resource Access Manager (RAM). |
-| **Advanced Concepts**  | [`03-advanced-concepts/`](./03-advanced-concepts/) | Explores private domains (Route 53 private hosted zones), private certificates (AWS Private CA and self-signed), and static IP egress (NAT gateway with Elastic IP for allowlisting) with AgentCore gateway VPC egress. |
-| **ECS Deployment** | [`04-ecs-deployment/`](./04-ecs-deployment/) | Deploy MCP servers on Amazon ECS Fargate behind an internal ALB with TLS termination, then connect to AgentCore gateway using managed VPC resource. |
-| **EKS Deployment** | [`05-eks-deployment/`](./05-eks-deployment/) | Deploy MCP servers and REST APIs on Amazon EKS behind an internal NLB with TLS termination, using private hosted zones. |
+Follow the [CLI setup, ownership and tests](vpcegress/README.md) before deployment.
+The control SDK and server dependency graphs are hash-locked. Local tests use fake
+service responses; they do not prove AWS routing, authorization or cloud cleanup.
 
-### Regions and accounts
+## Regions and accounts
 
-These labs are tested in **us-west-2** (primary region). Ensure AgentCore gateway and its features are available in your region: see [AgentCore supported regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html). The following labs require additional setup:
+The walkthrough uses **`us-west-2`** as its primary region. Verify the availability
+of your selected [AgentCore features](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html)
+before deploying elsewhere. An endpoint appearing in an SDK model is not proof
+that every private-connectivity mode is available there.
 
-- [VPC Peering lab](./01-managed-vpc-resource/02-peering.ipynb): requires a VPC in **us-east-1** (deployed in Lab 0, Step 5)
-- [Cross-Account lab](./02-self-managed-lattice/02-cross-account.ipynb): requires a **second AWS account** with a VPC in us-west-2 (deployed in Lab 0, Step 7)
+The [peering exercise](01-managed-vpc-resource/02-peering.md) uses a second VPC in
+`us-east-1`. The [cross-account exercise](02-self-managed-lattice/02-cross-account.md)
+requires a separately authorized resource account. Neither is part of the first
+same-account path.
 
-### Prerequisites for all labs
+## Domain and certificate requirements
 
-- **AWS CLI** v2 — [Installation guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Node.js** v18+ and **npm** — [Download](https://nodejs.org/en/download)
-- **AWS CDK CLI** — [Getting started](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html)
-- **Docker** — [Install Docker](https://docs.docker.com/engine/install/)
-- **Python 3.12+** — For running Jupyter notebooks
-- **IAM permissions** — Your IAM identity needs permissions for Amazon Bedrock AgentCore, Amazon VPC Lattice, Amazon EC2, and AWS CloudFormation. See the [IAM permissions guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security-iam.html) for details.
-- Make sure you have correct IAM permissions for [AgentCore gateway - Amazon VPC Lattice](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc-egress-private-endpoints.html)
+For the selected load-balancer workloads, prepare a domain/Route 53 hosted zone
+and the appropriate certificate. See [domain and certificate setup](00-prerequisites/).
+Do not create a Private CA or change shared DNS merely to run the initial API lab.
 
-### Domain and certificate requirements
+## Cost Warnings
 
-Labs that deploy private resources behind load balancers (ECS, EKS) require:
-- A **domain name** you own with a Route 53 hosted zone (can be in any AWS account)
-- An **ACM public certificate** for that domain
+Charges depend on the selected stacks and region. VPC endpoints, NAT gateways,
+public IPv4 addresses, load balancers, compute, VPC Lattice and Private CA can
+continue accruing charges while idle. Check current service pricing or the
+[AWS Pricing Calculator](https://calculator.aws/) rather than treating tutorial
+estimates as a budget.
 
-See the [Prerequisites](./00-prerequisites/) folder for domain and certificate setup guides covering public domains, and private domains.
+Review cleanup before creating resources. Preserve the CLI and SDK ownership
+records through failures; an access error or accepted delete request is not
+absence proof. Do not use `cdk deploy --all`, `destroy --all`, broad security-group
+cleanup, or shared-bucket pruning. Optional EKS/CA/listener risks are explicitly
+listed in the [ownership and safety notes](vpcegress/README.md#historical-optional-infrastructure-risks).
 
 ## License
 
-This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE.txt) file for details.
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE.txt).

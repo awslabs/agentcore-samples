@@ -8,10 +8,10 @@ The MCP server is reachable via a **private domain** in a Route 53 private hoste
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC + AgentCore Gateway deployed)
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
 - Docker running (for CDK container image builds)
-- An [ACM public certificate](../00-prerequisites/create-acm-public-certificate.md) for TLS termination on the ALB
+- An [ACM public certificate](../00-prerequisites/concepts/create-acm-public-certificate.md) for TLS termination on the ALB
 
 ## Deployment Steps
 
@@ -48,7 +48,7 @@ Capture outputs:
 
 ```bash
 export ALB_SG_ID=$(python3 -c "import json; print(json.load(open('ecs-outputs.json'))['McpEcs']['AlbSgId'])")
-export MCP_ENDPOINT=$(python3 -c "import json; print(json.load(open('ecs-outputs.json'))['McpEcs']['McpEndpoint'])")
+export MCP_ENDPOINT="https://$(python3 -c "import json; print(json.load(open('ecs-outputs.json'))['McpEcs']['PrivateDomain'])")/mcp"
 
 echo "MCP Endpoint: $MCP_ENDPOINT"
 echo "ALB SG:       $ALB_SG_ID"
@@ -73,7 +73,7 @@ python3 scripts/create_target.py \
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore MCP tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore MCP tools interactively.
 
 ### Step 4: Invoke the MCP server through AgentCore Gateway
 

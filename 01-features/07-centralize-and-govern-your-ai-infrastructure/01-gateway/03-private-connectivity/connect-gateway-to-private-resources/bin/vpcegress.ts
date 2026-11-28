@@ -15,7 +15,6 @@ import { PrivateDomainStack } from "../lib/private-domain-stack";
 import { ShortLivedCaStack } from "../lib/shared/short-lived-ca-stack";
 import { EksClusterStack } from "../lib/shared/eks-cluster-stack";
 import { PrivateCaStack } from "../lib/shared/private-ca-stack";
-import { AgentCoreGatewayStack } from "../lib/shared/agentcore-gateway-stack";
 import { VpcPeeringStack } from "../lib/vpc-peering-stack";
 
 const app = new cdk.App();
@@ -164,11 +163,6 @@ new PublicDnsPrivateCertStack(app, "Test6-PublicDnsPrivateCert", {
 	baseDomain,
 	certificateAuthorityArn: privateCa.caArn,
 	hostedZoneId,
-});
-
-// Shared AgentCore Gateway (Cognito M2M auth)
-new AgentCoreGatewayStack(app, "SharedAgentCoreGateway", {
-	env: envA,
 });
 
 // Test 7: Private DNS + Private Certificate (requires publicCertArn for ALB workaround)

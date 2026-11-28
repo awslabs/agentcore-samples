@@ -1,0 +1,4 @@
+# SDK helpers, locked separately from the external MCP servers.
+boto3==1.44.10
+botocore==1.44.10
+requests==2.34.2

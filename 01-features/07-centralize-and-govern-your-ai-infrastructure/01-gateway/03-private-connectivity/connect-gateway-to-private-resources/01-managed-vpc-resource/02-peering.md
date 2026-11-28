@@ -20,7 +20,7 @@ The API-VPCE DNS format (`{api-id}-{vpce-id}.execute-api.us-east-1.amazonaws.com
 
 ## Prerequisites
 
-- Completed [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) (VPC us-west-2 + AgentCore Gateway deployed)
+- Completed [Lab 0](../00-prerequisites/README.md) (VPC us-west-2 + AgentCore Gateway deployed)
 - **us-east-1 stacks deployed**: In Lab 0, deploy the us-east-1 VPC + API Gateway + VPC peering stacks
 - `GATEWAY_ID` and `GATEWAY_URL` exported (from the [vpcegress setup](../vpcegress/README.md))
 
@@ -31,7 +31,7 @@ The API-VPCE DNS format (`{api-id}-{vpce-id}.execute-api.us-east-1.amazonaws.com
 
 ### Step 1: Verify us-east-1 infrastructure — from project root
 
-The following stacks should have been deployed in [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md):
+The following stacks should have been deployed in [Lab 0](../00-prerequisites/README.md):
 
 | Stack | Description |
 |-------|-------------|
@@ -106,26 +106,25 @@ AgentCore Gateway -> VPC Lattice -> Resource Gateway ENI (us-west-2)
 ```
 
 ```bash
-export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
+export VPC_USW2_PRIVATE_SUBNETS=$(python3 -c "import json; print(json.load(open('../vpc-outputs.json'))['VpcegressStack-USWest2']['PrivateSubnetIds'])")
+
+python3 scripts/configure_gateway_permissions.py --credential peering-apigw-api-key
+agentcore deploy --yes --skip-bootstrap
 
 python3 scripts/create_target.py \
   --name peering-apigw \
+  --openapi-schema-file openapi-schemas/openapi-private-apigw.json \
   --endpoint $TARGET_ENDPOINT \
   --vpc-id $VPC_USW2_ID \
   --subnet-ids $VPC_USW2_PRIVATE_SUBNETS \
   --security-group-ids $RG_SG_ID \
-  --credential-provider-arn $(python3 -c "
-import boto3
-account = boto3.client('sts').get_caller_identity()['Account']
-region = boto3.Session().region_name
-print(f'arn:aws:bedrock-agentcore:{region}:{account}:token-vault/default/apikeycredentialprovider/peering-apigw-api-key')
-")
+  --credential-provider-arn "$(python3 -c "import json; print(json.load(open('.vpc-state/credential-peering-apigw-api-key.json'))['arn'])")"
 ```
 
 ## Demo
 
 > [!TIP]
-> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
+> Instead of running these commands, you can use the [AgentCore Gateway MCP Inspector](../../../05-community/gateway-mcp-inspector/) to explore tools interactively.
 
 ### Step 6: Invoke the API through AgentCore Gateway
 
@@ -191,7 +190,7 @@ curl -s -X POST $GATEWAY_URL \
 From the [`vpcegress/`](../vpcegress/) directory (`cd vpcegress`):
 
 ```bash
-python3 scripts/delete_target.py --name peering-apigw
+python3 scripts/delete_target.py --name peering-apigw &&
 python3 scripts/delete_credential.py --name peering-apigw-api-key --type api-key
 ```
 
@@ -202,7 +201,7 @@ aws ec2 delete-security-group --group-id $RG_SG_ID
 ```
 
 > [!NOTE]
-> The VPC peering connection, routes, and CDK stacks (`VpcPeeringStack`, `PeeringApigw-USEast1`, `VpcegressStack-USEast1`) are destroyed in [Lab 0](../00-prerequisites/00-vpc-gateway-setup.md) cleanup.
+> The VPC peering connection, routes, and CDK stacks (`VpcPeeringStack`, `PeeringApigw-USEast1`, `VpcegressStack-USEast1`) are destroyed in [Lab 0](../00-prerequisites/README.md) cleanup.
 
 ## Documentation
 

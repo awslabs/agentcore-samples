@@ -8,7 +8,7 @@ Deploy MCP servers and REST APIs on Amazon EKS and connect them to AgentCore gat
 
 ## Scope
 
-The labs in this section use a **private hosted zone** with a **public certificate** and `routingDomain`. The endpoint domain only resolves inside the VPC, while VPC Lattice routes traffic via the NLB's publicly resolvable DNS. For other domain and certificate combinations, see [Advanced Concepts](../03-advanced-concepts/).
+The labs in this section use a **private hosted zone** with a **public certificate**. The endpoint domain resolves inside the VPC to an alias for the internal NLB; the Resource Gateway uses private DNS. For other domain and certificate combinations, see [Advanced Concepts](../03-advanced-concepts/).
 
 ## Architecture
 
@@ -21,9 +21,9 @@ An [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/) runs 
 
 NGINX performs **path-based routing** to multiple backend services, so a single NLB can serve multiple MCP servers (e.g., `/mcp-server/mcp` and `/stock-mcp/mcp`).
 
-```bash
+```text
 AgentCore gateway
-  → VPC Lattice (routingDomain: NLB *.elb.amazonaws.com)
+  → VPC Lattice (private DNS alias to the NLB)
     → Resource gateway ENIs
       → Internal NLB (TLS :443, public cert)
         → NGINX Ingress (HTTP :80, path-based routing)
@@ -33,8 +33,8 @@ AgentCore gateway
 ## Prerequisites
 
 - Completed [Lab 0: Prerequisites](../00-prerequisites/) (VPC + AgentCore gateway deployed)
-- An ACM public certificate: see [Create an ACM Public Certificate](../00-prerequisites/create-acm-public-certificate.md)
-- A parent domain for the private hosted zone: see [Public Certificate + Private Domain](../00-prerequisites/public-certificate-private-domain.md)
+- An ACM public certificate: see [Create an ACM Public Certificate](../00-prerequisites/concepts/create-acm-public-certificate.md)
+- A parent domain for the private hosted zone: see [Public Certificate + Private Domain](../00-prerequisites/concepts/public-certificate-private-domain.md)
 
 > **Cost Warning:** Running an EKS cluster incurs ongoing charges ($0.10/hr for the control plane + EC2 node group instances). An internal NLB adds additional cost. Make sure to run the **Cleanup** section in each notebook after completing the lab, and destroy the `SharedEksCluster` stack when you're done with all EKS labs to avoid unnecessary charges. See [Amazon EKS pricing](https://aws.amazon.com/eks/pricing/) and [Elastic Load Balancing pricing](https://aws.amazon.com/elasticloadbalancing/pricing/) for details.
 
