@@ -38,4 +38,4 @@ The implementation:
 - **Reliability:** Removes LLM non-determinism from execution. Tool calls always use correct parameters from structured output. No risk of the model hallucinating wrong field values.
 - **Observability trade-off:** Phase 3 no longer produces natural language explanation of what it's doing. Mitigated by structured progress markers in the stream.
 - **Fallback handling:** If `submit_decision` was never called (Phase 1 failure), structured_decision is empty. Phase 3 handles this gracefully with `.get()` defaults — but the routing logic already defaults to REJECT in this case, so only `send_notification` would fire.
-- **MCP client lifecycle:** Depends on the MCPClient being started by Phase 1's Agent usage. If Gateway is unavailable, all Phase 3 actions are skipped (non-fatal).
+- **MCP client lifecycle:** Each direct call holds an MCP session explicitly and uses the qualified `target___tool` name. The real Strands dictionary result/status is checked. A failed create stays nonfatal but cannot trigger escalation or approval/review notification against a nonexistent claim ID. Phase 1 is only offered policy lookup.

@@ -3,39 +3,14 @@
 
 import argparse
 
-import boto3
+from cloud_checks import context
 
 
-def get_table_name(region, stack_name="AgentCore-ClaimsAgent-dev", logical_suffix="Policies"):
-    """Discover the actual DynamoDB table name from the deployed stack.
-
-    Falls back to the hardcoded convention if the stack isn't found.
-    """
-    cfn = boto3.client("cloudformation", region_name=region)
-    try:
-        resp = cfn.list_stack_resources(StackName=stack_name)
-        for r in resp.get("StackResourceSummaries", []):
-            if r["ResourceType"] == "AWS::DynamoDB::Table" and logical_suffix in r["LogicalResourceId"]:
-                return r["PhysicalResourceId"]
-    except Exception:
-        pass
-    # Fallback: try common naming patterns
-    dynamodb = boto3.client("dynamodb", region_name=region)
-    try:
-        tables = dynamodb.list_tables()["TableNames"]
-        for t in tables:
-            if "Policies" in t and "Claims" in t.lower():
-                return t
-    except Exception:
-        pass
-    return "ClaimsAgent-Policies"
-
-
-def seed_policies(region):
-    table_name = get_table_name(region)
+def seed_policies():
+    state, session, _ = context()
+    table_name = f"{state['project']}-{state['target']}-Policies"
     print(f"  Table: {table_name}")
-    dynamodb = boto3.resource("dynamodb", region_name=region)
-    table = dynamodb.Table(table_name)
+    table = session.resource("dynamodb").Table(table_name)
     policies = [
         {
             "policy_number": "POL-12345",
@@ -79,14 +54,15 @@ def seed_policies(region):
         },
     ]
     for p in policies:
-        table.put_item(Item=p)
+        table.put_item(Item=p, ConditionExpression="attribute_not_exists(policy_number)")
         print(f"  ✓ {p['policy_number']} ({p['holder_name']})")
     print(f"✅ Seeded {len(policies)} policies")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--region", default="us-west-2")
+    parser.add_argument("--allow-cloud", action="store_true")
     args = parser.parse_args()
-    print(f"🌱 Seeding DynamoDB in {args.region}...")
-    seed_policies(args.region)
+    if not args.allow_cloud:
+        parser.error("Explicit --allow-cloud required")
+    seed_policies()

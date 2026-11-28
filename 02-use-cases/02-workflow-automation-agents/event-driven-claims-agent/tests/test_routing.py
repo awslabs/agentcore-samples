@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app", "claimsagent"))
 
-from routing import (  # noqa: E402
+from routing import (
     AUTO_APPROVE,
     HUMAN_REVIEW,
     REJECT,

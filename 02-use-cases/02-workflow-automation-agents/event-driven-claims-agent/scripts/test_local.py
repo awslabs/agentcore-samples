@@ -5,7 +5,7 @@ Requires a running AgentCore dev server OR environment variables from .env.
 
 Usage:
     # Start dev server first (separate terminal):
-    #   cd app/claimsagent && agentcore dev --no-browser
+    #   agentcore dev --agent claimsagent --mode headless (after migration; cloud-connected)
     #
     # Then invoke:
     python3 scripts/test_local.py
@@ -53,7 +53,7 @@ def invoke_local(port: int, prompt: str) -> str:
 
     parts = []
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=180) as resp:
             for line in resp:
                 decoded = line.decode("utf-8").strip()
                 if not decoded:
@@ -67,7 +67,7 @@ def invoke_local(port: int, prompt: str) -> str:
     except urllib.error.URLError as e:
         print(f"\nError: Could not connect to dev server on port {port}.")
         print("Make sure the dev server is running:")
-        print("  cd app/claimsagent && agentcore dev --no-browser")
+        print("  agentcore dev --agent claimsagent --mode headless (see docs/MIGRATION.md)")
         raise SystemExit(1) from e
 
     print()

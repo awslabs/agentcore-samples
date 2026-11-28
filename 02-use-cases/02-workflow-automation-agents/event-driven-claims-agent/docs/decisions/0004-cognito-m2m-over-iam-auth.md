@@ -38,5 +38,5 @@ It also demonstrates the **agent-as-principal** pattern: the Runtime itself obta
 
 - Trigger Lambda and test scripts use standard AWS credential chain — no Cognito setup needed for callers.
 - The Runtime → Gateway path uses `@requires_access_token(provider_name="cognito-gateway-m2m", auth_flow="M2M")` — secrets live in the AgentCore Identity vault, never in env vars or CloudFormation.
-- The deploy script (`deploy.sh`) handles Cognito provisioning interactively and registers the credential via `agentcore add credential`.
+- The v1 lifecycle creates a dedicated tagged pool/provider and journals its exact ARN. Fresh names are target-qualified; old bare providers are not adopted or deleted. See [MIGRATION.md](../MIGRATION.md).
 - CDK only receives the credential provider name (`AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER`) — no client secrets flow through infrastructure-as-code.

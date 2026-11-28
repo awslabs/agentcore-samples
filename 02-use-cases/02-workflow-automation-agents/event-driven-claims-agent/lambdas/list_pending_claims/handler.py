@@ -36,6 +36,6 @@ def handler(event, context):
                 }
             )
         return json.dumps({"message": f"Found {len(result)} pending claim(s).", "claims": result})
-    except Exception as e:
-        logger.error("Failed to list pending claims", extra={"error": str(e)})
-        return json.dumps({"error": str(e)})
+    except Exception:  # noqa: BLE001 -- return a failed tool result without disclosing upstream responses
+        logger.error("Failed to list pending claims")
+        return json.dumps({"error": "Unable to list pending claims"})

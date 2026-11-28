@@ -1,5 +1,9 @@
 # Architecture: Event-Driven Claims Agent
 
+> Custom CLI 1.2.0 v1 port, fresh stacks only; cloud is NOT RUN.
+> See [MIGRATION.md](MIGRATION.md). Resource names in historical diagrams/tables
+> are shorthand; actual names are project/target-qualified as in CONFIGURATION.md.
+
 ## System Overview
 
 The Event-Driven Claims Agent is an insurance claims processor built on Amazon Bedrock AgentCore. It accepts claim submissions via email (through S3/EventBridge) or direct API invocation, processes them through a dual-agent pipeline, and routes outcomes to auto-approval or human review.
@@ -36,8 +40,8 @@ This document explains:
 - **Auth (inbound):** AWS_IAM (SigV4) — callers sign requests with AWS credentials (Lambda execution role or IAM user)
 - **Auth (outbound to Gateway):** Cognito M2M JWT via `@requires_access_token` decorator — secrets managed by AgentCore Identity vault (no env vars)
 - **Entrypoint:** `app/claimsagent/main.py`
-- **Agents:** Two `Agent` instances (Claims Processor, Validation Agent), lazily initialized as module-level singletons
-- **Model (cost routing):** Claims Processor and Executor use `global.anthropic.claude-sonnet-4-6` (complex reasoning + tool use); Validation Agent uses `FAST_MODEL_ID` (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) — classification task with no external tools, ~5x cheaper and 3–8s faster
+- **Agents:** Two per-claim `Agent` instances (Claims Processor, Validation Agent). Cross-session state belongs in Memory, not cached agent histories; Gateway tokens are not held across claims.
+- **Model (cost routing):** Claims Processor uses `global.anthropic.claude-sonnet-4-6`; Validation Agent uses `FAST_MODEL_ID` (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) with only the local structured-output tool. Phase 3 makes no model call.
 - **Co-located tools:** `submit_decision`, `submit_validation` (Strands `@tool` decorators for structured output)
 
 ### AgentCore Gateway
@@ -55,7 +59,7 @@ Two policies are enforced at the Gateway level:
 | Policy | Effect | Condition |
 |--------|--------|-----------|
 | `AllowAllTools` | permit | Any authenticated principal, any tool, on this gateway |
-| `BlockExcessiveClaims` | forbid | `create-claim` when `context.input.estimated_amount >= 100000` |
+| `BlockExcessiveClaims` | forbid | action `create-claim___create_claim` when `context.input.estimated_amount >= 100000` |
 
 Policy Engine operates in `ENFORCE` mode — blocked tool calls return an authorization error to the agent.
 
@@ -67,7 +71,7 @@ Policy Engine operates in `ENFORCE` mode — blocked tool calls return an author
 | `create_claim` | `ClaimsAgent-CreateClaim` | ClaimsTable (write) | Agent passes `status` + `decision` |
 | `request_human_review` | `ClaimsAgent-HumanReview` | ReviewsTable (write) | Also publishes to SNS |
 | `send_notification` | `ClaimsAgent-Notification` | — | SES send email |
-| `list_pending_claims` | `ClaimsAgent-ListPending` | ClaimsTable (scan) | Filters `status=pending_review` |
+| `list_pending_claims` | `ClaimsAgent-ListPending` | ClaimsTable (`status-index` query) | Filters `status=pending_review` |
 | `resolve_claim` | `ClaimsAgent-ResolveClaim` | ClaimsTable + ReviewsTable (update) | Human operator resolves |
 
 All handlers return `json.dumps({...})` directly — no HTTP envelope.
@@ -178,7 +182,11 @@ Both agents MUST call their respective structured-output tools (`submit_decision
 
 Phase 3 does **not** use an LLM call. Once routing is resolved (REJECT / AUTO_APPROVE / HUMAN_REVIEW), the execution is deterministic — we have all required data from the structured output tools and call Gateway tools directly via `MCPClient.call_tool_async()`. This eliminates one Sonnet invocation (~6–16s and ~$0.01 per request).
 
-All Phase 3 tool calls are non-fatal: if any fails, the agent logs a warning and continues. The primary response stream is never interrupted by secondary action failures.
+All Phase 3 tool calls are non-fatal: a failed create is reported but cannot
+trigger escalation or an approval/review notification with a nonexistent claim
+ID. Strands dictionary error/status fields are checked. Each direct call holds
+an MCP session and uses its qualified target/tool name. The Phase 1 model is
+only offered policy lookup; mutation tools are reserved for Phase 3.
 
 ---
 
@@ -194,8 +202,8 @@ All Phase 3 tool calls are non-fatal: if any fails, the agent logs a warning and
 ## Observability
 
 - **X-Ray tracing:** enabled on the Runtime via `instrumentation.enableOtel: true`
-- **CloudWatch logs:** `APPLICATION_LOGS` → `/aws/bedrock-agentcore/claims-agent` (1-week retention)
-- **Transaction Search + Trace/Log Delivery:** Automatically enabled by `scripts/enable_observability.py` for Gateway and Memory
+- **CloudWatch logs:** CFN-owned Runtime/Lambda/build and Gateway/Memory groups (1-week retention)
+- **Gateway/Memory deliveries:** CFN-owned TRACES + APPLICATION_LOGS; account Transaction Search must already be separately configured. Optional identity-only deliveries use tagged exact-ID receipts via `enable_observability.py --allow-cloud`.
 - **Online Evaluation:** 3 built-in metrics (Helpfulness, Correctness, Tool Selection Accuracy) at 100% sampling, bound to the Runtime endpoint
 - **Automatic OTEL configuration:** Runtime auto-configures exporters, propagators, and instrumentation when `enableOtel: true` is set
 
@@ -211,11 +219,11 @@ flowchart LR
         direction TB
         RS["Resource Server: agentcore (scope: invoke)"]
         Client["App Client: M2M (client_credentials)"]
-        Domain["Domain: claims-agent-{account}.auth.{region}.amazoncognito.com"]
+        Domain["Domain: claims-{suffix}-{account}.auth.{region}.amazoncognito.com"]
     end
 
     subgraph IdentityVault["AgentCore Identity<br/>(Secrets Manager)"]
-        Cred["OAuth Credential Provider: cognito-gateway-m2m"]
+        Cred["OAuth provider: Claims{suffix}_dev_cognito-gateway-m2m"]
     end
 
     RuntimeMCP["Runtime<br/>(MCP Gateway calls)"] -->|"@requires_access_token(provider_name)"| IdentityVault
@@ -233,14 +241,21 @@ flowchart LR
 | Runtime → MCP Gateway | Cognito M2M JWT | `@requires_access_token` decorator → Identity vault → `client_credentials` flow → `Authorization: Bearer {token}` |
 | Gateway → Lambda tools | IAM invoke | Gateway role has `lambda:InvokeFunction` on each tool function |
 
-The Cognito User Pool is managed by `scripts/setup_cognito.sh` (creates) and `scripts/teardown_cognito.sh` (destroys). The client secret is registered with AgentCore Identity during deploy via `agentcore add credential`. All callers of the Runtime (Trigger Lambda, test scripts) use IAM auth (SigV4). CDK grants invoke permissions via `runtime.grantInvoke()`.
+The dedicated Cognito User Pool and Identity provider are managed by the
+ownership-checking `scripts/lifecycle.py` (the shell helpers delegate to it).
+They are tagged, journaled and never reused by name. The client secret is passed
+to Identity in memory, not exposed to CDK. See [migration boundaries](MIGRATION.md).
+All Runtime callers use IAM/SigV4, never the Gateway JWT. Test mode retains
+SNS/SES tools but suppresses sends and omits send permissions.
 
 ### Validating Authentication
 
-`scripts/test_auth.py` exercises all four paths plus negative cases against a deployed stack:
+`scripts/test_auth.py` checks Runtime JWT/no-auth rejection, direct Gateway M2M
+and invalid-token behavior, and Cognito invalid-scope issuance. The positive
+Runtime IAM/model path is in the separate bounded E2E check. All require authorization:
 
 ```bash
-python3 scripts/test_auth.py --region us-west-2
+python3 scripts/test_auth.py --allow-cloud
 ```
 
 | # | Test | Expected |

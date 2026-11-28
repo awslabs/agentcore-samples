@@ -9,8 +9,8 @@
  * - EventBridge rule (S3 PutObject → Trigger)
  * - SNS topic (human review notifications)
  *
- * Cognito is managed externally (scripts/setup_cognito.sh) and its values
- * are passed via environment variables at synth time.
+ * Cognito is managed externally by the ownership-checked lifecycle. The parent
+ * stack reads its exact discovery URL/client ID from the local ownership ledger.
  *
  * Exposes `lambdaArnMap` for the parent stack to patch placeholder ARNs in agentcore.json.
  */
@@ -29,6 +29,9 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 export interface InfraConstructProps {
+  projectRoot: string;
+  namePrefix: string;
+  notifications: boolean;
   /** Whether to destroy data on stack delete (default: true for dev) */
   destroyOnDelete?: boolean;
 }
@@ -38,32 +41,27 @@ export class InfraConstruct extends Construct {
   public readonly lambdaArnMap: Record<string, string>;
   /** Trigger Lambda function (needs Runtime ARN injected after creation) */
   public readonly triggerFn: lambda_.Function;
-  /** Cognito OIDC discovery URL — read from env, used for Gateway CUSTOM_JWT authorizer */
-  public readonly cognitoDiscoveryUrl: string;
-  /** Cognito app client ID — read from env, used for Gateway allowedClients */
-  public readonly cognitoClientId: string;
-
-  constructor(scope: Construct, id: string, props: InfraConstructProps = {}) {
+  constructor(scope: Construct, id: string, props: InfraConstructProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
     const destroyOnDelete = props.destroyOnDelete ?? true;
     const removalPolicy = destroyOnDelete ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN;
 
-    // Project root: process.cwd() is agentcore/cdk/ → go up 2 levels
-    const projectRoot = path.resolve(process.cwd(), '..', '..');
+    const projectRoot = props.projectRoot;
+    const prefix = props.namePrefix;
 
     // ─── DynamoDB Tables ───────────────────────────────────────────
 
     const policiesTable = new dynamodb.Table(this, 'PoliciesTable', {
-      tableName: `ClaimsAgent-${stack.stackName.split('-').pop() || 'dev'}-Policies`,
+      tableName: `${prefix}-Policies`,
       partitionKey: { name: 'policy_number', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
     });
 
     const claimsTable = new dynamodb.Table(this, 'ClaimsTable', {
-      tableName: `ClaimsAgent-${stack.stackName.split('-').pop() || 'dev'}-Claims`,
+      tableName: `${prefix}-Claims`,
       partitionKey: { name: 'claim_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
@@ -78,7 +76,7 @@ export class InfraConstruct extends Construct {
     });
 
     const reviewsTable = new dynamodb.Table(this, 'ReviewsTable', {
-      tableName: `ClaimsAgent-${stack.stackName.split('-').pop() || 'dev'}-Reviews`,
+      tableName: `${prefix}-Reviews`,
       partitionKey: { name: 'review_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
@@ -94,30 +92,25 @@ export class InfraConstruct extends Construct {
     // ─── SNS Topic (human review alerts) ──────────────────────────
 
     const reviewTopic = new sns.Topic(this, 'ReviewTopic', {
-      topicName: 'ClaimsAgent-HumanReview',
+      topicName: `${prefix}-HumanReview`,
     });
 
     // ─── S3 Bucket (claims email inbox) ───────────────────────────
 
     const inboxBucket = new s3.Bucket(this, 'InboxBucket', {
-      bucketName: `claims-inbox-${stack.account}-${stack.region}`,
+      bucketName: `${prefix.toLowerCase()}-inbox-${stack.account}-${stack.region}`,
       removalPolicy,
       autoDeleteObjects: destroyOnDelete,
       eventBridgeEnabled: true,
     });
 
-    // ─── Cognito values (externally managed — read from env) ──────
-    // Cognito is created by scripts/setup_cognito.sh BEFORE deploy.
-    // These values are passed via environment variables at synth time.
-    this.cognitoDiscoveryUrl = process.env.COGNITO_DISCOVERY_URL || 'PLACEHOLDER_DISCOVERY_URL';
-    this.cognitoClientId = process.env.AGENTCORE_GATEWAY_CLIENT_ID || 'PLACEHOLDER_CLIENT_ID';
 
     // ─── Lambda Tool Functions ─────────────────────────────────────
 
     const lambdasPath = path.join(projectRoot, 'lambdas');
 
     const policyLookupFn = new lambda_.Function(this, 'PolicyLookupFn', {
-      functionName: 'ClaimsAgent-PolicyLookup',
+      functionName: `${prefix}-PolicyLookup`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'policy_lookup')),
@@ -127,7 +120,7 @@ export class InfraConstruct extends Construct {
     policiesTable.grantReadData(policyLookupFn);
 
     const createClaimFn = new lambda_.Function(this, 'CreateClaimFn', {
-      functionName: 'ClaimsAgent-CreateClaim',
+      functionName: `${prefix}-CreateClaim`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'create_claim')),
@@ -137,28 +130,32 @@ export class InfraConstruct extends Construct {
     claimsTable.grantReadWriteData(createClaimFn);
 
     const humanReviewFn = new lambda_.Function(this, 'HumanReviewFn', {
-      functionName: 'ClaimsAgent-HumanReview',
+      functionName: `${prefix}-HumanReview`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'human_review')),
       environment: {
         REVIEWS_TABLE: reviewsTable.tableName,
         REVIEW_SNS_TOPIC_ARN: reviewTopic.topicArn,
+        NOTIFICATIONS_ENABLED: String(props.notifications),
       },
       timeout: cdk.Duration.seconds(10),
     });
     reviewsTable.grantReadWriteData(humanReviewFn);
-    reviewTopic.grantPublish(humanReviewFn);
+    if (props.notifications) reviewTopic.grantPublish(humanReviewFn);
 
     const notificationFn = new lambda_.Function(this, 'NotificationFn', {
-      functionName: 'ClaimsAgent-Notification',
+      functionName: `${prefix}-Notification`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'notification')),
-      environment: { SENDER_EMAIL: process.env.SENDER_EMAIL || 'noreply@example.com' },
+      environment: {
+        SENDER_EMAIL: process.env.SENDER_EMAIL || 'noreply@example.com',
+        NOTIFICATIONS_ENABLED: String(props.notifications),
+      },
       timeout: cdk.Duration.seconds(10),
     });
-    notificationFn.addToRolePolicy(
+    if (props.notifications) notificationFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail', 'ses:SendRawEmail'],
         resources: [`arn:aws:ses:${stack.region}:${stack.account}:identity/*`],
@@ -166,7 +163,7 @@ export class InfraConstruct extends Construct {
     );
 
     const listPendingFn = new lambda_.Function(this, 'ListPendingFn', {
-      functionName: 'ClaimsAgent-ListPending',
+      functionName: `${prefix}-ListPending`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'list_pending_claims')),
@@ -176,7 +173,7 @@ export class InfraConstruct extends Construct {
     claimsTable.grantReadData(listPendingFn);
 
     const resolveClaimFn = new lambda_.Function(this, 'ResolveClaimFn', {
-      functionName: 'ClaimsAgent-ResolveClaim',
+      functionName: `${prefix}-ResolveClaim`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'resolve_claim')),
@@ -203,14 +200,14 @@ export class InfraConstruct extends Construct {
     // ─── Dead-Letter Queue (failed claim triggers) ────────────────
 
     const triggerDlq = new sqs.Queue(this, 'TriggerDLQ', {
-      queueName: 'ClaimsAgent-TriggerDLQ',
+      queueName: `${prefix}-TriggerDLQ`,
       retentionPeriod: cdk.Duration.days(14),
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
 
     // Alarm when failed claims land in the DLQ — ensures ops visibility
     new cloudwatch.Alarm(this, 'TriggerDLQAlarm', {
-      alarmName: 'ClaimsAgent-FailedClaims',
+      alarmName: `${prefix}-FailedClaims`,
       alarmDescription: 'Claims trigger DLQ has messages — failed claim processing needs attention',
       metric: triggerDlq.metricApproximateNumberOfMessagesVisible({
         period: cdk.Duration.minutes(1),
@@ -223,7 +220,7 @@ export class InfraConstruct extends Construct {
     // ─── Trigger Lambda (EventBridge → Runtime) ───────────────────
 
     this.triggerFn = new lambda_.Function(this, 'TriggerFn', {
-      functionName: 'ClaimsAgent-Trigger',
+      functionName: `${prefix}-Trigger`,
       runtime: lambda_.Runtime.PYTHON_3_12,
       handler: 'handler.handler',
       code: lambda_.Code.fromAsset(path.join(lambdasPath, 'trigger')),
@@ -240,7 +237,7 @@ export class InfraConstruct extends Construct {
     // ─── EventBridge Rule: S3 PutObject → Trigger Lambda ──────────
 
     new events.Rule(this, 'ClaimInboxRule', {
-      ruleName: 'ClaimsAgent-InboxTrigger',
+      ruleName: `${prefix}-InboxTrigger`,
       eventPattern: {
         source: ['aws.s3'],
         detailType: ['Object Created'],

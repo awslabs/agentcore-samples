@@ -1,6 +1,6 @@
 # ADR-0007: One Shared Cognito Pool for Runtime + Gateway
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-0004](0004-cognito-m2m-over-iam-auth.md) and [ADR-0010](0010-identity-token-vault-for-secrets.md). This is historical rationale, not the current auth contract. Runtime inbound is IAM; only the Gateway uses JWT. The v1 pool/provider are dedicated and script-managed, not shared or CDK-injected.
 **Date:** 2025-06-17
 
 ## Context

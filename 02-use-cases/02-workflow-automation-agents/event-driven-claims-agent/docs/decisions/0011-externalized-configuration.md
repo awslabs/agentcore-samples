@@ -22,18 +22,18 @@ Externalize all operational knobs to environment variables read via `config.py` 
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `AGENT_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Primary reasoning model |
-| `FAST_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Fast model for LOW priority |
+| `FAST_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Fast model for Phase 2 validation |
 | `AUTO_APPROVE_THRESHOLD` | `80` | Confidence score cutoff for auto-approval |
 | `MEMORY_RETRIEVAL_TOP_K` | `5` | Number of facts/sessions retrieved |
 | `MEMORY_RETRIEVAL_RELEVANCE` | `0.5` | Minimum relevance score |
 
-### CDK-side (synth-time env vars)
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `DESTROY_ON_DELETE` | `true` | Retain or destroy data on stack delete |
-| `LAMBDA_TIMEOUT_SECONDS` | `10` | Timeout for all 6 tool Lambdas |
-| `SNS_TOPIC_NAME` | `ClaimsAgent-HumanReview` | Notification topic name |
-| `S3_INBOX_PREFIX` | `claims-inbox/` | S3 key prefix that triggers the agent |
+### CDK-side properties
+
+Lambda timeouts, the inbox prefix and removal policy are explicit properties in
+`infra-construct.ts`/`cdk-stack.ts`, not implemented environment variables.
+Physical names derive from the fresh project/target identity; notification mode
+is journaled in `.claims-v1.json`. `SENDER_EMAIL` is the optional synth-time setting
+for a separately authorized notification-enabled demonstration.
 
 ## Reasoning
 
@@ -55,7 +55,7 @@ Externalize all operational knobs to environment variables read via `config.py` 
 
 ## Consequences
 
-- **Positive:** Users can customize the sample by editing `.env` alone. Tutorial and documentation reference env vars as the primary customization mechanism.
+- **Positive:** Deployed runtime settings are explicit `agentcore.json` envVars. The v1 lifecycle never sources `.env`; model changes must also update the runtime IAM boundary.
 - **Positive:** `config.py` becomes the single source of truth for all runtime configuration — easy to audit.
 - **Negative:** More env vars to document. Mitigated by `.env.example` with descriptions and the CONFIGURATION.md reference.
 - **Watch:** If the number of env vars grows past ~20, consider grouping into a config file loaded at startup. Currently at 12 (manageable).

@@ -1,12 +1,13 @@
 {
   "name": "ClaimsAgent",
-  "version": 1,
+  "version": 2,
   "managedBy": "CDK",
   "runtimes": [
     {
       "name": "claimsagent",
       "description": "Event-driven dual-agent claims processor with confidence-based routing",
       "build": "Container",
+      "dockerfile": "Dockerfile",
       "entrypoint": "main.py",
       "codeLocation": "app/claimsagent",
       "envVars": [
@@ -29,10 +30,6 @@
         {
           "name": "AUTO_APPROVE_THRESHOLD",
           "value": "80"
-        },
-        {
-          "name": "AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER",
-          "value": "cognito-gateway-m2m"
         },
         {
           "name": "AGENTCORE_GATEWAY_OAUTH_SCOPES",
@@ -218,15 +215,13 @@
         },
         {
           "name": "ClaimsBlockExcessiveAmount",
-          "description": "Forbid creating claims with estimated amount >= $100,000 — routes to human review",
-          "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has \"toolName\" && context.toolName == \"create-claim\" && context has \"input\" && context.input has \"estimated_amount\" && context.input.estimated_amount >= 100000 };",
+          "description": "Forbid creating claims with estimated amount >= $100,000; denial does not create a review",
+          "statement": "forbid(principal, action == AgentCore::Action::\"create-claim___create_claim\", resource is AgentCore::Gateway) when { context has \"input\" && context.input has \"estimated_amount\" && context.input.estimated_amount >= 100000 };",
           "validationMode": "IGNORE_ALL_FINDINGS"
         }
       ]
     }
   ],
   "configBundles": [],
-  "abTests": [],
-  "httpGateways": [],
   "harnesses": []
 }

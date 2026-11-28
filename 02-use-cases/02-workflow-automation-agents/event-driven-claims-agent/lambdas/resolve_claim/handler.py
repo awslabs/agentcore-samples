@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -26,7 +26,7 @@ def handler(event, context):
         if action not in ("approve", "deny"):
             return json.dumps({"error": "action must be 'approve' or 'deny'"})
 
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         new_status = "approved" if action == "approve" else "denied"
 
         claims_table.update_item(
@@ -63,6 +63,6 @@ def handler(event, context):
                 "resolved_at": timestamp,
             }
         )
-    except Exception as e:
-        logger.error("Failed to resolve claim", extra={"error": str(e), "claim_id": event.get("claim_id")})
-        return json.dumps({"error": str(e)})
+    except Exception:  # noqa: BLE001 -- return a failed tool result without disclosing upstream responses
+        logger.error("Failed to resolve claim")
+        return json.dumps({"error": "Unable to resolve claim"})

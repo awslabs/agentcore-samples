@@ -24,10 +24,11 @@ GATEWAY_URL = os.getenv(
 )
 GATEWAY_OAUTH_SCOPES = os.getenv("AGENTCORE_GATEWAY_OAUTH_SCOPES", "agentcore/invoke")
 
-# Identity credential provider — registered via `agentcore add credential`
-# during deploy. The @requires_access_token decorator uses this name to
-# fetch tokens from the AgentCore Identity token vault (Secrets Manager-backed).
-GATEWAY_CREDENTIAL_PROVIDER = os.getenv("AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER", "cognito-gateway-m2m")
+# Use the exact v1 provider binding. Never fall back to the potentially shared
+# bare v0 provider when local configuration is incomplete.
+GATEWAY_CREDENTIAL_PROVIDER = os.getenv(
+    "AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER", os.getenv("CREDENTIAL_COGNITO_GATEWAY_M2M_NAME", "")
+)
 
 # ─── Memory ─────────────────────────────────────────────────────────────────
 # L3 construct injects MEMORY_CLAIMSAGENTMEMORY_ID; explicit fallback for manual config.

@@ -1,440 +1,159 @@
-# Configuration Reference
+# Configuration reference
 
-AgentCore resources are declared in `agentcore/agentcore.json`; supplementary AWS infra is in `agentcore/cdk/lib/infra-construct.ts`. The deployed CloudFormation stack is named **`AgentCore-ClaimsAgent-dev`**. None of these are required to change for a basic deploy — defaults work out of the box.
+The custom CLI 1.2.0/v1 project uses two deliberate configuration surfaces:
+`agentcore/agentcore.json` for AgentCore resources, and the custom CDK app for
+supplementary infrastructure/wiring. External Cognito/Identity IDs and ownership
+are journaled in `.claims-v1.json`. See [deployment](deployment.md) before cloud use.
 
-## Deploy-time Parameters
+## Names and ownership
 
-| Parameter | How to set | Default | Notes |
-|-----------|------------|---------|-------|
-| `SENDER_EMAIL` | `export SENDER_EMAIL=...` before deploy | `noreply@example.com` | SES verified sender for notifications. `infra-construct.ts` reads `process.env.SENDER_EMAIL` at synth. Must be SES-verified or emails are logged as drafts, not sent. |
-| Region | `./deploy.sh <region>` | `us-west-2` | Sets `AWS_REGION`/`CDK_DEFAULT_REGION`. |
-| Model | `AGENT_MODEL_ID` runtime env | `global.anthropic.claude-sonnet-4-6` | Primary model for Claims Processor (Phase 1) and Executor (Phase 3). |
-| Fast model | `FAST_MODEL_ID` runtime env | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Fast/cheap model for the Validation Agent (Phase 2). Classification task — no tool use needed. |
-| Auto-approve threshold | `AUTO_APPROVE_THRESHOLD` runtime env | `80` | Confidence score (0-100) at or above which claims are auto-approved. |
-| Memory top_k | `MEMORY_RETRIEVAL_TOP_K` runtime env | `5` | Number of prior facts/sessions retrieved per invocation. |
-| Memory relevance | `MEMORY_RETRIEVAL_RELEVANCE` runtime env | `0.5` | Minimum relevance score (0.0-1.0) for memory results. |
+`configure_target.py --account ... --region ... --suffix ...` reserves a fresh
+project `Claims<suffix>` and target `dev`. It refuses existing state; it is not an
+in-place v0 migration or a retargeting tool.
 
-```bash
-# Example: customize for stricter review
-export AUTO_APPROVE_THRESHOLD=90
-export SENDER_EMAIL=claims@example.com
-agentcore deploy --target dev --yes
-```
+| Resource | Fresh name |
+|---|---|
+| Stack | `AgentCore-Claims<suffix>-dev` |
+| Tables | `Claims<suffix>-dev-{Policies,Claims,Reviews}` |
+| Tool/Trigger Lambdas | `Claims<suffix>-dev-<purpose>` |
+| SNS / SQS / alarm / rule | `Claims<suffix>-dev-<purpose>` |
+| Inbox | `claims<suffix>-dev-inbox-<account>-<region>` |
+| Runtime | `Claims<suffix>_dev_claimsagent` (service adds its ID suffix) |
+| Gateway | `Claims<suffix>-dev-ClaimsGateway` |
+| Memory/evaluator/policy engine | v1 project + target + spec name |
+| OAuth provider | `Claims<suffix>_dev_cognito-gateway-m2m` |
+| Cognito pool/domain | names in `.claims-v1.json`, tagged with `claims:owner` |
 
----
+These are **new identities**. The old bare `cognito-gateway-m2m`, old pool and old
+stack remain untouched. Never fabricate v1 state for existing resources.
 
-## Runtime Environment Variables
+## Runtime environment
 
-Injected into the Container runtime by CDK. All are set automatically on deploy.
+Set model/routing/Memory overrides in `runtimes[0].envVars` in `agentcore.json`.
+Exporting a shell variable does not override a declared runtime envVar at deploy.
 
-| Variable | Source | Example Value |
-|----------|--------|---------------|
-| `AGENTCORE_GATEWAY_URL` | CDK `gateway.gateway_url` | `https://xxx.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp` |
-| `AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER` | CDK hardcoded | `cognito-gateway-m2m` |
-| `AGENTCORE_GATEWAY_OAUTH_SCOPES` | CDK hardcoded | `agentcore/invoke` |
-| `AGENT_MODEL_ID` | `agentcore.json` envVars | `global.anthropic.claude-sonnet-4-6` |
-| `FAST_MODEL_ID` | `agentcore.json` envVars | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| `AUTO_APPROVE_THRESHOLD` | `agentcore.json` envVars | `80` |
-| `AGENT_OBSERVABILITY_ENABLED` | `agentcore.json` envVars | `true` |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `agentcore.json` envVars | `true` |
+| Variable | Source/default |
+|---|---|
+| `AGENTCORE_GATEWAY_URL` | typed v1 Gateway accessor |
+| `AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER` | actual provider name from recorded ARN |
+| `AGENTCORE_GATEWAY_OAUTH_SCOPES` | `agentcore/invoke` |
+| `AGENT_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` |
+| `FAST_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| `AUTO_APPROVE_THRESHOLD` | `80` |
+| `MEMORY_CLAIMSAGENTMEMORY_ID` | v1 Memory binding |
+| `MEMORY_RETRIEVAL_TOP_K` | `5` (summary uses `max(top_k - 2, 1)`) |
+| `MEMORY_RETRIEVAL_RELEVANCE` | `0.5` |
+| `AGENT_OBSERVABILITY_ENABLED` | `true` |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `true`; use synthetic data |
 
-**Note:** The Runtime does not receive `GATEWAY_CLIENT_ID`, `GATEWAY_CLIENT_SECRET`, or `GATEWAY_TOKEN_ENDPOINT` as env vars. Those secrets live in the AgentCore Identity token vault and are accessed via the `@requires_access_token` decorator using the `AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER` name.
+The container gets **no client secret**. Identity owns that secret and the
+`requires_access_token` M2M decorator obtains tokens. Runtime ingress remains IAM
+(SigV4), not JWT. Local development still needs cloud services and separately
+reviewed Identity permissions; `.env.example` contains nonsecret examples only.
 
-For local development, copy `.env.example` to `.env` and fill in values from your deployed stack:
-```bash
-cp .env.example .env
-# Fill in AGENTCORE_GATEWAY_URL and COGNITO_* values from CloudFormation outputs
-```
+## Lambda settings and notifications
 
----
+Tables/topic/Runtime ARN are CDK references, never guessed defaults at deploy.
+The notification and human-review Lambdas receive `NOTIFICATIONS_ENABLED`.
+The fresh test configuration sets it to `false`, suppresses both SES sends and
+SNS publication, and omits those actions from IAM. It does not remove the tools,
+topic or review persistence.
 
-## Lambda Environment Variables
+For the original notification-enabled demonstration, a separately authorized
+operator may change `.claims-v1.json` `notifications` to `true` and supply a
+verified `SENDER_EMAIL` at synth time. Review recipient policy, IAM and ownership
+before doing this. The bounded cloud checks **refuse** notification-enabled
+configurations. Never verify an address or create a subscription as part of
+migration validation. An SES error is returned as `ses_error`, not delivery proof.
 
-> **Table naming convention:** DynamoDB tables follow the pattern `ClaimsAgent-{target}-{Purpose}` where `{target}` is the deployment target name (e.g., `dev`). If you deploy with `--target staging`, tables will be named `ClaimsAgent-staging-Policies`, etc.
+## MCP and policy
 
-### ClaimsAgent-PolicyLookup
-| Variable | Value |
-|----------|-------|
-| `POLICIES_TABLE` | `ClaimsAgent-dev-Policies` |
-
-### ClaimsAgent-CreateClaim
-| Variable | Value |
-|----------|-------|
-| `CLAIMS_TABLE` | `ClaimsAgent-dev-Claims` |
-
-### ClaimsAgent-HumanReview
-| Variable | Value |
-|----------|-------|
-| `REVIEWS_TABLE` | `ClaimsAgent-dev-Reviews` |
-| `REVIEW_SNS_TOPIC_ARN` | SNS topic ARN (from CDK) |
-
-### ClaimsAgent-Notification
-| Variable | Value |
-|----------|-------|
-| `SENDER_EMAIL` | CDK context `sender_email` or `noreply@example.com` |
-
-### ClaimsAgent-ListPending
-| Variable | Value |
-|----------|-------|
-| `CLAIMS_TABLE` | `ClaimsAgent-dev-Claims` |
-
-### ClaimsAgent-ResolveClaim
-| Variable | Value |
-|----------|-------|
-| `CLAIMS_TABLE` | `ClaimsAgent-dev-Claims` |
-| `REVIEWS_TABLE` | `ClaimsAgent-dev-Reviews` |
-
-### ClaimsAgent-Trigger
-| Variable | Value | Notes |
-|----------|-------|-------|
-| `AGENTCORE_RUNTIME_ARN` | Runtime ARN (from CDK) | Used to construct the SigV4-signed HTTPS invocation URL |
-
----
-
-## Cedar Policies
-
-Cedar policies are declared in `agentcore/agentcore.json` under `policyEngines[0].policies`. Each policy is a `{ name, description, statement, validationMode }` object.
-
----
-
-## MCP Tool Schema Format
-
-Tool schemas in `lambdas/schemas/` define the contract between the MCP Gateway and each Lambda tool. The Gateway uses these schemas for tool discovery (semantic search matches against `description`) and input validation.
-
-**Format:** Each file is a JSON array containing one tool object:
-
-```json
-[{
-  "name": "tool-name",
-  "description": "Human-readable description of what this tool does. The Gateway uses this for semantic search.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "param_name": { "type": "string", "description": "What this parameter is for" }
-    },
-    "required": ["param_name"]
-  }
-}]
-```
-
-**How it's wired:**
-1. Schema file lives at `lambdas/schemas/<tool_name>.json`
-2. `agentcore/agentcore.json` references it via `toolSchemaFile: "lambdas/schemas/<tool_name>.json"`
-3. CDK loads it via `ToolSchema.from_local_asset(...)` during synthesis
-4. The Gateway registers the tool with its name, description, and input schema
-5. The agent discovers tools via semantic search (matching the `description` field)
-
-**Important:** The Lambda handler's expected parameters must match the schema's `properties`. If you add a field to the schema, the Lambda must handle it. If you rename a field in the Lambda, update the schema to match.
-
----
-
-### Policy 1: AllowAllTools
+Schema files in `lambdas/schemas/` remain the source of tool arguments. CDK patches
+placeholder Lambda ARNs and throws for an unknown mapping, rather than removing
+a target. Wire names are `<target>___<schema tool>`, for example
+`create-claim___create_claim`. Only `policy-lookup___lookup_policy` is offered to
+the Phase 1 model. Phase 3 calls the mutating tools directly and checks the actual
+Strands `MCPToolResult` dictionary `status`/`isError`/`content` contract.
 
 ```cedar
 permit(principal, action, resource is AgentCore::Gateway);
-```
 
-Grants all authenticated principals the ability to call any tool on the claims gateway. Uses `IGNORE_ALL_FINDINGS` validation mode.
-
-### Policy 2: BlockExcessiveClaims
-
-```cedar
-forbid(principal, action, resource is AgentCore::Gateway)
+forbid(principal, action == AgentCore::Action::"create-claim___create_claim",
+       resource is AgentCore::Gateway)
 when {
-    context has "toolName" && context.toolName == "create-claim"
-    && context has "input" && context.input has "estimated_amount"
-    && context.input.estimated_amount >= 100000
+  context has "input" && context.input has "estimated_amount"
+  && context.input.estimated_amount >= 100000
 };
 ```
 
-Blocks `create-claim` tool calls when the estimated amount is ≥$100,000.
-
-### Adding a New Policy
-
-Add an entry to `policyEngines[0].policies` in `agentcore/agentcore.json`:
-
-```json
-{
-  "name": "MyPolicyName",
-  "description": "Description of what this policy does",
-  "statement": "forbid(principal, action, resource is AgentCore::Gateway) when { context has \"toolName\" && context.toolName == \"my-tool\" };",
-  "validationMode": "IGNORE_ALL_FINDINGS"
-}
-```
-
-Then `agentcore validate && agentcore deploy --target dev --yes`.
-
-### Policy Engine Mode
-
-The gateway references the policy engine via `policyEngineConfiguration.mode` (set to `ENFORCE` in `agentcore.json`). In `ENFORCE` mode, Cedar denials block the tool call before it runs. Switch `mode` to `MONITOR` to observe and log policy decisions without blocking — handy while authoring new policies.
-
----
-
-## Cognito Configuration
-
-Cognito is used **exclusively for Runtime → MCP Gateway authentication**. The Runtime uses the `@requires_access_token` decorator to obtain tokens from the AgentCore Identity vault (no secrets in env vars).
-
-Cognito is managed **outside CDK** — created by `scripts/setup_cognito.sh` (runs during `deploy.sh` if needed) and destroyed by `scripts/teardown_cognito.sh` (runs during `scripts/destroy.sh` if script-created).
-
-A `.cognito-state.json` file tracks whether the script created the User Pool, so teardown only deletes what the script created (preserves manually-created pools).
-
-Callers of the Runtime (Trigger Lambda, test scripts) use **AWS_IAM (SigV4)** authentication instead — they do NOT need Cognito tokens.
-
-### User Pool: Script-Managed
-
-| Setting | Value |
-|---------|-------|
-| Name | `ClaimsAgent-UserPool` (or custom name from script) |
-| Created by | `scripts/setup_cognito.sh` (AWS CLI) |
-| Destroyed by | `scripts/teardown_cognito.sh` (if script-created) |
-| Domain prefix | `claims-agent-{account}` |
-
-### Resource Server
-
-| Setting | Value |
-|---------|-------|
-| Identifier | `agentcore` |
-| Scopes | `agentcore/invoke` |
-
-### App Client: M2M
-
-| Setting | Value |
-|---------|-------|
-| Name | Auto-generated by script |
-| Flow | `client_credentials` (machine-to-machine) |
-| Secret | Auto-generated, registered with AgentCore Identity |
-| Allowed scopes | `agentcore/invoke` |
-
-### Token Endpoint
-
-```
-https://claims-agent-{account}.auth.{region}.amazoncognito.com/oauth2/token
-```
-
-### AgentCore Identity Registration
-
-During `deploy.sh`, the Cognito client secret is registered with AgentCore Identity:
-
-```bash
-agentcore add credential \
-  --name cognito-gateway-m2m \
-  --type oauth \
-  --discovery-url "$COGNITO_DISCOVERY_URL" \
-  --client-id "$AGENTCORE_GATEWAY_CLIENT_ID" \
-  --client-secret "$AGENTCORE_GATEWAY_CLIENT_SECRET" \
-  --scopes "agentcore/invoke"
-```
-
-The Runtime references this credential provider by name (`AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER=cognito-gateway-m2m`) — no secrets in CloudFormation or env vars.
-
----
-
-## SES Setup
-
-The notification Lambda uses SES to send emails. SES is in sandbox mode by default.
-
-### Sandbox Mode (default)
-
-In sandbox mode, SES can only send to verified email addresses. To verify an address:
-
-```bash
-aws ses verify-email-identity --email-address your@email.com --region us-west-2
-```
-
-Click the verification link in the email. Then redeploy with the verified sender:
-
-```bash
-export SENDER_EMAIL=your@email.com
-agentcore deploy --target dev --yes
-```
-
-### Production Mode
-
-To send to any address, request SES production access:
-1. Go to SES console → Account dashboard → Request production access
-2. Fill in the use case form
-3. Wait for AWS approval (typically 24-48 hours)
-
-### SES IAM Permissions
-
-The notification Lambda is granted:
-```
-ses:SendEmail
-ses:SendRawEmail
-arn:aws:ses:{region}:{account}:identity/*
-```
-
-This scopes permissions to identities in the deploying account, not `*`.
-
----
-
-## Observability Configuration
-
-### Automated Setup
-
-Full observability is enabled automatically by `deploy.sh` via `scripts/enable_observability.py`:
-
-1. **CloudWatch Transaction Search** — enabled for the account/region
-2. **TRACES delivery** — creates CloudWatch Log deliveries for Gateway and Memory traces
-3. **LOGS delivery** — creates CloudWatch Log deliveries for Gateway and Memory application logs
-
-These are automatically cleaned up by `scripts/destroy.sh` via `scripts/disable_observability.py`.
-
-### Runtime OTEL Configuration
-
-The Runtime's `agentcore.json` includes environment variables:
-
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `AGENT_OBSERVABILITY_ENABLED` | `true` | Enables AgentCore observability features |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `true` | Captures LLM request/response content in traces |
-| `AGENT_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Model identifier |
-| `AUTO_APPROVE_THRESHOLD` | `80` | Confidence threshold for auto-approval |
-| `AGENTCORE_GATEWAY_CREDENTIAL_PROVIDER` | `cognito-gateway-m2m` | Identity credential provider name |
-| `AGENTCORE_GATEWAY_OAUTH_SCOPES` | `agentcore/invoke` | OAuth scopes for Gateway auth |
-
-The following OTEL variables are **auto-configured** by the Runtime when `instrumentation.enableOtel: true` is set — you do not need to set them manually:
-- `_AWS_XRAY_DAEMON_ADDRESS`
-- `_AWS_XRAY_TRACING_ENABLED`
-- `OTEL_METRICS_EXPORTER`
-- `OTEL_TRACES_EXPORTER`
-- `OTEL_EXPORTER_OTLP_PROTOCOL`
-- `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED`
-- `OTEL_AWS_APPLICATION_SIGNALS_ENABLED`
-- `OTEL_PROPAGATORS`
-
-### Viewing Observability Data
-
-- **CloudWatch Logs:** `/aws/bedrock-agentcore/claims-agent` (1-week retention)
-- **X-Ray Traces:** CloudWatch ServiceLens → Service Map
-- **Transaction Search:** CloudWatch console → Transaction Search
-- **Gateway/Memory Deliveries:** CloudWatch console → Logs → Deliveries
-
----
-
-## Bedrock Model Access
-
-The Runtime needs access to the Bedrock model specified in `app/claimsagent/model/load.py`.
-
-### Default Model
-
-```
-global.anthropic.claude-sonnet-4-6
-```
-
-This is a cross-region inference profile that automatically routes to the nearest available region.
-
-### Enable Model Access
-
-1. Go to **Bedrock console** → **Model access** → **Manage model access**
-2. Enable **Claude Sonnet** (Anthropic)
-3. Click **Save changes**
-
-Available in: us-east-1, us-west-2, eu-west-1, ap-northeast-1 (check console for current list).
-
-### IAM Permissions
-
-The Runtime role is granted:
-```json
-{
-  "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-  "Resource": [
-    "arn:aws:bedrock:{region}::foundation-model/anthropic.claude-sonnet-4-6",
-    "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6",
-    "arn:aws:bedrock:*:*:inference-profile/*"
-  ]
-}
-```
-
-### Changing the Model
-
-Preferred: set the `AGENT_MODEL_ID` environment variable on the Runtime (in `agentcore/agentcore.json` → `runtimes[0].envVars`), then redeploy:
-
-```bash
-agentcore deploy --target dev --yes
-```
-
-`app/claimsagent/main.py` reads `AGENT_MODEL_ID` (via `config.py`), so no code change is needed.
-
----
-
-## Memory Configuration
-
-Memory is declared in `agentcore/agentcore.json` under `memories`:
-
-```json
-{
-  "name": "ClaimsAgentMemory",
-  "eventExpiryDuration": 90,
-  "strategies": [
-    { "type": "SEMANTIC", "name": "semantic_strategy", "namespaces": ["claims/{actorId}/facts"] },
-    { "type": "SUMMARIZATION", "name": "summary_strategy", "namespaces": ["claims/{actorId}/{sessionId}"] }
-  ]
-}
-```
-
-| Setting | Value | Notes |
-|---------|-------|-------|
-| Expiration | 90 days | Adjust `eventExpiryDuration` |
-| SEMANTIC | enabled | Fact/concept retrieval across sessions |
-| SUMMARIZATION | enabled | Session compression for repeat claimants |
-| Retrieval top_k | 5 (facts), 3 (sessions) | Configurable via `MEMORY_RETRIEVAL_TOP_K` env var |
-| Relevance threshold | 0.5 | Configurable via `MEMORY_RETRIEVAL_RELEVANCE` env var |
-
-### Disabling Memory
-
-Remove the `memories` entry (or unset `MEMORY_ID`). The Runtime degrades gracefully — `app/claimsagent/memory/session.py` returns `None` when `MEMORY_ID` is unset, and `main.py` wraps the session manager in try/except.
-
----
-
-## Online Evaluation
-
-Configured in `agentcore/agentcore.json` under `onlineEvalConfigs`:
-
-```json
-{
-  "name": "ClaimsEvaluation",
-  "agent": "claimsagent",
-  "evaluators": ["Builtin.Helpfulness", "Builtin.Correctness", "Builtin.ToolSelectionAccuracy"],
-  "samplingRate": 100,
-  "description": "Online evaluation for claims agent (3 built-in metrics)"
-}
-```
-
-A custom LLM-as-judge evaluator (`ClaimsQualityEvaluator`) is also declared under `evaluators` for on-demand use.
-
-| Setting | Value | Notes |
-|---------|-------|-------|
-| Sampling | 100% | Every invocation is evaluated. Reduce for cost savings in production. |
-| Built-in metrics | 3 | Helpfulness, Correctness, Tool Selection Accuracy |
-| Custom evaluator | LLM-as-judge | Defined separately (`ClaimsQualityEvaluator`). Use for on-demand evaluation only — requires reference inputs not available online. |
-
-### Valid Built-in Evaluator IDs
-
-| ID | What it measures |
-|----|-----------------|
-| `HELPFULNESS` | Whether the response helps the user |
-| `CORRECTNESS` | Whether the response is factually accurate |
-| `TOOL_SELECTION_ACCURACY` | Whether the right tools were chosen at the right time |
-| `GOAL_SUCCESS_RATE` | Whether the agent achieved its stated goal |
-
-**Tip:** Use the exact IDs above — the tool-selection metric is `ToolSelectionAccuracy`.
-
-### Prerequisites
-
-Online Evaluation requires CloudWatch Transaction Search to be enabled in your region:
-1. Go to **CloudWatch console** → **Settings** → **Transaction Search**
-2. Enable Transaction Search
-3. Then deploy the stack
-
----
-
-## Deploying to a Different Region
-
-```bash
-./deploy.sh us-east-1
-```
-
-The deploy script sets `CDK_DEFAULT_REGION`, `AWS_DEFAULT_REGION`, and `AWS_REGION` automatically.
-
-**Note:** Ensure the Bedrock model (`global.anthropic.claude-sonnet-4-6`) is available in your target region. The global inference profile handles cross-region routing automatically.
+`estimated_amount` is required and integer-valued in the tool schema. A forbid
+overrides a permit. `IGNORE_ALL_FINDINGS` is policy validation mode, **not** an
+authorization bypass. The integration refuses any Gateway mode other than
+`ENFORCE`. A denial does not create a review automatically: the executor reports
+a nonfatal failed write and does not escalate or notify with a nonexistent claim
+ID. Offline Cedar tests evaluate the actual statements; direct service name and
+denial/effect checks remain required before claiming service enforcement.
+
+## Memory and evaluation
+
+Memory keeps the original 90-day expiry and strategies. The actor key is
+`claimant-` plus SHA-256 of the exact UTF-8 claimant identity (73 characters).
+Each invocation gets a separate `claim-<UUID hex>` session (38 characters), never
+raw email. Repeat identities share the actor key; different identities do not.
+The email remains separately available for claim metadata and notifications.
+This deterministic key is not encryption or a guarantee of anonymization.
+
+The namespace templates are unchanged:
+- SEMANTIC: `claims/{actorId}/facts`
+- SUMMARIZATION: `claims/{actorId}/{sessionId}`
+
+The real SDK session manager attaches to the processor; unconfigured/unavailable
+Memory degrades without crashing the workflow. Do not remove Memory to fix a
+migration/config error. The validator has only its local structured-output tool.
+
+`ClaimsEvaluation` retains 100% sampling of `Builtin.Helpfulness`,
+`Builtin.Correctness` and `Builtin.ToolSelectionAccuracy`. The separate
+`ClaimsQualityEvaluator` keeps its SESSION LLM-as-judge prompt/rating scale and
+Sonnet model for on-demand reference-based evaluations. Online eval depends on
+the Runtime log group. Service-level data delivery/evaluation is cloud-unverified.
+
+## IAM
+
+`runtime-boundary.ts` intersects the generated v1 Runtime role with:
+- exactly the two model IDs and their named inference profiles;
+- its image repository/key and Runtime log prefix;
+- its Memory ARN (original namespace conditions still apply);
+- the exact dedicated OAuth provider/Identity secret;
+- workload-token access in the current account/region default identity directory;
+- X-Ray, metrics and ECR token APIs (wildcards only where the API cannot scope a
+  resource; metrics restricted to namespace `bedrock-agentcore`).
+
+The service-generated workload identity ID cannot be referenced from the role
+without a dependency cycle; token access uses the current default directory and
+its workload-identity suffix wildcard. The boundary excludes the library's broad
+configuration-bundle mutations and API-key access. Model changes require a
+corresponding boundary change. Cross-region model-region wildcards apply only to
+the two named models, not arbitrary foundation models/profiles.
+
+Trigger IAM remains separate: S3 inbox reads, runtime/endpoint invoke, logs and
+DLQ. Gateway role invokes the six exact Lambda ARNs and evaluates the policy
+engine. Lambda data grants target their own tables/topic/SES account identity.
+Deployer/CodeBuild roles are not Runtime roles: review their separate template
+policies and existing bootstrap permissions; never use AdministratorAccess as a
+sample fix.
+
+## Observability and lifecycle
+
+Runtime OTEL stays enabled. CDK owns Runtime/helper/tool/build log groups and
+Gateway/Memory TRACES + APPLICATION_LOGS delivery chains with one-week retention.
+No sample code changes account Transaction Search. Optional identity-only
+deliveries are created after deployment by `enable_observability.py --allow-cloud`
+using actual workload IDs and an ownership-tagged receipt journal. Their exact-ID
+teardown runs before stack cleanup (or via `disable_observability.py`). Partial
+creates/deletes refuse retry/adoption without journal review. Legacy provider
+repair by name remains disabled.
+
+All lifecycle paths use `scripts/lifecycle.py`; they require `--allow-cloud`,
+verify ownership and propagate failures. Cleanup keeps state on partial deletion,
+including scheduled Identity secret/KMS deletion. See the
+[cleanup procedure](deployment.md#cleanup) and [migration limits](MIGRATION.md).

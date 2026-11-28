@@ -11,14 +11,15 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
-    "aws-cdk": "^2.1128.0",
-    "cdk-nag": "^2.38.2",
-    "typescript": "~5.9.3"
+    "@cedar-policy/cedar-wasm": "4.15.0",
+    "@types/node": "24.10.1",
+    "aws-cdk": "2.1149.0",
+    "cdk-nag": "2.38.2",
+    "typescript": "5.9.3"
   },
   "dependencies": {
-    "@aws/agentcore-cdk": "^0.1.0-alpha.39",
-    "aws-cdk-lib": "^2.260.0",
-    "constructs": "^10.0.0"
+    "@aws/agentcore-cdk": "1.2.0",
+    "aws-cdk-lib": "2.278.0",
+    "constructs": "10.7.2"
   }
 }

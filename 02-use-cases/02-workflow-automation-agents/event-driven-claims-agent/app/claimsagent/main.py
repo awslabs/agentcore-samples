@@ -6,6 +6,7 @@ Agent 2 (Validation Agent): Reviews decision, assigns confidence score, routes a
 """
 
 import json
+import logging
 import uuid
 
 from bedrock_agentcore.identity.auth import requires_access_token
@@ -18,6 +19,7 @@ from config import (
     GATEWAY_URL,
 )
 from mcp.client.streamable_http import streamablehttp_client
+from memory.identifiers import claimant_memory_ids
 from memory.session import get_memory_session_manager
 from routing import decide_action, resolve_decision, resolve_routing
 from strands import Agent
@@ -31,6 +33,8 @@ from tools.structured_output import (
     submit_validation,
 )
 
+# A level survives Uvicorn's startup configuration; .disabled does not.
+logging.getLogger("strands.event_loop.streaming").setLevel(logging.ERROR)
 app = BedrockAgentCoreApp()
 log = app.logger
 
@@ -41,7 +45,7 @@ Your job:
 2. Attempt lookup_policy to verify coverage. If it fails or is unavailable, proceed immediately.
 3. Evaluate the claim against policy terms
 4. Make a decision: ACCEPT or REJECT with detailed reasoning
-If lookup_policy is unavailable, ACCEPT plausible claims conditionally, noting manual verification is needed. Do not reject solely because lookup failed.
+If lookup_policy is unavailable, REJECT and note that manual policy verification is needed.
 
 Output your decision in this EXACT format:
 DECISION: [ACCEPT or REJECT]
@@ -98,17 +102,12 @@ Rules:
 - After completing your validation, you MUST call the submit_validation tool with all fields.
 """
 
-_processor = None
-_validator = None
-_mcp_client = None
-
 
 def load_model(fast: bool = False) -> BedrockModel:
     """Load a Bedrock model.
 
-    Cost routing: the Validation Agent (Phase 2) is a classification task
-    that doesn't require tool use — Haiku is sufficient and ~5x cheaper/faster.
-    The Processor and Executor use the full Sonnet model for complex reasoning.
+    The Validation Agent uses Haiku and the structured validation tool.
+    The Processor uses Sonnet; deterministic Phase 3 makes no model call.
     """
     model_id = FAST_MODEL_ID if fast else AGENT_MODEL_ID
     return BedrockModel(model_id=model_id)
@@ -132,60 +131,41 @@ def _build_mcp_client(*, access_token: str) -> MCPClient:
         headers = {"Authorization": f"Bearer {access_token}"}
         return streamablehttp_client(GATEWAY_URL, headers=headers)
 
-    return MCPClient(_transport)
+    # Phase 1 can only read policy data. Mutation tools are called directly in
+    # deterministic Phase 3, never offered to the reasoning model.
+    return MCPClient(_transport, tool_filters={"allowed": ["policy-lookup___lookup_policy"]})
 
 
 def get_mcp_client():
-    """Get or create the MCPClient for Gateway tool access."""
-    global _mcp_client
-    if _mcp_client is None:
-        if not GATEWAY_URL:
-            log.warning("GATEWAY_URL not configured — tools unavailable")
-            return None
-        try:
-            _mcp_client = _build_mcp_client()
-        except Exception as exc:
-            log.warning("Failed to build MCP client (Identity auth): %s", exc)
-            return None
-    return _mcp_client
+    """Acquire a request-scoped client/token, never cache a JWT across claims."""
+    if not GATEWAY_URL or not GATEWAY_CREDENTIAL_PROVIDER:
+        log.warning("Gateway URL/provider not configured — tools unavailable")
+        return None
+    try:
+        return _build_mcp_client()
+    except Exception:  # noqa: BLE001 -- auth failure disables tools; never log token-bearing responses
+        log.warning("Failed to build MCP client (Identity auth); check provider configuration")
+        return None
 
 
 def get_processor(session_manager=None):
-    """Create or return the Claims Processor agent.
-
-    When a session_manager is provided, a fresh agent is created for that session
-    (memory is per-invocation). Without memory, the cached singleton is reused.
-    """
-    global _processor
-    if session_manager is not None:
-        # Per-invocation agent with memory — enables cross-session recall
-        return Agent(
-            model=load_model(),
-            system_prompt=PROCESSOR_PROMPT,
-            tools=[get_mcp_client(), submit_decision],
-            session_manager=session_manager,
-        )
-    if _processor is None:
-        _processor = Agent(
-            model=load_model(),
-            system_prompt=PROCESSOR_PROMPT,
-            tools=[get_mcp_client(), submit_decision],
-        )
-    return _processor
+    """A fresh agent per claim; cross-session state belongs only in Memory."""
+    mcp = get_mcp_client()
+    return Agent(
+        model=load_model(),
+        system_prompt=PROCESSOR_PROMPT,
+        tools=([mcp] if mcp else []) + [submit_decision],
+        session_manager=session_manager,
+    )
 
 
 def get_validator():
-    global _validator
-    if _validator is None:
-        # Validator only validates — no Gateway tool access (least privilege).
-        # Uses the fast model (Haiku): validation is a classification task,
-        # ~5x cheaper and ~3-8s faster per invocation than Sonnet.
-        _validator = Agent(
-            model=load_model(fast=True),
-            system_prompt=VALIDATOR_PROMPT,
-            tools=[submit_validation],
-        )
-    return _validator
+    # Independent per-claim history, Haiku model, no Gateway mutation access.
+    return Agent(
+        model=load_model(fast=True),
+        system_prompt=VALIDATOR_PROMPT,
+        tools=[submit_validation],
+    )
 
 
 async def _call_tool(mcp: MCPClient, tool_name: str, arguments: dict) -> dict:
@@ -195,31 +175,37 @@ async def _call_tool(mcp: MCPClient, tool_name: str, arguments: dict) -> dict:
     LLM invocation. The routing decision is already made — we just need
     to call the tools with known parameters.
 
-    The MCPClient is already started by the Agent in Phase 1, so we can
-    call tools directly without re-initializing the connection.
+    Each call explicitly holds an MCP session, independent of the Agent's Phase 1
+    tool-provider lifecycle. The context manager reuses an active session safely.
     """
+    # Gateway exposes target-name___schema-tool-name. Strands returns a TypedDict,
+    # not an MCP SDK object; status/error must be checked before claiming an effect.
+    targets = {
+        "create_claim": "create-claim",
+        "request_human_review": "human-review",
+        "send_notification": "notification",
+    }
+    name = f"{targets[tool_name]}___{tool_name}"
     tool_use_id = f"phase3-{uuid.uuid4().hex[:8]}"
-    result = await mcp.call_tool_async(
-        tool_use_id=tool_use_id,
-        name=tool_name,
-        arguments=arguments,
-    )
-    # MCPToolResult has .content list; extract the text payload
-    if result and hasattr(result, "content") and result.content:
-        for content_block in result.content:
-            if hasattr(content_block, "text"):
-                try:
-                    return json.loads(content_block.text)
-                except (json.JSONDecodeError, TypeError):
-                    return {"raw": content_block.text}
-    return {"raw": str(result)}
+    with mcp:
+        result = await mcp.call_tool_async(tool_use_id=tool_use_id, name=name, arguments=arguments)
+    if not isinstance(result, dict) or result.get("status") != "success" or result.get("isError"):
+        raise RuntimeError(f"Gateway tool {name} failed or was denied")
+    for block in result.get("content", []):
+        if "text" in block:
+            payload = json.loads(block["text"])
+            if not isinstance(payload, dict) or payload.get("error"):
+                raise RuntimeError(f"Gateway tool {name} returned an error")
+            return payload
+    raise RuntimeError(f"Gateway tool {name} returned no JSON result")
 
 
 def _extract_claim_id(result: dict) -> str:
     """Extract claim_id from create_claim tool result."""
-    if isinstance(result, dict):
-        return result.get("claim_id", "unknown")
-    return "unknown"
+    claim_id = result.get("claim_id") if isinstance(result, dict) else None
+    if not isinstance(claim_id, str) or not claim_id.startswith("CLM-"):
+        raise RuntimeError("create_claim did not confirm a claim ID")
+    return claim_id
 
 
 @app.entrypoint
@@ -252,10 +238,9 @@ async def invoke(payload, context):
     # Reset structured output state between invocations
     reset_state()
 
-    # Extract actor/session identifiers for memory
-    # Use claimant_email as actor_id for cross-session recall of repeat claimants
-    actor_id = claimant_email or payload.get("user_id", "anonymous")
-    session_id = f"claim-{actor_id}-{uuid.uuid4().hex}"
+    # Raw email stays separate. Memory IDs/namespace components must obey the
+    # service patterns and session length limit even for long email addresses.
+    actor_id, session_id = claimant_memory_ids(claimant_email or payload.get("user_id") or "anonymous")
 
     if source or claimant_email:
         metadata_parts = []
@@ -269,8 +254,8 @@ async def invoke(payload, context):
     session_manager = None
     try:
         session_manager = get_memory_session_manager(session_id, actor_id)
-    except Exception as exc:
-        log.warning("Memory unavailable (running without memory): %s", exc)
+    except Exception:  # noqa: BLE001 -- optional memory degrades without exposing upstream responses
+        log.warning("Memory unavailable; continuing without memory")
 
     # --- Phase 1: Claims Processor ---
     yield "## Phase 1: Claims Processing\n\n"
@@ -317,7 +302,7 @@ Please validate this decision and assign a confidence score."""
 
     # Phase 3 executes deterministically based on routing. No LLM call needed —
     # we have all the data from structured output tools and can call Gateway
-    # tools directly via MCP, saving 6–16s and ~$0.01 per invocation.
+    # tools directly via MCP without a third model call.
     mcp = get_mcp_client()
 
     if action == "REJECT":
@@ -337,14 +322,14 @@ Please validate this decision and assign a confidence score."""
                         "body": f"Your claim has been reviewed and rejected.\n\nReason: {reasoning}",
                     },
                 )
-                yield f"📧 Notification sent to {claimant_email}\n"
-                log.info("Rejection notification sent: %s", result)
-            except Exception as exc:
-                log.warning("Failed to send rejection notification (non-fatal): %s", exc)
-                yield f"⚠️ Could not send notification: {exc}\n"
+                yield f"Notification result: {result.get('status', 'unknown')}\n"
+                log.info("Rejection notification tool completed")
+            except Exception:  # noqa: BLE001 -- nonfatal remote boundary; keep response details private
+                log.warning("Rejection notification failed")
+                yield "⚠️ Could not send notification. Check notification configuration.\n"
 
     elif action == "AUTO_APPROVE":
-        yield f"**Auto-approved** (confidence: {confidence}/100)\n\n"
+        yield f"**Auto-approval selected; awaiting claim persistence** (confidence: {confidence}/100)\n\n"
 
         # Create the claim record
         claim_result = None
@@ -363,13 +348,14 @@ Please validate this decision and assign a confidence score."""
                     },
                 )
                 yield f"✅ Claim created: {_extract_claim_id(claim_result)}\n"
-                log.info("Claim created (auto-approved): %s", claim_result)
-            except Exception as exc:
-                log.warning("Failed to create claim (non-fatal): %s", exc)
-                yield f"⚠️ Could not create claim record: {exc}\n"
+                log.info("Claim created (auto-approved)")
+            except Exception:  # noqa: BLE001 -- failed writes cannot approve or notify; redact remote errors
+                claim_result = None
+                log.warning("Claim creation failed")
+                yield "⚠️ Could not create claim record. Check Gateway authorization and tool configuration.\n"
 
-        # Notify claimant of approval
-        if mcp and claimant_email and claimant_email != "unknown":
+        # Notify only after a confirmed write; a Cedar denial cannot send approval.
+        if mcp and claim_result and claimant_email and claimant_email != "unknown":
             try:
                 result = await _call_tool(
                     mcp,
@@ -385,11 +371,11 @@ Please validate this decision and assign a confidence score."""
                         ),
                     },
                 )
-                yield f"📧 Approval notification sent to {claimant_email}\n"
-                log.info("Approval notification sent: %s", result)
-            except Exception as exc:
-                log.warning("Failed to send approval notification (non-fatal): %s", exc)
-                yield f"⚠️ Could not send notification: {exc}\n"
+                yield f"Notification result: {result.get('status', 'unknown')}\n"
+                log.info("Approval notification tool completed")
+            except Exception:  # noqa: BLE001 -- nonfatal remote boundary; keep response details private
+                log.warning("Approval notification failed")
+                yield "⚠️ Could not send notification. Check notification configuration.\n"
 
     else:  # HUMAN_REVIEW
         yield f"**Routed to human review** (confidence: {confidence}/100)\n\n"
@@ -412,16 +398,16 @@ Please validate this decision and assign a confidence score."""
                 )
                 claim_id = _extract_claim_id(claim_result)
                 yield f"📋 Claim created (pending review): {claim_id}\n"
-                log.info("Claim created (pending review): %s", claim_result)
-            except Exception as exc:
-                log.warning("Failed to create claim (non-fatal): %s", exc)
-                yield f"⚠️ Could not create claim record: {exc}\n"
+                log.info("Claim created (pending review)")
+            except Exception:  # noqa: BLE001 -- failed writes cannot escalate or notify; redact remote errors
+                log.warning("Claim creation failed")
+                yield "⚠️ Could not create claim record. Check Gateway authorization and tool configuration.\n"
 
         # Escalate to human review
         if mcp and claim_id:
             concerns = structured_validation.get("concerns", "Low confidence score")
             try:
-                result = await _call_tool(
+                await _call_tool(
                     mcp,
                     "request_human_review",
                     {
@@ -431,13 +417,13 @@ Please validate this decision and assign a confidence score."""
                     },
                 )
                 yield "🔍 Escalated to human review\n"
-                log.info("Human review requested: %s", result)
-            except Exception as exc:
-                log.warning("Failed to request human review (non-fatal): %s", exc)
-                yield f"⚠️ Could not escalate to human review: {exc}\n"
+                log.info("Human review requested")
+            except Exception:  # noqa: BLE001 -- nonfatal remote boundary; keep response details private
+                log.warning("Human review request failed")
+                yield "⚠️ Could not escalate to human review. Check review-tool configuration.\n"
 
-        # Notify claimant their claim is under review
-        if mcp and claimant_email and claimant_email != "unknown":
+        # Notify only when a pending claim exists.
+        if mcp and claim_id and claimant_email and claimant_email != "unknown":
             try:
                 result = await _call_tool(
                     mcp,
@@ -454,11 +440,11 @@ Please validate this decision and assign a confidence score."""
                         ),
                     },
                 )
-                yield f"📧 Review notification sent to {claimant_email}\n"
-                log.info("Review notification sent: %s", result)
-            except Exception as exc:
-                log.warning("Failed to send review notification (non-fatal): %s", exc)
-                yield f"⚠️ Could not send notification: {exc}\n"
+                yield f"Notification result: {result.get('status', 'unknown')}\n"
+                log.info("Review notification tool completed")
+            except Exception:  # noqa: BLE001 -- nonfatal remote boundary; keep response details private
+                log.warning("Review notification failed")
+                yield "⚠️ Could not send notification. Check notification configuration.\n"
 
     yield "\n\n✅ Processing complete.\n"
 

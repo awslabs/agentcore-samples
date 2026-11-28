@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -39,7 +39,10 @@ def handler(event, context):
         return json.dumps({"error": "recipient_email and subject are required"})
 
     message_id = f"MSG-{uuid.uuid4().hex[:8].upper()}"
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
+
+    if os.environ.get("NOTIFICATIONS_ENABLED", "false") != "true":
+        return json.dumps({"status": "suppressed", "message_id": message_id})
 
     if SENDER:
         try:
@@ -55,11 +58,11 @@ def handler(event, context):
                 },
             )
             status = "sent"
-        except Exception as e:
-            logger.error("SES send failed", extra={"error": str(e), "recipient": recipient_email})
+        except Exception:  # noqa: BLE001 -- report send failure without exposing recipient or service response
+            logger.error("SES send failed")
             status = "ses_error"
     else:
-        logger.info("Email draft (SES not configured)", extra={"recipient": recipient_email, "subject": subject})
+        logger.info("Email draft prepared (SES not configured)")
         status = "draft_logged"
 
     return json.dumps(

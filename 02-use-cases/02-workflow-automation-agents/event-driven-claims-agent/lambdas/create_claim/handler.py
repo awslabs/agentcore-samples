@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 
@@ -29,7 +29,7 @@ def handler(event, context):
     decision = event.get("decision", "agent_routed")
 
     claim_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     item = {
         "claim_id": claim_id,
