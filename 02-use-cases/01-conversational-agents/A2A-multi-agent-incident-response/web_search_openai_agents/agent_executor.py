@@ -1,3 +1,5 @@
+import logging
+
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -12,7 +14,6 @@ from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 from agent import _call_agent_stream, create_agent
 from openai.types.responses import ResponseTextDeltaEvent
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,12 @@ class WebSearchAgentExecutor(AgentExecutor):
 
     def __init__(self):
         """Initialize the executor"""
-        self._agent = None
         self._active_tasks = {}
         logger.info("WebSearchAgentExecutor initialized")
 
     async def _get_agent(self, session_id: str, actor_id: str):
-        """Lazily initialize and return the agent"""
-        if self._agent is None:
-            logger.info("Creating web search agent...")
-            self._agent = create_agent(session_id=session_id, actor_id=actor_id)
-            logger.info("Web search agent created successfully")
-        return self._agent
+        """Each request needs its own actor- and session-bound Memory tools."""
+        return create_agent(session_id=session_id, actor_id=actor_id)
 
     async def _execute_streaming(self, agent, user_message: str, updater: TaskUpdater, task_id: str) -> None:
         """Execute agent with streaming and update task status incrementally."""
@@ -50,9 +46,7 @@ class WebSearchAgentExecutor(AgentExecutor):
 
                 # Handle error events
                 if "error" in stream_event:
-                    error_msg = stream_event["error"]
-                    logger.error(f"Error in stream: {error_msg}")
-                    raise Exception(error_msg)
+                    raise RuntimeError("Search stream failed")
 
                 # Handle streaming events
                 if "event" in stream_event:
@@ -90,7 +84,7 @@ class WebSearchAgentExecutor(AgentExecutor):
             await updater.complete()
 
         except Exception as e:
-            logger.error(f"Error in streaming execution: {e}", exc_info=True)
+            logger.warning("Streaming failed (%s)", type(e).__name__)
             raise
 
     async def execute(
@@ -102,18 +96,13 @@ class WebSearchAgentExecutor(AgentExecutor):
         Execute the agent's logic for a given request context.
         """
         # Extract session and actor IDs from headers
-        session_id = None
+        session_id = actor_id = None
 
         if context.call_context:
             headers = context.call_context.state.get("headers", {})
             session_id = headers.get("x-amzn-bedrock-agentcore-runtime-session-id")
             actor_id = headers.get("x-amzn-bedrock-agentcore-runtime-custom-actorid")
-        if not actor_id:
-            logger.error("Session ID is not set")
-            raise Exception(error=InvalidParamsError())
-
-        if not session_id:
-            logger.error("Actor ID is not set")
+        if not actor_id or not session_id:
             raise ServerError(error=InvalidParamsError())
 
         # Get or create task
@@ -135,8 +124,6 @@ class WebSearchAgentExecutor(AgentExecutor):
                 logger.error("No user message found in context")
                 raise ServerError(error=InvalidParamsError())
 
-            logger.info(f"User message: '{user_message}'")
-
             # Get the agent instance
             agent = await self._get_agent(session_id=session_id, actor_id=actor_id)
 
@@ -153,7 +140,7 @@ class WebSearchAgentExecutor(AgentExecutor):
             # Re-raise ServerError as-is
             raise
         except Exception as e:
-            logger.error(f"Error executing task {task_id}: {e}", exc_info=True)
+            logger.warning("Task execution failed (%s)", type(e).__name__)
             raise ServerError(error=InternalError()) from e
         finally:
             # Clean up task from active tasks
@@ -183,5 +170,5 @@ class WebSearchAgentExecutor(AgentExecutor):
                 logger.warning(f"No task found for task_id {task_id}")
 
         except Exception as e:
-            logger.error(f"Error cancelling task {task_id}: {e}", exc_info=True)
+            logger.warning("Task cancellation failed (%s)", type(e).__name__)
             raise ServerError(error=InternalError()) from e

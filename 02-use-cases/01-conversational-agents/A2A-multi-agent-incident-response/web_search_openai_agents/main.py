@@ -1,3 +1,8 @@
+import logging
+import os
+from pathlib import Path
+
+import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
@@ -5,11 +10,8 @@ from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 from agent_executor import WebSearchAgentExecutor
 from dotenv import load_dotenv
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
-from pathlib import Path
 from starlette.responses import JSONResponse
-import logging
-import os
-import uvicorn
+from starlette.routing import Route
 
 OpenAIAgentsInstrumentor().instrument()
 
@@ -63,19 +65,16 @@ request_handler = DefaultRequestHandler(agent_executor=WebSearchAgentExecutor(),
 # Create A2A server
 server = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
 
-# Build the app and add health endpoint
-app = server.build()
 
-
-@app.route("/ping", methods=["GET"])
 async def ping(request):
     """Ping endpoint"""
     return JSONResponse({"status": "healthy"})
 
 
+app = server.build(routes=[Route("/ping", ping, methods=["GET"])])
+
 logger.info("✅ A2A Server configured")
 logger.info(f"📍 Server URL: {runtime_url}")
-logger.info(f"🏥 Health check: {runtime_url}/health")
 logger.info(f"🏓 Ping: {runtime_url}/ping")
 
 if __name__ == "__main__":
