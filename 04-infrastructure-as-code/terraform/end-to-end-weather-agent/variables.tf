@@ -26,8 +26,8 @@ variable "network_mode" {
   default     = "PUBLIC"
 
   validation {
-    condition     = contains(["PUBLIC", "PRIVATE"], var.network_mode)
-    error_message = "Network mode must be either PUBLIC or PRIVATE."
+    condition     = var.network_mode == "PUBLIC"
+    error_message = "This module provisions PUBLIC resources; VPC mode requires subnets and security groups."
   }
 }
 

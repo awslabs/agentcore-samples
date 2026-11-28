@@ -32,7 +32,7 @@ This pattern demonstrates deploying a full-featured weather agent with Amazon Be
 **Key Features:**
 - Integrated AgentCore tools (Browser, Code Interpreter, Memory)
 - Automated Docker image building via CodeBuild
-- S3-based artifact storage for analysis results
+- S3-based artifact storage for analysis results: `save_activity_plan` uses boto3 `PutObject` to write `results.md` in the stack-provided `RESULTS_BUCKET`. The tool cannot select other buckets, keys, or AWS operations, and reports empty input or upload failures as errors.
 - IAM-based security with tool-specific permissions
 - Weather data visualization and analysis capabilities
 
@@ -107,6 +107,8 @@ This Terraform configuration creates:
 
 ## Prerequisites
 
+The planner uses the global Claude Sonnet 4.6 inference profile and the Browser uses global Claude Haiku 4.5. Use an account and Region with model access and organization policies that allow their inference destinations.
+
 ### Required Tools
 
 1. **Terraform** (>= 1.6)
@@ -158,7 +160,7 @@ Edit `terraform.tfvars` with your preferred values:
 - `memory_name`: Name for memory resource (default: "WeatherAgentMemory")
 - `stack_name`: Stack identifier (default: "agentcore-weather")
 - `aws_region`: AWS region for deployment (default: "us-west-2")
-- `network_mode`: PUBLIC or PRIVATE networking
+- `network_mode`: PUBLIC (the example does not create VPC resources)
 
 ### 2. Initialize Terraform
 
@@ -253,6 +255,19 @@ This pattern uses **IAM-based authentication with workload identity tokens**:
 **Note**: This is a backend infrastructure pattern with no user authentication layer. For user-facing applications, you would add Cognito or API Gateway authorizers separately.
 
 ## Testing
+
+### Offline results-storage contract tests
+
+From the repository root, with the sample's `agent-code/requirements.txt` installed in a Python 3.11 environment:
+
+```bash
+python -m pip install PyYAML  # shared tests parse the standalone CloudFormation template
+python -m unittest discover -s 04-infrastructure-as-code/tests -v
+```
+
+The tests check tool registration, browser and interpreter session cleanup, and fixed-destination S3 writes with controlled service responses. They do not deploy resources or call a model.
+
+The runtime image build checks the installed dependency graph and records package download URLs and hashes in `/tmp/runtime-dependencies.json` inside the image. Dependencies are still resolved at build time; this report is evidence of the selected graph, not a lockfile.
 
 The included `test_weather_agent.py` script is **infrastructure-agnostic** and works with any deployment method (Terraform, CDK, CloudFormation, or manual).
 
@@ -379,14 +394,7 @@ To add more tools:
 
 ### Modify Network Configuration
 
-Change from PUBLIC to PRIVATE networking:
-
-```hcl
-# terraform.tfvars
-network_mode = "PRIVATE"
-```
-
-Requires VPC configuration (not included in this module).
+This module provisions `PUBLIC` network mode. Private connectivity requires a separate VPC design, including subnet and security group configuration; changing only `network_mode` is not sufficient.
 
 ### Customize Memory Settings
 
@@ -479,7 +487,7 @@ Monitor in AWS Console:
 **Agent Execution Role:**
 - Standard AgentCore permissions
 - ECR image pull access
-- S3 read/write for results bucket
+- S3 `PutObject` for `results.md` in the results bucket
 - CloudWatch Logs write access
 - Tool-specific permissions (Browser, Code Interpreter, Memory access)
 
@@ -490,7 +498,7 @@ Monitor in AWS Console:
 
 ### Network Security
 
-- Agent runs in specified network mode (PUBLIC/PRIVATE)
+- The agent runs in PUBLIC network mode; this does not disable inbound IAM authorization.
 - ECR repository has account-level access controls
 - S3 buckets block public access
 - IAM policies follow least-privilege principle

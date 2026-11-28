@@ -1,21 +1,36 @@
+import os
+import sys
+
 from aws_cdk import (
-    Stack,
-    aws_ecr as ecr,
-    aws_s3 as s3,
-    aws_codebuild as codebuild,
-    aws_iam as iam,
-    aws_lambda as lambda_,
-    aws_s3_assets as s3_assets,
-    aws_bedrockagentcore as bedrockagentcore,
-    CustomResource,
-    CfnParameter,
     CfnOutput,
+    CfnParameter,
+    CustomResource,
     Duration,
     RemovalPolicy,
+    Stack,
+)
+from aws_cdk import (
+    aws_bedrockagentcore as bedrockagentcore,
+)
+from aws_cdk import (
+    aws_codebuild as codebuild,
+)
+from aws_cdk import (
+    aws_ecr as ecr,
+)
+from aws_cdk import (
+    aws_iam as iam,
+)
+from aws_cdk import (
+    aws_lambda as lambda_,
+)
+from aws_cdk import (
+    aws_s3 as s3,
+)
+from aws_cdk import (
+    aws_s3_assets as s3_assets,
 )
 from constructs import Construct
-import sys
-import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "infra_utils"))
 from agentcore_role import AgentCoreRole
@@ -48,7 +63,7 @@ class WeatherAgentStack(Stack):
             type="String",
             default="PUBLIC",
             description="Network mode for AgentCore resources",
-            allowed_values=["PUBLIC", "PRIVATE"],
+            allowed_values=["PUBLIC"],
         )
 
         memory_name = CfnParameter(
@@ -185,10 +200,10 @@ class WeatherAgentStack(Stack):
         build_trigger_function = lambda_.Function(
             self,
             "BuildTriggerFunction",
-            runtime=lambda_.Runtime.PYTHON_3_9,
-            handler="infra_utils.build_trigger_lambda.handler",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="build_trigger_lambda.handler",
             timeout=Duration.minutes(15),
-            code=lambda_.Code.from_asset(".", exclude=["*.pyc", "__pycache__", "cdk.out"]),
+            code=lambda_.Code.from_asset("infra_utils", exclude=["*.pyc", "__pycache__", "agentcore_role.py"]),
             initial_policy=[
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -205,9 +220,6 @@ class WeatherAgentStack(Stack):
             service_token=build_trigger_function.function_arn,
             properties={"ProjectName": build_project.project_name},
         )
-
-        # Create AgentCore execution role with S3 permissions
-        agent_role = AgentCoreRole(self, "AgentCoreRole", s3_bucket_arn=results_bucket.bucket_arn)
 
         # Browser Tool
         browser_tool = bedrockagentcore.CfnBrowserCustom(
@@ -244,19 +256,17 @@ class WeatherAgentStack(Stack):
         memory_initializer_function = lambda_.Function(
             self,
             "MemoryInitializerFunction",
-            runtime=lambda_.Runtime.PYTHON_3_9,
-            handler="infra_utils.memory_initializer_lambda.handler",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="memory_initializer_lambda.handler",
             timeout=Duration.minutes(5),
-            code=lambda_.Code.from_asset(".", exclude=["*.pyc", "__pycache__", "cdk.out"]),
+            code=lambda_.Code.from_asset("infra_utils", exclude=["*.pyc", "__pycache__", "agentcore_role.py"]),
             initial_policy=[
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
                     actions=[
                         "bedrock-agentcore:CreateEvent",
-                        "bedrock-agentcore:ListEvents",
-                        "bedrock-agentcore:GetMemory",
                     ],
-                    resources=["*"],
+                    resources=[memory.attr_memory_arn],
                 )
             ],
         )
@@ -268,8 +278,17 @@ class WeatherAgentStack(Stack):
             service_token=memory_initializer_function.function_arn,
             properties={"MemoryId": memory.attr_memory_id, "Region": self.region},
         )
-        initialize_memory.node.add_dependency(memory)
 
+        # Bind execution permissions to the actual resources created by this stack.
+        agent_role = AgentCoreRole(
+            self,
+            "AgentCoreRole",
+            s3_bucket_arn=results_bucket.bucket_arn,
+            browser_arn=browser_tool.attr_browser_arn,
+            interpreter_arn=code_interpreter_tool.attr_code_interpreter_arn,
+            memory_arn=memory.attr_memory_arn,
+            repository_arn=ecr_repository.repository_arn,
+        )
         # Create AgentCore Runtime
         agent_runtime = bedrockagentcore.CfnRuntime(
             self,
@@ -296,7 +315,6 @@ class WeatherAgentStack(Stack):
         )
 
         agent_runtime.node.add_dependency(trigger_build)
-        agent_runtime.node.add_dependency(browser_tool)
         agent_runtime.node.add_dependency(code_interpreter_tool)
         agent_runtime.node.add_dependency(initialize_memory)
 

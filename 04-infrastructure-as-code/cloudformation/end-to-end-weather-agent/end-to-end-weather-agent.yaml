@@ -25,8 +25,7 @@ Parameters:
     Default: "PUBLIC"
     Description: "Network mode for AgentCore resources"
     AllowedValues:
-      - PUBLIC
-      - PRIVATE
+      - PUBLIC  # This example provisions no VPC subnets or security groups.
 
   # ECR Configuration
   ECRRepositoryName:
@@ -155,8 +154,6 @@ Resources:
                 aws:SourceAccount: !Ref AWS::AccountId
               ArnLike:
                 aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
       Policies:
         - PolicyName: AgentCoreExecutionPolicy
           PolicyDocument:
@@ -212,14 +209,44 @@ Resources:
                 Action:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
-                Resource: "*"
-              - Sid: S3ResultsAccess
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/global.anthropic.claude-sonnet-4-6"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+              - Sid: WeatherBrowserSessions
                 Effect: Allow
                 Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:DeleteObject
-                Resource: !Sub "${ResultsBucket.Arn}/*"
+                  - bedrock-agentcore:StartBrowserSession
+                  - bedrock-agentcore:StopBrowserSession
+                Resource: !GetAtt BrowserTool.BrowserArn
+              - Sid: BrowserWebSocket
+                Effect: Allow
+                Action: bedrock-agentcore:ConnectBrowserAutomationStream
+                # The signed WebSocket handshake has no IAM resource type.
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+              - Sid: WeatherAnalysis
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:StartCodeInterpreterSession
+                  - bedrock-agentcore:InvokeCodeInterpreter
+                  - bedrock-agentcore:StopCodeInterpreterSession
+                Resource: !GetAtt CodeInterpreterTool.CodeInterpreterArn
+              - Sid: ReadDemoPreferences
+                Effect: Allow
+                Action: bedrock-agentcore:ListEvents
+                Resource: !GetAtt BasicMemory.MemoryArn
+                Condition:
+                  StringEquals:
+                    bedrock-agentcore:actorId: user123
+                    bedrock-agentcore:sessionId: session456
+              - Sid: S3ResultsAccess
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${ResultsBucket.Arn}/results.md"
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-agent-execution-role"
@@ -258,14 +285,15 @@ Resources:
                   - ecr:BatchCheckLayerAvailability
                   - ecr:GetDownloadUrlForLayer
                   - ecr:BatchGetImage
-                  - ecr:GetAuthorizationToken
                   - ecr:PutImage
                   - ecr:InitiateLayerUpload
                   - ecr:UploadLayerPart
                   - ecr:CompleteLayerUpload
-                Resource:
-                  - !GetAtt ECRRepository.Arn
-                  - "*"
+                Resource: !GetAtt ECRRepository.Arn
+              - Sid: ECRLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-codebuild-role"
@@ -293,19 +321,6 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: ECRAccess
-                Effect: Allow
-                Action:
-                  - ecr:ListImages
-                  - ecr:BatchDeleteImage
-                  - ecr:GetAuthorizationToken
-                  - ecr:BatchGetImage
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:PutImage
-                  - ecr:InitiateLayerUpload
-                  - ecr:UploadLayerPart
-                  - ecr:CompleteLayerUpload
-                Resource: !GetAtt ECRRepository.Arn
               - Sid: CodeBuildAccess
                 Effect: Allow
                 Action:
@@ -317,9 +332,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - bedrock-agentcore:CreateEvent
-                  - bedrock-agentcore:ListEvents
-                  - bedrock-agentcore:GetMemory
-                Resource: "*"
+                Resource: !GetAtt BasicMemory.MemoryArn
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-custom-resource-role"
@@ -339,7 +352,7 @@ Resources:
       Description: "Triggers CodeBuild projects as CloudFormation custom resource"
       Handler: index.handler
       Role: !GetAtt CustomResourceRole.Arn
-      Runtime: python3.9
+      Runtime: python3.13
       Timeout: 900
       Code:
         ZipFile: |
@@ -353,8 +366,8 @@ Resources:
           logger.setLevel(logging.INFO)
 
           def handler(event, context):
-              logger.info('Received event: %s', json.dumps(event))
-              
+              logger.info('Build trigger request: %s', event['RequestType'])
+
               try:
                   if event['RequestType'] == 'Delete':
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
@@ -453,7 +466,7 @@ Resources:
       Description: "Initializes AgentCore Memory with default entries after memory creation"
       Handler: index.handler
       Role: !GetAtt CustomResourceRole.Arn
-      Runtime: python3.9
+      Runtime: python3.13
       Timeout: 300
       Code:
         ZipFile: |
@@ -468,8 +481,8 @@ Resources:
           logger.setLevel(logging.INFO)
 
           def handler(event, context):
-              logger.info('Received event: %s', json.dumps(event))
-              
+              logger.info('Memory initializer request: %s', event['RequestType'])
+
               try:
                   if event['RequestType'] == 'Delete':
                       # No cleanup needed for memory entries
@@ -570,202 +583,86 @@ Resources:
                 # Step 1.1: Create requirements.txt
                 - |
                   cat > requirements.txt << 'EOF'
-                  strands-agents
-                  strands-agents-tools
-                  uv
-                  boto3
-                  bedrock-agentcore
-                  bedrock-agentcore-starter-toolkit
-                  browser-use
-                  rich
+                  strands-agents==1.65.0
+                  boto3==1.44.9
+                  bedrock-agentcore==1.27.0
+                  # This browser-use release supports signed headers on the AgentCore CDP connection.
+                  browser-use[aws]==0.11.13
+                  pydantic-settings==2.16.3
+                  rich==15.0.0
+                  aws-opentelemetry-distro==0.24.0
                   EOF
 
                 # Step 1.2: Create my_agent.py
                 - |
                   cat > my_agent.py << 'EOF'
-                  from strands import Agent, tool
-                  from strands_tools import use_aws
-                  from typing import Dict, Any
+                  import asyncio
                   import json
                   import os
-                  import asyncio
-                  from contextlib import suppress
-
-                  import shutil
-                  import sys
-                  from pathlib import Path
-                  import asyncio, os
-
-
-                  def find_browser_use_path():
-                      """Automatically find the browser_use installation path"""
-                      try:
-                          import browser_use
-                          browser_use_path = Path(browser_use.__file__).parent
-                          session_file = browser_use_path / "browser" / "session.py"
-                          return str(session_file)
-                      except ImportError:
-                          print("❌ browser_use not installed. Install with: pip install browser-use")
-                          return None
-
-                  def patch_browser_use():
-
-                      # Auto-detect file path
-                      file_path = find_browser_use_path()
-                      if not file_path:
-                          return False
-                      
-                      if not os.path.exists(file_path):
-                          print(f"❌ File not found: {file_path}")
-                          return False
-                      
-                      print(f"📁 Found browser_use at: {file_path}")
-                      
-                      # Create backup
-                      backup_path = file_path + ".backup"
-                      if not os.path.exists(backup_path):
-                          shutil.copy2(file_path, backup_path)
-                          print(f"💾 Created backup: {backup_path}")
-                      else:
-                          print(f"📋 Backup already exists: {backup_path}")
-                      
-                      # Read file
-                      with open(file_path, 'r') as f:
-                          content = f.read()
-                      
-                      # Replacement 1: Add headers check after cdp_url check
-                      old1 = "if not cdp_url:\n\t\t\tprofile_kwargs['is_local'] = True"
-                      new1 = "if not cdp_url:\n\t\t\tprofile_kwargs['is_local'] = True\n\n\t\tif headers:\n\t\t\tprofile_kwargs['headers'] = headers"
-                      
-                      if old1 in content and "if headers:\n\t\t\tprofile_kwargs['headers'] = headers" not in content:
-                          content = content.replace(old1, new1)
-                          print("✅ Added headers check")
-                      elif "if headers:\n\t\t\tprofile_kwargs['headers'] = headers" in content:
-                          print("✅ Headers check already exists")
-                      else:
-                          print("⚠️ Headers check pattern not found")
-                      
-                      # Replacement 2: Add headers to CDPClient
-                      old2 = "self._cdp_client_root = CDPClient(self.cdp_url)"
-                      new2 = "self._cdp_client_root = CDPClient(self.cdp_url,  additional_headers=self.browser_profile.headers)"
-                      
-                      if old2 in content:
-                          content = content.replace(old2, new2)
-                          print("✅ Added headers to CDPClient")
-                      elif "additional_headers=self.browser_profile.headers" in content:
-                          print("✅ CDPClient headers already exists")
-                      else:
-                          print("⚠️ CDPClient pattern not found")
-                      
-                      # Write back
-                      with open(file_path, 'w') as f:
-                          f.write(content)
-                      
-                      print("🎉 Patching complete!")
-                      return True
-
-                  patch_browser_use()
-
-                  from bedrock_agentcore.tools.browser_client import BrowserClient
-                  from browser_use.llm import ChatAnthropicBedrock, ChatAWSBedrock
-                  from browser_use import Agent as BrowserAgent
-                  from browser_use import Browser, BrowserProfile
-
-                  from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-                  from bedrock_agentcore.memory import MemoryClient
-                  from rich.console import Console
                   import re
+                  from contextlib import AsyncExitStack, ExitStack, closing
+                  from typing import Any
 
+                  import boto3
+                  from bedrock_agentcore.memory import MemoryClient
                   from bedrock_agentcore.runtime import BedrockAgentCoreApp
+                  from bedrock_agentcore.tools.browser_client import BrowserClient
+                  from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+                  from botocore.exceptions import BotoCoreError, ClientError
+                  from browser_use import Agent as BrowserAgent
+                  from browser_use import BrowserSession
+                  from browser_use.llm.aws.chat_bedrock import ChatAWSBedrock
+                  from rich.console import Console
+                  from strands import Agent, tool
+
                   app = BedrockAgentCoreApp()
 
                   console = Console()
 
                   # Configuration
-                  BROWSER_ID = os.getenv('BROWSER_ID', "aws.browser.v1")
-                  CODE_INTERPRETER_ID = os.getenv('CODE_INTERPRETER_ID', "aws.codeinterpreter.v1")
-                  MEMORY_ID = os.getenv('MEMORY_ID', "")
-                  RESULTS_BUCKET = os.getenv('RESULTS_BUCKET', "default-results-bucket")
-                  region = os.getenv('AWS_REGION','us-west-2')
+                  BROWSER_ID = os.environ["BROWSER_ID"]
+                  CODE_INTERPRETER_ID = os.environ["CODE_INTERPRETER_ID"]
+                  MEMORY_ID = os.environ["MEMORY_ID"]
+                  RESULTS_BUCKET = os.environ["RESULTS_BUCKET"]
+                  AWS_REGION = os.getenv("AWS_REGION") or os.environ["AWS_DEFAULT_REGION"]
+                  PLANNER_MODEL = "global.anthropic.claude-sonnet-4-6"
+                  BROWSER_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+
 
                   # Async helper functions
-                  async def run_browser_task(browser_session, bedrock_chat, task: str) -> str:
-                      """Run a browser automation task using browser_use"""
-                      try:
-                          console.print(f"[blue]🤖 Executing browser task:[/blue] {task[:100]}...")
-                          
-                          agent = BrowserAgent(
-                              task=task,
-                              llm=bedrock_chat,
-                              browser=browser_session
-                          )
-                          
-                          result = await agent.run()
-                          console.print("[green]✅ Browser task completed successfully![/green]")
-                          
-                          if 'done' in result.last_action() and 'text' in result.last_action()['done']:
-                              return result.last_action()['done']['text'] 
-                          else:
-                              raise ValueError("NO Data")
-                              
-                      except Exception as e:
-                          console.print(f"[red]❌ Browser task error: {e}[/red]")
-                          raise
-
-                  async def initialize_browser_session():
-                      """Initialize Browser-use session with AgentCore WebSocket connection"""
-                      try:
-                          client = BrowserClient(region)
+                  async def run_browser_task(task: str) -> str:
+                      """Connect to the stack's Browser via signed CDP; always release the session."""
+                      async with AsyncExitStack() as cleanup:
+                          client = BrowserClient(AWS_REGION)
                           client.start(identifier=BROWSER_ID)
-                          
-                          ws_url, headers = client.generate_ws_headers()
-                          console.print(f"[cyan]🔗 Browser WebSocket URL: {ws_url[:50]}...[/cyan]")
-                          
-                          browser_profile = BrowserProfile(
-                              headers=headers,
-                              timeout=150000,
-                          )
-                          
-                          browser_session = Browser(
-                              cdp_url=ws_url,
-                              browser_profile=browser_profile,
-                              keep_alive=True
-                          )
-                          
-                          console.print("[cyan]🔄 Initializing browser session...[/cyan]")
-                          await browser_session.start()
-                          
-                          bedrock_chat = ChatBedrockConverse(
-                              model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-                              region_name="us-west-2"
-                          )
-                          
-                          console.print("[green]✅ Browser session initialized and ready[/green]")
-                          return browser_session, bedrock_chat, client 
-                          
-                      except Exception as e:
-                          console.print(f"[red]❌ Failed to initialize browser session: {e}[/red]")
-                          raise
+                          cleanup.callback(client.stop)
+                          url, headers = client.generate_ws_headers()
+                          # The WebSocket transport supplies Host and upgrade headers itself.
+                          # Forward the SigV4 fields, including the temporary session token.
+                          auth_headers = {k: v for k, v in headers.items() if k.lower() == "authorization" or k.lower().startswith("x-amz-")}
+                          browser = BrowserSession(cdp_url=url, headers=auth_headers, allowed_domains=["weather.gov", "*.weather.gov"])
+                          cleanup.push_async_callback(browser.stop)
+                          model = ChatAWSBedrock(model=BROWSER_MODEL, session=boto3.Session(region_name=AWS_REGION))
+                          history = await BrowserAgent(task=task, llm=model, browser=browser, use_judge=False).run(max_steps=20)
+                          forecast = history.final_result()
+                          if not history.is_successful() or not forecast:
+                              raise ValueError("No forecast returned")
+                          return forecast
+
 
                   # Tools for Strands Agent
                   @tool
-                  async def get_weather_data(city: str) -> Dict[str, Any]:
+                  async def get_weather_data(city: str) -> dict[str, Any]:
                       """Get weather data for a city using browser automation"""
-                      browser_session = None
-                      
                       try:
-                          console.print(f"[cyan]🌐 Getting weather data for {city}[/cyan]")
-                          
-                          browser_session, bedrock_chat, browser_client = await initialize_browser_session()
-                          
                           task = f"""Instruction: Extract 8-Day Weather Forecast for {city} from weather.gov
                               Steps:
                                   - Go to https://weather.gov.
-                                  - Enter “{city}” into the search box and Click on `GO` to execute the search.
+                                  - Enter "{city}" into the search box and Click on `GO` to execute the search.
                                   - On the local forecast page, click the "Printable Forecast" link.
                                   - Wait for the printable forecast page to load completely.
                                   - For each day in the forecast, extract these fields:
-                                      - date (format YYYY-MM-DD) 
+                                      - date (format YYYY-MM-DD)
                                       - high (highest temperature)
                                       - low (lowest temperature)
                                       - conditions (short weather summary, e.g., "Clear")
@@ -801,154 +698,161 @@ Resources:
                                   Avoid scraping ads, navigation, or unrelated page elements.
                                   If "Printable Forecast" is missing, fallback to the main forecast page.
                                   Include error handling (e.g., return an empty array if forecast data isn't found).
-                                  Confirm the city name matches the requested location before returning results. 
+                                  Confirm the city name matches the requested location before returning results.
                           """
-                          
-                          result = await run_browser_task(browser_session, bedrock_chat, task)
-                          
-                          if browser_client :
-                              browser_client.stop()
 
-                          return {
-                              "status": "success",
-                              "content": [{"text": result}]
-                          }
-                          
-                      except Exception as e:
-                          console.print(f"[red]❌ Error getting weather data: {e}[/red]")
-                          return {
-                              "status": "error",
-                              "content": [{"text": f"Error getting weather data: {str(e)}"}]
-                          }
-                          
-                      finally:
-                          if browser_session:
-                              console.print("[yellow]🔌 Closing browser session...[/yellow]")
-                              with suppress(Exception):
-                                  await browser_session.close()
-                              console.print("[green]✅ Browser session closed[/green]")
+                          result = await run_browser_task(task)
+                          return {"status": "success", "content": [{"text": result}]}
+                      except Exception:  # noqa: BLE001 - Provider errors can contain signed connection details.
+                          return {"status": "error", "content": [{"text": "Could not retrieve the weather.gov forecast."}]}
+
 
                   @tool
-                  def generate_analysis_code(weather_data: str) -> Dict[str, Any]:
+                  def generate_analysis_code(weather_data: str) -> dict[str, Any]:
                       """Generate Python code for weather classification"""
                       try:
                           query = f"""Create Python code to classify weather days as GOOD/OK/POOR:
-                          
-                          Rules: 
-                          - GOOD: 65-80°F, clear conditions, no rain
-                          - OK: 55-85°F, partly cloudy, slight rain chance  
-                          - POOR: <55°F or >85°F, cloudy/rainy
-                          
-                          Weather data: 
-                          {weather_data} 
 
-                          Store weather data stored in python variable for using it in python code 
+                          Rules:
+                          - GOOD: 65-80°F, clear conditions, no rain
+                          - OK: 55-85°F, partly cloudy, slight rain chance
+                          - POOR: <55°F or >85°F, cloudy/rainy
+
+                          Weather data:
+                          {weather_data}
+
+                          Store weather data stored in python variable for using it in python code
 
                           Return code that outputs list of tuples: [('2025-09-16', 'GOOD'), ('2025-09-17', 'OK'), ...]"""
-                          
-                          agent = Agent()
+
+                          agent = Agent(model=PLANNER_MODEL)
                           result = agent(query)
-                          
-                          pattern = r'```(?:json|python)\n(.*?)\n```'
-                          match = re.search(pattern, result.message['content'][0]['text'], re.DOTALL)
-                          python_code = match.group(1).strip() if match else result.message['content'][0]['text']
-                          
+
+                          pattern = r"```(?:json|python)\n(.*?)\n```"
+                          match = re.search(pattern, result.message["content"][0]["text"], re.DOTALL)
+                          python_code = match.group(1).strip() if match else result.message["content"][0]["text"]
+
                           return {"status": "success", "content": [{"text": python_code}]}
-                      except Exception as e:
-                          return {"status": "error", "content": [{"text": f"Error: {str(e)}"}]}
+                      except Exception as e:  # noqa: BLE001 - Report model and response-format failures to the calling agent.
+                          return {"status": "error", "content": [{"text": f"Error: {e!s}"}]}
 
-                  @tool 
-                  def execute_code(python_code: str) -> Dict[str, Any]:
-                      """Execute Python code using AgentCore Code Interpreter"""
-                      try:
-                          code_client = CodeInterpreter('us-west-2')
-                          code_client.start(identifier=CODE_INTERPRETER_ID)
-
-                          response = code_client.invoke("executeCode", {
-                              "code": python_code,
-                              "language": "python",
-                              "clearContext": True
-                          })
-
-                          for event in response["stream"]:
-                              code_execute_result = json.dumps(event["result"])
-                          
-                          analysis_results = json.loads(code_execute_result)
-                          console.print("Analysis results:", analysis_results)
-
-                          return {"status": "success", "content": [{"text": str(analysis_results)}]}
-
-                      except Exception as e:
-                          return {"status": "error", "content": [{"text": f"Error: {str(e)}"}]}
 
                   @tool
-                  def get_activity_preferences() -> Dict[str, Any]:
+                  def execute_code(python_code: str) -> dict[str, Any]:
+                      """Execute Python code using AgentCore Code Interpreter"""
+                      try:
+                          with ExitStack() as cleanup:
+                              code_client = CodeInterpreter(AWS_REGION)
+                              code_client.start(identifier=CODE_INTERPRETER_ID)
+                              cleanup.callback(code_client.stop)
+                              response = code_client.invoke(
+                                  "executeCode", {"code": python_code, "language": "python", "clearContext": True}
+                              )
+                              result = None
+                              for event in response["stream"]:
+                                  result = event["result"]
+                              if result is None or result.get("isError"):
+                                  return {"status": "error", "content": [{"text": "Weather analysis failed."}]}
+                              return {"status": "success", "content": [{"text": json.dumps(result)}]}
+
+                      except Exception:  # noqa: BLE001 - Provider details may contain the submitted code or data.
+                          return {"status": "error", "content": [{"text": "Unable to complete the Code Interpreter session."}]}
+
+
+                  @tool
+                  def get_activity_preferences() -> dict[str, Any]:
                       """Get activity preferences from memory"""
                       try:
-                          client = MemoryClient(region_name='us-west-2')
+                          client = MemoryClient(region_name=AWS_REGION)
                           response = client.list_events(
                               memory_id=MEMORY_ID,
                               actor_id="user123",
                               session_id="session456",
                               max_results=50,
-                              include_payload=True
+                              include_payload=True,
                           )
-                          
-                          preferences = response[0]["payload"][0]['blob'] if response else "No preferences found"
+
+                          preferences = response[0]["payload"][0]["blob"] if response else "No preferences found"
                           return {"status": "success", "content": [{"text": preferences}]}
-                      except Exception as e:
-                          return {"status": "error", "content": [{"text": f"Error: {str(e)}"}]}
+                      except Exception as e:  # noqa: BLE001 - Report memory retrieval and payload-decoding failures as tool results.
+                          return {"status": "error", "content": [{"text": f"Error: {e!s}"}]}
+
+
+                  @tool
+                  def save_activity_plan(markdown: str) -> dict[str, Any]:
+                      """Save Markdown recommendations as results.md in the configured results bucket."""
+                      if not isinstance(markdown, str) or not markdown.strip():
+                          return {"status": "error", "content": [{"text": "Activity plan must be non-empty Markdown."}]}
+                      if not RESULTS_BUCKET:
+                          return {"status": "error", "content": [{"text": "RESULTS_BUCKET must identify the deployed results bucket."}]}
+
+                      try:
+                          with closing(boto3.client("s3", region_name=AWS_REGION)) as client:
+                              client.put_object(
+                                  Bucket=RESULTS_BUCKET,
+                                  Key="results.md",
+                                  Body=markdown.encode("utf-8"),
+                                  ContentType="text/markdown; charset=utf-8",
+                              )
+                      except (BotoCoreError, ClientError):
+                          return {"status": "error", "content": [{"text": "Unable to save the activity plan to the results bucket."}]}
+
+                      return {"status": "success", "content": [{"text": f"Saved activity plan to s3://{RESULTS_BUCKET}/results.md"}]}
+
 
                   def create_weather_agent() -> Agent:
                       """Create the weather agent with all tools"""
-                      system_prompt = f"""You are a Weather-Based Activity Planning Assistant.
+                      system_prompt = """You are a Weather-Based Activity Planning Assistant.
 
                       When a user asks about activities for a location, follow below stepes Sequentially:
                       1. Extract city from user query
                       2. Call get_weather_data(city) to get weather information
                       3. Call generate_analysis_code(weather_data) to create classification code
-                      4. Call execute_code(python_code) to get Day Type ( GOOD, OK , POOR ) for forecasting dates. 
+                      4. Call execute_code(python_code) to get Day Type ( GOOD, OK , POOR ) for forecasting dates.
                       5. Call get_activity_preferences() to get user preferences
                       6. Generate Activity Recommendations based on weather and preferences that you have recieved from previous steps
-                      7. Generate the comprehensive Markdown file (results.md) and store it in S3 Bucket :  {RESULTS_BUCKET} through use_aws tool. 
-                      
+                      7. Generate comprehensive Markdown recommendations and call save_activity_plan(markdown) to save results.md in the configured S3 bucket. Confirm that the file was saved only if the tool succeeds.
+
                       IMPORTANT: Provide complete recommendations and end your response. Do NOT ask follow-up questions or wait for additional input."""
-                      
+
                       return Agent(
-                          tools=[get_weather_data, generate_analysis_code, execute_code, get_activity_preferences, use_aws],
+                          model=PLANNER_MODEL,
+                          tools=[
+                              get_weather_data,
+                              generate_analysis_code,
+                              execute_code,
+                              get_activity_preferences,
+                              save_activity_plan,
+                          ],
                           system_prompt=system_prompt,
-                          name="WeatherActivityPlanner"
+                          name="WeatherActivityPlanner",
                       )
+
 
                   @app.async_task
                   async def async_main(query=None):
                       """Async main function"""
                       console.print("🌤️ Weather-Based Activity Planner - Async Version")
                       console.print("=" * 30)
-                      
+
                       agent = create_weather_agent()
-                      
+
                       query = query or "What should I do this weekend in Richmond VA?"
                       console.print(f"\n[bold blue]🔍 Query:[/bold blue] {query}")
                       console.print("-" * 50)
-                      
-                      try:
-                          os.environ["BYPASS_TOOL_CONSENT"] = "True"
-                          result = agent(query)
 
-                          return {
-                            "status": "completed",
-                            "result": result.message['content'][0]['text']
-                          }
-                          
-                      except Exception as e:
+                      try:
+                          result = await agent.invoke_async(query)
+
+                          return {"status": "completed", "result": result.message["content"][0]["text"]}
+
+                      except Exception as e:  # noqa: BLE001 - Background task boundary returns model/provider failures to its caller.
                           console.print(f"[red]❌ Error: {e}[/red]")
                           import traceback
+
                           traceback.print_exc()
-                          return {
-                            "status": "error",
-                            "error": str(e)
-                          }
+                          return {"status": "error", "error": str(e)}
+
 
                   @app.entrypoint
                   async def invoke(payload=None):
@@ -957,20 +861,18 @@ Resources:
                           query = payload.get("prompt")
 
                           asyncio.create_task(async_main(query))
-                          
+
                           msg = (
-                               "Processing started ... "
+                              "Processing started ... "
                               f"You can monitor status in CloudWatch logs at /aws/bedrock-agentcore/runtimes/<agent-runtime-id> ....."
                               f"You can see the result at {RESULTS_BUCKET} ...."
                           )
 
-                          return {
-                              "status": "Started",
-                              "message": msg
-                          }
-                          
-                      except Exception as e:
+                          return {"status": "Started", "message": msg}
+
+                      except Exception as e:  # noqa: BLE001 - Preserve the request-boundary error response for malformed payloads.
                           return {"error": str(e)}
+
 
                   if __name__ == "__main__":
                       app.run()
@@ -980,26 +882,31 @@ Resources:
                 - |
                   cat > Dockerfile << 'EOF'
                   FROM public.ecr.aws/docker/library/python:3.11-slim
+
                   WORKDIR /app
 
+                  RUN python -m pip install --no-cache-dir --upgrade pip==26.3 setuptools==84.2.1
                   COPY requirements.txt requirements.txt
-                  RUN pip install -r requirements.txt
-                  RUN pip install aws-opentelemetry-distro>=0.10.1
+                  # Resolve telemetry with the application dependencies, not in a second install
+                  # that can silently replace compatible OpenTelemetry/protobuf versions.
+                  RUN pip install --no-cache-dir --report /tmp/runtime-dependencies.json \
+                      -r requirements.txt && \
+                      python -m pip check
 
-                  # ENV AWS_REGION=us-west-2
-                  # ENV AWS_DEFAULT_REGION=us-west-2
+                  ENV ANONYMIZED_TELEMETRY=false BROWSER_USE_CLOUD_SYNC=false
 
                   # Create non-root user
                   RUN useradd -m -u 1000 bedrock_agentcore
                   USER bedrock_agentcore
 
                   EXPOSE 8080
-                  EXPOSE 8000
 
-                  COPY . . 
+                  COPY . .
+
+                  HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+                    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/ping', timeout=2).close()"
 
                   CMD ["opentelemetry-instrument", "python", "-m", "my_agent"]
-
                   EOF
 
                 # Step 1.5: Build the image
@@ -1025,10 +932,7 @@ Resources:
   # CUSTOM RESOURCE - Trigger Image Build
   TriggerImageBuild:
     Type: Custom::CodeBuildTrigger
-    DependsOn:
-      - ECRRepository
-      - AgentImageBuildProject
-      - CodeBuildTriggerFunction
+    # ProjectName and ServiceToken already establish the build dependencies.
     Properties:
       ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
       ProjectName: !Ref AgentImageBuildProject
@@ -1041,11 +945,7 @@ Resources:
   # AgentCore Runtime
   AgentRuntime:
     Type: AWS::BedrockAgentCore::Runtime
-    DependsOn: 
-      - TriggerImageBuild
-      - BrowserTool
-      - CodeInterpreterTool
-      - BasicMemory
+    DependsOn: TriggerImageBuild
     Properties:
       AgentRuntimeName: !Sub 
         - "${StackNameUnderscore}_${AgentName}"
@@ -1105,9 +1005,6 @@ Resources:
 
   InitializeMemoryEntries:
     Type: Custom::MemoryInitializer
-    DependsOn:
-      - BasicMemory
-      - MemoryInitializerFunction
     Properties:
       ServiceToken: !GetAtt MemoryInitializerFunction.Arn
       MemoryId: !GetAtt BasicMemory.MemoryId
@@ -1131,8 +1028,6 @@ Resources:
       Name: !Sub '${AgentRuntime.AgentRuntimeId}-logs-source'
       LogType: 'APPLICATION_LOGS'
       ResourceArn: !GetAtt AgentRuntime.AgentRuntimeArn
-    DependsOn:
-      - AgentRuntime
 
   # Delivery Destination for Logs (CloudWatch Logs)
   LogsDeliveryDestination:
@@ -1148,9 +1043,6 @@ Resources:
     Properties:
       DeliverySourceName: !Ref LogsDeliverySource
       DeliveryDestinationArn: !GetAtt LogsDeliveryDestination.Arn
-    DependsOn:
-      - LogsDeliverySource
-      - LogsDeliveryDestination
 
   # Delivery Source for Traces
   TracesDeliverySource:
@@ -1173,9 +1065,6 @@ Resources:
     Properties:
       DeliverySourceName: !Ref TracesDeliverySource
       DeliveryDestinationArn: !GetAtt TracesDeliveryDestination.Arn
-    DependsOn:
-      - TracesDeliverySource
-      - TracesDeliveryDestination
 # ============================================================================
 # OUTPUTS SECTION - ORGANIZED BY MODULE
 # ============================================================================

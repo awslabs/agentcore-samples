@@ -69,7 +69,7 @@ The architecture demonstrates a complete AgentCore deployment with multiple inte
 3. Agent generates Python code and uses Code Interpreter to classify weather
 4. Agent retrieves user preferences from Memory
 5. Agent generates personalized recommendations
-6. Agent stores results in S3 bucket using use_aws tool
+6. Agent calls `save_activity_plan` to store Markdown in the configured S3 results bucket using boto3
 
 ## Prerequisites
 
@@ -98,7 +98,7 @@ The architecture demonstrates a complete AgentCore deployment with multiple inte
 
 4. **CDK version 2.218.0 or later** (for BedrockAgentCore support)
 
-5. **Bedrock Model Access**: Enable access to Amazon Bedrock models in your AWS region
+5. **Bedrock Model Access**: Enable the global Claude Sonnet 4.6 and Claude Haiku 4.5 inference profiles. The execution role permits these profiles and their destination models; your organization's Region policies must also allow them.
    - [Bedrock Model Access Guide](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)
 
 6. **Required Permissions**: Your AWS user/role needs permissions for:
@@ -162,6 +162,19 @@ cdk list
   - Memory initialization: ~1 minute
 
 ## Testing
+
+### Offline results-storage contract tests
+
+From the repository root, with the sample's `agent-code/requirements.txt` installed in a Python 3.11 environment:
+
+```bash
+python -m pip install PyYAML  # shared tests parse the standalone CloudFormation template
+python -m unittest discover -s 04-infrastructure-as-code/tests -v
+```
+
+The tests check tool registration, browser and interpreter session cleanup, and fixed-destination S3 writes with controlled service responses. They do not deploy resources or call a model.
+
+The runtime image build checks the installed dependency graph and records package download URLs and hashes in `/tmp/runtime-dependencies.json` inside the image. Dependencies are still resolved at build time; this report is evidence of the selected graph, not a lockfile.
 
 ### Using AWS CLI
 
@@ -282,8 +295,9 @@ Try these queries to test the weather agent:
    - Creates day-by-day activity recommendations
    - Formats as Markdown document
 
-8. **Storage** (S3 via use_aws tool):
-   - Saves recommendations to S3 bucket as `results.md`
+8. **Storage** (S3 via the `save_activity_plan` tool):
+   - Saves recommendations as `results.md` using boto3 `PutObject` in the stack-provided `RESULTS_BUCKET`
+   - The tool does not accept arbitrary bucket names, object keys, or AWS operations. Empty input and upload failures return an error rather than claiming success.
    - User can download and review recommendations
 
 ### Asynchronous Processing

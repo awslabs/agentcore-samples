@@ -82,7 +82,6 @@ resource "aws_bedrockagentcore_agent_runtime" "weather_agent" {
   depends_on = [
     null_resource.trigger_build,
     aws_iam_role_policy.agent_execution,
-    aws_iam_role_policy_attachment.agent_execution_managed,
     aws_bedrockagentcore_browser.browser,
     aws_bedrockagentcore_code_interpreter.code_interpreter,
     aws_bedrockagentcore_memory.memory
