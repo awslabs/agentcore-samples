@@ -233,7 +233,7 @@ typing-inspection==0.4.1
     # via
     #   pydantic
     #   pydantic-settings
-urllib3==2.6.0
+urllib3==2.8.0
     # via
     #   bedrock-agentcore
     #   botocore
