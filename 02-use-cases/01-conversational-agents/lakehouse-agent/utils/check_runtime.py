@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Check runtime status"""
 
-import boto3
 import json
-from dotenv import load_dotenv
 import os
+import sys
+from pathlib import Path
 
-load_dotenv()
+import boto3
+
+# Importable both as `python utils/check_runtime.py` (sys.path[0] is utils/) and
+# as `python -m utils.check_runtime` (sys.path[0] is the sample root).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from utils.env_file import load_env_file
+
+# Load .env with the sample's own loader (utils/env_file.py), so no python-dotenv
+# dependency is needed. Variables already exported in the environment win.
+load_env_file()
 
 runtime_id = os.getenv("LAKEHOUSE_AGENT_RUNTIME_ID", "lakehouse_agent-Hhb3lX6y7M")
 region = os.getenv("AWS_REGION", "us-east-1")

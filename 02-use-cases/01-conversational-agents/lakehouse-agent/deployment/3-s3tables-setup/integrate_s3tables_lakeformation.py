@@ -4,9 +4,12 @@ Integrate Amazon S3 Tables with Data Catalog and Lake Formation
 
 This script performs the integration steps required to enable Lake Formation
 permissions on S3 Tables:
-1. Creates IAM role for Lake Formation data access
-2. Registers S3 Tables bucket with Lake Formation
-3. Creates federated catalog for S3 Tables
+1. Refuses to continue if S3 Tables is already registered with Lake Formation
+   through a role this sample cannot prove it created
+2. Creates IAM role for Lake Formation data access (a re-run reuses this sample's
+   own role; a same-name role it did not create is refused)
+3. Registers S3 Tables bucket with Lake Formation
+4. Creates federated catalog for S3 Tables
 
 Reference: https://docs.aws.amazon.com/lake-formation/latest/dg/enable-s3-tables-catalog-integration.html
 
@@ -14,21 +17,23 @@ Usage:
     python integrate_s3tables_lakeformation.py
 """
 
-import boto3
 import json
-import sys
 import os
+import sys
 import time
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.iam_roles import FOREIGN, NOT_REGISTERED, RoleOwnershipError, ensure_role, lf_registration_owner
 
 
 class S3TablesLakeFormationIntegration:
     def __init__(self):
         """Initialize the integration setup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.iam = boto3.client("iam")
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
@@ -103,6 +108,34 @@ class S3TablesLakeFormationIntegration:
             print(f"   ⚠️  Note: {e}")
             # Continue - this is informational
 
+    def check_existing_registration(self) -> bool:
+        """Check the S3 Tables registration in Lake Formation before any change.
+
+        Returns False when S3 Tables is not registered, and True when it is registered
+        with this sample's own role. Exits 1, with nothing changed, when it is registered
+        with any other role (including the service-linked role) or cannot be read.
+        """
+        print("\n🔎 Checking for an existing S3 Tables registration in Lake Formation...")
+        resource_arn = f"arn:aws:s3tables:{self.region}:{self.account_id}:bucket/*"
+        try:
+            owner, registered_role_arn = lf_registration_owner(
+                self.lakeformation, self.iam, self.ssm, resource_arn, self.lf_role_name
+            )
+        except RoleOwnershipError as e:
+            print(e)
+            sys.exit(1)
+        if owner == NOT_REGISTERED:
+            print("   Not registered yet")
+            return False
+        if owner == FOREIGN:
+            print(
+                f"❌ This account already links S3 Tables to Lake Formation in {self.region} "
+                f"(role {registered_role_arn}). "
+                "This sample will not replace that registration. Nothing was changed."
+            )
+            sys.exit(1)
+        return True
+
     def create_lakeformation_role(self):
         """Create IAM role for Lake Formation to access S3 Tables."""
         print("\n🔐 Creating Lake Formation data access role...")
@@ -161,32 +194,27 @@ class S3TablesLakeFormationIntegration:
         }
 
         try:
-            # Check if role exists
-            try:
-                role = self.iam.get_role(RoleName=self.lf_role_name)
-                role_arn = role["Role"]["Arn"]
-                print(f"✅ Role already exists: {role_arn}")
-
-                # Update trust policy to ensure it has the correct permissions
-                print("   Updating trust policy...")
-                self.iam.update_assume_role_policy(RoleName=self.lf_role_name, PolicyDocument=json.dumps(trust_policy))
-                print("   ✅ Trust policy updated")
-            except self.iam.exceptions.NoSuchEntityException:
-                # Create role
-                response = self.iam.create_role(
-                    RoleName=self.lf_role_name,
-                    AssumeRolePolicyDocument=json.dumps(trust_policy),
-                    Description="Lake Formation role for S3 Tables data access",
-                    Tags=[
-                        {"Key": "Application", "Value": "lakehouse-agent"},
-                        {"Key": "Purpose", "Value": "LakeFormation-S3Tables"},
-                    ],
-                )
-                role_arn = response["Role"]["Arn"]
+            # Creates the role, or reuses it (updating its trust policy) only when its
+            # ownership record shows this sample created it.
+            role_arn, created = ensure_role(
+                self.iam,
+                self.ssm,
+                self.lf_role_name,
+                trust_policy,
+                description="Lake Formation role for S3 Tables data access",
+                tags=[
+                    {"Key": "Application", "Value": "lakehouse-agent"},
+                    {"Key": "Purpose", "Value": "LakeFormation-S3Tables"},
+                ],
+            )
+            if created:
                 print(f"✅ Created role: {role_arn}")
 
                 # Wait for role to be available
                 time.sleep(10)
+            else:
+                print(f"✅ Role already exists (created by this sample): {role_arn}")
+                print("   ✅ Trust policy updated")
 
             # Attach inline policy
             self.iam.put_role_policy(
@@ -198,6 +226,9 @@ class S3TablesLakeFormationIntegration:
 
             return role_arn
 
+        except RoleOwnershipError as e:
+            print(e)
+            sys.exit(1)
         except Exception as e:
             print(f"❌ Error creating role: {e}")
             raise
@@ -209,14 +240,6 @@ class S3TablesLakeFormationIntegration:
         # Use wildcard to register all S3 Tables buckets
         resource_arn = f"arn:aws:s3tables:{self.region}:{self.account_id}:bucket/*"
 
-        # First deregister if exists (to re-register with privileged access)
-        try:
-            self.lakeformation.deregister_resource(ResourceArn=resource_arn)
-            print("   Deregistered existing resource to re-register with privileged access")
-            time.sleep(2)
-        except Exception:
-            pass  # Not registered yet, that's fine
-
         try:
             # Register with WithFederation AND privileged access
             self.lakeformation.register_resource(ResourceArn=resource_arn, RoleArn=role_arn, WithFederation=True)
@@ -227,7 +250,8 @@ class S3TablesLakeFormationIntegration:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print("✅ S3 Tables already registered")
         except Exception as e:
-            print(f"⚠️  Registration note: {e}")
+            print(f"❌ Error registering S3 Tables: {e}")
+            raise
 
     def create_federated_catalog(self):
         """Create federated catalog for S3 Tables."""
@@ -263,7 +287,7 @@ class S3TablesLakeFormationIntegration:
         except Exception as e:
             print(f"❌ Error creating catalog: {e}")
             print(f"   Error type: {type(e).__name__}")
-            print(f"   Full error: {str(e)}")
+            print(f"   Full error: {e!s}")
             raise
 
     def store_configuration(self, role_arn: str, catalog_name: str):
@@ -286,7 +310,8 @@ class S3TablesLakeFormationIntegration:
                 )
                 print(f"✅ {name}")
             except Exception as e:
-                print(f"⚠️  Error storing {name}: {e}")
+                print(f"❌ Error storing {name}: {e}")
+                raise
 
     def run(self):
         """Run the complete integration process."""
@@ -294,19 +319,25 @@ class S3TablesLakeFormationIntegration:
         print(f"   Region: {self.region}")
         print(f"   Account: {self.account_id}")
 
-        # Step 0: Ensure current role is a Lake Formation admin
+        # Step 0: Refuse a registration this sample did not make, before any change
+        already_registered = self.check_existing_registration()
+
+        # Step 1: Ensure current role is a Lake Formation admin
         self.ensure_lakeformation_admin()
 
-        # Step 1: Create Lake Formation role
+        # Step 2: Create Lake Formation role
         role_arn = self.create_lakeformation_role()
 
-        # Step 2: Register S3 Tables with Lake Formation
-        self.register_s3tables_with_lakeformation(role_arn)
+        # Step 3: Register S3 Tables with Lake Formation
+        if already_registered:
+            print("\nℹ  S3 Tables already registered with this sample's role; not re-registering")
+        else:
+            self.register_s3tables_with_lakeformation(role_arn)
 
-        # Step 3: Create federated catalog
+        # Step 4: Create federated catalog
         catalog_name = self.create_federated_catalog()
 
-        # Step 4: Store configuration
+        # Step 5: Store configuration
         self.store_configuration(role_arn, catalog_name)
 
         print("\n✨ Integration complete!")

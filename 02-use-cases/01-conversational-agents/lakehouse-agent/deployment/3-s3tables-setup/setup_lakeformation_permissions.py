@@ -3,20 +3,53 @@
 Lake Formation Permissions Setup for S3 Tables
 
 This script grants Lake Formation permissions to tenant roles for accessing S3 Tables.
-It configures column-level and row-level security by granting appropriate permissions to:
+It configures column-level filtering and tenant-role table grants for:
 - lakehouse-policyholders-role
 - lakehouse-adjusters-role
 - lakehouse-administrators-role
+
+WHY PER-USER ROW SCOPE IS NOT DONE WITH LAKE FORMATION DATA-CELL FILTERS
+------------------------------------------------------------------------
+Other files in the sample state the conclusion in one line and point here.
+
+A data filter's row expression is a subset of the PartiQL ``WHERE`` grammar. It
+compares columns with **constants** and permits **no PartiQL functions at all** --
+so there is nowhere a caller-derived value could go, and the expression is fixed
+when the filter is created. Per-user scope would therefore mean provisioning one
+filter per user, plus one grant per user.
+
+The AWS row-level access control tutorial shows the shape this takes in practice:
+it scopes a reviews table by ``marketplace`` with one data filter per value, each
+granted to a separate IAM principal. Two audiences is tidy; five personas is ten
+objects; per-user is unbounded.
+
+Rows are instead scoped at query time by a predicate bound to the caller's verified
+identity (``WHERE user_id = <caller sub>``) in the claims tools. ``_apply_row_filter``
+below remains as a hook for static, group-level row policies; no caller passes
+``row_filter``, so no data-cell filter is invoked in this sample.
+
+Read this as a choice of mechanism, not as a gap in row isolation. Row isolation is
+enforced by the bound predicate and verified live -- see the isolation matrix in
+``07-optional-multi-user-isolation-test.ipynb``. Both approaches are commonly called
+"user-level permissions", which is why the mechanism is named explicitly here: the
+feature was not skipped, it does not express per-caller scope.
+
+Reference:
+- https://docs.aws.amazon.com/lake-formation/latest/dg/partiql-support.html
+- https://docs.aws.amazon.com/lake-formation/latest/dg/cbac-tutorial.html
 
 Usage:
     python setup_lakeformation_permissions.py
 """
 
-import boto3
-import sys
-import os
 import argparse
-from typing import List, Dict, Any
+import os
+import sys
+import time
+from typing import Any
+
+import boto3
+from botocore.exceptions import ClientError
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -26,7 +59,7 @@ from utils.aws_session_utils import get_aws_session
 class LakeFormationSetup:
     def __init__(self):
         """Initialize Lake Formation setup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
         self.glue = boto3.client("glue", region_name=self.region)
@@ -94,7 +127,7 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"⚠️  Error creating Glue database: {e}")
 
-    def create_glue_table(self, table_name: str, columns: List[Dict[str, str]]):
+    def create_glue_table(self, table_name: str, columns: list[dict[str, str]]):
         """Create Glue table pointing to S3 Tables."""
         print(f"   Creating Glue table: {table_name}...")
 
@@ -120,12 +153,38 @@ class LakeFormationSetup:
         except Exception as e:
             print(f"   ⚠️  Error creating Glue table: {e}")
 
+    def _grant_failed(self, role_arn: str, resource: str, error: Exception):
+        """Name a failed grant and record it; setup_permissions() then exits non-zero."""
+        principal = role_arn.rsplit("/", 1)[-1]
+        print(f"   ❌ Grant FAILED: {resource} for {principal}: {error}")
+        self.failed_grants.append(f"{resource} for {principal}")
+
+    def _grant(self, **params) -> str:
+        """Call grant_permissions; retry only AccessDeniedException. Returns the ✅-line suffix."""
+        # Grants right after the roles and tables are created can be rejected briefly while
+        # Lake Formation and Glue catch up; observed live, and the grant passed on re-run.
+        waits = (5, 10, 20)
+        for attempt in range(1, len(waits) + 2):
+            try:
+                self.lakeformation.grant_permissions(**params)
+                return f" (after {attempt} attempts)" if attempt > 1 else ""
+            except ClientError as e:
+                if e.response.get("Error", {}).get("Code") != "AccessDeniedException" or attempt > len(waits):
+                    raise
+                wait = waits[attempt - 1]
+                print(
+                    f"   ⏳ Grant rejected (AccessDeniedException); retrying in {wait} s "
+                    f"(attempt {attempt + 1}/{len(waits) + 1})…"
+                )
+                time.sleep(wait)
+        raise AssertionError("unreachable")
+
     def grant_database_permissions(self, role_arn: str, role_name: str):
         """Grant database-level permissions to a role."""
         print(f"\n🔐 Granting database permissions to {role_name}...")
 
         try:
-            self.lakeformation.grant_permissions(
+            suffix = self._grant(
                 CatalogId=self.account_id,  # Top-level CatalogId is just the account ID
                 Principal={"DataLakePrincipalIdentifier": role_arn},
                 Resource={
@@ -137,18 +196,18 @@ class LakeFormationSetup:
                 Permissions=["DESCRIBE"],
                 PermissionsWithGrantOption=[],
             )
-            print(f"   ✅ Granted DESCRIBE on database {self.namespace}")
+            print(f"   ✅ Granted DESCRIBE on database {self.namespace}{suffix}")
         except self.lakeformation.exceptions.AlreadyExistsException:
             print("   ✅ Database permissions already exist")
         except Exception as e:
-            print(f"   ⚠️  Error granting database permissions: {e}")
+            self._grant_failed(role_arn, f"DESCRIBE on database {self.namespace}", e)
 
-    def grant_table_permissions(self, role_arn: str, role_name: str, table_name: str, permissions: List[str]):
+    def grant_table_permissions(self, role_arn: str, role_name: str, table_name: str, permissions: list[str]):
         """Grant table-level permissions to a role."""
         print(f"   Granting {', '.join(permissions)} on table {table_name}...")
 
         try:
-            self.lakeformation.grant_permissions(
+            suffix = self._grant(
                 CatalogId=self.account_id,  # Top-level CatalogId is just the account ID
                 Principal={"DataLakePrincipalIdentifier": role_arn},
                 Resource={
@@ -161,22 +220,22 @@ class LakeFormationSetup:
                 Permissions=permissions,
                 PermissionsWithGrantOption=[],
             )
-            print(f"   ✅ Granted permissions on {table_name}")
+            print(f"   ✅ Granted permissions on {table_name}{suffix}")
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting table permissions: {e}")
+            self._grant_failed(role_arn, f"{', '.join(permissions)} on table {table_name}", e)
 
     def grant_column_permissions_with_filter(
         self,
         role_arn: str,
         role_name: str,
         table_name: str,
-        columns: List[str],
-        row_filter: Dict[str, Any] = None,
+        columns: list[str],
+        row_filter: dict[str, Any] | None = None,
     ):
-        """Grant column-level permissions with optional row filter."""
-        print(f"   Granting column permissions on {table_name} with row filter...")
+        """Grant column-level permissions, applying a row filter only if one is passed."""
+        print(f"   Granting column permissions on {table_name}...")
 
         resource = {
             "TableWithColumns": {
@@ -196,8 +255,8 @@ class LakeFormationSetup:
         }
 
         try:
-            self.lakeformation.grant_permissions(**grant_params)
-            print(f"   ✅ Granted column permissions on {table_name}")
+            suffix = self._grant(**grant_params)
+            print(f"   ✅ Granted column permissions on {table_name}{suffix}")
 
             # Apply row filter if provided
             if row_filter:
@@ -206,15 +265,15 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Column permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting column permissions: {e}")
+            self._grant_failed(role_arn, f"SELECT on columns of table {table_name}", e)
 
     def grant_column_wildcard_permissions(
         self,
         role_arn: str,
         role_name: str,
         table_name: str,
-        excluded_columns: List[str],
-        row_filter: Dict[str, Any] = None,
+        excluded_columns: list[str],
+        row_filter: dict[str, Any] | None = None,
     ):
         """Grant SELECT on all columns except the excluded ones using ColumnWildcard.
 
@@ -242,8 +301,8 @@ class LakeFormationSetup:
         }
 
         try:
-            self.lakeformation.grant_permissions(**grant_params)
-            print(f"   ✅ Granted wildcard column permissions on {table_name}")
+            suffix = self._grant(**grant_params)
+            print(f"   ✅ Granted wildcard column permissions on {table_name}{suffix}")
 
             if row_filter:
                 self._apply_row_filter(role_arn, table_name, row_filter)
@@ -251,9 +310,9 @@ class LakeFormationSetup:
         except self.lakeformation.exceptions.AlreadyExistsException:
             print(f"   ✅ Wildcard column permissions already exist for {table_name}")
         except Exception as e:
-            print(f"   ⚠️  Error granting wildcard column permissions: {e}")
+            self._grant_failed(role_arn, f"SELECT on column wildcard of table {table_name}", e)
 
-    def _apply_row_filter(self, role_arn: str, table_name: str, row_filter: Dict[str, Any]):
+    def _apply_row_filter(self, role_arn: str, table_name: str, row_filter: dict[str, Any]):
         """Apply row-level filter to a table."""
         try:
             self.lakeformation.create_data_cells_filter(
@@ -276,6 +335,7 @@ class LakeFormationSetup:
         print(f"   Region: {self.region}")
         print(f"   Database: {self.namespace}")
         print(f"   Table Bucket: {self.table_bucket_arn}")
+        self.failed_grants = []
 
         # Register S3 Tables resource
         self.register_s3tables_resource()
@@ -349,6 +409,16 @@ class LakeFormationSetup:
                 )
                 self.grant_column_permissions_with_filter(role_arn, role_type, "users", users_columns)
 
+        # A grant that failed is not swallowed: the reader would otherwise see
+        # "setup complete" with a role missing a permission. AlreadyExistsException
+        # stays non-fatal (handled in each grant method).
+        if self.failed_grants:
+            print(f"\n❌ Lake Formation permissions setup FAILED: {len(self.failed_grants)} grant(s) not made:")
+            for item in self.failed_grants:
+                print(f"   • {item}")
+            print("   The other grants were made. Re-run this step to retry the failed ones.")
+            return False
+
         print("\n✨ Lake Formation permissions setup complete!")
         print("\n📋 Permissions granted:")
         print("   Policyholders: SELECT on claims (15 columns - excludes internal data), SELECT on users")
@@ -361,6 +431,7 @@ class LakeFormationSetup:
         print("\n⚠️  Note: Row-level security filters need to be configured manually")
         print("   in Lake Formation console for policyholders and adjusters roles.")
         print("   Filter expression example: user_id = '{{SESSION_CONTEXT:user_id}}'")
+        return True
 
 
 def main():
@@ -370,7 +441,8 @@ def main():
 
     # Run setup
     setup = LakeFormationSetup()
-    setup.setup_permissions()
+    if not setup.setup_permissions():
+        sys.exit(1)
 
 
 if __name__ == "__main__":

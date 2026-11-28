@@ -30,17 +30,17 @@ Usage:
     session, region, account_id = get_aws_session(region_name='us-west-2')
 """
 
-import boto3
 import os
 import sys
 from pathlib import Path
-from typing import Tuple, Optional
+
+import boto3
 from botocore.exceptions import (
+    ClientError,
     NoCredentialsError,
     ProfileNotFound,
-    ClientError,
-    TokenRetrievalError,
     SSOTokenLoadError,
+    TokenRetrievalError,
 )
 
 
@@ -67,7 +67,16 @@ def load_env_credentials(env_path: str = ".env", verbose: bool = True) -> bool:
     env_file = Path(env_path)
     if not env_file.exists():
         if verbose:
-            print(f"⚠️  .env file not found at {env_path}")
+            # A missing .env is a supported configuration, so this is informational
+            # rather than a warning. `.env` is one optional source in the credential
+            # chain get_aws_session() walks (container IAM role -> env vars -> profile
+            # -> default credentials), and init_aws() ignores this function's return
+            # value because that chain covers the no-file case. If you use
+            # `aws configure`, SSO, or an instance/container role you never need it.
+            print(f"ℹ️  No .env at {env_path} (optional) — using existing environment credentials.")
+            print("   .env is one way to supply AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /")
+            print("   AWS_SESSION_TOKEN / AWS_DEFAULT_REGION. `aws configure`, AWS SSO and")
+            print("   container or instance roles all work instead — nothing to do here.")
         return False
 
     loaded_vars = []
@@ -123,24 +132,25 @@ def load_env_credentials(env_path: str = ".env", verbose: bool = True) -> bool:
             return True
         else:
             if verbose:
-                print("\n⚠️  AWS credentials not found in .env file")
-                print("   Make sure your .env file contains:")
-                print("   AWS_ACCESS_KEY_ID=your-access-key")
-                print("   AWS_SECRET_ACCESS_KEY=your-secret-key")
-                print("   AWS_SESSION_TOKEN=your-session-token (if using STS)")
-                print("   AWS_DEFAULT_REGION=your-region")
+                # Informational for the same reason as the file-missing branch above.
+                # A `.env` that holds only OKTA_* settings, as the Okta path creates,
+                # reaches this branch, and it needs no AWS keys added.
+                print("\nℹ️  No AWS credentials in .env — using existing environment credentials.")
+                print("   Nothing to do if you use `aws configure`, AWS SSO, or a container role.")
+                print("   To supply them via .env instead, set AWS_ACCESS_KEY_ID and")
+                print("   AWS_SECRET_ACCESS_KEY (plus AWS_SESSION_TOKEN for STS, AWS_DEFAULT_REGION).")
             return False
     else:
         if verbose:
-            print("⚠️  No valid environment variables found in .env file")
+            print(f"ℹ️  {env_path} sets no variables — using existing environment credentials.")
         return False
 
 
 def get_aws_session(
-    profile_name: Optional[str] = None,
-    region_name: Optional[str] = None,
+    profile_name: str | None = None,
+    region_name: str | None = None,
     verbose: bool = True,
-) -> Tuple[boto3.Session, str, str]:
+) -> tuple[boto3.Session, str, str]:
     """
     Create and validate AWS session with SSO support and automatic fallback.
 
@@ -343,7 +353,7 @@ def get_aws_session(
     return session, region, account_id
 
 
-def _detect_profile(profile_name: Optional[str], verbose: bool) -> Optional[str]:
+def _detect_profile(profile_name: str | None, verbose: bool) -> str | None:
     """Detect which AWS profile to use."""
     if profile_name:
         if verbose:
@@ -364,7 +374,7 @@ def _detect_profile(profile_name: Optional[str], verbose: bool) -> Optional[str]
     return None
 
 
-def _detect_region_simple(region_name: Optional[str]) -> str:
+def _detect_region_simple(region_name: str | None) -> str:
     """Detect AWS region without session (for container environments)."""
     if region_name:
         return region_name
@@ -386,7 +396,7 @@ def _detect_region_simple(region_name: Optional[str]) -> str:
     return "us-east-1"
 
 
-def _detect_region(session: boto3.Session, region_name: Optional[str], verbose: bool) -> str:
+def _detect_region(session: boto3.Session, region_name: str | None, verbose: bool) -> str:
     """Detect AWS region from multiple sources."""
     if region_name:
         if verbose:
@@ -418,7 +428,7 @@ def _detect_region(session: boto3.Session, region_name: Optional[str], verbose: 
     return region
 
 
-def _print_success_message(profile: Optional[str], region: str, account_id: str, credentials) -> None:
+def _print_success_message(profile: str | None, region: str, account_id: str, credentials) -> None:
     """Print success message with credential info."""
     print("\n✅ AWS Credentials Validated")
     print(f"   Region: {region}")
@@ -441,7 +451,7 @@ def _print_success_message(profile: Optional[str], region: str, account_id: str,
     print()
 
 
-def _print_no_credentials_error(profile: Optional[str]) -> None:
+def _print_no_credentials_error(profile: str | None) -> None:
     """Print helpful error message when no credentials are found."""
     print("\n" + "=" * 70)
     print("❌ AWS CREDENTIALS NOT CONFIGURED")
@@ -472,7 +482,7 @@ def _print_no_credentials_error(profile: Optional[str]) -> None:
     print("\n" + "=" * 70)
 
 
-def _print_sso_token_expired_error(profile: Optional[str], region: str, error_detail: str) -> None:
+def _print_sso_token_expired_error(profile: str | None, region: str, error_detail: str) -> None:
     """Print helpful error message for SSO token expiration."""
     print("\n" + "=" * 70)
     print("❌ AWS SSO TOKEN EXPIRED")

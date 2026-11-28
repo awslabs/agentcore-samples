@@ -1,0 +1,259 @@
+#!/bin/bash
+# Deploy the Notes (OpenSearch) Gateway REQUEST Interceptor Lambda — Cognito GW2 path.
+# Thin identity-forwarding interceptor (validate JWT → inject caller sub on the
+# body-context channel). Only attached on the Cognito path; harmless on Okta.
+#
+# Run by notebook 05b (cwd = this directory) on the Cognito path. Needs the IdP flag
+# and IdP settings from notebook 01 in SSM. Creates or updates:
+#   - IAM role lakehouse-notes-interceptor-role (CloudWatch Logs only)
+#   - Lambda lakehouse-notes-interceptor, configured through environment variables
+#   - SSM /app/lakehouse-agent/notes-interceptor-lambda-arn, which
+#     5b-obo-gateway-setup/04_create_obo_gateway.py reads to attach the interceptor
+#     to the notes gateway
+#   - log group /aws/lambda/lakehouse-notes-interceptor with 30-day retention
+# cleanup.sh in this directory deletes the same resources.
+
+set -e
+
+# Resolve the Python interpreter explicitly rather than trusting PATH.
+# A reader who has not activated the sample venv would otherwise get the system
+# interpreter, installing the Lambda dependencies against a different Python than
+# the one that runs the rest of the tutorial. Prefer the sample venv, fall back to
+# python3, and allow an override for anyone using a different environment.
+SAMPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+if [ -z "${PYTHON_BIN:-}" ]; then
+    if [ -x "$SAMPLE_ROOT/.venv/bin/python" ]; then
+        PYTHON_BIN="$SAMPLE_ROOT/.venv/bin/python"
+    else
+        PYTHON_BIN="$(command -v python3 || command -v python)"
+    fi
+fi
+if [ -z "$PYTHON_BIN" ]; then
+    echo "❌ Error: no Python interpreter found (set PYTHON_BIN to override)"
+    exit 1
+fi
+echo "   Python: $PYTHON_BIN"
+
+# Prints progress while the long AWS waits below run.
+source "$SAMPLE_ROOT/deployment/lib/wait.sh"
+
+# Ensure common tool paths are available (e.g. when run from a notebook subprocess)
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+echo "🚀 Deploying Notes Gateway REQUEST Interceptor Lambda"
+
+AWS_REGION=$(aws configure get region)
+if [ -z "$AWS_REGION" ]; then
+    echo "❌ Error: AWS region not configured"
+    echo "   Please run: aws configure set region <your-region>"
+    exit 1
+fi
+echo "   Region: $AWS_REGION"
+
+# IdP selector: fail-fast SSM read — NO env override, NO
+# implicit default (matches utils.idp_config.get_idp_provider). The flag is set
+# once in notebook 01 Step-0 (or `python -m utils.idp_config <cognito|okta>`).
+IDP_PROVIDER=$(aws ssm get-parameter --name /app/lakehouse-agent/idp-provider --query 'Parameter.Value' --output text 2>/dev/null)
+if [ -z "$IDP_PROVIDER" ] || [ "$IDP_PROVIDER" = "None" ]; then
+    echo "❌ Error: IDP_PROVIDER not set in SSM (/app/lakehouse-agent/idp-provider)"
+    echo "   Run notebook 01 (Step-0) first, or: python -m utils.idp_config <cognito|okta>"
+    exit 1
+fi
+if [ "$IDP_PROVIDER" != "cognito" ] && [ "$IDP_PROVIDER" != "okta" ]; then
+    echo "❌ Error: invalid IDP_PROVIDER='$IDP_PROVIDER' (allowed: cognito|okta)"
+    exit 1
+fi
+echo "   IdP Provider: $IDP_PROVIDER"
+
+if [ "$IDP_PROVIDER" = "cognito" ]; then
+    COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name /app/lakehouse-agent/cognito-user-pool-id --query 'Parameter.Value' --output text 2>/dev/null)
+    COGNITO_APP_CLIENT_ID=$(aws ssm get-parameter --name /app/lakehouse-agent/cognito-app-client-id --query 'Parameter.Value' --output text 2>/dev/null)
+    if [ -z "$COGNITO_USER_POOL_ID" ] || [ -z "$COGNITO_APP_CLIENT_ID" ]; then
+        echo "❌ Failed to retrieve Cognito configuration from SSM"
+        echo "   Please run notebook 01 (Cognito setup) first."
+        exit 1
+    fi
+    LAMBDA_ENV_VARS="COGNITO_REGION=$AWS_REGION,COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID,COGNITO_APP_CLIENT_ID=$COGNITO_APP_CLIENT_ID,IDP_PROVIDER=$IDP_PROVIDER"
+else
+    OKTA_ORG_URL=$(aws ssm get-parameter --name /app/lakehouse-agent/okta-org-url --query 'Parameter.Value' --output text 2>/dev/null)
+    OKTA_AUTH_SERVER_ID=$(aws ssm get-parameter --name /app/lakehouse-agent/okta-auth-server-id --query 'Parameter.Value' --output text 2>/dev/null)
+    OKTA_RESOURCE_SERVER_AUDIENCE=$(aws ssm get-parameter --name /app/lakehouse-agent/okta-resource-server-audience --query 'Parameter.Value' --output text 2>/dev/null)
+    LAMBDA_ENV_VARS="OKTA_ORG_URL=$OKTA_ORG_URL,OKTA_AUTH_SERVER_ID=$OKTA_AUTH_SERVER_ID,OKTA_RESOURCE_SERVER_AUDIENCE=$OKTA_RESOURCE_SERVER_AUDIENCE,IDP_PROVIDER=$IDP_PROVIDER"
+fi
+
+# Package Lambda function (thin: only lambda_function.py; no token_exchange/tool_validation).
+# Dependencies are installed as manylinux x86_64 wheels so they match the Lambda runtime,
+# not the machine running this script.
+echo ""
+echo "📦 Packaging Lambda function..."
+# Start from an empty build folder so no file from an earlier build (for example a
+# compiled module built for another Python version) ends up in the package.
+rm -rf "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-notes/dist"
+mkdir -p dist
+"$PYTHON_BIN" -m pip install -q --disable-pip-version-check -r requirements.txt -t dist/ --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:
+cp lambda_function.py dist/
+# zip adds to an existing archive rather than replacing it, so remove the old package first.
+rm -f "${SAMPLE_ROOT:?}/deployment/5a-gateway-setup/interceptor-notes/notes-interceptor-lambda.zip"
+cd dist
+zip -r ../notes-interceptor-lambda.zip . >/dev/null
+cd ..
+echo "✅ Package created: notes-interceptor-lambda.zip"
+
+# Dedicated LEAST-PRIVILEGE execution role: basic Lambda execution (CloudWatch
+# Logs) ONLY — no DynamoDB, no STS, no SSM. The notes interceptor just validates
+# a JWT and forwards the caller sub (all its config arrives via env vars set
+# below), so it needs nothing beyond log write. A role name alone does not show who
+# created the role, so the new role's id is recorded in SSM; a re-run updates the
+# role in place only if its id matches that record, and a same-name role this sample
+# did not create is refused before any policy is attached to it.
+ROLE_NAME="lakehouse-notes-interceptor-role"
+ROLE_RECORD="/app/lakehouse-agent/role-ids/$ROLE_NAME"
+echo ""
+echo "🔑 Ensuring dedicated least-privilege execution role: $ROLE_NAME"
+TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+
+# aws_capture <aws args...> runs an aws command and keeps its output in AWS_OUT and its error
+# text in AWS_ERR (leading blank lines removed), so the caller can tell one expected error code
+# from any other failure. Returns the command's exit status.
+aws_capture() {
+    local err_file status
+    err_file=$(mktemp)
+    if AWS_OUT=$(aws "$@" 2>"$err_file"); then status=0; else status=$?; fi
+    AWS_ERR=$(cat "$err_file")
+    rm -f "$err_file"
+    AWS_ERR="${AWS_ERR#"${AWS_ERR%%[![:space:]]*}"}"
+    return $status
+}
+
+if aws_capture iam create-role --role-name "$ROLE_NAME" \
+    --assume-role-policy-document "$TRUST_POLICY" \
+    --description "Least-priv execution role for the notes gateway REQUEST interceptor (CloudWatch Logs only)" \
+    --tags Key=Application,Value=lakehouse-agent Key=Purpose,Value=notes-interceptor-role \
+    --query Role.RoleId --output text; then
+    ROLE_ID="$AWS_OUT"
+    if ! aws_capture ssm put-parameter --name "$ROLE_RECORD" --type String --value "$ROLE_ID" --overwrite --region "$AWS_REGION"; then
+        PUT_ERR="$AWS_ERR"
+        if aws_capture iam delete-role --role-name "$ROLE_NAME"; then
+            echo "❌ Could not record ownership of new IAM role $ROLE_NAME: $PUT_ERR. The role was deleted again. Fix the error, then re-run this step."
+        else
+            echo "❌ Could not record ownership of new IAM role $ROLE_NAME: $PUT_ERR. It could not be deleted ($AWS_ERR); delete it by hand: aws iam delete-role --role-name $ROLE_NAME. Fix the error, then re-run this step."
+        fi
+        exit 1
+    fi
+    echo "   ✅ Created role: $ROLE_NAME"
+elif [[ "$AWS_ERR" == *"(EntityAlreadyExists)"* ]]; then
+    if aws_capture ssm get-parameter --name "$ROLE_RECORD" --query Parameter.Value --output text --region "$AWS_REGION"; then
+        RECORDED_ID="$AWS_OUT"
+    elif [[ "$AWS_ERR" == *"(ParameterNotFound)"* ]]; then
+        RECORDED_ID=""
+    else
+        echo "❌ Could not read the ownership record for IAM role $ROLE_NAME: $AWS_ERR. Nothing was changed."
+        exit 1
+    fi
+    if ! aws_capture iam get-role --role-name "$ROLE_NAME" --query Role.RoleId --output text; then
+        echo "❌ aws iam get-role failed:"
+        echo "$AWS_ERR"
+        exit 1
+    fi
+    if [ -z "$RECORDED_ID" ] || [ "$RECORDED_ID" != "$AWS_OUT" ]; then
+        echo "❌ IAM role $ROLE_NAME already exists and this sample has no matching ownership record for it. Nothing was changed. Delete or rename that role, then re-run this step."
+        exit 1
+    fi
+    echo "   ℹ️  Role exists; updating trust policy in place"
+    aws iam update-assume-role-policy --role-name "$ROLE_NAME" --policy-document "$TRUST_POLICY"
+else
+    echo "❌ aws iam create-role failed:"
+    echo "$AWS_ERR"
+    exit 1
+fi
+# CloudWatch Logs only.
+aws iam attach-role-policy --role-name "$ROLE_NAME" \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+LAMBDA_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
+echo "✅ Lambda role ready: $LAMBDA_ROLE_ARN"
+# A newly created role is not usable by Lambda until IAM propagates it.
+echo "⏳ Waiting for IAM role to propagate (10 seconds)..."
+sleep 10
+
+echo ""
+echo "🔍 Checking if Lambda function exists..."
+if aws lambda get-function --function-name lakehouse-notes-interceptor --region $AWS_REGION >/dev/null 2>/dev/null; then
+    echo "📝 Updating existing Lambda function..."
+    # Each update returns before Lambda finishes applying it; wait in between so the
+    # configuration update does not fail with ResourceConflictException.
+    aws lambda update-function-code \
+        --function-name lakehouse-notes-interceptor \
+        --zip-file fileb://notes-interceptor-lambda.zip \
+        --region $AWS_REGION >/dev/null
+    wait_with_progress "Lambda code update" "5 min" aws lambda wait function-updated \
+        --function-name lakehouse-notes-interceptor \
+        --region $AWS_REGION
+    echo "⚙️  Updating Lambda configuration..."
+    aws lambda update-function-configuration \
+        --function-name lakehouse-notes-interceptor \
+        --environment "Variables={$LAMBDA_ENV_VARS}" \
+        --kms-key-arn "" \
+        --region $AWS_REGION >/dev/null
+    wait_with_progress "Lambda configuration update" "5 min" aws lambda wait function-updated \
+        --function-name lakehouse-notes-interceptor \
+        --region $AWS_REGION
+    echo "✅ Lambda function updated!"
+else
+    echo "📝 Creating new Lambda function..."
+    # Retry: create-function can still reject a role that IAM has not finished propagating.
+    MAX_RETRIES=3
+    RETRY_COUNT=0
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if aws lambda create-function \
+            --function-name lakehouse-notes-interceptor \
+            --runtime python3.12 \
+            --role $LAMBDA_ROLE_ARN \
+            --handler lambda_function.lambda_handler \
+            --zip-file fileb://notes-interceptor-lambda.zip \
+            --timeout 30 \
+            --memory-size 256 \
+            --environment "Variables={$LAMBDA_ENV_VARS}" \
+            --tags Application=lakehouse-agent,Purpose=notes-interceptor \
+            --region $AWS_REGION >/dev/null 2>/dev/null; then
+            wait_with_progress "Lambda becoming active" "5 min" aws lambda wait function-active \
+                --function-name lakehouse-notes-interceptor \
+                --region $AWS_REGION
+            echo "✅ Lambda function created!"
+            break
+        else
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⏳ Role not ready yet, waiting 5 seconds (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+                sleep 5
+            else
+                echo "❌ Failed to create Lambda function after $MAX_RETRIES attempts"
+                exit 1
+            fi
+        fi
+    done
+fi
+
+# Store Lambda function ARN in SSM Parameter Store
+echo ""
+echo "💾 Storing Lambda function ARN in SSM Parameter Store..."
+LAMBDA_FUNCTION_ARN=$(aws lambda get-function --function-name lakehouse-notes-interceptor --region $AWS_REGION --query 'Configuration.FunctionArn' --output text)
+aws ssm put-parameter \
+    --name /app/lakehouse-agent/notes-interceptor-lambda-arn \
+    --value "$LAMBDA_FUNCTION_ARN" \
+    --type String \
+    --overwrite \
+    --region $AWS_REGION >/dev/null
+echo "✅ Stored parameter: /app/lakehouse-agent/notes-interceptor-lambda-arn"
+
+# CloudWatch Logs retention. The log group is created up front (ignoring "already exists")
+# so the retention policy can be set before the function's first invocation.
+echo ""
+echo "🪵 Configuring CloudWatch Logs retention for Lambda log group..."
+LOG_GROUP_NAME="/aws/lambda/lakehouse-notes-interceptor"
+aws logs create-log-group --log-group-name "$LOG_GROUP_NAME" --region "$AWS_REGION" 2>/dev/null || true
+aws logs put-retention-policy --log-group-name "$LOG_GROUP_NAME" --retention-in-days 30 --region "$AWS_REGION"
+echo "✅ Log group $LOG_GROUP_NAME retention set to 30 days"
+
+echo ""
+echo "✨ Deployment complete!"
+echo "📝 Lambda Function ARN: $LAMBDA_FUNCTION_ARN"

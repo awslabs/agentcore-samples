@@ -7,42 +7,65 @@ This script removes S3 Tables resources to allow for a fresh deployment:
 - Deletes S3 Tables namespace
 - Deletes S3 Tables bucket
 - Removes federated catalog from Glue
-- Unregisters S3 Tables from Lake Formation
+- Unregisters S3 Tables from Lake Formation, only when the registration uses this
+  sample's own role (any other registration is left in place)
 - Optionally removes SSM parameters
+
+Exit code: 0 when everything was removed or already gone, 1 on any error, 3 when the
+only problem is a Lake Formation registration left in place.
 
 Usage:
     python cleanup_s3tables.py [--keep-ssm]
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
+import sys
 import time
+
+import boto3
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from utils.aws_session_utils import get_aws_session
+from utils.iam_roles import FAILED, FOREIGN, LEFT, NOT_REGISTERED, RoleOwnershipError, combine, lf_registration_owner
+from utils.notebook_init import pause
+
+LF_ROLE_NAME = "LakeFormationS3TablesDataAccessRole"
 
 
 class S3TablesCleanup:
     def __init__(self, keep_ssm=False):
         """Initialize the cleanup."""
-        session, self.region, self.account_id = get_aws_session()
+        _session, self.region, self.account_id = get_aws_session()
 
         self.s3tables = boto3.client("s3tables", region_name=self.region)
         self.glue = boto3.client("glue", region_name=self.region)
         self.lakeformation = boto3.client("lakeformation", region_name=self.region)
         self.ssm = boto3.client("ssm", region_name=self.region)
+        self.iam = boto3.client("iam")
 
         self.keep_ssm = keep_ssm
+        # Failed deletes and reads are collected here; run() prints ✨ only when this
+        # stays empty. "Not found" outcomes are not failures.
+        self.errors = []
+        # Resources deliberately left in place because this sample cannot prove it created them.
+        self.left = []
+        self._ssm_read_failed = set()
 
     def _get_ssm_param(self, name: str, default=None) -> str:
         """Get parameter from SSM."""
         try:
             response = self.ssm.get_parameter(Name=f"/app/lakehouse-agent/{name}")
             return response["Parameter"]["Value"]
-        except Exception:
+        except self.ssm.exceptions.ParameterNotFound:
+            return default
+        except Exception as e:
+            # A failed read is not an absent key. Several steps read the same name, so record it once.
+            if name not in self._ssm_read_failed:
+                self._ssm_read_failed.add(name)
+                print(f"   ❌ Error reading SSM /app/lakehouse-agent/{name}: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{name} not read: {e}")
             return default
 
     def delete_tables(self):
@@ -70,9 +93,10 @@ class S3TablesCleanup:
                 print(f"   ⚠️  Table not found: {table_name}")
             except Exception as e:
                 print(f"   ❌ Error deleting table {table_name}: {e}")
+                self.errors.append(f"table {table_name}: {e}")
 
         # Wait a bit for tables to be deleted
-        time.sleep(2)
+        pause("S3 table deletes settling", 2)
 
     def delete_namespace(self):
         """Delete S3 Tables namespace."""
@@ -95,9 +119,10 @@ class S3TablesCleanup:
             print(f"   ⚠️  Namespace not found: {namespace}")
         except Exception as e:
             print(f"   ❌ Error deleting namespace: {e}")
+            self.errors.append(f"namespace {namespace}: {e}")
 
         # Wait a bit for namespace to be deleted
-        time.sleep(2)
+        pause("S3 Tables namespace delete settling", 2)
 
     def delete_table_bucket(self):
         """Delete S3 Tables bucket."""
@@ -118,6 +143,7 @@ class S3TablesCleanup:
             print(f"   ⚠️  S3 Tables bucket not found: {table_bucket_name}")
         except Exception as e:
             print(f"   ❌ Error deleting S3 Tables bucket: {e}")
+            self.errors.append(f"S3 Tables bucket {table_bucket_name}: {e}")
 
     def delete_federated_catalog(self):
         """Delete federated catalog from Glue."""
@@ -132,20 +158,39 @@ class S3TablesCleanup:
             print(f"   ⚠️  Catalog not found: {catalog_name}")
         except Exception as e:
             print(f"   ❌ Error deleting catalog: {e}")
+            self.errors.append(f"catalog {catalog_name}: {e}")
 
     def unregister_from_lakeformation(self):
-        """Unregister S3 Tables from Lake Formation."""
+        """Unregister S3 Tables from Lake Formation, only when the registration is this sample's."""
         print("\n🗑️  Unregistering from Lake Formation...")
-
         resource_arn = f"arn:aws:s3tables:{self.region}:{self.account_id}:bucket/*"
-
+        try:
+            owner, registered_role_arn = lf_registration_owner(
+                self.lakeformation, self.iam, self.ssm, resource_arn, LF_ROLE_NAME
+            )
+        except RoleOwnershipError as e:
+            print(f"   {e}")
+            self.errors.append(f"Lake Formation registration {resource_arn}: {e}")
+            return
+        if owner == NOT_REGISTERED:
+            print(f"   ⏭  Resource not registered: {resource_arn}")
+            return
+        if owner == FOREIGN:
+            print(
+                "   ⚠  The S3 Tables registration in Lake Formation uses role "
+                f"{registered_role_arn}, which this sample cannot prove it created. "
+                "Left in place."
+            )
+            self.left.append(f"Lake Formation registration {resource_arn}")
+            return
         try:
             self.lakeformation.deregister_resource(ResourceArn=resource_arn)
             print(f"   ✅ Unregistered: {resource_arn}")
         except self.lakeformation.exceptions.EntityNotFoundException:
-            print(f"   ⚠️  Resource not registered: {resource_arn}")
+            print(f"   ⏭  Resource not registered: {resource_arn}")
         except Exception as e:
-            print(f"   ⚠️  Note: {e}")
+            print(f"   ❌ Error unregistering {resource_arn}: {e}")
+            self.errors.append(f"Lake Formation registration {resource_arn}: {e}")
 
     def delete_ssm_parameters(self):
         """Delete SSM parameters."""
@@ -172,6 +217,7 @@ class S3TablesCleanup:
                 print(f"   ⚠️  Not found: /app/lakehouse-agent/{param}")
             except Exception as e:
                 print(f"   ❌ Error deleting {param}: {e}")
+                self.errors.append(f"SSM /app/lakehouse-agent/{param}: {e}")
 
     def run(self):
         """Run the complete cleanup process."""
@@ -196,6 +242,19 @@ class S3TablesCleanup:
 
         # Step 6: Delete SSM parameters (optional)
         self.delete_ssm_parameters()
+
+        # Exit 1 on any error; exit 3 when the only problem is something left in place.
+        rc = combine([FAILED] * len(self.errors) + [LEFT] * len(self.left))
+        if self.errors:
+            print(f"\n❌ cleanup_s3tables.py finished with {len(self.errors)} error(s):")
+            for err in self.errors:
+                print(f"   • {err}")
+        if self.left:
+            print("\n⚠  cleanup_s3tables.py left in place:")
+            for item in self.left:
+                print(f"   • {item}")
+        if rc:
+            sys.exit(rc)
 
         print("\n✨ Cleanup complete!")
         print("\n📋 Next Steps:")

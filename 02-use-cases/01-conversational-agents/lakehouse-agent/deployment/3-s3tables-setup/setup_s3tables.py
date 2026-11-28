@@ -9,12 +9,14 @@ Usage:
     python setup_s3tables.py --table-bucket-name my-lakehouse
 """
 
-import boto3
-import sys
-import os
 import argparse
+import os
 import random
 import string
+import sys
+
+import boto3
+from botocore.exceptions import ClientError
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -37,7 +39,7 @@ def main():
     args = parser.parse_args()
 
     # Get AWS session
-    session, region, account_id = get_aws_session()
+    _session, region, account_id = get_aws_session()
 
     # Use default table bucket name with random suffix if not provided
     if args.table_bucket_name:
@@ -93,6 +95,19 @@ def main():
 
     if not table_bucket_arn:
         raise Exception("Failed to create or retrieve table bucket ARN")
+
+    # Tag the table bucket (fail-soft). Uses s3tables TagResource separately from
+    # create so a missing s3tables:TagResource permission leaves the bucket
+    # untagged rather than breaking the create. To get the tags, grant the
+    # deploy identity s3tables:TagResource.
+    try:
+        s3tables.tag_resource(
+            resourceArn=table_bucket_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "s3tables-bucket"},
+        )
+        print("   🏷️  Tagged table bucket (Purpose=s3tables-bucket)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag table bucket (non-fatal): {e}")
 
     # Step 2: Create namespace
     namespace = "lakehouse_data"
@@ -161,6 +176,19 @@ def main():
     except s3tables.exceptions.ConflictException:
         print("✅ Claims table exists")
 
+    # Tag the claims table (fail-soft; resolve ARN via get_table so re-runs converge too).
+    try:
+        claims_arn = s3tables.get_table(tableBucketARN=table_bucket_arn, namespace=namespace, name="claims").get(
+            "tableARN"
+        )
+        s3tables.tag_resource(
+            resourceArn=claims_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "claims-table"},
+        )
+        print("   🏷️  Tagged claims table (Purpose=claims-table)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag claims table (non-fatal): {e}")
+
     # Step 4: Create users table
     print("\n👥 Creating users table...")
 
@@ -190,6 +218,19 @@ def main():
     except s3tables.exceptions.ConflictException:
         print("✅ Users table exists")
 
+    # Tag the users table (fail-soft; resolve ARN via get_table so re-runs converge too).
+    try:
+        users_arn = s3tables.get_table(tableBucketARN=table_bucket_arn, namespace=namespace, name="users").get(
+            "tableARN"
+        )
+        s3tables.tag_resource(
+            resourceArn=users_arn,
+            tags={"Application": "lakehouse-agent", "Purpose": "users-table"},
+        )
+        print("   🏷️  Tagged users table (Purpose=users-table)")
+    except Exception as e:
+        print(f"   ⚠️  Could not tag users table (non-fatal): {e}")
+
     # Step 5: Create or get S3 bucket for Athena query results
     print("\n📦 Setting up S3 bucket for query results...")
     s3 = boto3.client("s3", region_name=region)
@@ -197,16 +238,49 @@ def main():
     # Use a consistent bucket name format
     s3_bucket_name = f"{account_id}-{region}-lakehouse-agent"
 
+    # Probe first: in us-east-1, create_bucket on a bucket you already own
+    # returns 200 instead of BucketAlreadyOwnedByYou, so it cannot tell a new
+    # bucket from an existing one.
     try:
-        create_params = {"Bucket": s3_bucket_name}
-        if region != "us-east-1":
-            create_params["CreateBucketConfiguration"] = {"LocationConstraint": region}
-        s3.create_bucket(**create_params)
-        print(f"✅ Created S3 bucket: {s3_bucket_name}")
-    except s3.exceptions.BucketAlreadyOwnedByYou:
+        s3.head_bucket(Bucket=s3_bucket_name)
+        bucket_exists = True
+    except ClientError as e:
+        # A HEAD error has no body, so botocore reports the HTTP status ("404") as the code.
+        if e.response["Error"]["Code"] not in ("404", "NoSuchBucket"):
+            print(f"❌ Error checking S3 bucket {s3_bucket_name}: {e}")
+            raise
+        bucket_exists = False
+
+    if bucket_exists:
         print(f"✅ S3 bucket exists: {s3_bucket_name}")
+    else:
+        try:
+            create_params = {"Bucket": s3_bucket_name}
+            if region != "us-east-1":
+                create_params["CreateBucketConfiguration"] = {"LocationConstraint": region}
+            s3.create_bucket(**create_params)
+            print(f"✅ Created S3 bucket: {s3_bucket_name}")
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            print(f"✅ S3 bucket exists: {s3_bucket_name}")
+        except Exception as e:
+            print(f"❌ Error creating S3 bucket: {e}")
+            raise
+
+    # Tag the query-results bucket (fail-soft; regular S3 has no tags-at-create,
+    # so this is a separate put_bucket_tagging call).
+    try:
+        s3.put_bucket_tagging(
+            Bucket=s3_bucket_name,
+            Tagging={
+                "TagSet": [
+                    {"Key": "Application", "Value": "lakehouse-agent"},
+                    {"Key": "Purpose", "Value": "athena-results"},
+                ]
+            },
+        )
+        print("   🏷️  Tagged query-results bucket (Purpose=athena-results)")
     except Exception as e:
-        print(f"⚠️  S3 bucket creation note: {e}")
+        print(f"   ⚠️  Could not tag query-results bucket (non-fatal): {e}")
 
     # Step 6: Store configuration in SSM
     print("\n💾 Storing configuration in SSM...")

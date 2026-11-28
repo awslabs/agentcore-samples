@@ -108,7 +108,7 @@ These roles are used by the AgentCore Gateway for fine-grained access control:
 1. The gateway intercepts requests and determines the tenant
 2. It assumes the appropriate tenant role based on the user context
 3. Athena queries are executed with the tenant role's permissions
-4. Row-level security is enforced through the role's credentials
+4. Per-user **row** scope is enforced by the bound identity SQL predicate (`WHERE user_id = ?`), **not** by the role's credentials — the per-group tenant roles share one Athena/S3 policy and set no per-user session tags. Lake Formation governs **column**-level filtering + tenant-role table grants.
 
 ## Verification
 
@@ -166,7 +166,14 @@ Ensure your AWS credentials have the following permissions:
 
 ### Role already exists
 
-If the roles already exist, the script will skip creation and use the existing roles. To recreate them, delete the roles first using the cleanup commands above.
+When the script creates a role, it records the role's id in SSM Parameter Store at `/app/lakehouse-agent/role-ids/<role name>`. Re-running the script is safe for the roles it created: a role whose id matches its record is re-used, and its trust policy and permissions are updated in place.
+
+A role with the same name that this sample did not create (it has no matching record) is refused. The script stops with `❌ IAM role <name> already exists and this sample has no matching ownership record for it` and changes nothing. Delete or rename that role, then re-run the script.
+
+The same rule applies to every IAM role the sample creates, and to the S3 Tables registration in Lake Formation. Two consequences:
+
+- **Deployments made before ownership records existed** have no records. Setup refuses their roles, and cleanup leaves them in place with a `⚠` line that gives the manual `aws iam delete-role` command. Delete those roles by hand, or deploy into a clean account.
+- **Lake Formation permission:** setup and cleanup now read the existing S3 Tables registration, so the identity that runs them needs `lakeformation:DescribeResource`.
 
 ## Security Considerations
 

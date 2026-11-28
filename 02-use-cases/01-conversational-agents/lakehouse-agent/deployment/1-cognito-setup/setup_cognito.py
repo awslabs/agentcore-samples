@@ -4,15 +4,49 @@ Cognito Setup for Health Lakehouse Data
 Creates User Pool, App Client, Resource Server, and test users with OAuth scopes
 Writes configuration to SSM Parameter Store
 
+Run by 01-deploy-idp.ipynb (IDP_PROVIDER == "cognito") via subprocess. Every call is
+idempotent: existing resources are found by name and reused or updated.
+
+What it creates in Cognito (setup()):
+  - User pool "lakehouse-pool"; email is the username (UsernameAttributes is not set).
+  - Resource server "lakehouse-api" with scopes claims.query / claims.submit /
+    claims.update / claims.approve.
+  - App client "lakehouse-client" (secret generated): SRP, ADMIN_USER_PASSWORD and
+    refresh-token auth flows plus the client_credentials OAuth flow on the four scopes.
+    Used by the Streamlit UI and the user-token tests.
+  - App client "lakehouse-m2m-client" (create_m2m_client): client_credentials only, no
+    user auth flows. Used for gateway-to-runtime and service-to-service tokens.
+  - Hosted domain "lakehouse-<pool id suffix>", which provides the /oauth2/token endpoint.
+  - Groups policyholders / adjusters / administrators and five test users
+    (policyholder001/002, adjuster001/002, admin @example.com) with the temporary
+    password "TempPass123!", each added to its group. After the SSM write, the
+    password is made permanent with set_test_user_passwords.py, so no first sign-in
+    hits a forced password change.
+  - If the Lambda "lakehouse-cognito-post-auth" exists (deploy_post_auth_lambda.sh), it is
+    attached as the pool's PostAuthentication trigger (add_post_auth_trigger).
+
+SSM parameters written (store_parameters_in_ssm), all under /app/lakehouse-agent/:
+  cognito-user-pool-id, cognito-user-pool-arn, cognito-app-client-id, cognito-domain,
+  cognito-resource-server-id, cognito-region, cognito-m2m-client-id, and as SecureString
+  cognito-app-client-secret and cognito-m2m-client-secret.
+Later steps read them: 5a-gateway-setup/create_gateway.py (pool ARN, app client id,
+domain, M2M client id/secret), the interceptor Lambdas (pool id, app client id),
+deployment/agentcore_cli_deploy.py (pool id/ARN, client ids for the runtime authorizer),
+streamlit-ui/streamlit_app.py and notebooks 07/08 (pool id, app client id/secret, domain).
+
 Usage:
     python setup_cognito.py
+    python setup_cognito.py --add-post-auth-trigger   # only attach the Lambda trigger
 """
 
-import boto3
 import json
 import re
+import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
+
+import boto3
+from set_test_user_passwords import set_test_user_passwords
 
 
 class CognitoSetup:
@@ -30,7 +64,7 @@ class CognitoSetup:
 
         print(f"Initialized Cognito setup for region: {self.region}")
 
-    def find_existing_user_pool(self, pool_name: str) -> Optional[str]:
+    def find_existing_user_pool(self, pool_name: str) -> str | None:
         """Find existing user pool by name."""
         try:
             paginator = self.cognito.get_paginator("list_user_pools")
@@ -43,7 +77,7 @@ class CognitoSetup:
             print(f"⚠️  Error searching for user pool: {e}")
         return None
 
-    def get_user_pool_client(self, user_pool_id: str, client_name: str) -> Optional[Dict]:
+    def get_user_pool_client(self, user_pool_id: str, client_name: str) -> dict | None:
         """Get existing app client by name."""
         try:
             paginator = self.cognito.get_paginator("list_user_pool_clients")
@@ -60,7 +94,7 @@ class CognitoSetup:
             print(f"⚠️  Error searching for app client: {e}")
         return None
 
-    def get_user_pool_domain(self, user_pool_id: str) -> Optional[str]:
+    def get_user_pool_domain(self, user_pool_id: str) -> str | None:
         """Get existing domain for user pool."""
         try:
             response = self.cognito.describe_user_pool(UserPoolId=user_pool_id)
@@ -73,7 +107,7 @@ class CognitoSetup:
             print(f"⚠️  Error getting domain: {e}")
         return None
 
-    def store_parameters_in_ssm(self, config: Dict):
+    def store_parameters_in_ssm(self, config: dict):
         """
         Store Cognito configuration in SSM Parameter Store.
 
@@ -125,7 +159,7 @@ class CognitoSetup:
         ]
 
         # Store client secret as SecureString if available
-        if "client_secret" in config and config["client_secret"]:
+        if config.get("client_secret"):
             try:
                 self.ssm.put_parameter(
                     Name="/app/lakehouse-agent/cognito-app-client-secret",
@@ -140,7 +174,7 @@ class CognitoSetup:
                 raise
 
         # Store M2M client secret as SecureString
-        if "m2m_client_secret" in config and config["m2m_client_secret"]:
+        if config.get("m2m_client_secret"):
             try:
                 self.ssm.put_parameter(
                     Name="/app/lakehouse-agent/cognito-m2m-client-secret",
@@ -173,7 +207,7 @@ class CognitoSetup:
                 )  # codeql[py/clear-text-logging-sensitive-data]
                 raise
 
-    def write_to_env(self, config: Dict):
+    def write_to_env(self, config: dict):
         """
         Write configuration to .env file.
 
@@ -218,7 +252,13 @@ class CognitoSetup:
             print(f"❌ Error writing to .env file: {e}")
             raise
 
-    def setup(self, pool_name: str = "lakehouse-pool") -> Dict:
+    def setup(self, pool_name: str = "lakehouse-pool") -> dict:
+        # Failures that do not stop the run are collected here, so __main__ can
+        # end with a non-zero exit. "Already exists" outcomes are not failures.
+        self.errors = []
+        self.failed_users = set()
+        self.passwords_set = False
+
         # Check for existing User Pool
         user_pool_id = self.find_existing_user_pool(pool_name)
 
@@ -242,6 +282,7 @@ class CognitoSetup:
                 AdminCreateUserConfig={
                     "AllowAdminCreateUserOnly": False  # Allow users to sign up
                 },
+                UserPoolTags={"Application": "lakehouse-agent", "Purpose": "cognito-user-pool"},
             )
             user_pool_id = pool_response["UserPool"]["Id"]
             print(f"✅ User Pool created: {user_pool_id}")
@@ -337,22 +378,58 @@ class CognitoSetup:
         domain_url = self.get_user_pool_domain(user_pool_id)
 
         if not domain_url:
-            # Create domain
-            # Domain names can only contain lowercase letters, numbers, and hyphens
-            # Extract only alphanumeric characters from pool ID and convert to lowercase
-            pool_id_clean = re.sub(r"[^a-zA-Z0-9]", "", user_pool_id).lower()[:8]
+            # Create domain.
+            #
+            # Domain names may contain lowercase letters, numbers and hyphens only, and the
+            # hosted-domain namespace is shared by every AWS account in the region, so the
+            # name has to be genuinely unlikely to collide.
+            #
+            # Derive it from the pool id's unique segment, the part after the underscore. A
+            # user pool id looks like "us-east-1_UkB4mHbEr", so a slice taken from the start
+            # of the whole id would be mostly region and collide readily; the suffix is the
+            # per-pool identity. A collision here leaves the pool with no hosted domain.
+            pool_suffix = user_pool_id.split("_", 1)[-1]
+            pool_id_clean = re.sub(r"[^a-zA-Z0-9]", "", pool_suffix).lower()
             domain_name = f"lakehouse-{pool_id_clean}"
 
             try:
                 self.cognito.create_user_pool_domain(Domain=domain_name, UserPoolId=user_pool_id)
-                domain_url = f"https://{domain_name}.auth.{self.region}.amazoncognito.com"
-                print(f"✅ Domain created: {domain_url}")
-            except Exception as e:
-                if "already exists" in str(e).lower() or "domain" in str(e).lower():
-                    domain_url = f"https://{domain_name}.auth.{self.region}.amazoncognito.com"
-                    print(f"ℹ️  Domain already exists: {domain_url}")
+                print(f"✅ Domain created: {domain_name}")
+            except self.cognito.exceptions.InvalidParameterException as e:
+                # Exactly one condition here is benign: the domain already belongs to THIS
+                # pool, which makes the create idempotent. (Rare in practice, because the
+                # describe above returns early when the pool already has a domain.)
+                #
+                # Everything else must fail the step. The important case is "Domain already
+                # associated with another user pool", meaning the globally unique name is
+                # taken: the pool is left with NO hosted domain, so there is no
+                # /oauth2/token endpoint, so the machine-to-machine client-credentials grant
+                # cannot complete, so gateway targets fail to authenticate and the deployment
+                # serves nothing. Treating that as success yields a deploy that exits 0 and
+                # cannot answer a single request -- with no error anywhere for the reader to
+                # find.
+                if "already exists" in str(e).lower():
+                    print(f"ℹ️  Domain already exists for this pool: {domain_name}")
                 else:
+                    print(f"\n❌ Could not create the Cognito hosted domain '{domain_name}'")
+                    print(f"   {e}")
+                    print("   Without a hosted domain the pool has no OAuth token endpoint, so")
+                    print("   gateway targets cannot authenticate and the stack will not work.")
+                    print("   Re-run after resolving the domain name conflict.")
                     raise
+
+            # Read the hostname back instead of composing it. Composing it only asserts that
+            # the create succeeded; reading it proves the domain exists and records what the
+            # service actually holds. cleanup_cognito.py already reads the domain from the
+            # API before deleting it -- this is the same pattern applied on the way in.
+            domain_url = self.get_user_pool_domain(user_pool_id)
+            if not domain_url:
+                raise RuntimeError(
+                    f"Domain '{domain_name}' was created for user pool {user_pool_id}, but "
+                    "reading it back returned nothing. Refusing to continue with an "
+                    "unconfirmed hostname: every downstream component reads this value from "
+                    "SSM, and a hostname that does not resolve fails much later and far away."
+                )
         else:
             print(f"✅ Using existing domain: {domain_url}")
 
@@ -378,6 +455,7 @@ class CognitoSetup:
                     print(f"ℹ️  Group already exists: {group['name']}")
                 else:
                     print(f"⚠️  Error creating group {group['name']}: {e}")
+                    self.errors.append(f"group {group['name']}: {e}")
 
         # Create test users with email as username (skip if already exist)
         test_users = [
@@ -428,6 +506,8 @@ class CognitoSetup:
                     print(f"   ✅ Added to group: {user['group']}")
                 except Exception as e:
                     print(f"   ⚠️  Error adding to group: {e}")
+                    self.errors.append(f"user {email}: not added to group {user['group']}: {e}")
+                    self.failed_users.add(email)
 
             except self.cognito.exceptions.UsernameExistsException:
                 print(f"ℹ️  Test user already exists: {email}")
@@ -442,11 +522,16 @@ class CognitoSetup:
                         print(f"   ℹ️  Already in group: {user['group']}")
                     else:
                         print(f"   ⚠️  Error adding to group: {e}")
+                        self.errors.append(f"user {email}: not added to group {user['group']}: {e}")
+                        self.failed_users.add(email)
             except Exception as e:
                 if "already exists" in str(e).lower():
                     print(f"ℹ️  Test user already exists: {email}")
                 else:
                     print(f"⚠️  Error creating user {email}: {e}")
+                    self.errors.append(f"user {email}: not created: {e}")
+                    self.failed_users.add(email)
+        self.test_users = test_users
 
         result = {
             "user_pool_id": user_pool_id,
@@ -461,9 +546,23 @@ class CognitoSetup:
         m2m_client = self.create_m2m_client(user_pool_id)
         result["m2m_client_id"] = m2m_client["client_id"]
         result["m2m_client_secret"] = m2m_client["client_secret"]
+        if not m2m_client["client_secret"]:
+            self.errors.append("M2M app client lakehouse-m2m-client has no client secret (the gateway setup needs it)")
 
         # Store configuration in SSM Parameter Store
         self.store_parameters_in_ssm(result)
+
+        # Make the documented demo password permanent now, so a reader's first
+        # sign-in is not stopped by a forced password change. The helper reads the
+        # pool id from SSM (written just above) and holds the one copy of the
+        # password and its LAKEHOUSE_TEST_PASSWORD override.
+        # It raises RuntimeError if any persona was not set; record that and finish
+        # the remaining steps, so the run ends with the full error list.
+        try:
+            set_test_user_passwords(self.ssm, self.cognito)
+            self.passwords_set = True
+        except RuntimeError as e:
+            self.errors.append(str(e))
 
         # Write to .env file (deprecated, for backward compatibility)
         self.write_to_env(result)
@@ -473,7 +572,7 @@ class CognitoSetup:
 
         return result
 
-    def create_m2m_client(self, user_pool_id: str) -> Dict:
+    def create_m2m_client(self, user_pool_id: str) -> dict:
         """
         Create M2M-only app client with client_credentials OAuth flow.
 
@@ -532,7 +631,7 @@ class CognitoSetup:
 
         return {"client_id": client_id, "client_secret": client_secret}
 
-    def add_post_auth_trigger(self, user_pool_id: str = None, lambda_name: str = "lakehouse-cognito-post-auth"):
+    def add_post_auth_trigger(self, user_pool_id: str | None = None, lambda_name: str = "lakehouse-cognito-post-auth"):
         """
         Add Post-Authentication Lambda trigger to Cognito User Pool.
 
@@ -616,7 +715,7 @@ if __name__ == "__main__":
         else:
             print("\n❌ Failed to configure Post-Authentication trigger")
             print("   Run: bash deploy_post_auth_lambda.sh first")
-        exit(0 if success else 1)
+        sys.exit(0 if success else 1)
 
     # Normal setup flow (includes automatic post-auth trigger configuration)
     result = setup.setup()
@@ -624,34 +723,41 @@ if __name__ == "__main__":
     print(
         f"\n📝 Configuration:\n{json.dumps({k: v for k, v in result.items() if 'secret' not in k}, indent=2)}"
     )  # codeql[py/clear-text-logging-sensitive-data]
+    # Neither client secret is printed. Both were written to SSM Parameter Store as
+    # SecureStrings earlier in this run (store_parameters_in_ssm), and every component that
+    # needs them reads them from there. This script is run from 01-deploy-idp.ipynb via
+    # subprocess.run() without capture_output, so its stdout becomes that cell's output and
+    # is saved into the .ipynb file; a printed secret would be committed with the notebook.
+    # The "******" mask matches what 5a-gateway-setup/create_gateway.py prints when it loads
+    # a secret.
     if "client_secret" in result:
-        print(f"\n🔐 User App Client Secret: {result['client_secret']}")  # codeql[py/clear-text-logging-sensitive-data]
-        print("   (Also stored securely in SSM Parameter Store)")
-    if "m2m_client_secret" in result:
-        print(
-            f"\n🤖 M2M App Client Secret: {result['m2m_client_secret']}"
-        )  # codeql[py/clear-text-logging-sensitive-data]
-        print("   (Also stored securely in SSM Parameter Store)")
+        print("\n🔐 User App Client Secret: ****** (stored in SSM Parameter Store)")
+    if result.get("m2m_client_secret"):
+        print("\n🤖 M2M App Client Secret: ****** (stored in SSM Parameter Store)")
 
+    # store_parameters_in_ssm skips a secret it does not have, so list only the ones written.
     print("\n💾 SSM Parameters Stored:")
     print("   • /app/lakehouse-agent/cognito-user-pool-id")
     print("   • /app/lakehouse-agent/cognito-user-pool-arn")
     print("   • /app/lakehouse-agent/cognito-app-client-id (user auth + M2M)")
-    print("   • /app/lakehouse-agent/cognito-app-client-secret (SecureString)")
+    if result.get("client_secret"):
+        print("   • /app/lakehouse-agent/cognito-app-client-secret (SecureString)")
     print("   • /app/lakehouse-agent/cognito-m2m-client-id (M2M only)")
-    print("   • /app/lakehouse-agent/cognito-m2m-client-secret (SecureString)")
+    if result.get("m2m_client_secret"):
+        print("   • /app/lakehouse-agent/cognito-m2m-client-secret (SecureString)")
     print("   • /app/lakehouse-agent/cognito-domain")
     print("   • /app/lakehouse-agent/cognito-resource-server-id")
     print("   • /app/lakehouse-agent/cognito-region")
 
     print("\n👥 Test Users Created:")
-    print("   • policyholder001@example.com → policyholders group")
-    print("   • policyholder002@example.com → policyholders group")
-    print("   • adjuster001@example.com → adjusters group")
-    print("   • adjuster002@example.com → adjusters group")
-    print("   • admin@example.com → administrators group")
+    for user in setup.test_users:
+        failed = "  ❌ not set up (see the errors below)" if user["email"] in setup.failed_users else ""
+        print(f"   • {user['email']} → {user['group']} group{failed}")
     print("   Default password: TempPass123!")
-    print("   Note: Users will be prompted to change password on first login")
+    if setup.passwords_set:
+        print("   Set as permanent during setup, so the first sign-in does not ask for a new password")
+    else:
+        print("   ❌ Not made permanent for every user (see the errors below)")
 
     print("\n👥 Cognito Groups:")
     print("   • policyholders - Policy holders group")
@@ -670,3 +776,9 @@ if __name__ == "__main__":
     print("   1. Run: python cleanup_test_users.py")
     print("   2. Delete the User Pool from AWS Console")
     print("   3. Run this script again to recreate with correct settings")
+
+    if setup.errors:
+        print(f"\n❌ setup_cognito.py finished with {len(setup.errors)} error(s):")
+        for err in setup.errors:
+            print(f"   • {err}")
+        sys.exit(1)
