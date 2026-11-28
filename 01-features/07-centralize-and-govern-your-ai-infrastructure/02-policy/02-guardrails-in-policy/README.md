@@ -259,4 +259,4 @@ The gateway execution role needs `bedrock:InvokeGuardrailChecks` because the pol
 - [Guardrails in policies: Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-guardrails-in-policies.html)
 - [Getting started with guardrails: CLI walkthrough](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-guardrails-getting-started.html)
 - [Amazon Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)
-- [`01-tool-access-with-policy/`](../01-tool-access-with-policy/): Cedar ABAC policies with NL2Cedar
+- [`01-tool-access-with-policy/`](../01-tool-access-with-policy/): Preview generated Cedar statements and findings without installing policies
